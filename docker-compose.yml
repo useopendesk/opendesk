@@ -262,7 +262,7 @@ services:
   smtp-inbound:
     <<: *hardening
     profiles: [smtp-inbound]
-    image: haproxy:3.2-alpine
+    image: haproxy:3.4-alpine
     ports:
       - "${INBOUND_SMTP_PORT:-25}:2525"
     configs:
