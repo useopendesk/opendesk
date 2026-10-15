@@ -1,0 +1,312 @@
+---
+/**
+ * The opendesk desktop app on a webhook's page, 1:1 at 1280 x 804: AppWindow
+ * with SettingsLayout in its work panel (the settings nav scrolled down to
+ * Developers, Webhooks current) and WebhookDetail: the endpoint, its summary,
+ * the events it gets and its recent deliveries. Every value follows
+ * web/src/pages/settings/SettingsLayout.tsx, WebhookDetail.tsx and
+ * web/src/components/settings2/bits.tsx.
+ *
+ * On the timeline (`data-seq`) deliveries land at the top of the log: one
+ * goes through, the next answers 503 and waits for its retry (the endpoint
+ * reads Failing), the retry goes through on the second attempt, then another.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic, type Tone } from '../../app/icons';
+
+// lucide glyphs this page needs beyond the shared set (24 grid, stroke 2).
+const G: Record<string, string> = {
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  building: '<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>',
+  usersRound: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
+  creditCard: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/><path d="M6 14h2"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  sliders: '<path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/>',
+  shuffle: '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>',
+  messageSquareText: '<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M7 11h10"/><path d="M7 15h6"/><path d="M7 7h8"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  workflow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  layoutDashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/>',
+  flask: '<path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/>',
+  clipboardCheck: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  keyRound: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>',
+  cable: '<path d="M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z"/><path d="M17 21v-2"/><path d="M19 14V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V10"/><path d="M21 21v-2"/><path d="M3 5V3"/><path d="M4 10a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a2 2 0 0 1-2 2z"/><path d="M7 5V3"/>',
+  webhook: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>',
+  listChecks: '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  refreshCw: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+};
+const gl = (name: string, size: number, cls = '') =>
+  G[name]
+    ? `<svg class="dm-ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${G[name]}</svg>`
+    : ic(name, size, cls);
+
+// SettingsLayout's nav, as an admin on an instance with AI.
+const nav: { title: string; items: [string, string][] }[] = [
+  { title: 'Account', items: [['user', 'Profile'], ['shield', 'Security']] },
+  {
+    title: 'Workspace',
+    items: [['building', 'General'], ['users', 'Members'], ['usersRound', 'Teams'], ['inbox', 'Mailboxes'], ['creditCard', 'Plan and billing'], ['bot', 'AI'], ['plug', 'Integrations']],
+  },
+  {
+    title: 'Inbox',
+    items: [['tag', 'Labels'], ['sliders', 'Custom fields'], ['shuffle', 'Assignment'], ['sparkles', 'Triage'], ['clock', 'Business hours'], ['messageSquareText', 'Saved replies'], ['layers', 'Views'], ['gauge', 'SLA policies'], ['workflow', 'Automations']],
+  },
+  { title: 'Channels', items: [['messageCircle', 'Chat widget']] },
+  {
+    title: 'AI agent',
+    items: [['layoutDashboard', 'Overview'], ['sliders', 'Behaviour'], ['bookOpen', 'Knowledge'], ['wrench', 'Tools'], ['flask', 'Playground'], ['clipboardCheck', 'Tests']],
+  },
+  { title: 'Developers', items: [['keyRound', 'API keys'], ['cable', 'AI clients'], ['webhook', 'Webhooks']] },
+  { title: 'Admin', items: [['listChecks', 'Audit log']] },
+];
+
+type State = 'succeeded' | 'failed' | 'pending';
+interface Delivery { status: State; event: string; code: number; ms: number; attempts: number; when: string }
+const stateTone: Record<State, Tone> = { succeeded: 'green', failed: 'red', pending: 'amber' };
+const stateWord: Record<State, string> = { succeeded: 'Delivered', failed: 'Failed', pending: 'Pending' };
+const codeTone = (c: number): Tone => (c < 300 ? 'green' : c < 400 ? 'amber' : 'red');
+
+// Already in the log, newest first.
+const log: Delivery[] = [
+  { status: 'succeeded', event: 'ticket.updated', code: 200, ms: 97, attempts: 1, when: '16m' },
+  { status: 'succeeded', event: 'message.created', code: 200, ms: 126, attempts: 1, when: '41m' },
+  { status: 'succeeded', event: 'ticket.created', code: 200, ms: 531, attempts: 1, when: '1h' },
+  { status: 'succeeded', event: 'ticket.updated', code: 200, ms: 874, attempts: 2, when: '2h' },
+  { status: 'succeeded', event: 'message.created', code: 200, ms: 209, attempts: 1, when: '3h' },
+  { status: 'succeeded', event: 'ticket.created', code: 200, ms: 509, attempts: 1, when: '3h' },
+  { status: 'succeeded', event: 'ticket.updated', code: 200, ms: 725, attempts: 1, when: '4h' },
+];
+// Land on the timeline, each on its step; the retry is replaced on the step after it lands.
+const first: Delivery = { status: 'succeeded', event: 'ticket.created', code: 200, ms: 143, attempts: 1, when: 'now' };
+const retry: [Delivery, Delivery] = [
+  { status: 'pending', event: 'ticket.updated', code: 503, ms: 412, attempts: 1, when: 'now' },
+  { status: 'succeeded', event: 'ticket.updated', code: 200, ms: 188, attempts: 2, when: 'now' },
+];
+const last: Delivery = { status: 'succeeded', event: 'message.created', code: 200, ms: 96, attempts: 1, when: 'now' };
+---
+<AppWindow active="settings" crumbs={['Settings', 'Webhook']} width={1280}>
+  <div class="whk" data-seq data-hold="4200">
+    <!-- SettingsLayout nav, scrolled to Developers -->
+    <nav class="whk-nav">
+      <div class="whk-nav-in">
+        {nav.map((g, gi) => (
+          <div class={gi ? 'whk-group' : ''}>
+            <div class="whk-caps whk-nav-caps">{g.title}</div>
+            <div class="whk-items">
+              {g.items.map(([icon, label]) => (
+                <span class={`whk-item ${label === 'Webhooks' ? 'whk-item-on' : ''}`}><Fragment set:html={gl(icon, 14)} /><span class="dm-truncate">{label}</span></span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </nav>
+
+    <div class="whk-page">
+      <!-- SettingsPage header -->
+      <header class="whk-head">
+        <div class="whk-head-main">
+          <div class="whk-back"><span><Fragment set:html={gl('chevronLeft', 14)} />Webhooks</span></div>
+          <h1 class="whk-title dm-mono">https://hooks.margin.app/opendesk</h1>
+          <p class="whk-desc">Internal event bus</p>
+        </div>
+        <div class="whk-acts">
+          <span class="whk-state">
+            <span class="whk-swap">
+              <span class="whk-pill dm-chip dm-t-green" data-step="0" data-until="2" data-wait="0"><i></i>Active</span>
+              <span class="whk-pill dm-chip dm-t-red s-swap" data-step="2" data-until="3"><i></i>Failing</span>
+              <span class="whk-pill dm-chip dm-t-green s-swap" data-step="3"><i></i>Active</span>
+            </span>
+            <span class="whk-switch"><i></i></span>
+          </span>
+          <span class="dm-btn"><Fragment set:html={ic('send', 14)} />Send test event</span>
+          <span class="dm-btn whk-sq"><Fragment set:html={gl('pencil', 14)} /></span>
+          <span class="dm-btn whk-sq whk-danger"><Fragment set:html={gl('trash', 14)} /></span>
+        </div>
+      </header>
+
+      <div class="whk-body">
+        <!-- SummaryStrip -->
+        <div class="whk-strip">
+          <div><div class="whk-strip-k"><i class="dm-t-green"></i><span class="whk-caps">Delivered</span></div><div class="whk-strip-v">98%</div></div>
+          <div><div class="whk-strip-k"><i class="dm-t-red"></i><span class="whk-caps">Failed</span></div><div class="whk-strip-v">1</div></div>
+          <div><div class="whk-strip-k"><span class="whk-caps">Avg response</span></div><div class="whk-strip-v">318 ms</div></div>
+          <div>
+            <div class="whk-strip-k"><span class="whk-caps">Last delivery</span></div>
+            <div class="whk-strip-v"><span data-step="0" data-until="1" data-wait="0">16m</span><span class="s-swap" data-step="1">now</span></div>
+            <div class="whk-strip-hint">
+              <span data-step="0" data-until="1" data-wait="0">ticket.updated</span>
+              <span class="s-swap" data-step="1" data-until="2">ticket.created</span>
+              <span class="s-swap" data-step="2" data-until="4">ticket.updated</span>
+              <span class="s-swap" data-step="4">message.created</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Events -->
+        <section>
+          <div class="whk-sec-head"><div><h2 class="whk-sec-title">Events</h2><p class="whk-sec-sub">3 events subscribed</p></div></div>
+          <div class="whk-card whk-events">
+            <span class="whk-mono-chip">ticket.created</span><span class="whk-mono-chip">ticket.updated</span><span class="whk-mono-chip">message.created</span>
+          </div>
+        </section>
+
+        <!-- Recent deliveries -->
+        <section>
+          <div class="whk-sec-head">
+            <div><h2 class="whk-sec-title">Recent deliveries</h2><p class="whk-sec-sub">The last 50 attempts. Failures are retried automatically.</p></div>
+            <div class="whk-sec-acts">
+              <span class="whk-seg"><span class="whk-seg-on">All</span><span>Failed 1</span></span>
+              <span class="whk-refresh"><Fragment set:html={gl('refreshCw', 14)} /></span>
+            </div>
+          </div>
+          <div class="whk-card whk-table">
+            <div class="whk-tr whk-th">
+              <span class="whk-caps">Status</span><span class="whk-caps">Event</span><span class="whk-caps whk-r">Response</span>
+              <span class="whk-caps whk-r">Duration</span><span class="whk-caps whk-r">Attempts</span><span class="whk-caps whk-r">When</span>
+            </div>
+
+            <div class="whk-arrive" data-step="4" data-wait="2600"><div>
+              <div class="whk-tr whk-row">
+                <span><span class="whk-pill dm-chip dm-t-green"><i></i>Delivered</span></span>
+                <span class="dm-mono whk-event">{last.event}</span>
+                <span class="whk-r"><span class="dm-mono whk-code dm-chip dm-t-green">{last.code}</span></span>
+                <span class="dm-mono whk-num whk-r">{last.ms} ms</span>
+                <span class="dm-mono whk-num whk-r">{last.attempts}</span>
+                <span class="dm-mono whk-when whk-r">{last.when}</span>
+              </div>
+            </div></div>
+
+            <!-- The retry: lands waiting on a 503, then goes through on attempt 2 -->
+            <div class="whk-arrive" data-step="2" data-wait="2600"><div>
+              <div class="whk-tr whk-row">
+                <span class="whk-cell">
+                  <span class="whk-pill dm-chip dm-t-amber" data-step="2" data-until="3"><i class="dm-pulse"></i>Pending</span>
+                  <span class="whk-pill dm-chip dm-t-green s-swap" data-step="3" data-wait="3000"><i></i>Delivered</span>
+                </span>
+                <span class="dm-mono whk-event">{retry[0].event}</span>
+                <span class="whk-r">
+                  <span class={`dm-mono whk-code dm-chip dm-t-${codeTone(retry[0].code)}`} data-step="2" data-until="3">{retry[0].code}</span>
+                  <span class={`dm-mono whk-code dm-chip dm-t-${codeTone(retry[1].code)} s-swap`} data-step="3">{retry[1].code}</span>
+                </span>
+                <span class="dm-mono whk-num whk-r"><span data-step="2" data-until="3">{retry[0].ms} ms</span><span class="s-swap" data-step="3">{retry[1].ms} ms</span></span>
+                <span class="dm-mono whk-num whk-r"><span data-step="2" data-until="3">{retry[0].attempts}</span><span class="s-swap whk-amber" data-step="3">{retry[1].attempts}</span></span>
+                <span class="dm-mono whk-when whk-r">now</span>
+              </div>
+            </div></div>
+
+            <div class="whk-arrive" data-step="1" data-wait="2400"><div>
+              <div class="whk-tr whk-row">
+                <span><span class="whk-pill dm-chip dm-t-green"><i></i>Delivered</span></span>
+                <span class="dm-mono whk-event">{first.event}</span>
+                <span class="whk-r"><span class="dm-mono whk-code dm-chip dm-t-green">{first.code}</span></span>
+                <span class="dm-mono whk-num whk-r">{first.ms} ms</span>
+                <span class="dm-mono whk-num whk-r">{first.attempts}</span>
+                <span class="dm-mono whk-when whk-r">{first.when}</span>
+              </div>
+            </div></div>
+
+            {log.map((d) => (
+              <div class="whk-tr whk-row">
+                <span><span class={`whk-pill dm-chip dm-t-${stateTone[d.status]}`}><i></i>{stateWord[d.status]}</span></span>
+                <span class="dm-mono whk-event">{d.event}</span>
+                <span class="whk-r"><span class={`dm-mono whk-code dm-chip dm-t-${codeTone(d.code)}`}>{d.code}</span></span>
+                <span class="dm-mono whk-num whk-r">{d.ms} ms</span>
+                <span class={`dm-mono whk-num whk-r ${d.attempts > 1 ? 'whk-amber' : ''}`}>{d.attempts}</span>
+                <span class="dm-mono whk-when whk-r">{d.when}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</AppWindow>
+
+<style is:global>
+  /* SettingsLayout and WebhookDetail; the window and shared pieces are in app/app.css. */
+  .whk { display: flex; min-width: 0; flex: 1; }
+  .whk-caps { font-size: 10px; line-height: 14px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dm-fg-4); }
+
+  /* Settings nav: 1096px tall, scrolled down to Developers */
+  .whk-nav { width: 232px; flex-shrink: 0; overflow: hidden; border-right: 1px solid var(--dm-line); }
+  .whk-nav-in { padding: 16px 10px 24px; transform: translateY(-338px); }
+  .whk-group { margin-top: 16px; }
+  .whk-nav-caps { display: block; padding: 0 8px 4px; }
+  .whk-items { display: flex; flex-direction: column; gap: 1px; }
+  .whk-item { display: flex; height: 28px; align-items: center; gap: 10px; border-radius: 5px; padding: 0 8px; font-size: 12.5px; color: var(--dm-fg-2); }
+  .whk-item > .dm-ic { color: var(--dm-fg-4); }
+  .whk-item-on { background: var(--dm-active); font-weight: 500; color: var(--dm-fg); }
+  .whk-item-on > .dm-ic { color: var(--dm-fg-2); }
+
+  /* SettingsPage, wide */
+  .whk-page { min-width: 0; flex: 1; overflow: hidden; }
+  .whk-head { display: flex; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--dm-line); padding: 28px 32px 20px; }
+  .whk-head-main { min-width: 0; flex: 1; }
+  .whk-back { margin-bottom: 8px; height: 25px; }
+  .whk-back span { margin-left: -4px; display: inline-flex; height: 24px; align-items: center; gap: 2px; padding: 0 6px 0 2px; font-size: 12.5px; color: var(--dm-fg-3); }
+  .dm .whk-title { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+  .dm .whk-desc { margin-top: 4px; font-size: 12.5px; line-height: 19px; color: var(--dm-fg-3); }
+  .whk-acts { display: flex; flex-shrink: 0; align-items: center; gap: 6px; }
+  .whk-state { margin-right: 4px; display: flex; align-items: center; gap: 8px; }
+  .whk-swap { display: flex; }
+  .whk-switch { position: relative; display: inline-flex; width: 30px; height: 18px; flex-shrink: 0; align-items: center; border-radius: 9999px; background: var(--dm-inverse); }
+  .whk-switch i { display: block; width: 14px; height: 14px; border-radius: 9999px; background: var(--dm-inverse-fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transform: translateX(14px); }
+  .whk-sq { width: 28px; justify-content: center; padding: 0; }
+  .whk-danger { color: color-mix(in oklab, var(--dm-red) 82%, var(--dm-fg)); }
+
+  /* StatePill, MonoChip, CodePill */
+  .whk-pill { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 6px; white-space: nowrap; border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 500; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent); }
+  .whk-pill i { width: 6px; height: 6px; border-radius: 9999px; background: var(--t); }
+  .whk-code { display: inline-flex; height: 20px; align-items: center; border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 500; }
+  .whk-mono-chip { display: inline-flex; height: 18px; flex-shrink: 0; align-items: center; border: 1px solid var(--dm-line); border-radius: 4px; padding: 0 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--dm-fg-2); }
+
+  .whk-body { display: flex; flex-direction: column; gap: 36px; padding: 28px 32px 0; }
+  .whk-card { overflow: hidden; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs); }
+
+  /* SummaryStrip */
+  .whk-strip { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; overflow: hidden; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs); }
+  .whk-strip > div { min-width: 0; padding: 12px 16px; }
+  .whk-strip > div:not(:last-child) { border-right: 1px solid var(--dm-line); }
+  .whk-strip-k { display: flex; align-items: center; gap: 6px; }
+  .whk-strip-k i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 9999px; background: var(--t); }
+  .whk-strip-v { margin-top: 6px; font-size: 20px; line-height: 1; font-weight: 300; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .whk-strip-hint { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--dm-fg-3); }
+
+  /* Section */
+  .whk-sec-head { margin-bottom: 12px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+  .dm .whk-sec-title { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .dm .whk-sec-sub { margin-top: 2px; font-size: 12px; line-height: 18px; color: var(--dm-fg-3); }
+  .whk-sec-acts { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+  .whk-events { display: flex; flex-wrap: wrap; gap: 4px; padding: 14px 16px; }
+  .whk-seg { display: inline-flex; align-items: center; border-radius: 5px; background: var(--dm-hover); padding: 2px; }
+  .whk-seg span { display: inline-flex; height: 24px; align-items: center; border-radius: 5px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--dm-fg-3); }
+  .whk-seg .whk-seg-on { background: var(--dm-surface); color: var(--dm-fg); box-shadow: 0 0 0 1px var(--dm-line), 0 1px 2px rgb(0 0 0 / 0.06); }
+  .whk-refresh { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 5px; color: var(--dm-fg-3); }
+
+  /* Deliveries */
+  .whk-table { font-size: 12.5px; }
+  .whk-tr { display: grid; grid-template-columns: 104px minmax(0, 1fr) 80px 80px 72px 72px; align-items: center; gap: 12px; padding: 0 16px; }
+  .whk-th { height: 32px; border-bottom: 1px solid var(--dm-line-soft); background: var(--dm-sunken); }
+  .whk-row { height: 41px; border-bottom: 1px solid var(--dm-line-soft); }
+  .whk-r { text-align: right; }
+  .whk-cell { display: flex; }
+  .whk-event { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dm-fg-2); }
+  .whk-num { font-size: 12px; color: var(--dm-fg-3); }
+  .whk-when { font-size: 11.5px; color: var(--dm-fg-3); }
+  .whk-amber { color: color-mix(in oklab, var(--dm-amber) 82%, var(--dm-fg)); }
+
+  /* A delivery lands at the top: the row opens, then its tint fades. */
+  @keyframes whk-fresh { from { background-color: color-mix(in oklab, var(--dm-blue) 8%, transparent); } to { background-color: transparent; } }
+  .whk-arrive { display: grid; grid-template-rows: 1fr; }
+  .whk-arrive > div { min-height: 0; overflow: hidden; }
+  .seq-js [data-step].whk-arrive { transition: grid-template-rows 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 360ms ease 80ms; }
+  .seq-js [data-step]:not(.on).whk-arrive { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js [data-step].on.whk-arrive .whk-row { animation: whk-fresh 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s backwards; }
+</style>

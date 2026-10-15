@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { OllieMark } from "@/components/assistant/OllieMark";
 import { cn } from "@/lib/cn";
-import { number } from "@/lib/format";
+import { formatUsd, number } from "@/lib/format";
 import { AI_TONE, tone } from "@/lib/tones";
 
 /** The agent's picture: the uploaded `widget_bot` image, or the Ollie mark. */
@@ -47,10 +47,11 @@ export function AgentOffNotice({ className }: { className?: string }) {
 }
 
 /**
- * A whole-number credit amount as a friendly field: digits only, grouped while
- * not focused, with quick picks underneath. 0 reads as "No cap".
+ * An amount in US dollars as a friendly field: digits and a decimal point,
+ * kept to cents, formatted while not focused, with quick picks underneath.
+ * 0 reads as "No cap".
  */
-export function CreditsField({
+export function UsdField({
   value,
   onChange,
   max,
@@ -75,8 +76,8 @@ export function CreditsField({
   const [text, setText] = useState<string | null>(null);
   const commit = (s: string) => {
     setText(null);
-    const n = Math.min(max, Math.max(0, Math.round(Number(s.replace(/[^\d]/g, "")) || 0)));
-    onChange(n);
+    const n = Number(s.replace(",", ".")) || 0;
+    onChange(Math.min(max, Math.max(0, Math.round(n * 100) / 100)));
   };
   return (
     <div className="flex flex-col gap-2">
@@ -86,17 +87,18 @@ export function CreditsField({
           disabled && "opacity-60",
         )}
       >
+        <span className="shrink-0 text-[12px] text-fg-3">$</span>
         <input
           id={id}
           type="text"
-          inputMode="numeric"
+          inputMode="decimal"
           aria-label={ariaLabel}
           aria-describedby={describedBy}
           disabled={disabled}
-          value={text ?? (value === 0 ? "" : number(value))}
+          value={text ?? (value === 0 ? "" : number(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
           placeholder={zeroLabel}
           onFocus={() => setText(value === 0 ? "" : String(value))}
-          onChange={(e) => setText(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
+          onChange={(e) => setText(e.target.value.replace(/[^\d.,]/g, "").replace(/([.,].*)[.,]/g, "$1").slice(0, 9))}
           onBlur={() => text !== null && commit(text)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && text !== null) {
@@ -106,9 +108,9 @@ export function CreditsField({
           }}
           className="mono min-w-0 flex-1 bg-transparent text-[12.5px] tabular-nums text-fg outline-none placeholder:font-sans placeholder:text-fg-3"
         />
-        <span className="shrink-0 text-[12px] text-fg-3">{t("credits.unit")}</span>
+        <span className="shrink-0 text-[12px] text-fg-3">{t("usd.unit")}</span>
       </div>
-      <div className="flex flex-wrap gap-1" role="group" aria-label={t("credits.presets")}>
+      <div className="flex flex-wrap gap-1" role="group" aria-label={t("usd.presets")}>
         {[0, ...presets].map((p) => (
           <button
             key={p}
@@ -124,7 +126,7 @@ export function CreditsField({
               value === p ? "bg-inverse text-inverse-fg" : "bg-hover text-fg-2 hover:bg-active hover:text-fg",
             )}
           >
-            {p === 0 ? zeroLabel : number(p)}
+            {p === 0 ? zeroLabel : formatUsd(p, { trim: true })}
           </button>
         ))}
       </div>

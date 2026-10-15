@@ -15,8 +15,16 @@ defmodule Realtime.AuthTest do
                wid: claims["wid"],
                role: "admin",
                name: "Anna",
-               avatar: "https://example.test/a.png"
+               avatar: "https://example.test/a.png",
+               teams: [],
+               brand: nil
              }
+    end
+
+    test "a ws token's private teams, normalized" do
+      [a, b] = [Tokens.uuid(), Tokens.uuid()]
+      claims = Tokens.ws_claims(%{"teams" => [String.upcase(a), b, a]})
+      assert {:ok, %{teams: [^a, ^b]}} = Auth.verify(Tokens.sign(claims))
     end
 
     test "an api_key ws token" do
@@ -33,6 +41,13 @@ defmodule Realtime.AuthTest do
       assert {sub, wid} == {claims["sub"], claims["wid"]}
     end
 
+    test "a widget_ws token's brand, normalized" do
+      brand = Tokens.uuid()
+      claims = Tokens.widget_claims(%{"bid" => String.upcase(brand)})
+      assert {:ok, %{kind: :contact, brand: ^brand}} = Auth.verify(Tokens.sign(claims))
+      assert {:ok, %{brand: nil}} = Auth.verify(Tokens.sign(Tokens.widget_claims()))
+    end
+
     test "uppercase ids, normalized to lowercase" do
       claims = Tokens.ws_claims()
       upper = %{claims | "sub" => String.upcase(claims["sub"])}
@@ -42,6 +57,20 @@ defmodule Realtime.AuthTest do
   end
 
   describe "verify/2 refuses" do
+    test "a malformed brand claim" do
+      for bid <- ["nope", 1, [Tokens.uuid()]] do
+        token = Tokens.sign(Tokens.widget_claims(%{"bid" => bid}))
+        assert Auth.verify(token) == {:error, :invalid_claims}, inspect(bid)
+      end
+    end
+
+    test "a malformed teams claim" do
+      for teams <- ["#{Tokens.uuid()}", [Tokens.uuid(), "nope"], [1], %{"a" => 1}] do
+        token = Tokens.sign(Tokens.ws_claims(%{"teams" => teams}))
+        assert Auth.verify(token) == {:error, :invalid_claims}, inspect(teams)
+      end
+    end
+
     test "every other purpose" do
       for purpose <- ["access", "mfa", "oauth_state", "", nil, 1] do
         token = Tokens.sign(Tokens.ws_claims(%{"purpose" => purpose}))
@@ -119,7 +148,7 @@ defmodule Realtime.AuthTest do
       assert Auth.verify("a.b.c") == {:error, :invalid_token}
       assert Auth.verify(%{"x" => 1}) == {:error, :invalid_token}
 
-      huge = Tokens.sign(Tokens.ws_claims(%{"pad" => String.duplicate("a", 5000)}))
+      huge = Tokens.sign(Tokens.ws_claims(%{"pad" => String.duplicate("a", 9000)}))
       assert Auth.verify(huge) == {:error, :invalid_token}
     end
   end

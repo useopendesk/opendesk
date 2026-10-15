@@ -2,6 +2,7 @@ package tickets
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -32,6 +33,55 @@ type ReportAgent struct {
 	FirstResponseP50Minutes *float64       `json:"first_response_p50_minutes"`
 }
 
+// ReportTeam is one team's row of the overview; TeamID nil counts tickets without a team.
+type ReportTeam struct {
+	TeamID                  *uuid.UUID `json:"team_id"`
+	Created                 int        `json:"created"`
+	Solved                  int        `json:"solved"`
+	OpenNow                 int        `json:"open_now"`
+	FirstResponseP50Minutes *float64   `json:"first_response_p50_minutes"`
+}
+
+// ReportBrand is one brand's row of the overview.
+type ReportBrand struct {
+	BrandID                 uuid.UUID `json:"brand_id"`
+	Created                 int       `json:"created"`
+	Solved                  int       `json:"solved"`
+	OpenNow                 int       `json:"open_now"`
+	FirstResponseP50Minutes *float64  `json:"first_response_p50_minutes"`
+}
+
+// reportFilter narrows the overview to a team ("none": no team) and a brand.
+type reportFilter struct {
+	Team  string
+	Brand string
+}
+
+// sql binds the filter as $n and $n+1.
+func (f reportFilter) sql(n int) string {
+	return fmt.Sprintf(` AND ($%[1]d = '' OR ($%[1]d = 'none' AND t.team_id IS NULL) OR t.team_id::text = $%[1]d)
+		AND ($%[2]d = '' OR t.brand_id::text = $%[2]d)`, n, n+1)
+}
+
+func (f reportFilter) validate() (reportFilter, error) {
+	f.Team, f.Brand = strings.TrimSpace(f.Team), strings.TrimSpace(f.Brand)
+	if f.Team != "" && f.Team != hd.TeamNone {
+		id, err := hd.ParseRef(f.Team, "team_id")
+		if err != nil {
+			return f, err
+		}
+		f.Team = id.String()
+	}
+	if f.Brand != "" {
+		id, err := hd.ParseRef(f.Brand, "brand_id")
+		if err != nil {
+			return f, err
+		}
+		f.Brand = id.String()
+	}
+	return f, nil
+}
+
 // Overview is GET /v1/reports/overview.
 type ReportOverview struct {
 	Created                 int            `json:"created"`
@@ -46,6 +96,8 @@ type ReportOverview struct {
 	ByChannel               map[string]int `json:"by_channel"`
 	BySeverity              map[string]int `json:"by_severity" doc:"Tickets created in the range by severity; none counts tickets without one"`
 	ByAgent                 []ReportAgent  `json:"by_agent"`
+	ByTeam                  []ReportTeam   `json:"by_team" doc:"Every team with tickets in the range or open now; team_id null counts tickets without a team"`
+	ByBrand                 []ReportBrand  `json:"by_brand"`
 }
 
 // parseBound reads YYYY-MM-DD (a day in loc) or RFC 3339. endOfDay moves a date to the
@@ -75,8 +127,13 @@ func round1(v *float64) *float64 {
 	return &r
 }
 
-func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS string) (ReportOverview, error) {
-	o := ReportOverview{ByDay: []ReportDay{}, ByAgent: []ReportAgent{}, ByChannel: map[string]int{}, BySeverity: map[string]int{}}
+func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS string, rf reportFilter) (ReportOverview, error) {
+	o := ReportOverview{ByDay: []ReportDay{}, ByAgent: []ReportAgent{}, ByChannel: map[string]int{}, BySeverity: map[string]int{},
+		ByTeam: []ReportTeam{}, ByBrand: []ReportBrand{}}
+	rf, err := rf.validate()
+	if err != nil {
+		return o, err
+	}
 	s, err := hd.LoadSettings(ctx, q, wid)
 	if err != nil {
 		return o, err
@@ -104,7 +161,8 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 	}
 	tz := loc.String()
 
-	const base = `FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam`
+	// Reports count every ticket, private teams' included, without subjects or contacts.
+	base := `FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam` + rf.sql(4)
 	var frP50, resP50, csatAvg *float64
 	err = q.QueryRow(ctx, `SELECT
 		(SELECT count(*) `+base+` AND t.created_at >= $2 AND t.created_at < $3),
@@ -117,8 +175,8 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 		(SELECT avg(t.csat_score)::float8 `+base+` AND t.csat_score IS NOT NULL AND t.solved_at >= $2 AND t.solved_at < $3),
 		(SELECT count(*) `+base+` AND t.csat_score IS NOT NULL AND t.solved_at >= $2 AND t.solved_at < $3),
 		(SELECT count(DISTINCT a.ticket_id) FROM activities a JOIN tickets t ON t.id = a.ticket_id AND t.deleted_at IS NULL AND NOT t.spam
-			WHERE a.workspace_id = $1 AND a.type = 'sla_breached' AND a.created_at >= $2 AND a.created_at < $3)`,
-		wid, from, to).Scan(&o.Created, &o.Solved, &o.OpenNow, &frP50, &resP50, &csatAvg, &o.CSATCount, &o.SLABreached)
+			WHERE a.workspace_id = $1 AND a.type = 'sla_breached' AND a.created_at >= $2 AND a.created_at < $3`+rf.sql(4)+`)`,
+		wid, from, to, rf.Team, rf.Brand).Scan(&o.Created, &o.Solved, &o.OpenNow, &frP50, &resP50, &csatAvg, &o.CSATCount, &o.SLABreached)
 	if err != nil {
 		return o, err
 	}
@@ -128,13 +186,14 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 		o.CSATAvg = &v
 	}
 
+	base5 := `FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam` + rf.sql(5)
 	rows, err := q.Query(ctx, `WITH days AS (
 			SELECT generate_series(($2::timestamptz AT TIME ZONE $4)::date, (($3::timestamptz - interval '1 microsecond') AT TIME ZONE $4)::date,
 				interval '1 day')::date AS day),
-		c AS (SELECT (t.created_at AT TIME ZONE $4)::date AS day, count(*) AS n `+base+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY 1),
-		s AS (SELECT (t.solved_at AT TIME ZONE $4)::date AS day, count(*) AS n `+base+` AND t.solved_at >= $2 AND t.solved_at < $3 GROUP BY 1)
+		c AS (SELECT (t.created_at AT TIME ZONE $4)::date AS day, count(*) AS n `+base5+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY 1),
+		s AS (SELECT (t.solved_at AT TIME ZONE $4)::date AS day, count(*) AS n `+base5+` AND t.solved_at >= $2 AND t.solved_at < $3 GROUP BY 1)
 		SELECT to_char(days.day, 'YYYY-MM-DD'), COALESCE(c.n, 0), COALESCE(s.n, 0)
-		FROM days LEFT JOIN c USING (day) LEFT JOIN s USING (day) ORDER BY days.day`, wid, from, to, tz)
+		FROM days LEFT JOIN c USING (day) LEFT JOIN s USING (day) ORDER BY days.day`, wid, from, to, tz, rf.Team, rf.Brand)
 	if err != nil {
 		return o, err
 	}
@@ -150,7 +209,7 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 	for _, c := range domain.Channels {
 		o.ByChannel[c] = 0
 	}
-	rows, err = q.Query(ctx, `SELECT t.channel, count(*) `+base+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY t.channel`, wid, from, to)
+	rows, err = q.Query(ctx, `SELECT t.channel, count(*) `+base+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY t.channel`, wid, from, to, rf.Team, rf.Brand)
 	if err != nil {
 		return o, err
 	}
@@ -171,7 +230,7 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 	for _, s := range hd.SeverityFilterValues {
 		o.BySeverity[s] = 0
 	}
-	rows, err = q.Query(ctx, `SELECT COALESCE(t.severity, 'none'), count(*) `+base+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY 1`, wid, from, to)
+	rows, err = q.Query(ctx, `SELECT COALESCE(t.severity, 'none'), count(*) `+base+` AND t.created_at >= $2 AND t.created_at < $3 GROUP BY 1`, wid, from, to, rf.Team, rf.Brand)
 	if err != nil {
 		return o, err
 	}
@@ -195,10 +254,10 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 				FILTER (WHERE t.first_responded_at IS NOT NULL AND t.created_at >= $2 AND t.created_at < $3)
 		FROM tickets t JOIN users u ON u.id = t.assignee_id
 		JOIN members m ON m.workspace_id = t.workspace_id AND m.user_id = u.id
-		WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam
+		WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam`+rf.sql(4)+`
 			AND ((t.solved_at >= $2 AND t.solved_at < $3) OR (t.created_at >= $2 AND t.created_at < $3))
 		GROUP BY u.id, u.name, u.email, u.avatar_url
-		ORDER BY 5 DESC, u.name LIMIT 100`, wid, from, to)
+		ORDER BY 5 DESC, u.name LIMIT 100`, wid, from, to, rf.Team, rf.Brand)
 	if err != nil {
 		return o, err
 	}
@@ -209,8 +268,55 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 		a.FirstResponseP50Minutes = round1(p50)
 		return a, err
 	})
+	if err != nil {
+		return o, err
+	}
 	if o.ByAgent == nil {
 		o.ByAgent = []ReportAgent{}
+	}
+
+	// By team and by brand: created, solved, open now and first response, per group.
+	group := func(col string) string {
+		return `SELECT ` + col + `,
+			count(*) FILTER (WHERE t.created_at >= $2 AND t.created_at < $3),
+			count(*) FILTER (WHERE t.solved_at >= $2 AND t.solved_at < $3),
+			count(*) FILTER (WHERE t.status IN ('open', 'pending', 'on_hold')),
+			percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM t.first_responded_at - t.created_at) / 60)
+				FILTER (WHERE t.first_responded_at IS NOT NULL AND t.created_at >= $2 AND t.created_at < $3)
+			` + base + ` AND ((t.created_at >= $2 AND t.created_at < $3) OR (t.solved_at >= $2 AND t.solved_at < $3)
+				OR t.status IN ('open', 'pending', 'on_hold'))
+			GROUP BY 1 ORDER BY 2 DESC, 4 DESC, 1 LIMIT 500`
+	}
+	rows, err = q.Query(ctx, group("t.team_id"), wid, from, to, rf.Team, rf.Brand)
+	if err != nil {
+		return o, err
+	}
+	o.ByTeam, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (ReportTeam, error) {
+		var x ReportTeam
+		var p50 *float64
+		err := r.Scan(&x.TeamID, &x.Created, &x.Solved, &x.OpenNow, &p50)
+		x.FirstResponseP50Minutes = round1(p50)
+		return x, err
+	})
+	if err != nil {
+		return o, err
+	}
+	rows, err = q.Query(ctx, group("t.brand_id"), wid, from, to, rf.Team, rf.Brand)
+	if err != nil {
+		return o, err
+	}
+	o.ByBrand, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (ReportBrand, error) {
+		var x ReportBrand
+		var p50 *float64
+		err := r.Scan(&x.BrandID, &x.Created, &x.Solved, &x.OpenNow, &p50)
+		x.FirstResponseP50Minutes = round1(p50)
+		return x, err
+	})
+	if o.ByTeam == nil {
+		o.ByTeam = []ReportTeam{}
+	}
+	if o.ByBrand == nil {
+		o.ByBrand = []ReportBrand{}
 	}
 	return o, err
 }
@@ -222,11 +328,17 @@ type SearchResults struct {
 	Articles []kb.KbArticle   `json:"articles"`
 }
 
-func search(ctx context.Context, q db.Querier, p *auth.Principal, query string) (SearchResults, error) {
+// search finds the caller's tickets, contacts and articles. brand narrows the articles to
+// what that brand shows (its own and shared ones).
+func search(ctx context.Context, q db.Querier, p *auth.Principal, query string, brand *uuid.UUID) (SearchResults, error) {
 	res := SearchResults{Tickets: []domain.Ticket{}, Contacts: []domain.Contact{}, Articles: []kb.KbArticle{}}
 	allowed := func(scope string) bool { return p.Kind == auth.KindUser || p.HasScope(scope) }
 	if allowed(auth.ScopeTicketsRead) {
-		page, err := listTickets(ctx, q, p.WorkspaceID, p.ActorUserID(), listQuery{TicketFilters: hd.TicketFilters{Q: query}}, "", "", 5, "")
+		lq, err := forCaller(ctx, q, p, listQuery{TicketFilters: hd.TicketFilters{Q: query}})
+		if err != nil {
+			return res, err
+		}
+		page, err := listTickets(ctx, q, p.WorkspaceID, p.ActorUserID(), lq, "", "", 5, "")
 		if err != nil {
 			return res, err
 		}
@@ -253,7 +365,7 @@ func search(ctx context.Context, q db.Querier, p *auth.Principal, query string) 
 		}
 	}
 	if allowed(auth.ScopeKBRead) {
-		arts, err := kb.Search(ctx, q, p.WorkspaceID, query, 5)
+		arts, err := kb.Search(ctx, q, p.WorkspaceID, query, 5, brand)
 		if err != nil {
 			return res, err
 		}
@@ -267,7 +379,8 @@ func registerInsights(d *deps.Deps, api huma.API) {
 		Summary: "Search tickets, contacts and articles", Tags: []string{"Search"},
 		Description: "Top 5 of each. API keys see only the kinds their scopes allow."},
 		func(ctx context.Context, in *struct {
-			Q string `query:"q" required:"true" minLength:"1" maxLength:"200"`
+			Q       string `query:"q" required:"true" minLength:"1" maxLength:"200"`
+			BrandID string `query:"brand_id" doc:"Articles of this brand and of every brand only"`
 		}) (*struct{ Body SearchResults }, error) {
 			p, err := requireAnyScope(ctx, auth.ScopeTicketsRead, auth.ScopeContactsRead, auth.ScopeKBRead)
 			if err != nil {
@@ -277,7 +390,15 @@ func registerInsights(d *deps.Deps, api huma.API) {
 			if q == "" {
 				return nil, httpx.Validation("q is required")
 			}
-			res, err := search(ctx, d.DB.Pool, p, q)
+			var brand *uuid.UUID
+			if strings.TrimSpace(in.BrandID) != "" {
+				id, err := hd.ParseRef(in.BrandID, "brand_id")
+				if err != nil {
+					return nil, err
+				}
+				brand = &id
+			}
+			res, err := search(ctx, d.DB.Pool, p, q, brand)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -286,16 +407,18 @@ func registerInsights(d *deps.Deps, api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "report-overview", Method: http.MethodGet, Path: "/v1/reports/overview",
 		Summary: "Helpdesk overview report", Tags: []string{"Reports"},
-		Description: "from and to are YYYY-MM-DD (days in the workspace timezone, to inclusive) or RFC 3339. Default: the last 30 days. Spam and deleted tickets are excluded."},
+		Description: "from and to are YYYY-MM-DD (days in the workspace timezone, to inclusive) or RFC 3339. Default: the last 30 days. Spam and deleted tickets are excluded. team_id (or none) and brand_id narrow every figure."},
 		func(ctx context.Context, in *struct {
-			From string `query:"from"`
-			To   string `query:"to"`
+			From    string `query:"from"`
+			To      string `query:"to"`
+			TeamID  string `query:"team_id" doc:"A team id, or none for tickets without a team"`
+			BrandID string `query:"brand_id"`
 		}) (*struct{ Body ReportOverview }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			o, err := overview(ctx, d.DB.Pool, p.WorkspaceID, in.From, in.To)
+			o, err := overview(ctx, d.DB.Pool, p.WorkspaceID, in.From, in.To, reportFilter{Team: in.TeamID, Brand: in.BrandID})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

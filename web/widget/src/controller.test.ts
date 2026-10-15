@@ -83,3 +83,66 @@ describe("controller with the agent", () => {
     mock.dispose();
   });
 });
+
+describe("controller with topics", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const boot = async (key: string) => {
+    const mock = createMock({ seed: "empty", latency: 5 });
+    const c = new Controller({ base: "https://mock.invalid", key, fetcher: mock.fetch, socketFactory: mock.socket, persist: false });
+    const b = c.boot(demoConfig(key, new URLSearchParams("od_bot=0")));
+    await vi.advanceTimersByTimeAsync(200);
+    await b;
+    return { c, mock };
+  };
+
+  it("asks for a topic before the first message and sends it as topic_id", async () => {
+    const { c, mock } = await boot("wk_topics");
+    c.newConversation();
+    expect(c.needsTopic()).toBe(true);
+    await c.pickTopic("billing");
+    expect(c.needsTopic()).toBe(false);
+    const send = c.send("Can I get a refund?", []);
+    await vi.advanceTimersByTimeAsync(50);
+    await send;
+    expect(mock.lastTopic).toBe("billing");
+    expect(c.store.get().active).not.toBeNull();
+    // An open conversation never asks; a new one asks again.
+    expect(c.needsTopic()).toBe(false);
+    c.newConversation();
+    expect(c.needsTopic()).toBe(true);
+    c.newConversation("orders");
+    expect(c.store.get().topic).toBe("orders");
+    c.stop();
+    mock.dispose();
+  });
+
+  it("holds a tapped suggestion until a topic is picked", async () => {
+    const { c, mock } = await boot("wk_topics");
+    await c.startWith("Where is my order?");
+    expect(c.store.get().queued).toBe("Where is my order?");
+    expect(c.store.get().conversations).toEqual([]);
+    const pick = c.pickTopic("orders");
+    await vi.advanceTimersByTimeAsync(50);
+    await pick;
+    const s = c.store.get();
+    expect(s.queued).toBeNull();
+    expect(s.conversations?.[0]?.last_message_preview).toBe("Where is my order?");
+    expect(mock.lastTopic).toBe("orders");
+    c.stop();
+    mock.dispose();
+  });
+
+  it("sends a suggestion at once without topics, with no topic_id", async () => {
+    const { c, mock } = await boot("wk_demo");
+    const go = c.startWith("Where is my order?");
+    await vi.advanceTimersByTimeAsync(50);
+    await go;
+    expect(c.needsTopic()).toBe(false);
+    expect(c.store.get().conversations?.[0]?.last_message_preview).toBe("Where is my order?");
+    expect(mock.lastTopic).toBeNull();
+    c.stop();
+    mock.dispose();
+  });
+});

@@ -1,0 +1,32 @@
+---
+/**
+ * A figure in the /security standard: a plate on a fine grid with a numbered
+ * caption underneath, the way a specification prints its illustrations.
+ */
+interface Props {
+  n: string;
+  caption: string;
+  id?: string;
+  class?: string;
+  /** The small, still figures get a shorter plate. */
+  mini?: boolean;
+}
+const { n, caption, id, class: cls = '', mini = false } = Astro.props;
+---
+<figure id={id} class:list={['sec-fig flex scroll-mt-24 flex-col rounded-[14px] bg-surface-2 p-1.5 ring-1 ring-line', cls]}>
+  <div class:list={['graph relative overflow-hidden rounded-[10px]', mini ? 'flex-1' : '']}>
+    <span class="sec-fig-mark sec-fig-mark-tl" aria-hidden="true"></span>
+    <span class="sec-fig-mark sec-fig-mark-br" aria-hidden="true"></span>
+    <slot />
+  </div>
+  <figcaption class="flex items-baseline gap-3 px-3 pb-1.5 pt-3 md:px-4">
+    <span class="shrink-0 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-fg">Fig. {n}</span>
+    <span class="text-[13px] leading-snug text-muted">{caption}</span>
+  </figcaption>
+</figure>
+
+<style is:global>
+  .sec-fig-mark { position: absolute; z-index: 1; width: 12px; height: 12px; pointer-events: none; border-color: var(--line-strong); }
+  .sec-fig-mark-tl { left: 10px; top: 10px; border-left-width: 1px; border-top-width: 1px; }
+  .sec-fig-mark-br { right: 10px; bottom: 10px; border-right-width: 1px; border-bottom-width: 1px; }
+</style>

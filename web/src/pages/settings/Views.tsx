@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Trash2, UserRound, Users, X } from "lucide-react";
+import { ArrowUpRight, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Trash2, UserRound, Users, UsersRound, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
@@ -18,6 +18,9 @@ import { TagChip } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import { orderBy, useListMutation } from "@/components/settings2/optimistic";
 import { SortableList } from "@/components/settings2/Sortable";
+import { TeamChip, TeamPick, useTeams } from "@/components/settings2/teams";
+import { Segmented } from "@/components/ui/tabs";
+import { viewAudience, viewAudienceHint, viewDeleteBody } from "@/components/settings2/viewAudience";
 import {
   MultiPick,
   SinglePick,
@@ -148,6 +151,8 @@ export default function Views() {
   const navigate = useNavigate();
 
   const sorted = useMemo(() => [...(views ?? [])].sort((a, b) => a.position - b.position), [views]);
+  const { teams } = useTeams();
+  const teamById = new Map(teams.map((x) => [x.id, x]));
 
   const toggleShared = useListMutation<View, { id: string; shared: boolean }>(
     qk.views,
@@ -212,18 +217,22 @@ export default function Views() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-[13px] font-medium">{v.name}</span>
-                      <Tooltip content={v.shared ? t("views.visibleTitle") : t("views.visibleHint")}>
-                        <span className="inline-flex items-center gap-1 text-[11px] text-fg-4">
-                          {v.shared ? <Globe className="size-3" /> : <Lock className="size-3" />}
-                          {v.shared ? t("views.shared") : t("views.personal")}
-                        </span>
-                      </Tooltip>
+                      {v.team_id && teamById.get(v.team_id) ? (
+                        <TeamChip team={teamById.get(v.team_id)!} size="xs" />
+                      ) : (
+                        <Tooltip content={viewAudienceHint(t, viewAudience(v))}>
+                          <span className="inline-flex items-center gap-1 text-[11px] text-fg-4">
+                            {v.shared ? <Globe className="size-3" /> : <Lock className="size-3" />}
+                            {v.shared ? t("views.shared") : t("views.personal")}
+                          </span>
+                        </Tooltip>
+                      )}
                     </div>
                     <FilterChips f={v.filters} />
                   </div>
                   {canEdit && (
                     <div className="flex items-center gap-1 self-center">
-                      <span className="mr-1 hidden sm:flex" onClick={(e) => e.stopPropagation()}>
+                      <span className={cn("mr-1 hidden", !v.team_id && "sm:flex")} onClick={(e) => e.stopPropagation()}>
                         <Switch
                           checked={v.shared}
                           onCheckedChange={(shared) => toggleShared.mutate({ id: v.id, shared })}
@@ -267,7 +276,7 @@ export default function Views() {
                             onSelect={() =>
                               confirm.show(
                                 <>
-                                  <span className="font-medium text-fg">{v.name}</span> {t("views.deleteBody")}
+                                  <span className="font-medium text-fg">{v.name}</span> {viewDeleteBody(t, viewAudience(v), v.team_id ? teamById.get(v.team_id)?.name : null)}
                                 </>,
                                 () => remove.mutateAsync(v.id),
                                 {
@@ -300,6 +309,9 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
   const confirm = useConfirm();
   const [name, setName] = useState(view?.name ?? "");
   const [shared, setShared] = useState(view?.shared ?? true);
+  const [teamId, setTeamId] = useState<string | null>(view?.team_id ?? null);
+  const { teams: allTeams } = useTeams();
+  const { t: tt } = useTranslation("settingsTeams");
   const [f, setF] = useState<TicketFilters>(view?.filters ?? { status: ["open"] });
   const [error, setError] = useState<string | null>(null);
   const members = useMemberItems();
@@ -309,9 +321,11 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
   const initial = JSON.stringify({
     name: view?.name ?? "",
     shared: view?.shared ?? true,
+    teamId: view?.team_id ?? null,
     f: view?.filters ?? { status: ["open"] },
   });
-  const dirty = JSON.stringify({ name, shared, f }) !== initial;
+  const dirty = JSON.stringify({ name, shared, teamId, f }) !== initial;
+  const audience = viewAudience({ shared, team_id: teamId });
 
   const requestClose = () => {
     if (!dirty) return onClose();
@@ -326,10 +340,11 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
     mutationFn: () => {
       const filters = clean(f);
       return view
-        ? api.views.update(view.id, { name: name.trim(), shared, filters })
+        ? api.views.update(view.id, { name: name.trim(), shared: teamId ? false : shared, team_id: teamId, filters })
         : api.views.create({
             name: name.trim(),
-            shared,
+            shared: teamId ? false : shared,
+            team_id: teamId,
             filters,
             position: nextPosition,
           });
@@ -387,16 +402,44 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
               <TextInput {...p} autoFocus value={name} maxLength={60} placeholder={t("views.namePlaceholder")} onChange={(e) => setName(e.target.value)} />
             )}
           </Field>
-          <div className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5">
-            <IconTile tone={shared ? "blue" : "gray"} size="sm">
-              {shared ? <Globe /> : <Lock />}
-            </IconTile>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium">{t("views.visibleTitle")}</div>
-              <div className="text-[12px] text-fg-3">{t("views.visibleHint")}</div>
+          {allTeams.length > 0 || teamId ? (
+            <div className="flex flex-col gap-2.5 rounded-lg border border-line px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[13px] font-medium">{tt("scoped.viewShare")}</div>
+                <Segmented
+                  size="xs"
+                  value={audience}
+                  onChange={(v) => {
+                    if (v === "team") {
+                      setTeamId(teamId ?? allTeams[0]?.id ?? null);
+                      setShared(false);
+                    } else {
+                      setTeamId(null);
+                      setShared(v === "everyone");
+                    }
+                  }}
+                  options={[
+                    { value: "me", label: tt("scoped.viewMe"), icon: <Lock /> },
+                    { value: "team", label: tt("scoped.viewTeam"), icon: <UsersRound /> },
+                    { value: "everyone", label: tt("scoped.viewEveryone"), icon: <Globe /> },
+                  ]}
+                />
+              </div>
+              {audience === "team" && <TeamPick className="w-full" value={teamId} onChange={(v) => setTeamId(v)} />}
+              <div className="text-[12px] text-fg-3">{viewAudienceHint(t, audience, allTeams.find((x) => x.id === teamId)?.name)}</div>
             </div>
-            <Switch checked={shared} onCheckedChange={setShared} aria-label={t("views.visibleTitle")} />
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5">
+              <IconTile tone={shared ? "blue" : "gray"} size="sm">
+                {shared ? <Globe /> : <Lock />}
+              </IconTile>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium">{t("views.visibleTitle")}</div>
+                <div className="text-[12px] text-fg-3">{viewAudienceHint(t, audience)}</div>
+              </div>
+              <Switch checked={shared} onCheckedChange={setShared} aria-label={t("views.visibleTitle")} />
+            </div>
+          )}
 
           <div>
             <div className="label-caps mb-2">{t("views.showWhere")}</div>

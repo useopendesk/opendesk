@@ -1,0 +1,12 @@
+---
+/** One step inside <Steps>; see Steps.astro. */
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+
+<li class="od-step">
+  <p class="od-step-title">{title}</p>
+  <div class="od-step-body"><slot /></div>
+</li>

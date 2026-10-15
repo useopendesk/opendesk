@@ -37,6 +37,8 @@ import OdIcon from './OdIcon.astro';
     }
   }
   customElements.define('od-theme-toggle', OdThemeToggle);
+  // Following the system: its switch moves the toggle too.
+  document.addEventListener('od-theme-change', sync);
 </script>
 
 <style>

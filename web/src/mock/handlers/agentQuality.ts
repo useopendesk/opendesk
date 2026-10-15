@@ -16,12 +16,12 @@ import type {
   PlaygroundVisitor,
 } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
-import { offersModel, reserve, round3, spend, effectiveModels } from "../credits";
+import { effectiveModels, fromMicro, offersModel, reserve, roundUsd, spend, toMicro, typicalUsd } from "../aiBalance";
 import { publish } from "../gateway";
 import { HttpError, del, get, invalid, notFound, patch, post, respond, type Ctx } from "../router";
 import { DAY, HOUR, MIN, ago, isRecord, markdownToHtml, nowIso, stripHtml, uuid } from "../util";
 import { assertAi, requireAiAdmin, terms } from "./ai";
-import { plan, widgetModel, type Overrides } from "./agent";
+import { checkTrialBot, plan, widgetModel, type Overrides } from "./agent";
 import { addSnippet } from "./knowledge";
 import { mcpTool } from "./mcp";
 
@@ -177,7 +177,7 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
   const p = plan(ws, t.messages, o, t.visitor ?? {});
   const text = p.text.replace(MARKERS, "");
   const toolsUsed = p.tools.filter((x) => x.status === "done").map((x) => x.name);
-  let credits = p.metered && meter ? spend(ws, "playground", db.meId, widgetModel(ws, o)) : p.metered ? 3 : 0;
+  let usd = p.metered && meter ? spend(ws, "playground", db.meId, widgetModel(ws, o)) : p.metered ? typicalUsd("playground", widgetModel(ws, o)) : 0;
   const plain = stripHtml(markdownToHtml(text)) || p.action?.summary || "";
   let judged = false;
   const checks = t.expectations.map((e): AgentTestCheck => {
@@ -209,7 +209,7 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
     }
   });
   // The judge runs once per test, on the fast model.
-  if (judged) credits += meter ? spend(ws, "playground", db.meId, effectiveModels(ws).fast) : 0.12;
+  if (judged) usd += meter ? spend(ws, "playground", db.meId, effectiveModels(ws).fast) : typicalUsd("playground", effectiveModels(ws).fast);
   return {
     test_id: t.id,
     status: checks.every((c) => c.passed) ? "passed" : "failed",
@@ -220,14 +220,14 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
     action: p.action,
     checks,
     error: null,
-    credits: round3(credits),
+    usd: roundUsd(usd),
   };
 }
 
 // ─── Runs ──────────────────────────────────────────────────────────────────
 
 function pending(run: StoredRun, testId: string): AgentTestResult {
-  return { run_id: run.id, test_id: testId, status: "pending", answer_html: "", handoff: false, tools: [], sources: [], action: null, checks: [], error: null, credits: 0, draft: run.draft, previous_status: null, finished_at: null };
+  return { run_id: run.id, test_id: testId, status: "pending", answer_html: "", handoff: false, tools: [], sources: [], action: null, checks: [], error: null, usd: 0, draft: run.draft, previous_status: null, finished_at: null };
 }
 
 function tally(s: State, run: StoredRun) {
@@ -235,7 +235,7 @@ function tally(s: State, run: StoredRun) {
   run.passed = rs.filter((r) => r.status === "passed").length;
   run.failed = rs.filter((r) => r.status === "failed").length;
   run.errored = rs.filter((r) => r.status === "error").length;
-  run.credits = round3(rs.reduce((n, r) => n + r.credits, 0));
+  run.usd = fromMicro(rs.reduce((n, r) => n + toMicro(r.usd), 0));
 }
 
 function finish(ws: WsData, run: StoredRun, status: "done" | "failed" | "cancelled", error: string | null = null) {
@@ -265,7 +265,7 @@ function step(ws: WsData, run: StoredRun) {
     try {
       reserve(ws, "playground");
     } catch (e) {
-      if (e instanceof HttpError && e.code === "no_credits") return finish(ws, run, "failed", "Not enough credits to finish the run.");
+      if (e instanceof HttpError && e.code === "ai_balance_empty") return finish(ws, run, "failed", "The AI balance is too low to finish the run.");
       throw e;
     }
     res = { ...rs[i], ...answerTest(ws, t, run.settings), finished_at: nowIso() };
@@ -283,7 +283,7 @@ function startRun(ws: WsData, b: Record<string, unknown>): StoredRun {
   if (isRecord(b.settings)) {
     settings = b.settings as Overrides;
     if (settings.widget_model !== undefined && settings.widget_model !== "" && !offersModel(ws, settings.widget_model)) throw invalid("settings.widget_model must be empty or one of the offered models");
-    if (settings.widget_instructions !== undefined && (typeof settings.widget_instructions !== "string" || settings.widget_instructions.length > 4000)) throw invalid("settings.widget_instructions can be at most 4,000 characters");
+    checkTrialBot(ws, settings);
   }
   if (s.runs.some((r) => r.status === "queued" || r.status === "running")) throw new HttpError(409, "run_in_progress", "Tests are already running. Wait for that run to finish or stop it.");
   let ids: string[];
@@ -303,7 +303,7 @@ function startRun(ws: WsData, b: Record<string, unknown>): StoredRun {
     passed: 0,
     failed: 0,
     errored: 0,
-    credits: 0,
+    usd: 0,
     error: null,
     created_at: nowIso(),
     started_at: null,
@@ -378,7 +378,7 @@ function markReviewed(ws: WsData, id: string, outcome: "dismissed" | "improved")
 
 // ─── Seed ──────────────────────────────────────────────────────────────────
 
-/** Fieldnote's tests and two runs: the latest has a test that passed the run before. */
+/** Margin's tests and two runs: the latest has a test that passed the run before. */
 function seed(ws: WsData, s: State) {
   const at = (ms: number) => ago(ms);
   const add = (name: string, messages: PlaygroundMessage[], expectations: AgentExpectation[], visitor: PlaygroundVisitor | null = null, created = 6 * DAY) =>
@@ -403,7 +403,7 @@ function seed(ws: WsData, s: State) {
     passed: 0,
     failed: 0,
     errored: 0,
-    credits: 0,
+    usd: 0,
     error: null,
     created_at: at(created),
     started_at: at(created),
@@ -415,7 +415,7 @@ function seed(ws: WsData, s: State) {
   s.runs.push(older);
   s.results.set(
     older.id,
-    s.tests.map((t) => ({ ...pending(older, t.id), status: "passed" as const, answer_html: "<p>…</p>", checks: t.expectations.map((e) => ({ kind: e.kind, value: e.value ?? "", passed: true, reason: "The answer meets this." })), credits: 3.1, finished_at: older.finished_at })),
+    s.tests.map((t) => ({ ...pending(older, t.id), status: "passed" as const, answer_html: "<p>…</p>", checks: t.expectations.map((e) => ({ kind: e.kind, value: e.value ?? "", passed: true, reason: "The answer meets this." })), usd: 0.021, finished_at: older.finished_at })),
   );
   tally(s, older);
   // Yesterday's run, answered for real without metering.

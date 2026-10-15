@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
+    <meta name="color-scheme" content="light dark" />
+    <title>opendesk</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="picker.css" />
+  </head>
+  <body data-page="offline">
+    <div class="drag" aria-hidden="true"></div>
+    <main class="shell center">
+      <section class="panel offline" aria-live="polite">
+        <span class="mark" aria-hidden="true"></span>
+        <h1>Can't reach <span id="host">your server</span></h1>
+        <p class="sub">opendesk reconnects on its own when the server is back. To use another server, choose Switch server from the menu.</p>
+        <p class="retry"><span class="spinner" aria-hidden="true"></span>Trying again</p>
+      </section>
+    </main>
+    <script src="picker.js"></script>
+  </body>
+</html>

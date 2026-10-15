@@ -43,6 +43,16 @@ describe("mock Ollie email answers", () => {
     await call("PATCH", `/v1/mailboxes/${billing.id}`, { ai_answers: false, ai_answers_mode: "draft", ai_answers_outside_hours: false });
   });
 
+  it("quotes whole sentences of the article, not its headings", async () => {
+    const t = ws().tickets.find((x) => x.contact?.name === "Elena Rossi" && /export/i.test(x.subject))!;
+    expect(t).toBeTruthy();
+    const got = (await call("GET", `/v1/tickets/${t.id}/ai/suggested-reply`)).body.suggested_reply ?? suggestReply(ws(), t);
+    const html: string = got.body_html;
+    expect(html).toContain("Exports run in the background.");
+    expect(html).not.toContain("If the export fails");
+    expect(html).not.toContain("…");
+  });
+
   it("sends a suggested reply as Ollie once", async () => {
     const t = answerable(ws())[0];
     expect(t).toBeTruthy();

@@ -1,0 +1,145 @@
+---
+title: Email setup
+description: Inbound forwarding, outbound replies and platform email on a self-hosted opendesk.
+---
+
+import Callout from '../../../components/Callout.astro';
+import Diagram from '../../../components/Diagram.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+
+opendesk handles three kinds of email, each configured separately.
+
+| Kind | What | Configured by |
+| --- | --- | --- |
+| Inbound, mailbox connections | IMAP, Google and Microsoft mailboxes are read directly | each mailbox (nothing to set on the server, except [OAuth apps](/self-hosting/oauth-apps/)) |
+| Inbound, forwarding | Mail forwarded to `<token>@INBOUND_DOMAIN` | `INBOUND_DOMAIN`, plus a receiver below |
+| Outbound replies | Replies to customers | each mailbox: SMTP, Google or Microsoft |
+| Platform email | Verification, password reset, invitations | `MAIL_DRIVER` and friends |
+
+## From mailbox to ticket
+
+However mail comes in, it goes through the same intake: the same loop and sender checks, the same threading and the same routing, whichever mailbox it arrived at.
+
+<Diagram name="email-intake" />
+
+A new ticket gets its team in this order. Routing rules live in **Settings**, under **Routing**.
+
+<Diagram name="routing-order" />
+
+## Inbound forwarding
+
+Forwarding mailboxes get an address `<token>@INBOUND_DOMAIN`. Choose a domain you control, such as `in.desk.example.com`, and set:
+
+```sh
+INBOUND_DOMAIN=in.desk.example.com
+```
+
+Then pick one way to receive that mail.
+
+### Option A: Cloudflare Email Worker
+
+If the domain is on Cloudflare, Email Routing can receive mail and hand it to a worker that posts it to opendesk. This is how the hosted service works, and it needs no open port 25.
+
+<Steps>
+<Step title="Set a shared secret">
+
+Set `INBOUND_SECRET` to a long random value (`openssl rand -hex 24`).
+
+</Step>
+<Step title="Turn on Email Routing">
+
+In Cloudflare, enable **Email Routing** for the inbound domain. Cloudflare adds the MX records.
+
+</Step>
+<Step title="Deploy the worker">
+
+Deploy the worker in `deploy/cloudflare/email-worker` with `wrangler`, setting its `INBOUND_SECRET` secret to the same value and its `INBOUND_URL` variable to `https://desk.example.com/v1/inbound/email`.
+
+</Step>
+<Step title="Route every address to it">
+
+Add a **catch-all** routing rule that sends every address to the worker.
+
+</Step>
+</Steps>
+
+Set `INBOUND_AUTHSERV_ID=mx.cloudflare.net` so opendesk believes the sender checks (SPF, DKIM, DMARC) Email Routing writes into each message.
+
+The worker posts each raw message to `POST /v1/inbound/email?to=<recipient>` with the `OD-Inbound-Secret` header and the envelope sender in `OD-Envelope-From`. It retries briefly on network errors and `5xx`; if the API stays unreachable, Email Routing treats it as a temporary failure and the sending server retries later, so mail is not lost. Unknown addresses and oversized messages bounce with a short reason.
+
+### Option B: the built-in SMTP receiver
+
+opendesk can receive mail itself:
+
+<Steps>
+<Step title="Listen for mail">
+
+Set `INBOUND_SMTP_ADDR=:25` (or another port with a port forward from 25).
+
+</Step>
+<Step title="Open port 25">
+
+Open port 25 to the server. Many cloud providers block it by default; check yours.
+
+</Step>
+<Step title="Point MX at the server">
+
+Add an `MX` record for the inbound domain pointing at the server:
+
+```
+in.desk.example.com.  MX  10  desk.example.com.
+```
+
+</Step>
+</Steps>
+
+The installer's `--wizard` can set this up.
+
+<Callout type="note" title="Sender checks with this receiver">
+
+The built-in receiver does not check senders (SPF, DKIM, DMARC), so leave `INBOUND_AUTHSERV_ID` empty with it: a DMARC verdict is then unknown and nothing is flagged on it. If a mail server of yours that does check senders relays to it, list that server's authserv-id.
+
+</Callout>
+
+### Option C: your own pipeline
+
+Anything that can make an HTTPS request can deliver mail: post the raw RFC 822 message to `/v1/inbound/email?to=<recipient>` with `OD-Inbound-Secret`, and the SMTP envelope sender in `OD-Envelope-From` (empty for the null sender of a delivery report). See [Mailboxes API](/api/resources/mailboxes/#inbound-email).
+
+Redelivery is safe: each raw message is stored once per mailbox, keyed by its `Message-ID` and a hash of its content, so a different message reusing a `Message-ID` is still received.
+
+### Sender checks
+
+A customer is identified by the `From` address. A message whose `From` failed DMARC, as reported by a server in `INBOUND_AUTHSERV_ID` (or by Gmail or Microsoft 365 for those mailboxes), opens a ticket marked spam; on an existing conversation it is kept, flagged for agents, and changes nothing: the ticket is not reopened, and no automation, auto-reply or Ollie answer runs for it. `Reply-To` never changes who the customer is; replies go to it only when it is at the same domain as `From`. The one exception is a website contact form the mailbox trusts (Settings, the mailbox, Contact forms): when its message passed DMARC, the visitor in `Reply-To` is the customer.
+
+## Outbound replies
+
+<Diagram name="reply" />
+
+Replies to customers go out **through the customer's own mailbox**: SMTP, Gmail or Microsoft, as set on each mailbox. This keeps replies in the mailbox's Sent folder, authenticated by the domain's own SPF, DKIM and DMARC, and from the address the customer wrote to. opendesk does not need to be a trusted sender for your customers' domains.
+
+Failed sends are retried, up to 8 attempts, and the message shows its delivery status in the ticket.
+
+The `system` outbound option sends replies through platform email instead. Use it only when a mailbox cannot send for itself.
+
+## Platform email
+
+Verification, password reset and invitation emails come from `MAIL_FROM` through `MAIL_DRIVER`:
+
+| Driver | Use |
+| --- | --- |
+| `log` | Default. Prints emails to the opendesk log. Fine for trying it out; read reset links with `opendesk-ctl logs opendesk`. |
+| `smtp` | Any SMTP provider: set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`. |
+| `ses` | Amazon SES in `SES_REGION`, with AWS credentials from the standard environment (variables, profile or instance role). |
+
+```sh
+MAIL_DRIVER=smtp
+MAIL_FROM=opendesk <notifications@desk.example.com>
+SMTP_HOST=smtp.postmarkapp.com
+SMTP_PORT=587
+SMTP_USERNAME=...
+SMTP_PASSWORD=...
+SMTP_TLS=starttls
+```
+
+Set up SPF and DKIM for the `MAIL_FROM` domain with your provider so these emails reach inboxes.

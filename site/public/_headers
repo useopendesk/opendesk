@@ -24,3 +24,8 @@
 /install.sh.sha256
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=300
+
+# The social card is fetched by other sites' link previews, some from the browser.
+/og.jpg
+  ! Cross-Origin-Resource-Policy
+  Cache-Control: public, max-age=86400

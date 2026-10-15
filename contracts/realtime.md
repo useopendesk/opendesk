@@ -11,7 +11,7 @@ client appends `/websocket`.
 
 | socket | `new Socket(...)` URL | wire path | tokens | Origin | topics |
 | --- | --- | --- | --- | --- | --- |
-| agents | `GATEWAY_URL` | `/socket/websocket?vsn=2.0.0&token=<jwt>` | `ws` only | must be in `CHECK_ORIGINS` (non-browser clients send none and are allowed) | `workspace:`, `user:`, `ticket:` |
+| agents | `GATEWAY_URL` | `/socket/websocket?vsn=2.0.0&token=<jwt>` | `ws` only | must be in `CHECK_ORIGINS` (non-browser clients send none and are allowed) | `workspace:`, `team:`, `user:`, `ticket:` |
 | widget | `GATEWAY_URL + "/widget"` | `/socket/widget/websocket?vsn=2.0.0&token=<jwt>` | `widget_ws` only | any (the widget is embedded on customer sites) | `contact:<wid>:<sub>` only |
 
 1. Client gets a token: agents `POST /v1/realtime/token` (purpose `ws`), widget
@@ -23,21 +23,35 @@ client appends `/websocket`.
    one that socket accepts; the agents' socket also checks the browser `Origin` against
    `CHECK_ORIGINS` (comma-separated). A token on the wrong socket is refused (HTTP 403).
 3. Socket id `user_socket:<sub>` so `od.control.disconnect` can kill it.
+4. The `ws` token's `teams` claim (at most 200 uuids; a malformed claim refuses the token) is kept
+   for the socket's life. A change to someone's private teams disconnects them, and the reconnect
+   fetches a token with the new list. Tokens are at most 8 KB.
 
 ## Channels
 
 | topic                         | who may join                                   | server pushes |
 | ----------------------------- | ---------------------------------------------- | ------------- |
-| `workspace:<wid>`             | `ws` token with that `wid`                     | `"event"` with every envelope for that workspace (visibility `agents` or `public`) |
+| `workspace:<wid>`             | `ws` token with that `wid`                     | `"event"` with every envelope for that workspace (visibility `agents` or `public`); for an event of a private team's ticket only the stand-in `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {}, occurred_at}`, so `seq` stays contiguous |
 | | | Pushed envelopes omit `topics`: per-user events (`notification.created`) are told apart by the channel they arrive on (`user:<uid>`), not by `topics` |
-| `user:<uid>`                  | `ws` token, `kind=user`, `sub == uid`          | `"event"` envelopes whose topics include `user:<uid>` |
-| `ticket:<wid>:<ticket_id>`    | `ws` token, `kind=user`, same `wid`            | Presence (`presence_state`, `presence_diff`), `"typing"` and `"live"` |
-| `contact:<wid>:<contact_id>`  | widget socket: `widget_ws` token with `sub == contact_id`, same `wid` | `"event"` for public envelopes with that topic, `"typing"` from agents and `"live"` |
+| `team:<wid>:<tid>`            | `ws` token with that `wid` and `tid` in its `teams` claim | `"event"` envelopes of a private team's tickets in full (contracts/teams.md "Visibility"); `workspace:<wid>` gets their stand-in. They may arrive before or after the stand-in: apply them when they arrive, track `seq` on the workspace channel |
+| `user:<uid>`                  | `ws` token, `kind=user`, `sub == uid`          | `"event"` envelopes whose topics include `user:<uid>`, in full (their notifications and assignments, which go only to users who can see the ticket) |
+| `ticket:<wid>:<ticket_id>`    | `ws` token, `kind=user`, same `wid`; with `team_id` in the join params, that team in its `teams` claim | Presence (`presence_state`, `presence_diff`), `"typing"` and `"live"`; those of a private team's ticket only to sockets with the team (below) |
+| `contact:<wid>:<contact_id>`  | widget socket: `widget_ws` token with `sub == contact_id`, same `wid` | `"event"` for public envelopes with that topic, `"typing"` from agents and `"live"`. Envelopes list `contact:<wid>:<contact_id>:<brand_id>` (the chat's brand) and live previews carry `brand_id`: they are pushed only to sockets whose token's `bid` is that brand, without `brand_id`, so a visitor's chats of another brand never reach this widget (a token without `bid` gets every brand's) |
 
 Join params on `ticket:<wid>:<tid>`: `{"watch": true}` watches a ticket (the inbox list
 shows who is on it): the joiner receives `presence_state`/`presence_diff` but is **not**
 tracked, and its `"presence"` and `"typing"` pushes are ignored. `{"state": "viewing" |
-"replying" | "idle"}` sets the initial Presence state (default `"viewing"`).
+"replying" | "idle"}` sets the initial Presence state (default `"viewing"`). `{"team_id": "<tid>"}`
+names the ticket's team when it is private: `tid` must be in the token's `teams` claim (else
+`forbidden`), and it is required to see anything of that ticket here.
+
+A private team's ticket reaches only that team on this topic. The joiner's Presence meta and its
+`"typing"` carry the `team_id` it joined with, and live previews carry the ticket's private team
+(set by the API, "Live events"); the gateway pushes each of them only to sockets whose `teams`
+claim lists that team, and strips `team_id` from what it pushes. A socket that joins without
+`team_id` (any user of the workspace may) sees only what is not scoped to a team: clients join a
+private team's ticket with its `team_id`. `"customer_typing"` carries ids only and goes to every
+joiner.
 
 Join replies `{"ok": {"server_time": "..."}}`. Unauthorized joins reply `{"error": {"reason": "forbidden"}}`.
 
@@ -62,18 +76,19 @@ Short-lived previews that are never stored or replayed: the widget agent's reply
 (`contracts/agent.md`). The API publishes them on NATS subject **`od.live.<wid>`**:
 
 ```jsonc
-{ "workspace_id": "…", "ticket_id": "…", "contact_id": "…",
+{ "workspace_id": "…", "ticket_id": "…", "contact_id": "…", "team_id": "…" /* only when the ticket's team is private */,
+  "brand_id": "…" /* the chat's brand: the contact topic's copy goes only to widget sockets of that brand */,
   "type": "ai.reply.started" | "ai.reply.delta" | "ai.reply.tool" | "ai.reply.ended", "data": { /* below */ } }
 ```
 
 The gateway checks that `workspace_id` matches the subject and that the ids are uuids, then pushes
 `"live"` with `{type, data}` to `contact:<wid>:<contact_id>` and `ticket:<wid>:<ticket_id>` (watchers
-included). There is no `seq` and no catch-up: a client that misses them still gets the posted
+included); with a `team_id`, the ticket topic's copy goes only to sockets with that team in `teams`. There is no `seq` and no catch-up: a client that misses them still gets the posted
 message as `message.created`.
 
 | type | data |
 | --- | --- |
-| `ai.reply.started` | `{reply_id, ticket_id, bot: {name}}`: the agent is writing (show a typing state) |
+| `ai.reply.started` | `{reply_id, ticket_id, bot: {id: string \| null, name, look: BotLook, avatar_url}}`: the agent is writing as this bot (contracts/bots.md); show a typing state with its avatar |
 | `ai.reply.delta` | `{reply_id, ticket_id, text}`: append `text` (markdown; hide `[n]` citation markers) |
 | `ai.reply.tool` | `{reply_id, ticket_id, tool: string /* display name */, status: "running" \| "done" \| "error"}`: the agent is using a tool (show "Checking <tool>…") |
 | `ai.reply.ended` | `{reply_id, ticket_id, message_id: string \| null, handoff: boolean, action_id: string \| null}`: `message_id` is the posted message (replace the preview with it when its `message.created` arrives); `null` means nothing was posted (drop the preview); `action_id` when the message asks the visitor to confirm an action |

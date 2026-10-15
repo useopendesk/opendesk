@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
-// 16px line icons (currentColor) and the Ollie mark, all inline SVG.
+// 16px line icons (currentColor) and bot faces, all inline SVG.
 
 import type { JSX } from "preact";
+import { readLook, renderBotSvg } from "../../src/lib/botlook";
 
 const svg = (d: JSX.Element, s = 16, w = 1.75) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={w} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -56,21 +57,26 @@ export const OdMark = ({ s = 10 }: { s?: number }) => (
   </svg>
 );
 
-/** Ollie, the AI agent's default picture: a small violet blob with a shine and two eyes. */
-export const Ollie = ({ s = 18 }: { s?: number }) => (
-  <svg class="ollie" width={s} height={s} viewBox="0 0 24 24" aria-hidden="true">
-    <defs>
-      <radialGradient id="od-ollie" cx="36%" cy="30%" r="75%">
-        <stop offset="0" stop-color="#d9d0ff" />
-        <stop offset=".5" stop-color="#7d5af0" />
-        <stop offset="1" stop-color="#3f22a6" />
-      </radialGradient>
-    </defs>
-    <path fill="url(#od-ollie)" d="M12 2.4c5.4 0 9.5 3.8 9.5 9.1 0 5.6-4.1 10.1-9.6 10.1-5.3 0-9.4-4.3-9.4-9.8 0-5.4 4.1-9.4 9.5-9.4Z" />
-    <ellipse cx="8.4" cy="7.2" rx="2.7" ry="1.5" fill="#fff" opacity=".6" transform="rotate(-24 8.4 7.2)" />
-    <g class="ollie-eyes" fill="#fff">
-      <rect x="9.1" y="10.6" width="1.7" height="2.8" rx=".85" />
-      <rect x="13.3" y="10.6" width="1.7" height="2.8" rx=".85" />
-    </g>
-  </svg>
+/** A look as SVG markup, cached by look (rows re-render often; the markup is a pure function of it). */
+const faces = new Map<string, string>();
+function faceSvg(look: unknown): string {
+  const l = readLook(look);
+  const k = JSON.stringify(l);
+  let svg = faces.get(k);
+  if (svg === undefined) {
+    svg = renderBotSvg(l);
+    if (faces.size >= 32) faces.clear();
+    faces.set(k, svg);
+  }
+  return svg;
+}
+
+/**
+ * A bot's face, drawn by the shared look renderer (contracts/bots.md "The
+ * look"). The markup holds only the renderer's constants and validated values
+ * (readLook allow-lists every key, colours are #rrggbb, the emoji is escaped).
+ * `anim` adds the idle blink; a data-bot-state ancestor bobs or hops it.
+ */
+export const BotFace = ({ look, anim }: { look: unknown; anim?: boolean }) => (
+  <span class={`face${anim ? " odb-anim" : ""}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: faceSvg(look) }} />
 );

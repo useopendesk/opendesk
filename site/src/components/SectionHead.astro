@@ -1,27 +1,27 @@
 ---
 /**
- * A section's opening row: a mono index and label in the left column, the
- * heading and one paragraph in the right, over a hairline. The index is the
- * section's place in the page's module grid.
+ * The head of a section: a label and a short headline on the left, one line
+ * and an optional link on the right.
  */
+import Icon from './Icon.astro';
+
 interface Props {
-  index?: string;
   label: string;
   title: string;
-  lede?: string;
+  body?: string;
+  href?: string;
+  link?: string;
   class?: string;
 }
-const { index, label, title, lede, class: className = '' } = Astro.props;
+const { label, title, body, href, link = 'Read the guide', class: className = '' } = Astro.props;
 ---
-<div class={`grid gap-6 border-t border-line pt-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-10 md:pt-8 ${className}`}>
-  <div class="reveal label flex items-center gap-2.5 self-start">
-    <span class="dot"></span>
-    {index && <span class="tabular-nums text-subtle">{index}</span>}
-    <span class="text-fg">{label}</span>
+<div class={`grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-end lg:gap-16 ${className}`}>
+  <div>
+    <div class="label flex items-center gap-2"><span class="dot"></span>{label}</div>
+    <h2 class="mt-5 max-w-[15ch] text-balance text-[34px] font-semibold leading-[1.03] tracking-[-0.045em] text-fg md:text-[52px]">{title}</h2>
   </div>
-  <div class="reveal" style="--d:60ms">
-    <h2 class="h-section max-w-3xl" set:html={title} />
-    {lede && <p class="lede mt-5 max-w-2xl">{lede}</p>}
-    <slot />
+  <div class="lg:pb-2">
+    {body && <p class="lede max-w-[440px]">{body}</p>}
+    {href && <a href={href} class="link-arrow mt-4">{link}<Icon name="arrowRight" size={14} /></a>}
   </div>
 </div>

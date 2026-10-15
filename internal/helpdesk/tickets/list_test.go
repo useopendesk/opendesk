@@ -214,9 +214,14 @@ func TestMessagesAndMentions(t *testing.T) {
 		t.Fatalf("mentions %d", n)
 	}
 
-	// Attachments: must be this workspace's and unattached.
+	// Attachments: must be this workspace's, unattached and the caller's own uploads.
 	att := ids.New()
-	e.Exec(`INSERT INTO attachments (id, workspace_id, filename, size_bytes, storage_key) VALUES ($1, $2, 'a.txt', 3, 'k')`, att, ws.ID)
+	e.Exec(`INSERT INTO attachments (id, workspace_id, filename, size_bytes, storage_key, uploaded_by) VALUES ($1, $2, 'a.txt', 3, 'k', $3)`, att, ws.ID, ws.Agent.ID)
+	theirs := ids.New()
+	e.Exec(`INSERT INTO attachments (id, workspace_id, filename, size_bytes, storage_key, uploaded_by) VALUES ($1, $2, 'c.txt', 3, 'k', $3)`, theirs, ws.ID, ws.Admin.ID)
+	e.Do("POST", path, agent, map[string]any{"kind": "reply", "body_html": "x", "attachment_ids": []string{theirs.String()}}).Want(t, 422)
+	key := e.APIKey(ws, "tickets:write", "tickets:read")
+	e.Do("POST", path, hdtest.Auth{Bearer: key}, map[string]any{"kind": "note", "body_html": "x", "attachment_ids": []string{theirs.String()}}).Want(t, 422)
 	other := e.NewWorkspace()
 	foreign := ids.New()
 	e.Exec(`INSERT INTO attachments (id, workspace_id, filename, size_bytes, storage_key) VALUES ($1, $2, 'b.txt', 3, 'k')`, foreign, other.ID)

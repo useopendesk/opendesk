@@ -1,7 +1,7 @@
 defmodule RealtimeWeb.JoinTest do
   use RealtimeWeb.ChannelCase, async: true
 
-  alias RealtimeWeb.{ContactChannel, TicketChannel, UserChannel, WorkspaceChannel}
+  alias RealtimeWeb.{ContactChannel, TeamChannel, TicketChannel, UserChannel, WorkspaceChannel}
 
   @forbidden {:error, %{reason: "forbidden"}}
 
@@ -42,6 +42,52 @@ defmodule RealtimeWeb.JoinTest do
             {c.agent, "workspace:#{String.upcase(c.wid)}"}
           ] do
         assert subscribe_and_join(socket, WorkspaceChannel, topic) == @forbidden, topic
+      end
+    end
+  end
+
+  describe "team:<wid>:<tid>" do
+    setup c do
+      team = Tokens.uuid()
+
+      {:ok, member} =
+        connect_claims(Tokens.ws_claims(%{"wid" => c.wid, "teams" => [String.upcase(team)]}))
+
+      {:ok, key} =
+        connect_claims(
+          Tokens.ws_claims(%{"wid" => c.wid, "kind" => "api_key", "teams" => [team]})
+        )
+
+      %{team: team, member: member, granted_key: key}
+    end
+
+    test "users and API keys whose teams claim lists the team join", c do
+      assert {:ok, _, _} = subscribe_and_join(c.member, TeamChannel, "team:#{c.wid}:#{c.team}")
+
+      assert {:ok, _, _} =
+               subscribe_and_join(c.granted_key, TeamChannel, "team:#{c.wid}:#{c.team}")
+    end
+
+    test "sockets without the team, other teams and workspaces, contacts and malformed ids are forbidden",
+         c do
+      other_wid = Tokens.uuid()
+
+      {:ok, elsewhere} =
+        connect_claims(Tokens.ws_claims(%{"wid" => other_wid, "teams" => [c.team]}))
+
+      for {socket, topic} <- [
+            {c.agent, "team:#{c.wid}:#{c.team}"},
+            {c.key, "team:#{c.wid}:#{c.team}"},
+            {c.contact, "team:#{c.wid}:#{c.team}"},
+            {c.member, "team:#{c.wid}:#{Tokens.uuid()}"},
+            {c.member, "team:#{other_wid}:#{c.team}"},
+            {elsewhere, "team:#{c.wid}:#{c.team}"},
+            {c.member, "team:#{c.wid}:#{String.upcase(c.team)}"},
+            {c.member, "team:#{c.wid}"},
+            {c.member, "team:#{c.team}"},
+            {c.member, "team:#{c.wid}:#{c.team}:extra"}
+          ] do
+        assert subscribe_and_join(socket, TeamChannel, topic) == @forbidden, topic
       end
     end
   end

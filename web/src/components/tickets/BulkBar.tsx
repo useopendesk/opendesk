@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { AnimatedNumber } from "@/components/motion";
 import { springs } from "@/lib/motion";
-import { ShieldAlert, Signal, Siren, Tag as TagIcon, Trash2, UserRound, X, CircleDot } from "lucide-react";
+import { ShieldAlert, Signal, Siren, Tag as TagIcon, Trash2, UserRound, Users, X, CircleDot } from "lucide-react";
 import { forwardRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,14 @@ import { Avatar } from "@/components/ui/avatar";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useConfirm } from "@/components/ui/confirm";
 import { toast } from "@/components/ui/toast";
-import type { Priority, Severity, TicketStatus } from "@/lib/api/types";
+import type { Priority, Severity, Ticket, TicketStatus } from "@/lib/api/types";
+import { cachedTicket } from "@/lib/ticketCache";
 import { q } from "@/lib/queries";
 import { PriorityIcon, priorityLabel, priorityOrder, SeverityChip, severityHint, severityLabel, severityOrder, StatusIcon, statusLabel, statusOrder } from "./bits";
 import { useLabelChoices } from "./detail/LabelPicker";
 import { useDisplay } from "./fields";
 import { useBulkUpdate } from "./useTicketActions";
+import { TeamMove, useTeamsCtx } from "./teams";
 
 /** A bar action: labelled, or icon-only with a tooltip when the list is narrow. */
 const Act = forwardRef<HTMLButtonElement, { compact?: boolean; icon: ReactNode; label: string } & React.ButtonHTMLAttributes<HTMLButtonElement>>(function Act(
@@ -45,6 +47,8 @@ export function BulkBar({ ids, onClear, spamView, compact }: { ids: string[]; on
   const [tagSel, setTagSel] = useState<string[]>([]);
   const labelChoices = useLabelChoices();
   const display = useDisplay();
+  const teams = useTeamsCtx();
+  const qc = useQueryClient();
   const n = ids.length;
 
   const run = (b: Parameters<typeof bulk.mutate>[0], done: string) =>
@@ -82,6 +86,19 @@ export function BulkBar({ ids, onClear, spamView, compact }: { ids: string[]; on
               <Act compact={compact} icon={<UserRound className="size-3.5" />} label={t("bulk.assign")} />
             }
           />
+          {teams.hasTeams && (
+            <TeamMove
+              side="top"
+              tickets={n ? ids.map((id) => cachedTicket(qc, id)).filter((x): x is Ticket => !!x) : []}
+              onMove={(teamId) =>
+                run(
+                  { ids, patch: { team_id: teamId } },
+                  teamId ? t("bulk.moved", { count: n, team: teams.team(teamId)?.name ?? "" }) : t("bulk.teamCleared", { count: n }),
+                )
+              }
+              trigger={<Act compact={compact} icon={<Users className="size-3.5" />} label={t("bulk.team")} />}
+            />
+          )}
           <Picker
             side="top"
             placeholder={t("bulk.setStatus")}
@@ -122,11 +139,11 @@ export function BulkBar({ ids, onClear, spamView, compact }: { ids: string[]; on
           <Picker
             side="top"
             multi
-            placeholder="Add tags"
+            placeholder="Add labels"
             values={tagSel}
             onChange={(v) => setTagSel(labelChoices.resolve(tagSel, v))}
             onCreate={(name) => setTagSel((s) => [...s, name])}
-            createLabel="Add tag"
+            createLabel="Add label"
             items={[...labelChoices.items, ...tagSel.filter((x) => !tags?.some((g) => g.name === x)).map((x) => ({ value: x, label: x }))]}
             onOpenChange={(o) => {
               if (!o && tagSel.length) {

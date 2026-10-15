@@ -38,10 +38,14 @@ describe("mock widget agent", () => {
     expect(m.body.default).toBe("anthropic/claude-sonnet-5.5");
     expect(m.body.fast).toBe("anthropic/claude-haiku-5.5");
     expect(m.body.data).toHaveLength(7);
-    expect(m.body.data.find((x: { id: string }) => x.id === "openai/gpt-5.6-sol")).toMatchObject({ vendor: "OpenAI", credits_per_mtok: { input: 187.5, output: 1500 } });
+    expect(m.body.data.find((x: { id: string }) => x.id === "openai/gpt-5.6-sol")).toMatchObject({ vendor: "OpenAI", usd_per_mtok: { input: 3, output: 15 }, typical_reply_usd: 0.0195 });
     const c = (await call("GET", "/v1/ai/config")).body;
     expect(c).toMatchObject({ provider: "openrouter", metered: true, models: { default: "anthropic/claude-sonnet-5.5", fast: "anthropic/claude-haiku-5.5" } });
-    expect(c.costs).toMatchObject({ playground: 3, answer_check: 0.1 });
+    // What a typical call costs on the chosen models, in US dollars: Sonnet for the agent, Haiku for rewrites, Jev for checks.
+    expect(c.costs).toMatchObject({ playground: 0.021, draft_reply: 0.0195, rewrite: 0.00042, answer_check: 0.00075 });
+    await call("PATCH", "/v1/ai/settings", { model: "anthropic/claude-opus-5.5" });
+    expect((await call("GET", "/v1/ai/config")).body.costs.draft_reply).toBe(0.039);
+    await call("PATCH", "/v1/ai/settings", { model: "" });
   });
 
   it("validates the agent settings", async () => {
@@ -49,11 +53,11 @@ describe("mock widget agent", () => {
       { model: "openai/gpt-4" },
       { widget_max_replies: 0 },
       { widget_max_replies: 2.5 },
-      { widget_instructions: "x".repeat(4001) },
       { widget_blocked_topics: Array.from({ length: 21 }, (_, i) => `topic ${i}`) },
       { widget_blocked_topics: ["x"] },
       { widget_blocked_topics: ["<b>legal</b>"] },
-      { widget_monthly_cap: -1 },
+      { widget_monthly_cap_usd: -1 },
+      { widget_monthly_cap_usd: 10_001 },
       { widget_collect_email: "yes" },
     ];
     for (const b of bad) expect((await call("PATCH", "/v1/ai/settings", b)).status, JSON.stringify(b).slice(0, 60)).toBe(422);
@@ -64,28 +68,38 @@ describe("mock widget agent", () => {
   });
 
   it("validates widget appearance and builds the public config", async () => {
-    for (const b of [{ color: "red" }, { theme: "neon" }, { offset_x: 201 }, { offset_y: 1.5 }, { title: "x".repeat(41) }, { suggestions: ["a"] }, { suggestions: ["one", "two", "three", "four", "five"] }, { bot_name: "<script>" }]) {
+    for (const b of [{ color: "red" }, { theme: "neon" }, { offset_x: 201 }, { offset_y: 1.5 }, { title: "x".repeat(41) }, { suggestions: ["a"] }, { suggestions: ["one", "two", "three", "four", "five"] }]) {
       expect((await call("PATCH", "/v1/widget/settings", b)).status, JSON.stringify(b)).toBe(422);
     }
-    const w = await call("PATCH", "/v1/widget/settings", { bot_name: "  Nova   bot ", position: "left", offset_x: 32 });
-    expect(w.body).toMatchObject({ bot_name: "Nova bot", position: "left", offset_x: 32, title: "Fieldnote support", color: "#4f46e5" });
+    const w = await call("PATCH", "/v1/widget/settings", { position: "left", offset_x: 32 });
+    expect(w.body).toMatchObject({ position: "left", offset_x: 32, title: "Margin support", color: "#4f46e5" });
     const key = db.workspaces[0].workspace.widget_key;
     const cfg = (await call("GET", `/v1/widget/config?key=${key}`)).body;
-    expect(cfg).toMatchObject({ workspace_name: "Fieldnote", brand_color: "#4f46e5", ai_answers: true, bot: { name: "Nova bot", avatar_url: null }, position: "left" });
+    expect(cfg).toMatchObject({ workspace_name: "Margin", brand_color: "#4f46e5", ai_answers: true, position: "left" });
+    // The widget answers as the default bot (contracts/bots.md).
+    expect(cfg.bot).toMatchObject({ name: "Ollie", role: "Margin support", look: { kind: "built", shape: "blob" } });
+    expect(cfg.bot.id).toBeTruthy();
+    expect(cfg.bot.avatar_url).toMatch(/^data:image\/svg\+xml/);
+    expect(cfg.topics.length).toBeGreaterThan(0);
+    expect(Object.keys(cfg.topics[0]).sort()).toEqual(["id", "label"]);
+    expect(typeof cfg.open).toBe("boolean");
+    expect(cfg.offline_message).not.toBe("");
+    expect(cfg.brand).toMatchObject({ name: "Margin" });
     expect(cfg.team.length).toBeLessThanOrEqual(3);
     expect(cfg.team[0].name).not.toContain(" ");
     expect((await call("GET", "/v1/widget/config?key=nope")).status).toBe(404);
-    await call("PATCH", "/v1/widget/settings", { bot_name: "", position: "right", offset_x: 20 });
+    await call("PATCH", "/v1/widget/settings", { position: "right", offset_x: 20 });
   });
 
-  it("reports usage in decimals with a by-model breakdown", async () => {
+  it("reports usage in US dollars with a by-model breakdown", async () => {
     const u = (await call("GET", "/v1/billing/usage")).body;
     expect(u.by_model.length).toBeGreaterThan(1);
     expect(u.by_model.map((m: { model: string }) => m.model)).toContain("jev");
-    const credits = u.by_model.map((m: { credits: number }) => m.credits);
-    expect(credits).toEqual([...credits].sort((a, b) => b - a));
-    expect(credits.some((c: number) => !Number.isInteger(c))).toBe(true);
-    for (const c of [u.total_credits, ...credits]) expect(Math.round(c * 1000) / 1000).toBe(c);
+    const usd = u.by_model.map((m: { usd: number }) => m.usd);
+    expect(usd).toEqual([...usd].sort((a, b) => b - a));
+    expect(usd.some((c: number) => !Number.isInteger(c))).toBe(true);
+    for (const c of [u.total_usd, ...usd]) expect(Math.round(c * 1e6) / 1e6).toBe(c);
+    expect(Math.round(usd.reduce((s: number, c: number) => s + c * 1e6, 0)) / 1e6).toBe(u.total_usd);
   });
 
   it("builds a consistent agent report", () => {
@@ -104,9 +118,9 @@ describe("mock widget agent", () => {
     const ask = (text: string, extra: Record<string, unknown> = {}) => call("POST", "/v1/ai/agent/playground", { messages: [{ role: "visitor", text }], ...extra });
     const cancel = (await ask("Please cancel my order #4821")).body;
     expect(cancel.action).toEqual({ tool: "shop__cancel_order", title: "Cancel order", summary: "Cancel order #4821 and refund $48.00 to the card ending 4242" });
-    expect(cancel.credits).toBeGreaterThan(0);
+    expect(cancel.usd).toBeGreaterThan(0);
     const human = (await ask("Can I talk to a human?", { visitor: { email: "dana@oakridge.org" } })).body;
-    expect(human).toMatchObject({ handoff: true, credits: 0 });
+    expect(human).toMatchObject({ handoff: true, usd: 0 });
     const blocked = (await ask("I need legal advice about my contract", { settings: { widget_blocked_topics: ["legal advice"] } })).body;
     expect(blocked.text_html).toContain("can't help with legal advice");
     const unverified = (await ask("Where is my order #5100?", { visitor: { verified: false } })).body;
@@ -158,7 +172,7 @@ describe("mock widget agent", () => {
     expect(JSON.parse(okTest.body.content).order_id).toBe("4821");
     const oauth = await call("POST", `/v1/ai/mcp-servers/${list[1].id}/oauth/start`);
     expect(oauth.body.url).toBe(`/settings/ai/tools?connected=${list[1].id}`);
-    expect(JSON.parse(sessionStorage.getItem("od-mock-mcp-oauth") ?? "{}").fieldnote).toContain("linear");
+    expect(JSON.parse(sessionStorage.getItem("od-mock-mcp-oauth") ?? "{}").margin).toContain("linear");
     const before = db.workspaces[0].seq;
     expect((await call("DELETE", `/v1/ai/mcp-servers/${id}`)).status).toBe(204);
     const ev = (await call("GET", `/v1/events?since=${before}`)).body.data;
@@ -169,7 +183,7 @@ describe("mock widget agent", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const seeded = (await call("GET", "/v1/ai/knowledge")).body.data;
     expect(seeded.map((s: { status: string }) => s.status)).toEqual(expect.arrayContaining(["ready", "error"]));
-    expect(seeded.find((s: { name: string }) => s.name === "Fieldnote blog").doc_count).toBeGreaterThanOrEqual(23);
+    expect(seeded.find((s: { name: string }) => s.name === "Margin blog").doc_count).toBeGreaterThanOrEqual(23);
     expect(seeded.some((s: { enabled: boolean }) => !s.enabled)).toBe(true);
     const docs = (await call("GET", `/v1/ai/knowledge/${seeded[0].id}/docs?limit=20`)).body;
     expect(docs.data).toHaveLength(20);
@@ -230,15 +244,15 @@ describe("mock widget agent", () => {
   it("stays silent at the monthly cap and tells admins once", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const ws = db.workspaces[0];
-    const cap = ws.ai.widget_monthly_cap;
-    ws.ai.widget_monthly_cap = 0.001;
+    const cap = ws.ai.widget_monthly_cap_usd;
+    ws.ai.widget_monthly_cap_usd = 0.01;
     const t = chatTicket(ws)!;
     expect(await ollieReply(ws, t)).toBeNull();
     expect(await ollieReply(ws, t)).toBeNull();
     const notes = ws.notifications.filter((n) => n.type === ("ai_cap_reached" as string));
     expect(notes).toHaveLength(1);
-    expect(notes[0]).toMatchObject({ ticket: null, data: { cap: 0.001 } });
-    ws.ai.widget_monthly_cap = cap;
+    expect(notes[0]).toMatchObject({ ticket: null, data: { cap_usd: 0.01 } });
+    ws.ai.widget_monthly_cap_usd = cap;
   });
 
   it("seeds agent replies with an action and ratings", () => {

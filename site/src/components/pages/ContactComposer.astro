@@ -1,0 +1,132 @@
+---
+/**
+ * Starting a message: pick who it is for on the left, and the draft on the
+ * right is addressed to them, with a hint of what helps us answer. The button
+ * opens it in the visitor's own email app.
+ */
+import Icon from '../Icon.astro';
+import type { ContactChannel } from './types';
+
+interface Props {
+  channels: ContactChannel[];
+  class?: string;
+}
+const { channels, class: className = '' } = Astro.props;
+const mark = 'M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z';
+---
+<div class={`grid gap-2 rounded-[22px] bg-surface p-2 ring-1 ring-line lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] ${className}`} data-composer>
+  <!-- Who it is for. -->
+  <div class="flex flex-col gap-1 p-1 md:p-2" role="tablist" aria-label="What you are writing about" aria-orientation="vertical">
+    <div class="px-3 pb-2 pt-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle">Topic</div>
+    {channels.map((c, i) => (
+      <button
+        type="button"
+        role="tab"
+        id={`to-${c.id}`}
+        aria-controls={`draft-${c.id}`}
+        aria-selected={i === 0 ? 'true' : 'false'}
+        tabindex={i === 0 ? 0 : -1}
+        class="composer-tab group flex w-full items-start gap-3.5 rounded-[14px] px-3.5 py-3.5 text-left transition-colors"
+        data-tab={c.id}
+      >
+        <span class="composer-icon mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-bg text-muted ring-1 ring-line transition-colors"><Icon name={c.icon} size={16} /></span>
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.015em] text-fg">{c.title}</span>
+          <span class="mt-0.5 block text-[13.5px] leading-snug text-muted">{c.body}</span>
+          <span class="mt-1.5 block truncate font-mono text-[12px] text-subtle">Subject: {c.subject}</span>
+        </span>
+      </button>
+    ))}
+  </div>
+
+  <!-- The draft. -->
+  <div class="relative min-h-[440px] overflow-hidden rounded-[16px] bg-bg shadow-[var(--shadow)] ring-1 ring-line">
+    {channels.map((c, i) => (
+      <div id={`draft-${c.id}`} role="tabpanel" aria-labelledby={`to-${c.id}`} class="composer-panel flex h-full flex-col" data-panel={c.id} hidden={i !== 0}>
+        <div class="flex h-12 items-center gap-2 border-b border-line px-5">
+          <span class="text-[13px] font-medium text-fg">New message</span>
+          <span class="ml-auto flex items-center gap-3 text-subtle"><Icon name="paperclip" size={14} /><Icon name="moreH" size={14} /></span>
+        </div>
+        <div class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-5 py-2.5 text-[13.5px]">
+          <span class="w-14 text-muted">To</span>
+          <span class="inline-flex h-7 min-w-0 items-center gap-2 rounded-full bg-surface pl-1 pr-3 font-mono text-[12.5px] text-fg ring-1 ring-line">
+            <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-fg text-bg"><svg viewBox="0 0 64 64" class="size-2.5" fill="currentColor" aria-hidden="true"><path d={mark} /></svg></span><span class="truncate">{c.email}</span>
+          </span>
+        </div>
+        <div class="flex h-12 items-center gap-3 border-b border-line px-5 text-[13.5px]">
+          <span class="w-14 shrink-0 text-muted">Subject</span>
+          <span class="truncate font-medium text-fg">{c.subject}</span>
+        </div>
+        <div class="flex-1 px-5 py-5 text-[15px] leading-[1.65] text-subtle">
+          <span class="od-caret mr-1 align-middle"></span>{c.hint}
+          {c.note && <p class="mt-5 flex gap-2 rounded-[10px] bg-surface-2 px-3.5 py-3 text-[13.5px] leading-relaxed text-muted ring-1 ring-line"><Icon name="lock" size={14} class="mt-[3px] shrink-0 text-subtle" />{c.note}</p>}
+        </div>
+        <div class="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3.5">
+          <a href={`mailto:${c.email}?subject=${encodeURIComponent(c.subject)}`} class="btn btn-primary"><Icon name="send" size={14} />Open in your email app</a>
+          <button type="button" class="btn btn-ghost" data-copy-mail={c.email} aria-label={`Copy ${c.email}`}>
+            <Icon name="copy" size={14} class="[.is-copied_&]:hidden" /><Icon name="check" size={14} class="hidden [.is-copied_&]:block" />
+            <span class="[.is-copied_&]:hidden">Copy address</span><span class="hidden [.is-copied_&]:inline">Copied</span>
+          </button>
+          <span class="ml-auto hidden text-[12.5px] text-subtle sm:inline">A person reads it.</span>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style is:global>
+  .composer-tab:hover { background: color-mix(in oklab, var(--bg) 60%, transparent); }
+  .composer-tab[aria-selected='true'] { background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgb(0 0 0 / 0.04); }
+  .composer-tab[aria-selected='true'] .composer-icon { background: var(--fg); color: var(--bg); box-shadow: none; }
+  .composer-tab:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .composer-panel:not([hidden]) { animation: composer-in 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes composer-in { from { opacity: 0; transform: translateY(4px); } }
+  @media (prefers-reduced-motion: reduce) { .composer-panel:not([hidden]) { animation: none; } }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-composer]').forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[data-tab]')];
+    const panels = [...root.querySelectorAll<HTMLElement>('[data-panel]')];
+    const select = (id: string, focus = false) => {
+      for (const t of tabs) {
+        const on = t.dataset.tab === id;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        if (on && focus) t.focus();
+      }
+      for (const p of panels) p.hidden = p.dataset.panel !== id;
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => {
+        select(t.dataset.tab ?? '');
+        // Stacked on small screens: bring the draft into view.
+        if (innerWidth < 1024) {
+          const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+          panels.find((p) => !p.hidden)?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+        }
+      });
+      t.addEventListener('keydown', (e) => {
+        const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        select(tabs[(i + step + tabs.length) % tabs.length].dataset.tab ?? '', true);
+      });
+    });
+    // A link to /contact/#security opens that draft.
+    const hash = location.hash.slice(1);
+    if (tabs.some((t) => t.dataset.tab === hash)) select(hash);
+
+    root.querySelectorAll<HTMLButtonElement>('[data-copy-mail]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(b.dataset.copyMail ?? '');
+          b.classList.add('is-copied');
+          setTimeout(() => b.classList.remove('is-copied'), 1600);
+        } catch {
+          // Clipboard can be refused; the address stays selectable.
+        }
+      });
+    });
+  });
+</script>

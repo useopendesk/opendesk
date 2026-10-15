@@ -33,6 +33,17 @@ type SendTicketEmailArgs struct {
 
 func (SendTicketEmailArgs) Kind() string { return "email.send_ticket_email" }
 
+// ChatFollowUpArgs emails an agent's chat reply to a visitor who is not on the page
+// (contracts/teams.md "Chat follow-up"). It runs a minute after the reply and sends only
+// when the visitor has not been back since. Owner: email.
+type ChatFollowUpArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	TicketID    uuid.UUID `json:"ticket_id"`
+	MessageID   uuid.UUID `json:"message_id"`
+}
+
+func (ChatFollowUpArgs) Kind() string { return "email.chat_follow_up" }
+
 // ProcessInboundArgs parses a stored raw email into a ticket message. Owner: email.
 type ProcessInboundArgs struct {
 	WorkspaceID    uuid.UUID `json:"workspace_id"`
@@ -91,9 +102,21 @@ type SystemEmailArgs struct {
 	Subject string `json:"subject"`
 	HTML    string `json:"html"`
 	Text    string `json:"text"`
+	// Headers are extra headers (List-Unsubscribe, References); see mailer.Mail.
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 func (SystemEmailArgs) Kind() string { return "mail.system" }
+
+// NotificationEmailArgs emails one user the notifications waiting for them in one
+// workspace (contracts/api.md "Notification preferences and emails"). Enqueued by the
+// core sweep, unique per user and workspace while waiting or running. Owner: core.
+type NotificationEmailArgs struct {
+	UserID      uuid.UUID `json:"user_id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (NotificationEmailArgs) Kind() string { return "core.notification_email" }
 
 // SyncSeatsArgs sets a workspace's Stripe subscription quantity to its billed seats.
 // Enqueued (unique, debounced) when members change. Owner: billing.
@@ -118,7 +141,7 @@ type CancelSubscriptionArgs struct {
 
 func (CancelSubscriptionArgs) Kind() string { return "billing.cancel_subscription" }
 
-// AutoRechargeArgs buys AI credit packs off-session for a workspace whose balance fell
+// AutoRechargeArgs buys AI usage off-session for a workspace whose balance fell
 // below its auto-recharge threshold. Unique per workspace, so one runs at a time.
 // Owner: billing.
 type AutoRechargeArgs struct {
@@ -126,6 +149,14 @@ type AutoRechargeArgs struct {
 }
 
 func (AutoRechargeArgs) Kind() string { return "billing.auto_recharge" }
+
+// SyncPaymentMethodArgs refreshes what billing shows of a workspace's saved payment method
+// from Stripe. Owner: billing.
+type SyncPaymentMethodArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (SyncPaymentMethodArgs) Kind() string { return "billing.sync_payment_method" }
 
 // AIWidgetAnswerArgs lets the widget AI agent reply to one visitor chat message.
 // Owner: ai.
@@ -206,3 +237,22 @@ func (AvatarFetchArgs) Kind() string { return "images.fetch_avatar" }
 type AvatarSweepArgs struct{}
 
 func (AvatarSweepArgs) Kind() string { return "images.sweep" }
+
+// PushNotificationArgs sends a notification as an alert to the user's iPhones
+// (contracts/native.md "Push"). Enqueued by hd.Notify in the notification's transaction.
+// Owner: core.
+type PushNotificationArgs struct {
+	WorkspaceID    uuid.UUID `json:"workspace_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	NotificationID uuid.UUID `json:"notification_id"`
+}
+
+func (PushNotificationArgs) Kind() string { return "push.notification" }
+
+// PushBadgeArgs sets the app icon badge on the user's iPhones to their unread count,
+// after notifications are read. Owner: core.
+type PushBadgeArgs struct {
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (PushBadgeArgs) Kind() string { return "push.badge" }

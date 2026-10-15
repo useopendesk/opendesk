@@ -21,6 +21,10 @@ import (
 // InboundSecretHeader authenticates the Cloudflare Email Worker (or SES relay).
 const InboundSecretHeader = "OD-Inbound-Secret"
 
+// EnvelopeFromHeader carries the SMTP envelope sender from the relay; empty is the null
+// sender of a delivery report.
+const EnvelopeFromHeader = "OD-Envelope-From"
+
 func writeProblem(w http.ResponseWriter, status int, code, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
@@ -70,7 +74,11 @@ func (s *service) inboundHTTP(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusServiceUnavailable, "unavailable", "Try again later.")
 		return
 	}
-	id, dup, err := s.ingest(r.Context(), m, body, rcpt)
+	var envFrom *string
+	if vals, ok := r.Header[http.CanonicalHeaderKey(EnvelopeFromHeader)]; ok && len(vals) > 0 {
+		envFrom = &vals[0]
+	}
+	id, dup, err := s.ingest(r.Context(), m, body, rcpt, envFrom)
 	if err != nil {
 		s.log.Error("inbound ingest", "mailbox_id", m.ID, "err", err)
 		writeProblem(w, http.StatusServiceUnavailable, "unavailable", "Try again later.")
@@ -101,15 +109,19 @@ func (b *smtpBackend) NewSession(c *smtp.Conn) (smtp.Session, error) {
 }
 
 type smtpSession struct {
-	s     *service
-	rcpts []string
-	boxes []*mailboxRow
+	s       *service
+	envFrom string
+	rcpts   []string
+	boxes   []*mailboxRow
 }
 
-func (ss *smtpSession) Reset()        { ss.rcpts, ss.boxes = nil, nil }
+func (ss *smtpSession) Reset()        { ss.envFrom, ss.rcpts, ss.boxes = "", nil, nil }
 func (ss *smtpSession) Logout() error { return nil }
 
-func (ss *smtpSession) Mail(string, *smtp.MailOptions) error { return nil }
+func (ss *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
+	ss.envFrom = from
+	return nil
+}
 
 func (ss *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -142,7 +154,8 @@ func (ss *smtpSession) Data(r io.Reader) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	for i, m := range ss.boxes {
-		if _, _, err := ss.s.ingest(ctx, m, raw, ss.rcpts[i]); err != nil {
+		envFrom := ss.envFrom
+		if _, _, err := ss.s.ingest(ctx, m, raw, ss.rcpts[i], &envFrom); err != nil {
 			ss.s.log.Error("smtp ingest", "mailbox_id", m.ID, "err", err)
 			return &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 3, 0}, Message: "Temporary failure, try later"}
 		}

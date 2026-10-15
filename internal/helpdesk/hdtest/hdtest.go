@@ -138,11 +138,14 @@ type User struct {
 	Token string
 }
 
-// WS is a seeded workspace with one member per role.
+// WS is a seeded workspace with one member per role, its default brand (slug = the
+// workspace slug, help center off) and that brand's widget.
 type WS struct {
 	ID        uuid.UUID
 	Slug      string
 	WidgetKey string
+	BrandID   uuid.UUID
+	WidgetID  uuid.UUID
 	Owner     User
 	Admin     User
 	Agent     User
@@ -167,6 +170,9 @@ func (e *Env) NewWorkspace() WS {
 	ws.Slug = "ws-" + crypto.RandomString(10)
 	ws.WidgetKey = "wk_" + crypto.RandomString(20)
 	e.Exec(`INSERT INTO workspaces (id, name, slug, widget_key) VALUES ($1, $2, $3, $4)`, ws.ID, "Acme "+ws.Slug, ws.Slug, ws.WidgetKey)
+	ws.BrandID, ws.WidgetID = ids.New(), ids.New()
+	e.Exec(`INSERT INTO brands (id, workspace_id, name, slug, is_default) VALUES ($1, $2, $3, $4, true)`, ws.BrandID, ws.ID, "Acme "+ws.Slug, ws.Slug)
+	e.Exec(`INSERT INTO widgets (id, workspace_id, brand_id, name, key) VALUES ($1, $2, $3, 'Website', $4)`, ws.WidgetID, ws.ID, ws.BrandID, ws.WidgetKey)
 	ws.Owner = e.AddUser(ws, auth.RoleOwner, "Olivia Owner")
 	ws.Admin = e.AddUser(ws, auth.RoleAdmin, "Adam Admin")
 	ws.Agent = e.AddUser(ws, auth.RoleAgent, "Anna Agent")
@@ -189,6 +195,21 @@ func (e *Env) AddUser(ws WS, role auth.Role, name string) User {
 	return u
 }
 
+// SignedIn returns u with a token on a stored session that started now: what owner-level
+// operations check (a recent sign-in; a second factor when mfa is true).
+func (e *Env) SignedIn(u User, mfa bool) User {
+	e.T.Helper()
+	sid := ids.New()
+	e.Exec(`INSERT INTO sessions (id, user_id, refresh_hash, mfa_verified, expires_at) VALUES ($1, $2, $3, $4, now() + interval '1 day')`,
+		sid, u.ID, []byte(sid.String()), mfa)
+	tok, _, err := e.D.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: sid.String()}, u.ID.String(), time.Hour)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	u.Token = tok
+	return u
+}
+
 // APIKey creates an API key for ws with scopes and returns its secret.
 func (e *Env) APIKey(ws WS, scopes ...string) string {
 	e.T.Helper()
@@ -202,6 +223,16 @@ func (e *Env) APIKey(ws WS, scopes ...string) string {
 func (e *Env) SetSettings(ws WS, settings map[string]any) {
 	e.T.Helper()
 	e.Exec(`UPDATE workspaces SET settings = settings || $2 WHERE id = $1`, ws.ID, settings)
+}
+
+// SetWidgetSettings merges keys into the settings of a widget (the workspace's default
+// widget when id is uuid.Nil).
+func (e *Env) SetWidgetSettings(ws WS, id uuid.UUID, settings map[string]any) {
+	e.T.Helper()
+	if id == uuid.Nil {
+		id = ws.WidgetID
+	}
+	e.Exec(`UPDATE widgets SET settings = settings || $3 WHERE workspace_id = $1 AND id = $2`, ws.ID, id, settings)
 }
 
 // Exec runs SQL and fails the test on error.

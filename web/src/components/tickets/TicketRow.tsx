@@ -15,7 +15,9 @@ import { SetByOllie, useOllieNote } from "./ollie";
 import { aiDecisions } from "@/lib/decisions";
 import { useTicketViewers } from "./presence";
 import { rowMotion } from "./motion";
-import { LiveChatBadge, UrgentEdge, WaitPill, urgentWash, useChatWait } from "./waiting";
+import { Labels } from "@/components/contacts/bits";
+import { LiveChatBadge, NewCount, UrgentEdge, WaitPill, urgentWash, useChatWait, useHandoffBot } from "./waiting";
+import { TicketTeamChips, useTeamsCtx } from "./teams";
 
 export type QuickAction = "assign" | "snooze" | "solve";
 
@@ -93,10 +95,17 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
   const reduced = useReducedMotion();
   const display = useDisplay();
   const note = useOllieNote();
+  const teams = useTeamsCtx();
   const wait = useChatWait(t);
   // A visitor waiting in live chat with nobody on it: the row washes red.
   const urgent = wait?.state === "urgent" && !t.assignee;
   const unread = awaitingReply(t) || !!wait;
+  // A waiting visitor's row says what it is about and how much they wrote; other rows
+  // show the count once it is more than one message.
+  const newCount = wait ? t.unanswered_count : t.unanswered_count > 1 ? t.unanswered_count : 0;
+  // The bot's hand-off line is the last message of a chat it gave to the team.
+  const botLast = !!wait?.handedOff && !awaitingReply(t);
+  const bot = useHandoffBot(t);
   const contactName = t.contact?.name || t.contact?.email || tr("row.unknown");
   const subject = t.subject || tr("row.noSubject");
   const showCheck = selecting || selected;
@@ -162,8 +171,16 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
     </Tooltip>
   );
 
+  // Which address an email came in on, once there is more than one to write to.
+  const received = teams.multiAddress && t.channel === "email" && t.received_at ? (
+    <span className="mono min-w-0 shrink truncate text-[10.5px] text-fg-4" title={tr("row.receivedAt", { address: t.received_at })} data-ph-mask>
+      {t.received_at}
+    </span>
+  ) : null;
+  const chips = <TicketTeamChips t={t} ctx={teams} />;
+
   const channel = t.channel === "chat" ? (
-    <LiveChatBadge urgent={urgent} />
+    <LiveChatBadge urgent={urgent} handedOff={wait?.handedOff} bot={bot} />
   ) : t.channel !== "email" && (
     <Tooltip content={channelLabel[t.channel]}>
       <span className="flex shrink-0">
@@ -243,10 +260,11 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className={cn("min-w-0 truncate text-[12.5px]", unread ? "font-medium text-fg" : "text-fg-2")} data-ph-mask>
+              <span className={cn("min-w-[72px] shrink-[0.25] truncate text-[12.5px]", unread ? "font-medium text-fg" : "text-fg-2")} data-ph-mask>
                 {contactName}
               </span>
               {channel}
+              <TicketTeamChips t={t} ctx={teams} plain className="ml-0.5 shrink" />
               <Viewers ticketId={t.id} />
               <span className="flex-1" />
               {end}
@@ -256,11 +274,15 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
               <span className={cn("min-w-0 truncate text-[12.5px]", unread ? "font-medium text-fg" : "text-fg")} data-ph-mask>
                 {subject}
               </span>
+              {wait && <Labels labels={t.tags} className="ml-auto pl-1" />}
             </div>
             <div className="mt-1 flex items-center gap-1.5">
               <span className={cn("min-w-0 flex-1 truncate text-xs", urgent ? "text-fg-2" : "text-fg-3")} data-ph-mask>
+                {botLast && <span className="font-medium text-tone-violet">{tr("waiting.botSaid", { name: bot })} </span>}
                 {t.last_message_preview}
               </span>
+              {received}
+              <NewCount count={newCount} urgent={urgent} />
               {wait ? <WaitPill wait={wait} compact /> : <SlaIfAtRisk ticket={t} />}
             </div>
           </div>
@@ -287,10 +309,15 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
             <span className={cn("max-w-[60%] shrink-0 truncate text-[13px]", unread ? "font-medium text-fg" : "text-fg-2")} data-ph-mask>
               {subject}
             </span>
+            {wait && <Labels labels={t.tags} className="shrink-0" />}
+            {chips}
+            <NewCount count={newCount} urgent={urgent} />
             {wait ? <WaitPill wait={wait} /> : <SlaIfAtRisk ticket={t} />}
-            <span className={cn("min-w-0 truncate text-[12.5px]", urgent ? "text-fg-3" : "text-fg-4")} data-ph-mask>
+            <span className={cn("min-w-0 flex-1 truncate text-[12.5px]", urgent ? "text-fg-3" : "text-fg-4")} data-ph-mask>
+              {botLast && <span className="font-medium text-tone-violet">{tr("waiting.botSaid", { name: bot })} </span>}
               {t.last_message_preview}
             </span>
+            {received && <span className="flex max-w-[180px] shrink-0">{received}</span>}
           </span>
           {end}
         </div>

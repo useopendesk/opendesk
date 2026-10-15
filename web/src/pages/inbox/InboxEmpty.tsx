@@ -7,7 +7,7 @@ import { format, startOfDay } from "date-fns";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TicketCounts } from "@/lib/api/types";
-import type { FolderId, InboxSearch } from "@/lib/folders";
+import type { FolderId, InboxSearch, TeamTab } from "@/lib/folders";
 import { q } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -46,18 +46,23 @@ export function InboxEmpty({
   search,
   onSearch,
   viewId,
+  teamName,
+  tab,
 }: {
-  folder: FolderId | "view";
+  folder: FolderId | "view" | "team";
   counts?: TicketCounts;
   search: InboxSearch;
   onSearch: (s: InboxSearch) => void;
   viewId?: string;
+  /** A team inbox: its name (or "My teams") and tab. */
+  teamName?: string;
+  tab?: TeamTab;
 }) {
   const { t } = useTranslation("inbox");
   const navigate = useNavigate();
   const me = useSession((s) => s.user?.id);
   const toFolder = (f: FolderId) => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: f, ticketId: undefined } });
-  const filtered = !!(search.q || search.priority || search.channel || search.tag || search.mailbox || search.fields);
+  const filtered = !!(search.q || search.priority || search.severity || search.channel || search.tag || search.mailbox || search.team || search.brand || search.fields);
   const wantsReport = folder === "mine" || folder === "solved";
   const range = useToday();
   const month = { from: format(new Date(Date.now() - 29 * 86_400_000), "yyyy-MM-dd"), to: range.to };
@@ -70,7 +75,7 @@ export function InboxEmpty({
         ghost={ghost}
         title={search.q ? t("empty.search.title", { q: search.q }) : t("empty.filtered.title")}
         description={t("empty.filtered.description")}
-        action={<Button onClick={() => onSearch({ sort: search.sort, order: search.order })}>{t("empty.filtered.clear")}</Button>}
+        action={<Button onClick={() => onSearch({ sort: search.sort, order: search.order, tab: search.tab })}>{t("empty.filtered.clear")}</Button>}
         secondary={
           search.q ? (
             <Button variant="ghost" onClick={() => shell.palette(true)}>
@@ -87,6 +92,31 @@ export function InboxEmpty({
     );
 
   switch (folder) {
+    case "team":
+      return (
+        <EmptyState
+          art={tab === "pending" ? "pending" : "inbox"}
+          ghost={ghost}
+          title={t(`empty.team.${tab ?? "unassigned"}`, { team: teamName ?? "" })}
+          description={t("empty.team.description")}
+          action={
+            tab === "unassigned" || !tab ? (
+              <Button onClick={() => onSearch({ ...search, tab: "open" })}>{t("empty.team.seeOpen")}</Button>
+            ) : (
+              <Button onClick={() => onSearch({ ...search, tab: undefined })}>{t("empty.team.seeUnassigned")}</Button>
+            )
+          }
+          secondary={
+            <Button variant="ghost" onClick={() => toFolder("unassigned")}>
+              {t("empty.backToInbox")}
+            </Button>
+          }
+          tips={[
+            { kbd: "g t", label: t("empty.tips.switchTeam") },
+            { kbd: "t", label: t("empty.tips.moveTeam") },
+          ]}
+        />
+      );
     case "spam":
       return (
         <EmptyState

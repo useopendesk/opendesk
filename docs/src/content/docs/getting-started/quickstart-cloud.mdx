@@ -1,35 +1,117 @@
 ---
 title: Quickstart (Cloud)
-description: Create an opendesk workspace, connect a mailbox, invite your team and answer your first ticket.
+description: Create an opendesk account and workspace, connect a mailbox, add live chat to your site, invite your team and answer your first ticket.
 ---
 
-import { Steps, Aside } from '@astrojs/starlight/components';
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
 
-The hosted service runs at [app.opendesk.sh](https://app.opendesk.sh). It is the same code as the self-hosted install, operated for you.
+The hosted service runs at [app.opendesk.sh](https://app.opendesk.sh). It is the same code as the self-hosted install, operated for you, so there is nothing to install. Plan for about ten minutes.
 
 <Steps>
+<Step title="Create your account">
 
-1. **Create an account.** Sign up with your email and a password, or with Google or Microsoft. Passwords must be 12 to 128 characters and are checked against a list of known breached passwords.
+Open [app.opendesk.sh/register](https://app.opendesk.sh/register).
 
-2. **Create a workspace.** A workspace holds your tickets, contacts, mailboxes and settings. You become its owner. New workspaces start with default views, tags and an SLA policy.
+<Screenshot src="/guides/start/sign-up" alt="The Create your account page: the sign-up buttons ringed as 1, the name, work email and password fields ringed as 2, and the Create account button ringed as 3" />
 
-3. **Connect a mailbox.** Open **Settings → Mailboxes** and choose how mail comes in:
-   - [Forwarding](/guides/mailboxes/forwarding/): forward your support address to the unique address opendesk gives you.
-   - [Connect Google](/guides/mailboxes/google/) or [Connect Microsoft](/guides/mailboxes/microsoft/): sign in once and opendesk reads and sends through that mailbox.
-   - [IMAP and SMTP](/guides/mailboxes/imap-smtp/): any other provider.
+<Legend>
 
-4. **Invite your team.** Open **Settings → Members** and invite people by email as an admin, agent or viewer. See [Teams and roles](/guides/teams-and-roles/).
+1. **Sign up with a provider**, such as Google or Microsoft, and skip the password.
+2. Or fill in your **name**, **work email** and a **password** of 12 to 128 characters. Known breached passwords are refused; the bar under the field shows how strong yours is.
+3. **Create account**.
 
-5. **Answer your first ticket.** Send an email to your support address. It appears in the inbox within moments. Reply, and the customer receives it from your address.
+</Legend>
 
+</Step>
+<Step title="Name your workspace">
+
+A workspace holds your team's tickets, contacts, mailboxes, help center and settings. You become its owner. The name sets your help center's address, and you can rename it later.
+
+<Screenshot src="/guides/start/workspace" alt="Create your workspace: the workspace name field ringed as 1, the help center address under it ringed as 2, and Continue ringed as 3" />
+
+<Legend>
+
+1. **Workspace name**: your company or your support team, such as Margin.
+2. **Your help center**: the public address of your knowledge base, from the name.
+3. **Continue**.
+
+</Legend>
+
+</Step>
+<Step title="Connect a mailbox">
+
+Type the address your customers write to. opendesk looks up who hosts it and offers the right way to connect. Mail sent to the address becomes tickets, and your replies go out from the same address.
+
+<Screenshot src="/guides/start/mailbox" alt="Connect your first mailbox: the name and email address fields ringed as 1, the detected provider and the ways to connect ringed as 2, Continue ringed as 3 and Skip for now ringed as 4" />
+
+<Legend>
+
+1. **Name** the mailbox for your team, such as Care, and type its **email address**.
+2. opendesk shows the **provider** it found and the ways to connect, with the right one picked. Gmail and Google Workspace connect with an [**app password**](/guides/mailboxes/google/), and [Microsoft 365](/guides/mailboxes/microsoft/) with Microsoft sign-in or by forwarding. [Forwarding](/guides/mailboxes/forwarding/) works with any provider, and **Other IMAP and SMTP** takes any mail server.
+3. **Continue**, and follow the steps for that way in.
+4. **Skip for now** opens the inbox; add a mailbox later in **Settings**, under **Mailboxes**.
+
+</Legend>
+
+See [Connect a mailbox](/guides/mailboxes/) for each way in.
+
+</Step>
+<Step title="Add live chat to your site">
+
+Open **Settings**, then **Brands and widgets**, pick your brand and open its widget. Copy the script tag under **Install** and paste it before `</body>` on every page that should show the widget.
+
+<Screenshot src="/guides/start/widget" alt="The chat widget settings: Brands and widgets in the settings menu ringed as 1, and the Install section with the script tag and widget key ringed as 2" />
+
+<Legend>
+
+1. **Brands and widgets**, under **Channels** in the settings menu.
+2. **Install**: the script tag to copy, with its copy button, and the widget key.
+
+</Legend>
+
+To the right of these settings, a live preview shows the real widget with your unsaved changes. See [Live chat widget](/guides/live-chat/).
+
+</Step>
+<Step title="Invite your team">
+
+Open **Settings**, then **Members**, and click **Invite people**.
+
+<Screenshot src="/guides/start/invite" alt="The Invite people dialog: the email addresses field with two addresses ringed as 1, the roles ringed as 2, and Send invitations ringed as 3" />
+
+<Legend>
+
+1. **Email addresses**: type or paste several, separated by commas or spaces.
+2. **Role**: **Admin** manages settings, mailboxes and members, **Agent** works tickets, contacts and articles, **Viewer** reads everything and changes nothing.
+3. **Send invitations**. Each person gets an email with a link that expires after 7 days.
+
+</Legend>
+
+See [Teams and roles](/guides/teams-and-roles/) to group people into teams.
+
+</Step>
+<Step title="Answer your first ticket">
+
+Send an email to your support address, or start a chat on your site. It appears in the inbox within moments. Open it, write a reply and click **Send**: the customer receives it from your address.
+
+<Screenshot src="/guides/inbox/open-ticket" alt="The inbox with the All open folder ringed as 1 and a ticket in the list ringed as 2" />
+
+See [Inbox and tickets](/guides/inbox-and-tickets/) for replies, notes, status and assignment.
+
+</Step>
 </Steps>
 
-<Aside type="tip">
-Add live chat next: copy the snippet from **Settings → Chat widget** into your site. See [Live chat widget](/guides/live-chat/).
-</Aside>
+<Callout title="Keep your account safe">
+
+Turn on [two-factor authentication](/guides/teams-and-roles/#two-factor-authentication) in **Settings**, under **Security**. As the owner, you need it for owner-level changes such as deleting the workspace.
+
+</Callout>
 
 ## Next steps
 
-- Turn on [two-factor authentication](/guides/teams-and-roles/#two-factor-authentication) for your account.
 - Set [SLA policies](/guides/sla-policies/) and [automations](/guides/automations/).
 - Publish a [help center](/guides/knowledge-base/).
+- Let [Ollie](/guides/ollie/) answer chats and suggest replies.

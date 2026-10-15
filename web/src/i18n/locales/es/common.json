@@ -9,7 +9,5 @@
     "back": "Atrás",
     "continue": "Continuar"
   },
-  "credits_one": "{{count}} crédito",
-  "credits_many": "{{count}} de créditos",
-  "credits_other": "{{count}} créditos"
+  "aboutCost": "aprox. {{cost}}"
 }

@@ -5,22 +5,21 @@
 import { create } from "zustand";
 import type { AISettings, PlaygroundSettings } from "@/lib/api/types";
 
+/** A bot's instructions (contracts/bots.md). */
 export const INSTRUCTIONS_MAX = 4000;
 export const TOPICS_MAX = 20;
 export const TOPIC_MIN = 2;
 export const TOPIC_LEN = 100;
-export const CAP_MAX = 1_000_000;
-export const BOT_NAME_MAX = 30;
+export const CAP_MAX = 10_000;
 
 export type AgentSettings = Required<
   Pick<
     AISettings,
     | "widget_answers"
     | "widget_model"
-    | "widget_instructions"
     | "widget_max_replies"
     | "widget_blocked_topics"
-    | "widget_monthly_cap"
+    | "widget_monthly_cap_usd"
     | "widget_collect_email"
   >
 >;
@@ -29,10 +28,9 @@ export function agentSettings(f: AISettings | null | undefined): AgentSettings {
   return {
     widget_answers: f?.widget_answers ?? false,
     widget_model: f?.widget_model ?? "",
-    widget_instructions: f?.widget_instructions ?? "",
     widget_max_replies: f?.widget_max_replies ?? 20,
     widget_blocked_topics: f?.widget_blocked_topics ?? [],
-    widget_monthly_cap: f?.widget_monthly_cap ?? 0,
+    widget_monthly_cap_usd: f?.widget_monthly_cap_usd ?? 0,
     widget_collect_email: f?.widget_collect_email ?? true,
   };
 }
@@ -48,7 +46,7 @@ export function topicProblem(v: string): "short" | "long" | "markup" | null {
 }
 
 /** The Behaviour page's unsaved edits. */
-export type BehaviourDraft = { ai: AgentSettings; botName: string };
+export type BehaviourDraft = { ai: AgentSettings };
 
 type DraftState = {
   /** Unsaved Behaviour edits, kept while you try them in the playground; null when there are none. */
@@ -64,5 +62,5 @@ export const useAgentDraft = create<DraftState>((set) => ({
 /** What the playground sends from a Behaviour draft. */
 export function playgroundSettings(d: BehaviourDraft | null): PlaygroundSettings | undefined {
   if (!d) return undefined;
-  return { widget_model: d.ai.widget_model, widget_instructions: d.ai.widget_instructions, widget_blocked_topics: d.ai.widget_blocked_topics };
+  return { widget_model: d.ai.widget_model, widget_blocked_topics: d.ai.widget_blocked_topics };
 }

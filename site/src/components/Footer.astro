@@ -1,7 +1,7 @@
 ---
 import Logo from './Logo.astro';
 import Icon from './Icon.astro';
-import { LINKS, EMAILS } from '../lib/site';
+import { LINKS, EMAIL, COMPANY } from '../lib/site';
 
 const cols = [
   {
@@ -15,15 +15,16 @@ const cols = [
       { href: '/features/#reports', label: 'Reports' },
       { href: '/features/#api', label: 'API and webhooks' },
       { href: '/pricing/', label: 'Pricing' },
+      { href: '/download/', label: 'Download' },
     ],
   },
   {
     title: 'Open source',
     links: [
-      { href: '/self-hosting/', label: 'Self-hosting' },
+      { href: LINKS.selfHosting, label: 'Self-hosting' },
       { href: '/open-source/', label: 'Why open source' },
       { href: LINKS.github, label: 'GitHub' },
-      { href: '/changelog/', label: 'Changelog' },
+      { href: LINKS.discord, label: 'Discord' },
       { href: `${LINKS.docs}/contributing/`, label: 'Contributing' },
     ],
   },
@@ -50,48 +51,52 @@ const cols = [
 ];
 const year = new Date().getFullYear();
 ---
-<footer class="mt-auto border-t border-line">
-  <div class="container-page py-14 md:py-16">
-    <div class="modules lg:grid-cols-[1.5fr_repeat(4,1fr)]">
-      <div class="flex flex-col p-6 md:p-8">
+<footer class="mt-auto">
+  <div class="container-page pb-10 pt-20 md:pt-24">
+    <div class="grid gap-12 lg:grid-cols-[1.5fr_repeat(4,1fr)] lg:gap-8">
+      <div class="flex flex-col">
         <a href="/" aria-label="opendesk home" class="inline-block w-fit text-fg"><Logo class="h-[20px] w-auto" /></a>
-        <p class="mt-5 max-w-[260px] text-[14px] leading-relaxed text-muted">The open-source helpdesk. Run it on our cloud or on your own servers. Same code either way.</p>
-        <div class="mt-8 lg:mt-auto flex items-center gap-0.5 rounded-[6px] p-0.5 w-fit ring-1 ring-line" role="radiogroup" aria-label="Theme" data-theme-switch>
+        <p class="mt-5 max-w-[280px] text-[14px] leading-relaxed text-muted">The open-source helpdesk. Run it on our cloud or on your own servers. Same code either way.</p>
+        <div class="mt-8 flex w-fit items-center gap-0.5 rounded-full bg-surface-2 p-1 ring-1 ring-line lg:mt-auto" role="radiogroup" aria-label="Theme" data-theme-switch>
           {[
             { v: 'light', icon: 'sun', label: 'Light theme' },
             { v: 'dark', icon: 'moon', label: 'Dark theme' },
             { v: 'system', icon: 'monitor', label: 'System theme' },
           ].map((o) => (
             <button type="button" role="radio" aria-checked="false" data-value={o.v} aria-label={o.label}
-              class="inline-flex size-7 items-center justify-center rounded-[5px] text-subtle transition-colors hover:text-fg aria-checked:bg-surface aria-checked:text-fg">
+              class="inline-flex size-7 items-center justify-center rounded-full text-subtle transition-colors hover:text-fg aria-checked:bg-bg aria-checked:text-fg aria-checked:shadow-[0_1px_2px_rgb(0_0_0/0.08)] aria-checked:ring-1 aria-checked:ring-line">
               <Icon name={o.icon as 'sun'} size={14} />
             </button>
           ))}
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-px bg-line sm:grid-cols-4 lg:contents">
+      <div class="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:contents">
         {cols.map((c) => (
-          <div class="bg-bg p-6 md:p-8">
-            <div class="label">{c.title}</div>
-            <ul class="mt-5 space-y-2.5">
+          <div>
+            <div class="text-[13px] font-medium text-fg">{c.title}</div>
+            <ul class="mt-4 space-y-2.5">
               {c.links.map((l) => (
-                <li><a href={l.href} class="text-[14px] text-body transition-colors hover:text-fg">{l.label}</a></li>
+                <li><a href={l.href} class="text-[14px] text-muted transition-colors hover:text-fg">{l.label}</a></li>
               ))}
             </ul>
           </div>
         ))}
       </div>
     </div>
-    <div class="mt-6 flex flex-col gap-3 px-1 font-mono text-[11.5px] uppercase tracking-[0.06em] text-subtle sm:flex-row sm:items-center sm:justify-between">
-      <div>© {year} opendesk · Apache-2.0</div>
+    <div class="mt-16 flex flex-col gap-3 border-t border-line pt-6 text-[13px] text-subtle sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <div>© {year} opendesk · Apache-2.0</div>
+        <div class="mt-1 text-[12px]">{COMPANY.legalName} · registered in {COMPANY.registeredIn}, company no. {COMPANY.number} · {COMPANY.shortAddress}</div>
+      </div>
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <a href={`mailto:${EMAILS.hello}`} class="normal-case tracking-normal hover:text-fg">{EMAILS.hello}</a>
+        <a href={`mailto:${EMAIL}`} class="hover:text-fg">{EMAIL}</a>
         <a href={LINKS.github} class="hover:text-fg">GitHub</a>
         <a href="/blog/rss.xml" class="hover:text-fg">RSS</a>
       </div>
     </div>
   </div>
 </footer>
+
 
 <script>
   import { applyTheme, currentTheme, type Theme } from '../lib/theme';

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, X, MessageSquare, StickyNote } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, StickyNote } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { tone } from "@/lib/tones";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { q } from "@/lib/queries";
 import { isApiError } from "@/lib/api/client";
 import { realtime } from "@/lib/realtime/manager";
+import { useRealtime } from "@/lib/realtime/store";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useAI } from "@/lib/ai";
 import { useTranslation } from "react-i18next";
@@ -33,12 +34,14 @@ import { CheckBurst } from "../CheckBurst";
 import { intent } from "../motion";
 import { focusField, missingForSolve, useDisplay, useTicketFields } from "../fields";
 import { usePageCrumb } from "@/app/useBreadcrumbs";
+import { useMarkTicketNotificationsRead } from "@/app/notificationRead";
 import { useTicketViewers } from "../presence";
 import { useDeleteTicket, useUpdateTicket } from "../useTicketActions";
 import { Timeline } from "./Timeline";
 import { Composer, type ComposerHandle } from "./Composer";
 import { TicketProperties, type PropPicker } from "./TicketProperties";
 import { MergeDialog } from "./MergeDialog";
+import { TicketTeamChips, useTeamsCtx } from "../teams";
 import { SnoozeMenu } from "./SnoozeMenu";
 
 const PANEL_KEY = "od-ticket-panel";
@@ -131,6 +134,7 @@ export default function TicketDetail({
   const { data: ticketFields } = useTicketFields();
   const reduced = useReducedMotion();
   const t = ticket.data;
+  const teamsCtx = useTeamsCtx();
   useDocumentTitle(t ? `#${t.number} ${t.subject}` : null);
   usePageCrumb(t ? `#${t.number}` : null);
 
@@ -139,11 +143,22 @@ export default function TicketDetail({
     if (t && canEdit && intent.take(t.id, t.number)) composer.current?.focus("reply");
   }, [t?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Seeing the ticket reads its notifications, so they are never emailed.
+  useMarkTicketNotificationsRead(realId);
+
   useEffect(() => {
     if (!realId) return;
     realtime()?.setActiveTicket(realId);
     return () => realtime()?.setActiveTicket(null);
   }, [realId]);
+
+  // Moved to a private team this person is not on: it is gone from their view.
+  const hiddenAt = useRealtime((s) => (realId ? s.hidden[realId] : undefined));
+  useEffect(() => {
+    if (!hiddenAt) return;
+    toast.info(tr("detail.movedPrivate"));
+    onClose();
+  }, [hiddenAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const togglePanel = () => {
     setPanel((p) => {
@@ -212,10 +227,11 @@ export default function TicketDetail({
       s: (e: KeyboardEvent) => (e.shiftKey ? spam() : openPicker("status")),
       h: () => setSnoozeOpen(true),
       p: () => openPicker("priority"),
+      t: () => teamsCtx.hasTeams && openPicker("team"),
       e: solve,
       i: () => assignMe(),
       "]": togglePanel,
-      "mod+j": () => composer.current?.aiDraft(),
+      // mod+J drafts a reply from inside the composer (Composer.tsx); elsewhere it opens Ollie.
     },
     !!t && canEdit,
   );
@@ -227,11 +243,12 @@ export default function TicketDetail({
       commands: [
         { id: "reply", label: tr("commands.reply"), shortcut: "r", icon: <MessageSquare />, run: () => composer.current?.focus("reply") },
         { id: "note", label: tr("commands.note"), shortcut: "n", icon: <StickyNote />, run: () => composer.current?.focus("note") },
-        ...(aiOn ? [{ id: "ai-draft", label: tAi("composer.command"), shortcut: "mod j", icon: <AiIcon />, run: () => composer.current?.aiDraft() }] : []),
+        ...(aiOn ? [{ id: "ai-draft", label: tAi("composer.command"), icon: <AiIcon />, run: () => composer.current?.aiDraft() }] : []),
         { id: "assign-me", label: tr("commands.assignMe"), shortcut: "i", icon: <UserRound />, run: assignMe },
         { id: "assign", label: tr("commands.assign"), shortcut: "a", icon: <UserRound />, run: () => openPicker("assignee") },
         { id: "status", label: tr("commands.status"), shortcut: "s", icon: <CircleDot />, run: () => openPicker("status") },
         { id: "priority", label: tr("commands.priority"), shortcut: "p", icon: <Signal />, run: () => openPicker("priority") },
+        ...(teamsCtx.hasTeams ? [{ id: "team", label: tr("commands.team"), shortcut: "t", keywords: ["team", "move", "transfer"], icon: <Users />, run: () => openPicker("team") }] : []),
         { id: "severity", label: tr("commands.severity"), icon: <SeverityChip severity={t.severity ?? "sev3"} />, run: () => openPicker("severity") },
         ...severityOrder
           .filter((s) => s !== t.severity)
@@ -250,7 +267,7 @@ export default function TicketDetail({
     });
     return () => usePageCommands.setState({ commands: [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn]);
+  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn, teamsCtx.hasTeams]);
 
   if (ticket.isError) {
     return (
@@ -310,6 +327,7 @@ export default function TicketDetail({
                 {t.severity && <HeaderSeverity t={t} />}
                 {slaState(t) && slaState(t)!.state !== "on_track" && <SlaPill ticket={t} />}
                 {t.spam && <Badge tone="red">{tr("detail.spam")}</Badge>}
+                <TicketTeamChips t={t} ctx={teamsCtx} className="ml-0.5" />
               </span>
             </>
           ) : (
@@ -400,6 +418,7 @@ export default function TicketDetail({
             loading={!messages.data}
             onRetry={(m) => composer.current?.retry(m)}
             contactName={t?.contact?.name}
+            receivedAt={t && t.channel !== "email" ? null : t?.received_at}
           />
           {t && canEdit && <Composer ref={composer} ticket={t} />}
         </div>

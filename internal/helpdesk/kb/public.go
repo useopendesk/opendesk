@@ -14,7 +14,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/domain"
-	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
@@ -29,8 +28,8 @@ type helpCenterHome struct {
 	Title       string         `json:"title"`
 	Collections []KbCollection `json:"collections"`
 	Featured    []KbArticle    `json:"featured"`
-	Locale      string         `json:"locale" doc:"Workspace default language (BCP 47), empty when not set"`
-	LogoURL     domain.Avatar  `json:"logo_url" doc:"Help center logo, else the workspace logo"`
+	Locale      string         `json:"locale" doc:"The brand's language, else the workspace's (BCP 47); empty when not set"`
+	LogoURL     domain.Avatar  `json:"logo_url" doc:"The brand's help center logo, else its logo, else the workspace logo"`
 	FaviconURL  domain.Avatar  `json:"favicon_url"`
 }
 
@@ -58,28 +57,49 @@ func rateLimit(d *deps.Deps, key string, perMinute int) func(huma.Context, func(
 	}
 }
 
-// helpCenter resolves a workspace whose help center is enabled; anything else is 404.
-func helpCenter(ctx context.Context, d *deps.Deps, slug string) (uuid.UUID, string, error) {
-	var wid uuid.UUID
-	var name string
-	var raw []byte
-	err := d.DB.Pool.QueryRow(ctx, `SELECT id, name, settings FROM workspaces WHERE slug = $1`, strings.ToLower(strings.TrimSpace(slug))).
-		Scan(&wid, &name, &raw)
-	if db.IsNotFound(err) {
-		return uuid.Nil, "", httpx.NotFound("Help center")
+// helpCenterBrand is the brand a public help center path names.
+type helpCenterBrand struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Title       string
+	Locale      string
+	Logo        domain.Avatar
+	Favicon     domain.Avatar
+}
+
+// helpCenter resolves a brand slug whose help center is enabled; anything else is 404. The
+// default brand's slug is the workspace slug, so workspace help center links keep working.
+func helpCenter(ctx context.Context, d *deps.Deps, slug string) (helpCenterBrand, error) {
+	var b helpCenterBrand
+	var name, title, wsLocale string
+	var enabled bool
+	var imgs map[string]string
+	var wsLogo domain.Avatar
+	err := d.DB.Pool.QueryRow(ctx, `SELECT b.id, b.workspace_id, b.name, b.help_center_title, b.help_center_enabled, b.locale, b.images,
+		COALESCE(w.settings ->> 'locale', ''), w.avatar_url
+		FROM brands b JOIN workspaces w ON w.id = b.workspace_id WHERE b.slug = $1`, strings.ToLower(strings.TrimSpace(slug))).
+		Scan(&b.ID, &b.WorkspaceID, &name, &title, &enabled, &b.Locale, &imgs, &wsLocale, &wsLogo)
+	if db.IsNotFound(err) || (err == nil && !enabled) {
+		return b, httpx.NotFound("Help center")
 	}
 	if err != nil {
-		return uuid.Nil, "", httpx.Wrap(err)
+		return b, httpx.Wrap(err)
 	}
-	s := hd.ParseSettings(raw)
-	if !s.HelpCenterEnabled {
-		return uuid.Nil, "", httpx.NotFound("Help center")
+	b.Title = strings.TrimSpace(title)
+	if b.Title == "" {
+		b.Title = name
 	}
-	title := strings.TrimSpace(s.HelpCenterTitle)
-	if title == "" {
-		title = name
+	if b.Locale == "" {
+		b.Locale = wsLocale
 	}
-	return wid, title, nil
+	b.Logo, b.Favicon = domain.Avatar(imgs["help_center_logo"]), domain.Avatar(imgs["help_center_favicon"])
+	if b.Logo == "" {
+		b.Logo = domain.Avatar(imgs["logo"])
+	}
+	if b.Logo == "" {
+		b.Logo = wsLogo
+	}
+	return b, nil
 }
 
 func registerPublic(d *deps.Deps, api huma.API) {
@@ -92,37 +112,25 @@ func registerPublic(d *deps.Deps, api huma.API) {
 		func(ctx context.Context, in *struct {
 			Slug string `path:"workspace_slug"`
 		}) (*struct{ Body helpCenterHome }, error) {
-			wid, title, err := helpCenter(ctx, d, in.Slug)
+			hc, err := helpCenter(ctx, d, in.Slug)
 			if err != nil {
 				return nil, err
 			}
-			rows, err := d.DB.Pool.Query(ctx, collectionSelect+` WHERE k.workspace_id = $2 AND EXISTS
-				(SELECT 1 FROM kb_articles a WHERE a.collection_id = k.id AND a.status = 'published')
-				ORDER BY k.position, k.name, k.id`, true, wid)
+			rows, err := d.DB.Pool.Query(ctx, publicCollectionSelect+` WHERE k.workspace_id = $2 AND COALESCE(k.brand_id, $1) = $1
+				AND EXISTS (SELECT 1 FROM kb_articles a WHERE a.collection_id = k.id AND a.status = 'published' AND COALESCE(k.brand_id, a.brand_id, $1) = $1)
+				ORDER BY k.position, k.name, k.id`, hc.ID, hc.WorkspaceID)
 			cols, err := collectRows(rows, err, scanCollection)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			rows, err = d.DB.Pool.Query(ctx, articleSelect+` WHERE a.workspace_id = $1 AND a.status = 'published'
-				ORDER BY a.views DESC, a.published_at DESC NULLS LAST, a.id LIMIT $2`, wid, featuredLimit)
+			rows, err = d.DB.Pool.Query(ctx, articleSelect+` WHERE a.workspace_id = $1 AND a.status = 'published' AND `+forBrand(3)+`
+				ORDER BY a.views DESC, a.published_at DESC NULLS LAST, a.id LIMIT $2`, hc.WorkspaceID, featuredLimit, hc.ID)
 			featured, err := collectRows(rows, err, scanArticle)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			st, err := hd.LoadSettings(ctx, d.DB.Pool, wid)
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			home := helpCenterHome{Title: title, Collections: cols, Featured: publicList(featured), Locale: st.Locale}
-			var logo string
-			var brand map[string]string
-			if err := d.DB.Pool.QueryRow(ctx, `SELECT avatar_url, brand_images FROM workspaces WHERE id = $1`, wid).Scan(&logo, &brand); err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			home.LogoURL, home.FaviconURL = domain.Avatar(brand["help_center_logo"]), domain.Avatar(brand["help_center_favicon"])
-			if home.LogoURL == "" {
-				home.LogoURL = domain.Avatar(logo)
-			}
+			home := helpCenterHome{Title: hc.Title, Collections: cols, Featured: publicList(featured), Locale: hc.Locale,
+				LogoURL: hc.Logo, FaviconURL: hc.Favicon}
 			return &struct{ Body helpCenterHome }{home}, nil
 		})
 
@@ -133,11 +141,12 @@ func registerPublic(d *deps.Deps, api huma.API) {
 			WSSlug string `path:"workspace_slug"`
 			Slug   string `path:"slug"`
 		}) (*struct{ Body helpCenterCollection }, error) {
-			wid, _, err := helpCenter(ctx, d, in.WSSlug)
+			hc, err := helpCenter(ctx, d, in.WSSlug)
 			if err != nil {
 				return nil, err
 			}
-			c, err := scanCollection(d.DB.Pool.QueryRow(ctx, collectionSelect+` WHERE k.workspace_id = $2 AND k.slug = $3`, true, wid, in.Slug))
+			c, err := scanCollection(d.DB.Pool.QueryRow(ctx, publicCollectionSelect+` WHERE k.workspace_id = $2 AND k.slug = $3
+				AND COALESCE(k.brand_id, $1) = $1`, hc.ID, hc.WorkspaceID, in.Slug))
 			if db.IsNotFound(err) {
 				return nil, httpx.NotFound("Collection")
 			}
@@ -145,7 +154,7 @@ func registerPublic(d *deps.Deps, api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			rows, err := d.DB.Pool.Query(ctx, articleSelect+` WHERE a.workspace_id = $1 AND a.collection_id = $2 AND a.status = 'published'
-				ORDER BY a.position, a.title, a.id`, wid, c.ID)
+				AND `+forBrand(3)+` ORDER BY a.position, a.title, a.id`, hc.WorkspaceID, c.ID, hc.ID)
 			arts, err := collectRows(rows, err, scanArticle)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -160,20 +169,21 @@ func registerPublic(d *deps.Deps, api huma.API) {
 			WSSlug string `path:"workspace_slug"`
 			Slug   string `path:"slug"`
 		}) (*articleOut, error) {
-			wid, _, err := helpCenter(ctx, d, in.WSSlug)
+			hc, err := helpCenter(ctx, d, in.WSSlug)
 			if err != nil {
 				return nil, err
 			}
 			var id uuid.UUID
-			err = d.DB.Pool.QueryRow(ctx, `UPDATE kb_articles SET views = views + 1
-				WHERE workspace_id = $1 AND slug = $2 AND status = 'published' RETURNING id`, wid, in.Slug).Scan(&id)
+			err = d.DB.Pool.QueryRow(ctx, `UPDATE kb_articles a SET views = views + 1
+				WHERE a.workspace_id = $1 AND a.slug = $2 AND a.status = 'published' AND `+forBrand(3)+` RETURNING a.id`,
+				hc.WorkspaceID, in.Slug, hc.ID).Scan(&id)
 			if db.IsNotFound(err) {
 				return nil, httpx.NotFound("Article")
 			}
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			a, err := loadArticle(ctx, d.DB.Pool, wid, id)
+			a, err := loadArticle(ctx, d.DB.Pool, hc.WorkspaceID, id)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -187,7 +197,7 @@ func registerPublic(d *deps.Deps, api huma.API) {
 			WSSlug string `path:"workspace_slug"`
 			Q      string `query:"q" maxLength:"200"`
 		}) (*struct{ Body []KbArticle }, error) {
-			wid, _, err := helpCenter(ctx, d, in.WSSlug)
+			hc, err := helpCenter(ctx, d, in.WSSlug)
 			if err != nil {
 				return nil, err
 			}
@@ -198,7 +208,7 @@ func registerPublic(d *deps.Deps, api huma.API) {
 			}
 			tsq := searchQuery(2)
 			rows, err := d.DB.Pool.Query(ctx, articleSelect+` WHERE a.workspace_id = $1 AND a.status = 'published' AND a.search @@ `+tsq+`
-				ORDER BY ts_rank(a.search, `+tsq+`) DESC, a.views DESC, a.id LIMIT $4`, wid, q, pq, publicSearchLimit)
+				AND `+forBrand(5)+` ORDER BY ts_rank(a.search, `+tsq+`) DESC, a.views DESC, a.id LIMIT $4`, hc.WorkspaceID, q, pq, publicSearchLimit, hc.ID)
 			arts, err := collectRows(rows, err, scanArticle)
 			if err != nil {
 				return nil, httpx.Wrap(err)

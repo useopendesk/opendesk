@@ -13,23 +13,57 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 )
 
 type kbCollectionCreate struct {
-	Name        string `json:"name" minLength:"1" maxLength:"100"`
-	Slug        string `json:"slug,omitempty" maxLength:"100"`
-	Description string `json:"description,omitempty" maxLength:"1000"`
-	Position    int    `json:"position,omitempty"`
+	Name        string  `json:"name" minLength:"1" maxLength:"100"`
+	Slug        string  `json:"slug,omitempty" maxLength:"100"`
+	Description string  `json:"description,omitempty" maxLength:"1000"`
+	Position    int     `json:"position,omitempty"`
+	BrandID     *string `json:"brand_id,omitempty" required:"false" nullable:"true" doc:"Brand id, or null for every brand"`
 }
 
 type kbCollectionPatch struct {
-	Name        *string `json:"name,omitempty" minLength:"1" maxLength:"100"`
-	Slug        *string `json:"slug,omitempty" maxLength:"100"`
-	Description *string `json:"description,omitempty" maxLength:"1000"`
-	Position    *int    `json:"position,omitempty"`
+	Name        *string             `json:"name,omitempty" minLength:"1" maxLength:"100"`
+	Slug        *string             `json:"slug,omitempty" maxLength:"100"`
+	Description *string             `json:"description,omitempty" maxLength:"1000"`
+	Position    *int                `json:"position,omitempty"`
+	BrandID     hd.Nullable[string] `json:"brand_id,omitempty" doc:"Brand id, or null for every brand"`
+}
+
+// brandRef parses an optional brand id of the workspace; "" means every brand.
+func brandRef(ctx context.Context, q db.Querier, wid uuid.UUID, raw string) (*uuid.UUID, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	id, err := hd.ParseRef(raw, "brand_id")
+	if err != nil {
+		return nil, err
+	}
+	if err := brands.Check(ctx, q, wid, id); err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+// brandFilter is the ?brand_id= filter of the agent lists: a brand id, or "none" for what
+// every brand shows. col is the brand expression it applies to.
+func brandFilter(raw, col string, arg func(any) string) (string, error) {
+	switch strings.TrimSpace(raw) {
+	case "":
+		return "", nil
+	case "none":
+		return col + " IS NULL", nil
+	}
+	id, err := hd.ParseRef(raw, "brand_id")
+	if err != nil {
+		return "", err
+	}
+	return col + " = " + arg(id), nil
 }
 
 type collectionOut struct{ Body KbCollection }
@@ -73,12 +107,25 @@ func slugConflict(err error) error {
 func registerCollections(d *deps.Deps, api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "list-kb-collections", Method: http.MethodGet, Path: "/v1/kb/collections",
 		Summary: "List knowledge base collections", Tags: []string{"Knowledge base"}},
-		func(ctx context.Context, _ *struct{}) (*struct{ Body httpx.Page[KbCollection] }, error) {
+		func(ctx context.Context, in *struct {
+			BrandID string `query:"brand_id" doc:"Only this brand's collections; \"none\" for those of every brand"`
+		}) (*struct{ Body httpx.Page[KbCollection] }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeKBRead)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			rows, err := d.DB.Pool.Query(ctx, collectionSelect+` WHERE k.workspace_id = $2 ORDER BY k.position, k.name, k.id`, false, p.WorkspaceID)
+			args := []any{false, p.WorkspaceID}
+			filter, err := brandFilter(in.BrandID, "k.brand_id", func(v any) string {
+				args = append(args, v)
+				return "$" + itoaArg(len(args))
+			})
+			if err != nil {
+				return nil, err
+			}
+			if filter != "" {
+				filter = " AND " + filter
+			}
+			rows, err := d.DB.Pool.Query(ctx, collectionSelect+` WHERE k.workspace_id = $2`+filter+` ORDER BY k.position, k.name, k.id`, args...)
 			out, err := collectRows(rows, err, scanCollection)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -122,13 +169,19 @@ func registerCollections(d *deps.Deps, api huma.API) {
 			}
 			var c KbCollection
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				var brand *uuid.UUID
+				if in.Body.BrandID != nil {
+					if brand, err = brandRef(ctx, tx, p.WorkspaceID, *in.Body.BrandID); err != nil {
+						return err
+					}
+				}
 				slug, err := pickSlug(ctx, tx, "kb_collections", p.WorkspaceID, &in.Body.Slug, name, nil)
 				if err != nil {
 					return err
 				}
 				id := ids.New()
-				if _, err := tx.Exec(ctx, `INSERT INTO kb_collections (id, workspace_id, name, slug, description, position)
-					VALUES ($1,$2,$3,$4,$5,$6)`, id, p.WorkspaceID, name, slug, strings.TrimSpace(in.Body.Description), in.Body.Position); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO kb_collections (id, workspace_id, name, slug, description, position, brand_id)
+					VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, p.WorkspaceID, name, slug, strings.TrimSpace(in.Body.Description), in.Body.Position, brand); err != nil {
 					return slugConflict(err)
 				}
 				if c, err = loadCollection(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -183,8 +236,16 @@ func registerCollections(d *deps.Deps, api huma.API) {
 				if b.Position != nil {
 					cur.Position = *b.Position
 				}
-				if _, err := tx.Exec(ctx, `UPDATE kb_collections SET name = $3, slug = $4, description = $5, position = $6, updated_at = now()
-					WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id, cur.Name, cur.Slug, cur.Description, cur.Position); err != nil {
+				if b.BrandID.Set {
+					cur.BrandID = nil
+					if !b.BrandID.Null {
+						if cur.BrandID, err = brandRef(ctx, tx, p.WorkspaceID, b.BrandID.Value); err != nil {
+							return err
+						}
+					}
+				}
+				if _, err := tx.Exec(ctx, `UPDATE kb_collections SET name = $3, slug = $4, description = $5, position = $6, brand_id = $7, updated_at = now()
+					WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id, cur.Name, cur.Slug, cur.Description, cur.Position, cur.BrandID); err != nil {
 					return slugConflict(err)
 				}
 				if c, err = loadCollection(ctx, tx, p.WorkspaceID, id); err != nil {

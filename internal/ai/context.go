@@ -86,8 +86,12 @@ func role(m domain.Message) string {
 	}
 }
 
+// author is the name a message is shown under. The AI's own replies have none here: the
+// role names them, and their from_name is the From name the customer saw ("Ollie at Acme").
 func author(m domain.Message) string {
 	switch {
+	case m.AI && m.Author.User == nil:
+		return ""
 	case m.Author.User != nil:
 		return m.Author.User.Name
 	case m.Author.Contact != nil:

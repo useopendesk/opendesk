@@ -194,7 +194,7 @@ func TestPasskeyFlow(t *testing.T) {
 	}
 	assertion := key.assert(lopts, 1, true)
 	lf := c.do("POST", "/v1/auth/passkey/login/finish", map[string]any{"passkey_token": lb.str("passkey_token"), "credential": assertion})
-	if lf.Status != 200 || lf.str("access_token") == "" || lf.str("user", "email") != email || c.cookie(RefreshCookie) == "" {
+	if lf.Status != 200 || lf.str("access_token") == "" || lf.str("user", "email") != email || c.cookie(RefreshCookieName(uuid.MustParse(lf.str("user", "id")))) == "" {
 		t.Fatalf("login finish: %d %s", lf.Status, lf.Raw)
 	}
 	claims, err := e.d.Tokens.Verify(lf.str("access_token"), auth.PurposeAccess)

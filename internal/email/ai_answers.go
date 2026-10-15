@@ -71,14 +71,7 @@ func aiAnswerable(pm *parsedMail, sender string) bool {
 		return false
 	}
 	for _, addr := range []string{sender, pm.FromAddr} {
-		local, _, _ := strings.Cut(strings.ToLower(addr), "@")
-		local, _, _ = strings.Cut(local, "+")
-		for _, n := range noReplyLocals {
-			if local == n || strings.HasPrefix(local, n+"-") || strings.HasPrefix(local, n+".") {
-				return false
-			}
-		}
-		if strings.Contains(local, "noreply") || strings.Contains(local, "no-reply") || strings.Contains(local, "donotreply") {
+		if noReplySender(addr) {
 			return false
 		}
 	}

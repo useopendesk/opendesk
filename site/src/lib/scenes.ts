@@ -7,6 +7,7 @@
  *     <p data-step="2" data-stream>          gets .on, then its words stream in
  *     <i data-step="1" data-until="3">       shows from step 1, leaves at step 3
  *
+ * Each round eases back to the first frame and plays again, without a blank.
  * Without JS, or under reduced motion, every step shows in its final state.
  */
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -92,9 +93,12 @@ export function initScenes() {
           if (isLive()) held += 100;
         }
         if (seq.dataset.once !== undefined) return;
-        seq.classList.add('seq-reset');
+        // Settle back: every step eases to its first state, the words last, so
+        // the next round starts from a calm frame instead of a blank one.
+        steps.forEach((s) => s.classList.remove('on', 'off'));
+        await sleep(650);
+        seq.querySelectorAll('.w.on').forEach((w) => w.classList.remove('on'));
         await sleep(450);
-        seq.classList.remove('seq-reset');
       }
     };
     loop();

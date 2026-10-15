@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/plan"
@@ -100,7 +101,6 @@ type WorkspaceImages struct {
 	HelpCenterFavicon domain.Avatar `json:"help_center_favicon"`
 	WidgetAvatar      domain.Avatar `json:"widget_avatar"`
 	WidgetLauncher    domain.Avatar `json:"widget_launcher"`
-	WidgetBot         domain.Avatar `json:"widget_bot" doc:"The widget AI agent's picture; null = the Ollie mark"`
 }
 
 type CoreMembership struct {
@@ -108,13 +108,23 @@ type CoreMembership struct {
 	Role      string        `json:"role" enum:"owner,admin,agent,viewer"`
 }
 
-const workspaceCols = `w.id, w.name, w.slug, w.widget_key, w.settings, w.avatar_url, w.brand_images, w.created_at`
+// workspaceCols reads the widget key and the help center and widget pictures from the
+// default brand and its first widget, which own them (contracts/teams.md).
+const workspaceCols = `w.id, w.name, w.slug,
+	COALESCE((SELECT g.key FROM widgets g WHERE g.id = (` + primaryWidget + `)), w.widget_key),
+	w.settings, w.avatar_url, w.brand_images, w.created_at,
+	COALESCE((SELECT b.images FROM brands b WHERE b.workspace_id = w.id AND b.is_default), '{}'),
+	COALESCE((SELECT g.images FROM widgets g WHERE g.id = (` + primaryWidget + `)), '{}')`
+
+// primaryWidget is brands.PrimaryWidgetSQL for the workspace aliased w.
+const primaryWidget = `SELECT g.id FROM widgets g JOIN brands b ON b.id = g.brand_id AND b.is_default
+	WHERE g.workspace_id = w.id ORDER BY g.position, g.created_at, g.id LIMIT 1`
 
 func scanWorkspace(row pgx.Row, extra ...any) (CoreWorkspace, error) {
 	var w CoreWorkspace
 	var raw []byte
-	var brand map[string]string
-	err := row.Scan(append([]any{&w.ID, &w.Name, &w.Slug, &w.WidgetKey, &raw, &w.AvatarURL, &brand, &w.CreatedAt}, extra...)...)
+	var ws, brand, widget map[string]string
+	err := row.Scan(append([]any{&w.ID, &w.Name, &w.Slug, &w.WidgetKey, &raw, &w.AvatarURL, &ws, &w.CreatedAt, &brand, &widget}, extra...)...)
 	if err != nil {
 		return w, err
 	}
@@ -123,8 +133,7 @@ func scanWorkspace(row pgx.Row, extra ...any) (CoreWorkspace, error) {
 		w.AvatarSource = ptr("upload")
 	}
 	w.Images = WorkspaceImages{HelpCenterLogo: domain.Avatar(brand["help_center_logo"]), HelpCenterFavicon: domain.Avatar(brand["help_center_favicon"]),
-		WidgetAvatar: domain.Avatar(brand["widget_avatar"]), WidgetLauncher: domain.Avatar(brand["widget_launcher"]),
-		WidgetBot: domain.Avatar(brand["widget_bot"])}
+		WidgetAvatar: domain.Avatar(widget["avatar"]), WidgetLauncher: domain.Avatar(widget["launcher"])}
 	return w, nil
 }
 
@@ -248,28 +257,18 @@ func slugify(name string) string {
 	return s
 }
 
-func newWidgetKey() string { return "wk_" + crypto.RandomString(24) }
-
-// newWidgetSecret returns the plaintext widget secret and its sealed form. The widget
-// verifies user_hash = hex(HMAC-SHA256(secret, user_id)) with the plaintext as key.
-func (s *svc) newWidgetSecret() (string, []byte, error) {
-	secret := "wsec_" + crypto.RandomToken(32)
-	sealed, err := s.d.Box.Seal([]byte(secret))
-	return secret, sealed, err
-}
-
-// createWorkspace creates a workspace owned by uid and seeds its defaults.
+// createWorkspace creates a workspace owned by uid and seeds its defaults, including its
+// default brand and widget.
 func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal, name string) (CoreWorkspace, error) {
 	wid := ids.New()
-	_, sealed, err := s.newWidgetSecret()
-	if err != nil {
-		return CoreWorkspace{}, err
-	}
 	base := slugify(name)
 	slug := base
 	for i := 0; ; i++ {
+		// The default brand takes the workspace slug as its help center address, so the
+		// slug must be free among brands too.
 		var taken bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspaces WHERE slug = $1)`, slug).Scan(&taken); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspaces WHERE slug = $1)
+			OR EXISTS (SELECT 1 FROM brands WHERE slug = $1)`, slug).Scan(&taken); err != nil {
 			return CoreWorkspace{}, err
 		}
 		if !taken {
@@ -285,8 +284,12 @@ func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal,
 	if utf8.RuneCountInString(settings["help_center_title"].(string)) > 100 {
 		settings["help_center_title"] = "Help center"
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO workspaces (id, name, slug, widget_key, widget_secret_enc, settings) VALUES ($1, $2, $3, $4, $5, $6)`,
-		wid, name, slug, newWidgetKey(), sealed, settings); err != nil {
+	widgetKey := brands.NewWidgetKey()
+	if _, err := tx.Exec(ctx, `INSERT INTO workspaces (id, name, slug, widget_key, settings) VALUES ($1, $2, $3, $4, $5)`,
+		wid, name, slug, widgetKey, settings); err != nil {
+		return CoreWorkspace{}, err
+	}
+	if _, err := brands.CreateDefaults(ctx, tx, s.d.Box, wid, name, slug, settings["help_center_title"].(string), widgetKey); err != nil {
 		return CoreWorkspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`, wid, p.UserID); err != nil {
@@ -500,6 +503,9 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				if err := requeuePictures(ctx, tx, p.WorkspaceID, patch); err != nil {
 					return err
 				}
+				if err := brands.SyncDefault(ctx, tx, s.d.Cfg.AppURL, p.WorkspaceID, patch); err != nil {
+					return err
+				}
 				if w, err = loadWorkspace(ctx, tx, p.WorkspaceID); err != nil {
 					return err
 				}
@@ -614,45 +620,79 @@ func (s *svc) registerWorkspaces(api huma.API) {
 		})
 
 	register(s, api, huma.Operation{OperationID: "rotate-widget-secret", Method: http.MethodPost, Path: "/v1/workspace/widget-secret/rotate",
-		Summary: "Rotate the chat widget identity secret", Tags: tags},
-		func(ctx context.Context, _ *struct{}) (*struct {
-			CacheControl string `header:"Cache-Control"`
-			Body         struct {
-				Secret string `json:"secret"`
-			}
-		}, error) {
-			p, err := requireUserWorkspace(ctx, auth.RoleAdmin)
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			if err := s.requireMFA(ctx, p); err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			secret, sealed, err := s.newWidgetSecret()
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			err = s.tx(ctx, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `UPDATE workspaces SET widget_secret_enc = $2, updated_at = now() WHERE id = $1`, p.WorkspaceID, sealed); err != nil {
-					return err
-				}
-				return audit.Log(ctx, tx, p, p.WorkspaceID, "workspace.widget_secret_rotated", "workspace", &p.WorkspaceID, nil)
-			})
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			out := &struct {
-				CacheControl string `header:"Cache-Control"`
-				Body         struct {
-					Secret string `json:"secret"`
-				}
-			}{CacheControl: "no-store"}
-			out.Body.Secret = secret
-			return out, nil
+		Summary: "Rotate the chat widget identity secret", Description: "The default brand's first widget; see /v1/widgets/{id}/secret/rotate.",
+		Tags: tags},
+		func(ctx context.Context, _ *struct{}) (*widgetSecretOut, error) {
+			return s.rotateWidgetSecret(ctx, nil)
 		})
+
+	register(s, api, huma.Operation{OperationID: "rotate-widget-secret-by-id", Method: http.MethodPost, Path: "/v1/widgets/{id}/secret/rotate",
+		Summary: "Rotate a chat widget's identity secret", Description: "Answers the new secret once; the previous one stops verifying user_hash.",
+		Tags: []string{"Widget"}},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*widgetSecretOut, error) {
+			id, err := parseID(in.ID, "Widget")
+			if err != nil {
+				return nil, err
+			}
+			return s.rotateWidgetSecret(ctx, &id)
+		})
+}
+
+type widgetSecretOut struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Secret string `json:"secret"`
+	}
+}
+
+// rotateWidgetSecret replaces a widget's identity secret (the default brand's first widget
+// when id is nil). An owner-level operation: a second factor when the user has one, and a
+// recent sign-in.
+func (s *svc) rotateWidgetSecret(ctx context.Context, id *uuid.UUID) (*widgetSecretOut, error) {
+	p, err := requireUserWorkspace(ctx, auth.RoleAdmin)
+	if err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	if err := s.requireMFA(ctx, p); err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	secret, sealed, err := brands.NewWidgetSecret(s.d.Box)
+	if err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	err = s.tx(ctx, func(tx pgx.Tx) error {
+		var widgetID uuid.UUID
+		if id == nil {
+			widgetID, err = brands.PrimaryWidgetID(ctx, tx, p.WorkspaceID)
+		} else {
+			err = tx.QueryRow(ctx, `SELECT id FROM widgets WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, *id).Scan(&widgetID)
+		}
+		if db.IsNotFound(err) {
+			return httpx.NotFound("Widget")
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE widgets SET secret_enc = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+			p.WorkspaceID, widgetID, sealed); err != nil {
+			return err
+		}
+		if id == nil {
+			return audit.Log(ctx, tx, p, p.WorkspaceID, "workspace.widget_secret_rotated", "widget", &widgetID, nil)
+		}
+		return audit.Log(ctx, tx, p, p.WorkspaceID, "widget.secret_rotated", "widget", &widgetID, nil)
+	})
+	if err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	out := &widgetSecretOut{CacheControl: "no-store"}
+	out.Body.Secret = secret
+	return out, nil
 }
 
 // publishWorkspace sends workspace.updated.

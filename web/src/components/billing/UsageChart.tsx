@@ -1,4 +1,4 @@
-// Credits per day, stacked by feature. The top features take the chart series
+// AI usage in US dollars per day, stacked by feature. The top features take the chart series
 // hues in order (lib/tones SERIES), the rest fold into a quiet "Other". Each
 // feature keeps its hue in every bar; the legend, tooltip and table carry the names.
 
@@ -48,7 +48,7 @@ export function UsageChart({ days, series }: { days: StackedDay[]; series: Key[]
   const [hover, setHover] = useState<number | null>(null);
 
   const plotW = Math.max(0, width - ML - MR);
-  const ticks = niceTicks(Math.max(1, ...days.map((d) => d.total)));
+  const ticks = niceTicks(Math.max(0.01, ...days.map((d) => d.total)));
   const top = ticks[ticks.length - 1];
   const slot = days.length ? plotW / days.length : 0;
   const barW = Math.max(2, Math.min(18, slot * 0.62));
@@ -69,19 +69,19 @@ export function UsageChart({ days, series }: { days: StackedDay[]; series: Key[]
             <g key={v}>
               <line x1={ML} x2={ML + plotW} y1={y(v)} y2={y(v)} stroke={v === 0 ? "var(--line)" : "var(--line-soft)"} shapeRendering="crispEdges" />
               <text x={ML - 8} y={y(v)} dy="0.32em" textAnchor="end" className="mono" fontSize={10.5} fill="var(--fg-4)">
-                {fmt.credits(v)}
+                {fmt.usd(v, { tiny: true })}
               </text>
             </g>
           ))}
           {days.map((d, i) => {
             let acc = 0;
-            const segs = d.stacks.filter((s) => s.credits > 0);
+            const segs = d.stacks.filter((s) => s.usd > 0);
             const dim = hover !== null && hover !== i;
             return (
               <g key={d.date} opacity={dim ? 0.45 : 1} style={{ transition: "opacity 120ms" }}>
                 {segs.map((s, j) => {
                   const base = y(acc);
-                  acc += s.credits;
+                  acc += s.usd;
                   const isTop = j === segs.length - 1;
                   // A 2px surface gap between stacked segments: 1px off each side.
                   const bottom = base - (j > 0 ? 1 : 0);
@@ -143,13 +143,13 @@ export function UsageChart({ days, series }: { days: StackedDay[]; series: Key[]
         >
           <div className="mb-1.5 flex items-baseline justify-between gap-4">
             <span className="mono text-[10.5px] text-fg-3">{fmt.day(h.date, true)}</span>
-            <span className="mono text-[12.5px] font-semibold">{fmt.credits(h.total)}</span>
+            <span className="mono text-[12.5px] font-semibold">{fmt.usd(h.total, { tiny: true })}</span>
           </div>
           {[...h.stacks].reverse().map((s) => (
             <div key={s.key} className="flex items-center gap-2 py-px">
               <span className="size-2 rounded-xs" style={{ background: shadeOf(series, s.key) }} />
               <span className="flex-1 text-xs text-fg-2">{t(`features.${s.key}`)}</span>
-              <span className="mono text-xs tabular-nums text-fg">{fmt.credits(s.credits)}</span>
+              <span className="mono text-xs tabular-nums text-fg">{fmt.usd(s.usd, { tiny: true })}</span>
             </div>
           ))}
         </div>
@@ -182,10 +182,10 @@ export function UsageDayTable({ days, series }: { days: StackedDay[]; series: Ke
               <td className="py-1.5 text-fg-2">{fmt.day(d.date, true)}</td>
               {d.stacks.map((s) => (
                 <td key={s.key} className="mono py-1.5 text-right tabular-nums text-fg-2">
-                  {fmt.credits(s.credits)}
+                  {fmt.usd(s.usd, { tiny: true })}
                 </td>
               ))}
-              <td className="mono py-1.5 text-right tabular-nums">{fmt.credits(d.total)}</td>
+              <td className="mono py-1.5 text-right tabular-nums">{fmt.usd(d.total, { tiny: true })}</td>
             </tr>
           ))}
         </tbody>

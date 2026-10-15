@@ -18,7 +18,7 @@ func readTools() []*tool {
 	return []*tool{
 		{
 			Name: "search_tickets",
-			Description: "Find tickets by text, status, priority, assignee, label, channel, creation time or SLA state. " +
+			Description: "Find tickets by text, status, priority, assignee, team, label, channel, creation time or SLA state. " +
 				"Returns up to `limit` tickets (newest activity first, or newest created when a time filter is set) and how many matched.",
 			Schema:  obj(merge(ticketFilterProps(), map[string]any{"limit": integer("How many tickets to return (default 20).", 1, 50)})),
 			MinRole: auth.RoleViewer, Active: "Searching tickets", Done: "Searched tickets",
@@ -26,7 +26,7 @@ func readTools() []*tool {
 		},
 		{
 			Name:        "get_ticket",
-			Description: "Read one ticket: its fields, SLA, labels and the latest messages and notes of its thread.",
+			Description: "Read one ticket: its fields, team, brand, the address the customer wrote to and the one replies go out from, SLA, labels and the latest messages and notes of its thread.",
 			Schema:      obj(map[string]any{"ticket": str("The ticket number like #123, or its id.")}, "ticket"),
 			MinRole:     auth.RoleViewer, Active: "Reading the ticket", Done: "Read the ticket",
 			Read: getTicket,
@@ -132,6 +132,7 @@ func getTicket(ctx context.Context, rc *runCtx, in json.RawMessage) (output, err
 	if err != nil {
 		return output{}, err
 	}
+	rc.replyAddress(ctx, &t)
 	var msgs struct {
 		Data []domain.Message `json:"data"`
 	}
@@ -424,12 +425,18 @@ func listTeam(ctx context.Context, rc *runCtx, _ json.RawMessage) (output, error
 	if err != nil {
 		return output{}, err
 	}
-	// Workload: counted directly, scoped to the caller's workspace.
+	// Workload: counted directly, scoped to the caller's workspace and to the tickets the
+	// caller may see (contracts/teams.md "Visibility").
+	hidden, err := domain.HiddenTeams(ctx, rc.svc.d.DB.Pool, rc.p)
+	if err != nil {
+		return output{}, err
+	}
 	type load struct{ open, pending, urgent int }
 	loads := map[string]*load{}
-	rows, err := rc.svc.d.DB.Pool.Query(ctx, `SELECT assignee_id::text, status, priority, count(*) FROM tickets
-		WHERE workspace_id = $1 AND deleted_at IS NULL AND NOT spam AND assignee_id IS NOT NULL AND status IN ('open', 'pending', 'on_hold')
-		GROUP BY 1, 2, 3`, rc.p.WorkspaceID)
+	rows, err := rc.svc.d.DB.Pool.Query(ctx, `SELECT t.assignee_id::text, t.status, t.priority, count(*) FROM tickets t
+		WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam AND t.assignee_id IS NOT NULL AND t.status IN ('open', 'pending', 'on_hold')
+			AND `+domain.VisibleSQLUser("t", 2, 3)+`
+		GROUP BY 1, 2, 3`, rc.p.WorkspaceID, hidden, rc.p.UserID)
 	if err != nil {
 		return output{}, err
 	}

@@ -147,7 +147,7 @@ func TestAgentTests(t *testing.T) {
 	_, seq = e.Events(e.WS.ID, 0)
 	e.runTestJobs()
 	got := e.getRun(run.ID)
-	if got.Status != "done" || got.Passed != 1 || got.Failed != 1 || got.Errored != 0 || got.Credits <= 0 || got.FinishedAt == nil {
+	if got.Status != "done" || got.Passed != 1 || got.Failed != 1 || got.Errored != 0 || got.USD <= 0 || got.FinishedAt == nil {
 		t.Fatalf("run %+v", got)
 	}
 	r1 := resultOf(t, got, pass.ID)
@@ -179,7 +179,7 @@ func TestAgentTests(t *testing.T) {
 	if !containsStr(types, "ai_agent_test_result.updated") || types[len(types)-1] != "ai_agent_test_run.updated" {
 		t.Fatalf("events %v", types)
 	}
-	// Credits are playground usage; nothing reaches the report or the tool log.
+	// The AI usage is playground usage; nothing reaches the report or the tool log.
 	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature <> 'playground'`, e.WS.ID); n != 0 {
 		t.Fatalf("non-playground usage %d", n)
 	}
@@ -193,7 +193,7 @@ func TestAgentTests(t *testing.T) {
 	// test that passed before now fails (it stands out with previous_status).
 	e.F.queue("widget", "Please call our support line to reset it.")
 	e.F.queue("judge", `{"results":[{"n":1,"met":false,"reason":"No Forgot password link."},{"n":2,"met":false,"reason":"It says to call support."}]}`)
-	draft := e.startRun(map[string]any{"test_ids": []any{pass.ID}, "settings": map[string]any{"widget_instructions": "Send people to the phone line."}})
+	draft := e.startRun(map[string]any{"test_ids": []any{pass.ID}, "settings": map[string]any{"bot": map[string]any{"personality": map[string]any{"instructions": "Send people to the phone line."}}}})
 	if !draft.Draft || draft.Total != 1 {
 		t.Fatalf("draft run %+v", draft)
 	}
@@ -226,13 +226,13 @@ func TestAgentTests(t *testing.T) {
 		t.Fatalf("tool calls %+v", calls)
 	}
 
-	// Out of credits: the test errors and the run fails with the reason.
-	e.Exec(`UPDATE ai_credits SET included_used_milli = $2 WHERE workspace_id = $1`, e.WS.ID, plan.FreeMonthlyCredits*1000)
+	// AI balance used up: the test errors and the run fails with the reason.
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = $2 WHERE workspace_id = $1`, e.WS.ID, plan.FreeMonthlyUSD)
 	nc := e.startRun(map[string]any{"test_ids": []any{pass.ID}})
 	e.runTestJobs()
 	got = e.getRun(nc.ID)
-	if got.Status != "failed" || got.Error == nil || got.Errored != 1 || got.Results[0].Error == nil || *got.Results[0].Error != "Not enough credits." {
-		t.Fatalf("no credits run %+v", got)
+	if got.Status != "failed" || got.Error == nil || got.Errored != 1 || got.Results[0].Error == nil || *got.Results[0].Error != "The AI balance is too low." {
+		t.Fatalf("no balance run %+v", got)
 	}
 
 	// Cancelling a queued run: the job does nothing.

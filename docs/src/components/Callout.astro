@@ -1,0 +1,29 @@
+---
+/**
+ * A short aside in the flow of a guide.
+ *
+ *   <Callout>Good to know, the default.</Callout>
+ *   <Callout type="note">Something to keep in mind.</Callout>
+ *   <Callout type="warning" title="Custom title">Something that can go wrong.</Callout>
+ */
+interface Props {
+  type?: 'tip' | 'note' | 'warning';
+  title?: string;
+}
+const { type = 'tip', title } = Astro.props;
+const titles = { tip: 'Good to know', note: 'Note', warning: 'Warning' } as const;
+const icons = {
+  // Lucide: lightbulb, info, triangle-alert.
+  tip: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  note: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+} as const;
+---
+
+<aside class={`od-callout od-callout--${type}`} aria-label={title ?? titles[type]}>
+  <svg class="od-callout-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={icons[type]} />
+  <div class="od-callout-body">
+    <p class="od-callout-title">{title ?? titles[type]}</p>
+    <div class="od-callout-content"><slot /></div>
+  </div>
+</aside>

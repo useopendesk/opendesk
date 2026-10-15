@@ -94,5 +94,40 @@
     "subtitle": "Medians for the period",
     "fastest": "Fastest first reply",
     "none": "No replies in this period yet."
+  },
+  "filter": {
+    "teamLabel": "Team: {{value}}",
+    "brandLabel": "Brand: {{value}}",
+    "allTeams": "All teams",
+    "noTeam": "No team",
+    "private": "Private",
+    "allBrands": "All brands",
+    "searchTeams": "Search teams",
+    "searchBrands": "Search brands"
+  },
+  "groups": {
+    "narrow": "Show only this in the report"
+  },
+  "byTeam": {
+    "title": "By team",
+    "subtitle": "Tickets created and solved in the period, open now",
+    "caption": "Tickets created, solved and open, and first response time, by team",
+    "team": "Team",
+    "hidden": "Private teams you are not on are left out here. The totals above count their tickets.",
+    "emptyTitle": "No team work in this period",
+    "emptyDescription": "Teams appear here once their tickets arrive or are solved."
+  },
+  "byBrand": {
+    "title": "By brand",
+    "subtitle": "Tickets created and solved in the period, open now",
+    "caption": "Tickets created, solved and open, and first response time, by brand",
+    "brand": "Brand",
+    "emptyTitle": "No brand work in this period",
+    "emptyDescription": "Brands appear here once their tickets arrive or are solved."
+  },
+  "filtered": {
+    "emptyTitle": "Nothing here in this period",
+    "emptyDescription": "No tickets match this team and brand in the period. Try a longer range or clear the filters.",
+    "clear": "Clear filters"
   }
 }

@@ -124,6 +124,12 @@ func (s *Service) publish(ctx context.Context, tx pgx.Tx, typ string, wid uuid.U
 	return err
 }
 
+// publishTicket publishes an event about a ticket, scoped to its team when that is private.
+func (s *Service) publishTicket(ctx context.Context, tx pgx.Tx, typ string, wid, ticketID uuid.UUID, data map[string]any) error {
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: data, TicketID: &ticketID})
+	return err
+}
+
 func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 	tags := []string{"Integrations"}
 

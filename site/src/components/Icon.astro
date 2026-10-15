@@ -1,16 +1,16 @@
 ---
-import { ICONS, GITHUB_PATH, type IconName } from '../lib/icons';
+import { ICONS, BRAND_PATHS, type BrandName, type IconName } from '../lib/icons';
 
 interface Props {
-  name: IconName | 'github';
+  name: IconName | BrandName;
   size?: number;
   stroke?: number;
   class?: string;
 }
 const { name, size = 18, stroke = 1.75, class: className = '' } = Astro.props;
 ---
-{name === 'github' ? (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" class={className} aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+{name in BRAND_PATHS ? (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" class={className} aria-hidden="true"><path d={BRAND_PATHS[name as BrandName]} /></svg>
 ) : (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -24,6 +24,6 @@ const { name, size = 18, stroke = 1.75, class: className = '' } = Astro.props;
     stroke-linejoin="round"
     class={className}
     aria-hidden="true"
-    set:html={ICONS[name]}
+    set:html={ICONS[name as IconName]}
   />
 )}

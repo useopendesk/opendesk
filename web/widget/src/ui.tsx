@@ -4,17 +4,19 @@
 import { Fragment, type ComponentChildren, type VNode } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { aiHandling, isAiAnswer, latestAiAnswer, teamReplied } from "./ai";
-import { BOT_NAME } from "./config";
+import { readBot } from "./config";
 import { NEW, type Controller } from "./controller";
 import { current, dayLabel, isRtl, relTime, t } from "./i18n";
-import { Arrow, Back, ChatIc, Clip, Down, Ext, FileIc, OdMark, Up, X } from "./icons";
+import { Arrow, Back, ChatIc, Clip, Clock, Down, Ext, FileIc, OdMark, Up, X } from "./icons";
 import { repliesFor, type LiveReply } from "./live";
-import { AiMessage, AvatarStack, Bubble, Dots, HandedOff, LiveReplyView, reducedMotion, type Offer } from "./messages";
+import { AiMessage, AvatarStack, BotGreeting, Bubble, Dots, HandedOff, LiveReplyView, reducedMotion, type Offer } from "./messages";
 import { primeSound } from "./sound";
 import { useStore, type State } from "./store";
-import type { BotIdentity, WidgetConfig } from "./types";
+import type { BotIdentity, UiMessage, WidgetConfig, WidgetTopic } from "./types";
 
 const THINK_MS = 15_000;
+/** How long the bot's hop lasts when a reply lands (BOT_LOOK_CSS odb-hop). */
+const HOP_MS = 700;
 
 const typingReply = (ticket: string): LiveReply => ({
   id: "typing",
@@ -30,8 +32,9 @@ const typingReply = (ticket: string): LiveReply => ({
   at: 0,
 });
 
-const botOf = (cfg: WidgetConfig | null): BotIdentity => cfg?.bot ?? { name: BOT_NAME, avatar_url: null };
-const titleOf = (cfg: WidgetConfig | null) => cfg?.title || cfg?.workspace_name || t("support");
+const DEFAULT_BOT = readBot(null);
+const botOf = (cfg: WidgetConfig | null): BotIdentity => cfg?.bot ?? DEFAULT_BOT;
+const titleOf = (cfg: WidgetConfig | null) => cfg?.title || cfg?.brand?.name || cfg?.workspace_name || t("support");
 const subtitleOf = (cfg: WidgetConfig | null) => cfg?.subtitle || (cfg?.ai_answers ? t("replyTimeAi", { name: botOf(cfg).name }) : t("replyTime"));
 
 /** The theme attribute: forced light or dark, or "auto" (follows the system, or the preview's choice). */
@@ -90,7 +93,7 @@ export function App({ c }: { c: Controller }) {
       if (s.open && !wasOpen.current) {
         requestAnimationFrame(() => {
           const p = panel.current;
-          const el = p?.querySelector<HTMLElement>("textarea:not(:disabled)") ?? p?.querySelector<HTMLElement>(".primary:not(:disabled)") ?? p?.querySelector<HTMLElement>("button");
+          const el = p?.querySelector<HTMLElement>("textarea:not(:disabled)") ?? p?.querySelector<HTMLElement>(".primary:not(:disabled), .topic:not(:disabled)") ?? p?.querySelector<HTMLElement>("button");
           el?.focus({ preventScroll: true });
         });
       } else if (!s.open && wasOpen.current) launcher.current?.focus();
@@ -224,6 +227,7 @@ function Home({ c }: { c: Controller }) {
   const bot = cfg?.ai_answers ? botOf(cfg) : null;
   const ready = !!s.session;
   const suggestions = cfg?.suggestions ?? [];
+  const topics = cfg?.topics ?? [];
   return (
     <>
       <div class="head home">
@@ -246,10 +250,18 @@ function Home({ c }: { c: Controller }) {
       </div>
       <div class="body">
         <div class="home-body">
+          {cfg?.open === false && !(s.error && !s.session) && <Away cfg={cfg} />}
           {s.error && !s.session ? (
             <div class="empty">
               <b>{t("unavailable")}</b>
               {t("unavailableHint")}
+            </div>
+          ) : topics.length > 0 ? (
+            <div class="card">
+              <div class="card-h" id="od-topics-h">
+                {t("topicsTitle")}
+              </div>
+              <Topics topics={topics} labelledBy="od-topics-h" disabled={!ready} onPick={(id) => c.newConversation(id)} />
             </div>
           ) : (
             <button class="primary start" disabled={!ready} onClick={() => c.newConversation()}>
@@ -323,10 +335,13 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
   const conv = s.conversations?.find((v) => v.id === s.active);
   const typing = s.active ? s.typing[s.active] : undefined;
   const needsEmail = c.needsEmail();
+  const needsTopic = c.needsTopic();
+  const topic = !s.active && s.topic ? cfg?.topics?.find((x) => x.id === s.topic) : undefined;
   const handed = !!s.active && (conv?.ai_handoff === true || s.handoff[s.active] === "done");
   const handling = aiHandling({ aiAnswers: cfg?.ai_answers === true, conversation: conv, handedOff: handed, msgs: msgs ?? [] });
   const replies = s.active ? repliesFor(s.live, s.active) : [];
   const writing = replies.some((r) => r.phase !== "leaving");
+  const composing = replies.some((r) => r.phase === "typing" || r.phase === "streaming");
   const since = s.active ? s.awaiting[s.active] : undefined;
   const [now, setNow] = useState(Date.now());
   // The agent will answer the visitor's message: show it typing until its first live event.
@@ -342,6 +357,10 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
     const id = setTimeout(() => setNow(Date.now()), left + 20);
     return () => clearTimeout(id);
   }, [since]);
+
+  const landed = useLanded(key, msgs);
+  // The header's bot: thinking while it writes, a hop when its reply lands, else idle.
+  const mood = thinking || composing ? "thinking" : landed ? "happy" : undefined;
 
   const latest = msgs ? latestAiAnswer(msgs) : null;
   const items: VNode[] = [];
@@ -373,6 +392,7 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
             swapped={!!s.swapped[m.id]}
             rating={m.id in s.ratings ? s.ratings[m.id] : (m.ai_rating ?? null)}
             action={m.ai_action ? s.actions[m.ai_action.id] : undefined}
+            landed={m.id === landed}
           />
         ) : (
           <Bubble m={m} me={me} grouped={grouped} onRetry={() => void c.retry(key, m.id)} />
@@ -385,10 +405,13 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
   if (thinking) items.push(<LiveReplyView key="ai-live" r={typingReply(s.active ?? NEW)} bot={bot} />);
 
   const avatars = handling ? { bot, team: [] } : { bot: null, team: cfg?.team ?? [] };
+  // The bot's greeting opens a new chat while the agent answers, and stays at the top of the conversations it took.
+  const hello = cfg?.ai_answers && bot.greeting ? bot.greeting : "";
+  const opener = hello && (!s.active || handling || (msgs ?? []).some(isAiAnswer)) ? <BotGreeting key="greeting" bot={bot} text={hello} /> : null;
 
   return (
     <>
-      <div class="head">
+      <div class="head" data-bot-state={handling ? mood : undefined}>
         <button class="icon-btn flip" aria-label={t("back")} onClick={() => c.home()}>
           <Back />
         </button>
@@ -401,21 +424,49 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
           {X()}
         </button>
       </div>
-      <Scroller watch={`${key}:${msgs?.length ?? -1}:${items.length}`}>
+      <Scroller watch={`${key}:${msgs?.length ?? -1}:${items.length}:${needsTopic}:${!!s.queued}`}>
         {needsEmail && <Capture c={c} />}
+        {s.queued && (
+          <div class="thread queued">
+            <div class="row me is-pending">
+              <div class="msg" dir="auto">
+                {s.queued}
+              </div>
+            </div>
+          </div>
+        )}
+        {topic && items.length === 0 && (
+          <div class="topic-row">
+            <span class="topic-chip">
+              <span dir="auto">{topic.label}</span>
+              <button aria-label={t("changeTopic")} title={t("changeTopic")} onClick={() => void c.pickTopic(null)}>
+                {X(12)}
+              </button>
+            </span>
+          </div>
+        )}
         {msgs === undefined ? (
           <div aria-busy="true" style={{ paddingTop: "12px" }}>
             <div class="skel" style={{ width: "55%" }} />
             <div class="skel" style={{ width: "35%", marginInlineStart: "auto" }} />
           </div>
-        ) : items.length === 0 && !needsEmail ? (
-          <div class="empty">
-            <b dir="auto">{greeting(cfg?.greeting)}</b>
-            {t("emptyHint")}
+        ) : needsTopic && !needsEmail ? (
+          <TopicPicker c={c} />
+        ) : items.length === 0 && !needsEmail && !s.queued ? (
+          opener ? (
+            <div class="thread">{opener}</div>
+          ) : (
+            <div class="empty">
+              <b dir="auto">{greeting(cfg?.greeting)}</b>
+              {t("emptyHint")}
+            </div>
+          )
+        ) : items.length > 0 ? (
+          <div class="thread">
+            {opener}
+            {items}
           </div>
-        ) : (
-          <div class="thread">{items}</div>
-        )}
+        ) : null}
         {handed && msgs && !teamReplied(msgs) && <HandedOff />}
         {typing && (
           <div class="typing" role="status" aria-label={t("typing", { name: typing })}>
@@ -424,8 +475,100 @@ function Thread({ c, files, setFiles, addFiles }: { c: Controller; files: File[]
           </div>
         )}
       </Scroller>
-      <Composer c={c} files={files} setFiles={setFiles} addFiles={addFiles} disabled={needsEmail || !s.session} />
+      {cfg?.open === false && <Away cfg={cfg} bar />}
+      <Composer c={c} files={files} setFiles={setFiles} addFiles={addFiles} disabled={needsEmail || needsTopic || !s.session} hint={needsEmail ? t("placeholderEmail") : needsTopic ? t("placeholderTopic") : undefined} focusOn={s.preview || s.active ? null : s.topic} />
     </>
+  );
+}
+
+/**
+ * The id of an agent reply that just arrived in the open thread (not one that
+ * was already there when the thread loaded), for HOP_MS: its bot hops once.
+ */
+function useLanded(key: string, msgs: UiMessage[] | undefined): string | null {
+  const seen = useRef<{ key: string; ids: Set<string> | null }>({ key, ids: null });
+  const [landed, setLanded] = useState<string | null>(null);
+  useEffect(() => {
+    const prev = seen.current;
+    const ids = msgs ? new Set(msgs.filter(isAiAnswer).map((m) => m.id)) : null;
+    seen.current = { key, ids };
+    // A new thread, or its first load: what is there already doesn't hop.
+    if (!ids || prev.key !== key || !prev.ids) return;
+    const fresh = [...ids].reverse().find((id) => !prev.ids!.has(id));
+    if (fresh) setLanded(fresh);
+  }, [key, msgs]);
+  useEffect(() => {
+    if (!landed) return;
+    const id = setTimeout(() => setLanded(null), HOP_MS);
+    return () => clearTimeout(id);
+  }, [landed]);
+  return landed;
+}
+
+// ── Topics and closed hours ──────────────────────────────────────────────────
+
+/** The widget's topics as one list of buttons: Tab reaches each, arrow keys move between them. */
+function Topics({ topics, onPick, disabled, labelledBy }: { topics: WidgetTopic[]; onPick: (id: string) => void; disabled?: boolean; labelledBy: string }) {
+  const onKeyDown = (e: KeyboardEvent) => {
+    const keys: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+    if (!(e.key in keys) && e.key !== "Home" && e.key !== "End") return;
+    const list = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+    const at = list.indexOf(e.target as HTMLButtonElement);
+    if (at < 0 || !list.length) return;
+    e.preventDefault();
+    const dir = keys[e.key] ?? 0;
+    // In a right-to-left layout, left and right swap; up and down don't.
+    const flip = (e.key === "ArrowLeft" || e.key === "ArrowRight") && isRtl() ? -1 : 1;
+    const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (at + dir * flip + list.length) % list.length;
+    list[next].focus();
+  };
+  return (
+    <div class="topics" role="group" aria-labelledby={labelledBy} onKeyDown={onKeyDown}>
+      {topics.map((x, i) => (
+        <button key={x.id} class="topic" style={{ "--i": i }} disabled={disabled} onClick={() => onPick(x.id)}>
+          <span dir="auto">{x.label}</span>
+          <span class="topic-ic flip" aria-hidden="true">
+            <Arrow />
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Asked before the first message of a new conversation when the widget has topics. */
+function TopicPicker({ c }: { c: Controller }) {
+  const s = useStore(c.store);
+  const box = useRef<HTMLDivElement>(null);
+  // Keyboard users land on the first topic (never in the dashboard preview).
+  useEffect(() => {
+    if (s.preview) return;
+    const id = requestAnimationFrame(() => box.current?.querySelector<HTMLButtonElement>(".topic:not(:disabled)")?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div class="picker" ref={box}>
+      <b id="od-pick-h">{t("topicsTitle")}</b>
+      <p>{t("topicsHint")}</p>
+      <div class="card">
+        <Topics topics={s.config?.topics ?? []} labelledBy="od-pick-h" disabled={!s.session} onPick={(id) => void c.pickTopic(id)} />
+      </div>
+    </div>
+  );
+}
+
+/** Outside business hours: the widget's offline message, else the translated default. */
+function Away({ cfg, bar }: { cfg: WidgetConfig; bar?: boolean }) {
+  const text = cfg.offline_message?.trim() || t("offlineDefault");
+  return (
+    <div class={bar ? "away bar" : "away"} role="status">
+      <span class="away-ic" aria-hidden="true">
+        {Clock(bar ? 12 : 14)}
+      </span>
+      <span class="away-text" dir="auto" title={bar ? text : undefined}>
+        {text}
+      </span>
+    </div>
   );
 }
 
@@ -534,13 +677,34 @@ function Capture({ c }: { c: Controller }) {
 
 const MAX_INPUT = 120;
 
-function Composer({ c, files, setFiles, addFiles, disabled }: { c: Controller; files: File[]; setFiles: (f: File[]) => void; addFiles: (f: FileList | null) => void; disabled: boolean }) {
+function Composer({
+  c,
+  files,
+  setFiles,
+  addFiles,
+  disabled,
+  hint,
+  focusOn,
+}: {
+  c: Controller;
+  files: File[];
+  setFiles: (f: File[]) => void;
+  addFiles: (f: FileList | null) => void;
+  disabled: boolean;
+  hint?: string;
+  /** Focus the field when this becomes set (a topic was picked). */
+  focusOn?: string | null;
+}) {
   const [text, setText] = useState("");
   const [height, setHeight] = useState(30);
   const ta = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const ready = !disabled && (!!text.trim() || files.length > 0);
+
+  useEffect(() => {
+    if (focusOn && !disabled) ta.current?.focus({ preventScroll: true });
+  }, [focusOn, disabled]);
 
   // Measure on a hidden twin, so the field's own height can ease between sizes.
   useLayoutEffect(() => {
@@ -582,7 +746,7 @@ function Composer({ c, files, setFiles, addFiles, disabled }: { c: Controller; f
             value={text}
             style={{ height: `${height}px`, overflowY: height >= MAX_INPUT ? "auto" : "hidden" }}
             disabled={disabled}
-            placeholder={disabled ? t("placeholderEmail") : t("placeholder")}
+            placeholder={disabled ? (hint ?? t("placeholder")) : t("placeholder")}
             aria-label={t("message")}
             dir="auto"
             onInput={(e) => {

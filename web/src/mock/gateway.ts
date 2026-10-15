@@ -5,6 +5,7 @@
 import type { Envelope } from "@/lib/api/types";
 import type { PushReply, RtChannel, RtSocket, SocketFactory } from "@/lib/realtime/transport";
 import { db, type WsData } from "./db";
+import { privateTeamOf } from "./teams";
 import { uuid7 } from "./util";
 
 type Handler = { ref: number; event: string; cb: (payload: unknown) => void };
@@ -238,16 +239,36 @@ export function activeTicketIds(): string[] {
   return ids;
 }
 
-/** Write an envelope to the workspace's event log and fan it out. */
+/** The private team of each logged envelope that has one (contracts/teams.md "Realtime"). */
+export const envelopeTeam = new WeakMap<Envelope, string>();
+
+/** The ticket an event is about, from its payload. */
+function ticketIdOf(data: Record<string, unknown>): string | null {
+  const pick = (v: unknown, k: string) => (v && typeof v === "object" && typeof (v as Record<string, unknown>)[k] === "string" ? ((v as Record<string, unknown>)[k] as string) : null);
+  return (typeof data.ticket_id === "string" ? data.ticket_id : null) ?? pick(data.ticket, "id") ?? pick(data.message, "ticket_id") ?? pick(data.activity, "ticket_id");
+}
+
+/** What `workspace:<wid>` gets for an event of a private team: same id and seq, no data. */
+export function standIn(env: Envelope): Envelope {
+  return { id: env.id, seq: env.seq, workspace_id: env.workspace_id, type: "event.hidden", visibility: "agents", topics: [`workspace:${env.workspace_id}`], data: {}, occurred_at: env.occurred_at };
+}
+
+/**
+ * Write an envelope to the workspace's event log and fan it out. Events about a
+ * ticket in a private team go in full to `team:<wid>:<team>` and as a stand-in
+ * to `workspace:<wid>`, so seq stays contiguous for everyone; `user:` topics
+ * are unaffected. `ticket.hidden` always goes to the workspace as is.
+ */
 export function publish(
   ws: WsData,
   type: string,
   data: Record<string, unknown>,
-  opts: { topics?: string[]; visibility?: "agents" | "public" } = {},
+  opts: { topics?: string[]; visibility?: "agents" | "public"; teamId?: string | null } = {},
 ): Envelope {
   ws.seq += 1;
   const wid = ws.workspace.id;
-  const topics = [`workspace:${wid}`, ...(opts.topics ?? [])];
+  const team = type === "ticket.hidden" ? null : opts.teamId !== undefined ? opts.teamId : privateTeamOf(ws, ticketIdOf(data));
+  const topics = [team ? `team:${wid}:${team}` : `workspace:${wid}`, ...(opts.topics ?? [])];
   const env: Envelope = {
     id: uuid7(),
     seq: ws.seq,
@@ -258,14 +279,15 @@ export function publish(
     data: structuredClone(data),
     occurred_at: new Date().toISOString(),
   };
+  if (team) envelopeTeam.set(env, team);
   ws.events.push(env);
   if (ws.events.length > EVENT_LOG_CAP) ws.events.splice(0, ws.events.length - EVENT_LOG_CAP);
   if (!paused.drop) {
     setTimeout(() => {
       for (const ch of channels) {
-        if (ch.topic === `workspace:${wid}` || (ch.topic.startsWith("user:") && topics.includes(ch.topic))) {
-          ch.emit("event", env);
-        }
+        if (ch.topic === `workspace:${wid}`) ch.emit("event", team ? standIn(env) : env);
+        else if (team && ch.topic === `team:${wid}:${team}`) ch.emit("event", env);
+        else if (ch.topic.startsWith("user:") && topics.includes(ch.topic)) ch.emit("event", env);
       }
     }, 25);
   }

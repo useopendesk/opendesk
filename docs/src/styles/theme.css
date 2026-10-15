@@ -1,4 +1,5 @@
-/* opendesk docs theme. Monochrome, from brand/tokens.css; light by default.
+/* opendesk docs theme. Monochrome, from brand/tokens.css; light unless the reader or
+   their system prefers dark (ThemeProvider.astro).
    Unlayered rules here win over Starlight's layered defaults. */
 
 /* ---------------------------------------------------------------- tokens */
@@ -24,26 +25,35 @@
   --od-radius: 12px;
   --od-radius-sm: 8px;
   --od-mono-label: 500 11px/1.4 var(--__sl-font-mono);
+  /* Semantic tones, as in the app (web/src/styles/app.css): callouts only. */
+  --od-tone-green: #12a150;
+  --od-tone-blue: #2b6cf0;
+  --od-tone-amber: #d48806;
+  --od-shot-shadow: 0 1px 2px rgb(10 10 10 / 0.04), 0 18px 40px -28px rgb(15 23 42 / 0.35);
   color-scheme: light;
 }
 
 :root[data-theme='dark'] {
-  /* The reverse: paper on ink, coal and charcoal for surfaces and rules. */
-  --od-bg: #0a0a0a;
-  --od-heading: #ffffff;
-  --od-body: #e4e4e4;
-  --od-muted: #a3a3a3;
-  --od-faint: #737373;
-  --od-line: #262626;
-  --od-line-soft: #1c1c1c;
-  --od-soft: #121212;
-  --od-hover: #171717;
-  --od-code-bg: #1c1c1c;
-  --od-code-fg: #f4f4f4;
-  --od-link-line: #525252;
-  --od-ink: #ffffff;
-  --od-ink-fg: #0a0a0a;
-  --od-popover: #0a0a0a;
+  /* Charcoal, as in the app and the site: never pure black. */
+  --od-bg: #141416;
+  --od-heading: #f5f5f6;
+  --od-body: #dcdcde;
+  --od-muted: #a1a1a6;
+  --od-faint: #74747a;
+  --od-line: #2c2d31;
+  --od-line-soft: #222326;
+  --od-soft: #1a1b1e;
+  --od-hover: #202124;
+  --od-code-bg: #202124;
+  --od-code-fg: #f0f0f2;
+  --od-link-line: #4a4b50;
+  --od-ink: #f5f5f6;
+  --od-ink-fg: #141416;
+  --od-popover: #1d1e21;
+  --od-tone-green: #3dd68c;
+  --od-tone-blue: #6b9bff;
+  --od-tone-amber: #f5b53d;
+  --od-shot-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 18px 40px -24px rgb(0 0 0 / 0.6);
   color-scheme: dark;
 }
 
@@ -750,9 +760,367 @@ kbd {
   white-space: nowrap;
 }
 
+/* App screenshots: a plain frame on a hairline, a soft drop, no backdrop. */
 .sl-markdown-content img {
-  border-radius: var(--od-radius);
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-block: 1.75rem;
+  border-radius: 10px;
   border: 1px solid var(--od-line);
+  box-shadow: 0 18px 40px -28px rgb(15 23 42 / 0.35);
+}
+:root[data-theme='dark'] .sl-markdown-content img {
+  box-shadow: 0 18px 40px -24px rgb(0 0 0 / 0.6);
+}
+/* A dialog or drawer reads at its own size, not stretched across the column. */
+.sl-markdown-content img[src*='/narrow/'] {
+  max-width: min(100%, 560px);
+  margin-inline: auto;
+}
+
+/* Screenshots (Screenshot.astro): the light or dark picture, as the page is; a plain
+   frame on a hairline with a soft drop; a crop at its own size, centred. */
+.sl-markdown-content .od-shot {
+  margin: 1.75rem auto;
+  max-width: min(100%, var(--od-shot-max, 100%));
+}
+.sl-markdown-content .od-shot-frame {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--od-line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--od-bg);
+  box-shadow: var(--od-shot-shadow);
+  cursor: zoom-in;
+  transition: border-color 150ms ease;
+}
+.sl-markdown-content .od-shot-frame:hover {
+  border-color: color-mix(in oklab, var(--od-faint) 60%, transparent);
+}
+.sl-markdown-content .od-shot-frame:focus-visible {
+  outline: 2px solid var(--od-ink);
+  outline-offset: 3px;
+}
+.sl-markdown-content .od-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.od-shot-dark,
+:root[data-theme='dark'] .od-shot-light {
+  display: none !important;
+}
+:root[data-theme='dark'] .od-shot-dark {
+  display: block !important;
+}
+.sl-markdown-content .od-shot figcaption {
+  margin-top: 0.625rem;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--od-muted);
+}
+
+/* The zoomed screenshot: the picture over a soft scrim; Escape or any click closes it. */
+.od-zoom {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 2rem;
+  border: 0;
+  background: transparent;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.875rem;
+  cursor: zoom-out;
+  outline: none;
+}
+.od-zoom[open] {
+  display: flex;
+  animation: od-fade 160ms ease;
+}
+.od-zoom::backdrop {
+  background: rgb(10 10 10 / 0.55);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+:root[data-theme='dark'] .od-zoom::backdrop {
+  background: rgb(0 0 0 / 0.7);
+}
+.od-zoom img {
+  max-width: min(100%, 1680px);
+  max-height: calc(100dvh - 6rem);
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.5);
+  animation: od-rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.od-zoom-caption {
+  margin: 0;
+  font-size: 13px;
+  color: rgb(255 255 255 / 0.85);
+}
+.od-zoom-caption:empty {
+  display: none;
+}
+:root.od-zoom-open {
+  overflow: hidden;
+}
+
+/* Steps (Steps.astro): an ink counter on a hairline rail, a short title, then the
+   sentence or two and the screenshot of what to click. */
+.sl-markdown-content .od-steps {
+  --od-step-size: 1.625rem;
+  counter-reset: od-step;
+  list-style: none;
+  margin: 1.75rem 0;
+  padding: 0;
+}
+.sl-markdown-content .od-steps > .od-step {
+  counter-increment: od-step;
+  position: relative;
+  margin: 0;
+  padding: 0 0 2rem calc(var(--od-step-size) + 1.125rem);
+}
+.sl-markdown-content .od-steps > .od-step:last-child {
+  padding-bottom: 0.25rem;
+}
+.sl-markdown-content .od-steps > .od-step::before {
+  content: counter(od-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--od-step-size);
+  height: var(--od-step-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--od-ink);
+  color: var(--od-ink-fg);
+  font: 500 12px/1 var(--__sl-font-mono);
+}
+.sl-markdown-content .od-steps > .od-step::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--od-step-size) + 0.5rem);
+  bottom: 0.5rem;
+  left: calc(var(--od-step-size) / 2 - 0.5px);
+  width: 1px;
+  background: var(--od-line);
+}
+.sl-markdown-content .od-steps > .od-step:last-child::after {
+  display: none;
+}
+.sl-markdown-content .od-step-title {
+  margin: 0;
+  padding-top: 0.0625rem;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5rem;
+  letter-spacing: -0.01em;
+  color: var(--od-heading);
+}
+.sl-markdown-content .od-step-body {
+  margin-top: 0.375rem;
+}
+.sl-markdown-content .od-step-body > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content .od-step-body .od-shot {
+  margin: 1rem 0 0.25rem;
+}
+.sl-markdown-content .od-step-body .od-shot[style*='--od-shot-max'] {
+  margin-inline: 0;
+}
+/* On a phone a step's screenshot takes the whole column, rail included. */
+@media (max-width: 40em) {
+  .sl-markdown-content .od-step-body .od-shot[style*='--od-shot-max'] {
+    --od-step-indent: calc(var(--od-step-size) + 1.125rem);
+    margin-inline-start: calc(-1 * var(--od-step-indent));
+    max-width: min(calc(100% + var(--od-step-indent)), var(--od-shot-max));
+  }
+}
+
+/* Callouts (Callout.astro): a flat panel; the icon carries the colour. */
+.sl-markdown-content .od-callout {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  padding: 0.875rem 1.125rem 0.875rem 1rem;
+  border: 1px solid var(--od-line);
+  border-radius: var(--od-radius);
+  background: var(--od-soft);
+}
+.sl-markdown-content .od-callout-icon {
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.1875rem;
+  color: var(--od-tone-green);
+}
+.sl-markdown-content .od-callout--note .od-callout-icon {
+  color: var(--od-tone-blue);
+}
+.sl-markdown-content .od-callout--warning {
+  border-color: color-mix(in oklab, var(--od-tone-amber) 32%, var(--od-line));
+  background: color-mix(in oklab, var(--od-tone-amber) 5%, var(--od-bg));
+}
+.sl-markdown-content .od-callout--warning .od-callout-icon {
+  color: var(--od-tone-amber);
+}
+.sl-markdown-content .od-callout > *,
+.sl-markdown-content .od-callout-body > * {
+  margin-top: 0;
+}
+.sl-markdown-content .od-callout-body {
+  min-width: 0;
+  flex: 1;
+}
+.sl-markdown-content .od-callout-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--od-heading);
+}
+.sl-markdown-content .od-callout-body > .od-callout-content {
+  margin-top: 0.25rem;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.sl-markdown-content .od-callout-content > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content .od-callout-content :is(p, li) {
+  color: var(--od-muted);
+}
+.sl-markdown-content .od-callout-content ul {
+  padding-inline-start: 1.1rem;
+}
+
+/* The key to a screenshot's numbered marks (Legend.astro): each number drawn like the
+   badge on the picture. */
+.sl-markdown-content .od-legend {
+  margin: 1.25rem 0 2rem;
+}
+.sl-markdown-content .od-legend ol {
+  counter-reset: od-legend;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.625rem;
+}
+.sl-markdown-content .od-legend li {
+  counter-increment: od-legend;
+  position: relative;
+  margin: 0;
+  padding-inline-start: 2.125rem;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sl-markdown-content .od-legend li::before {
+  content: counter(od-legend);
+  position: absolute;
+  left: 0;
+  top: 0.125rem;
+  width: 1.375rem;
+  height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--od-ink);
+  color: var(--od-ink-fg);
+  font: 500 11.5px/1 var(--__sl-font-mono);
+}
+
+/* Folded detail: a hairline row per section, its heading as the toggle. */
+.sl-markdown-content .od-fold {
+  border-top: 1px solid var(--od-line);
+  /* Not Starlight's own details: no side rule, no leading chevron. */
+  border-inline-start: 0;
+  padding-inline-start: 0;
+}
+.sl-markdown-content .od-fold > summary::before {
+  display: none;
+}
+/* A run of folds shares its rules (in dev a script can sit between two). */
+.sl-markdown-content .od-fold {
+  border-bottom: 1px solid var(--od-line);
+}
+.sl-markdown-content :is(.od-fold + .od-fold, .od-fold + script + .od-fold) {
+  border-top: 0;
+  margin-top: 0;
+}
+.sl-markdown-content .od-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 0;
+  list-style: none;
+  cursor: pointer;
+  color: var(--od-muted);
+}
+.sl-markdown-content .od-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.sl-markdown-content .od-fold-head {
+  min-width: 0;
+  flex: 1;
+}
+.sl-markdown-content .od-fold-head .sl-heading-wrapper,
+.sl-markdown-content .od-fold-head :is(h2, h3) {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+.sl-markdown-content .od-fold-head :is(h2, h3) {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--od-heading);
+}
+.sl-markdown-content .od-fold-head .sl-anchor-link {
+  display: none;
+}
+.sl-markdown-content .od-fold > summary:hover :is(h2, h3) {
+  color: var(--od-muted);
+}
+.sl-markdown-content .od-fold-chevron {
+  flex-shrink: 0;
+  transition: transform 160ms ease;
+}
+.sl-markdown-content .od-fold[open] .od-fold-chevron {
+  transform: rotate(180deg);
+}
+.sl-markdown-content .od-fold-body {
+  padding: 0 0 20px;
+}
+.sl-markdown-content .od-fold-body > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content :is(.od-fold + :not(.od-fold, script), .od-fold + script + :not(.od-fold)) {
+  margin-top: 2rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-markdown-content .od-fold-chevron { transition: none; }
 }
 
 /* The home page: no title band, cards in a two-column grid. */

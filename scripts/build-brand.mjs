@@ -51,6 +51,10 @@ const files = {
   "logo/lockup-white.svg": svg(LOCKUP_W, 88, lockup(PAPER)),
   "logo/stacked.svg": svg(STACK_W, STACK_H, stacked(INK)),
   "logo/stacked-white.svg": svg(STACK_W, STACK_H, stacked(PAPER)),
+  // Profile pictures: square and full bleed, the mark at half the width so a circle crop
+  // keeps clear space around it. site/scripts/og.mjs renders them to PNG.
+  "social/avatar.svg": svg(1024, 1024, `<rect width="1024" height="1024" fill="${INK}"/>` + mark(256, 256, 512, PAPER)),
+  "social/avatar-light.svg": svg(1024, 1024, `<rect width="1024" height="1024" fill="${PAPER}"/>` + mark(256, 256, 512, INK)),
   "icons/app-icon.svg": tile(512, INK, PAPER),
   "icons/app-icon-light.svg": tile(512, PAPER, INK),
   // Adapts to the browser tab theme.

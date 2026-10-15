@@ -1,7 +1,8 @@
 package ai
 
 // A workspace's own AI provider key (contracts/ai.md "Provider per workspace"). With a
-// key, every LLM call of the workspace goes to its provider and charges no credits.
+// key, every LLM call of the workspace goes to its provider and charges nothing to the
+// AI balance.
 // Embeddings and Jev decisions stay on the instance.
 
 import (
@@ -57,8 +58,8 @@ var ownDefaults = map[string][2]string{
 	KeyAnthropic:  {"claude-sonnet-5-5", "claude-haiku-4-5-20251001"},
 }
 
-// route is where a workspace's LLM calls go: the instance's provider (charged in
-// credits) or its own key (recorded with 0 credits).
+// route is where a workspace's LLM calls go: the instance's provider (charged to the AI
+// balance) or its own key (recorded at $0).
 type route struct {
 	p      Provider
 	own    bool
@@ -106,7 +107,7 @@ func (s *Service) instanceRoute() *route {
 }
 
 // routeFor returns where the workspace's LLM calls go. A key that cannot be read fails
-// the call: a workspace on its own key never falls back to credits silently.
+// the call: a workspace on its own key never falls back to the AI balance silently.
 func (s *Service) routeFor(ctx context.Context, wid uuid.UUID) (*route, error) {
 	var kind, baseURL, model, fast, status string
 	var sealed []byte
@@ -306,7 +307,7 @@ func (s *Service) ownModelOK(ctx context.Context, rt *route, id string) bool {
 }
 
 // ownModelList is GET /v1/ai/models on a workspace key: the provider's models, without
-// credit prices (calls on the key charge none).
+// prices (the workspace pays its provider; calls on the key charge nothing).
 func (s *Service) ownModelList(ctx context.Context, rt *route) []ModelInfo {
 	info, ids := s.ownCatalog(ctx, rt)
 	out := make([]ModelInfo, 0, len(ids)+2)
@@ -317,7 +318,7 @@ func (s *Service) ownModelList(ctx context.Context, rt *route) []ModelInfo {
 	}
 	for _, id := range ids {
 		m := info[id]
-		m.CreditsPerMTok = nil
+		m.USDPerMTok, m.TypicalReplyUSD = nil, nil
 		out = append(out, m)
 	}
 	return out

@@ -93,6 +93,9 @@ export class SeqSync {
 
   private applyOne(env: Envelope) {
     this.last = this.last === null ? env.seq : Math.max(this.last, env.seq);
+    // A private team's stand-in only moves seq on; the real envelope (same id) may still
+    // come on the team channel, before or after it, and must not look already applied.
+    if (env.type === "event.hidden") return;
     if (this.seen.has(env.id)) return;
     this.markSeen(env.id);
     this.deps.apply(env);

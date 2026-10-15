@@ -19,9 +19,10 @@ import (
 func (e *env) emailMailbox(mode string) uuid.UUID {
 	e.T.Helper()
 	id := ids.New()
-	e.Exec(`INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token, outbound_kind, ai_answers, ai_answers_mode)
-		VALUES ($1, $2, 'Support', $3, 'Acme Support', 'forwarding', $4, 'system', $5, $6)`, id, e.WS.ID,
-		"support-"+crypto.RandomString(6)+"@acme.test", "acme-"+crypto.RandomString(8), mode != "", map[bool]string{true: mode, false: "draft"}[mode != ""])
+	e.Exec(`INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token, outbound_kind, ai_answers, ai_answers_mode, brand_id)
+		VALUES ($1, $2, 'Support', $3, 'Acme Support', 'forwarding', $4, 'system', $5, $6, $7)`, id, e.WS.ID,
+		"support-"+crypto.RandomString(6)+"@acme.test", "acme-"+crypto.RandomString(8), mode != "", map[bool]string{true: mode, false: "draft"}[mode != ""],
+		e.defaultBrand())
 	return id
 }
 
@@ -190,6 +191,11 @@ func TestEmailAgent(t *testing.T) {
 	if n := e.count(`SELECT count(*) FROM activities WHERE ticket_id = $1 AND type = 'ai_handoff' AND actor_type = 'ai'`, tid); n != 1 {
 		t.Fatalf("handoff activity %d", n)
 	}
+	// The handoff names the bot that handed over.
+	if bot, _ := e.loadTicket(tid).Custom["ai_handoff_bot"].(string); bot == "" ||
+		e.count(`SELECT count(*) FROM activities WHERE ticket_id = $1 AND type = 'ai_handoff' AND data->>'bot' = $2`, tid, bot) != 1 {
+		t.Fatalf("handoff bot %q", bot)
+	}
 	// A later email on a handed-off ticket is left to the team.
 	before = e.F.calls()
 	e.emailAnswer(tid, e.customerReply(tid, "Hello?"))
@@ -258,6 +264,36 @@ func TestEmailAgentOutsideHours(t *testing.T) {
 	e.emailAnswer(tid, mid)
 	if ms := publicMessages(e, tid); len(ms) != 2 || !ms[1].AI {
 		t.Fatalf("not answered outside business hours %+v", ms)
+	}
+}
+
+func TestEmailAgentOutsideTeamHours(t *testing.T) {
+	e := newEnv(t, opts{billing: true})
+	mb := e.emailMailbox("send")
+	e.Exec(`UPDATE mailboxes SET ai_answers_outside_hours = true WHERE id = $1`, mb)
+	// The workspace is open around the clock.
+	day := `[{"start":"00:00","end":"24:00"}]`
+	e.Exec(`UPDATE workspaces SET settings = jsonb_set(settings, '{business_hours}', $2::jsonb) WHERE id = $1`, e.WS.ID,
+		`{"enabled":true,"schedule":{"mon":`+day+`,"tue":`+day+`,"wed":`+day+`,"thu":`+day+`,"fri":`+day+`,"sat":`+day+`,"sun":`+day+`},"holidays":[]}`)
+	// The ticket's team keeps its own hours and is closed today.
+	team := ids.New()
+	e.Exec(`INSERT INTO teams (id, workspace_id, name, business_hours) VALUES ($1, $2, 'Nights', $3::jsonb)`, team, e.WS.ID,
+		`{"enabled":true,"timezone":"","schedule":{"mon":`+day+`,"tue":`+day+`,"wed":`+day+`,"thu":`+day+`,"fri":`+day+`,"sat":`+day+`,"sun":`+day+`},`+
+			`"holidays":[{"date":"`+time.Now().UTC().Format(time.DateOnly)+`","name":"Day off"}]}`)
+	tid, mid := e.emailTicket(mb, customerEmail(), "Password", "How do I reset my password?")
+	e.Exec(`UPDATE tickets SET team_id = $3 WHERE workspace_id = $1 AND id = $2`, e.WS.ID, tid, team)
+	e.emailAnswer(tid, mid)
+	if ms := publicMessages(e, tid); len(ms) != 2 || !ms[1].AI {
+		t.Fatalf("not answered outside the team's hours %+v", ms)
+	}
+	// A team without hours of its own follows the workspace's: open, so the agent stays out.
+	e.Exec(`UPDATE teams SET business_hours = NULL WHERE id = $1`, team)
+	tid, mid = e.emailTicket(mb, customerEmail(), "Password", "How do I reset my password?")
+	e.Exec(`UPDATE tickets SET team_id = $3 WHERE workspace_id = $1 AND id = $2`, e.WS.ID, tid, team)
+	before := e.F.calls()
+	e.emailAnswer(tid, mid)
+	if e.F.calls() != before {
+		t.Fatal("answered inside the workspace's hours")
 	}
 }
 

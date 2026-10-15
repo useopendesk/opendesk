@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
 
@@ -140,15 +142,54 @@ func bestPassage(text string, words []string, n int) string {
 	return clip(string(r[best:]), n)
 }
 
-// retrieveKB returns the published articles most relevant to query: embeddings when
-// available, else full-text search. Results under minScore are dropped.
-func (s *Service) retrieveKB(ctx context.Context, wid uuid.UUID, wsSlug, query string, limit int, forAnswer bool) ([]kbSource, error) {
+// The knowledge base is per brand (contracts/teams.md): an answer for a ticket of brand B
+// draws on articles shared by every brand (no brand of their own or of their collection)
+// and B's own, and links them on B's help center. An article takes its collection's brand
+// when the collection has one.
+
+// kbBrandJoin joins an article a to its brand eb (the collection's, else its own).
+const kbBrandJoin = ` LEFT JOIN kb_collections kc ON kc.workspace_id = a.workspace_id AND kc.id = a.collection_id
+	LEFT JOIN brands eb ON eb.workspace_id = a.workspace_id AND eb.id = COALESCE(kc.brand_id, a.brand_id)`
+
+// kbBrandSQL keeps the articles of brand $n (a nullable uuid) and the shared ones; a null
+// brand keeps every article.
+func kbBrandSQL(n int) string {
+	return fmt.Sprintf(`($%[1]d::uuid IS NULL OR COALESCE(kc.brand_id, a.brand_id) IS NULL OR COALESCE(kc.brand_id, a.brand_id) = $%[1]d::uuid)`, n)
+}
+
+// kbBrandSlug is the help center slug links fall back to: the brand's, or without one the
+// default brand's (the workspace slug when no brand row is found).
+func (s *Service) kbBrandSlug(ctx context.Context, wid uuid.UUID, brand *uuid.UUID) (string, error) {
+	var slug string
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(
+			(SELECT b.slug FROM brands b WHERE b.workspace_id = $1 AND ($2::uuid IS NULL AND b.is_default OR b.id = $2::uuid) LIMIT 1),
+			(SELECT w.slug FROM workspaces w WHERE w.id = $1))`, wid, brand).Scan(&slug)
+	return slug, err
+}
+
+// ticketBrand is the brand a ticket's answers draw on, nil when unknown.
+func ticketBrand(t domain.Ticket) *uuid.UUID {
+	if t.BrandID == uuid.Nil {
+		return nil
+	}
+	b := t.BrandID
+	return &b
+}
+
+// retrieveKB returns the published articles of brand (nil: every brand) most relevant to
+// query: embeddings when available, else full-text search. Results under minScore are
+// dropped.
+func (s *Service) retrieveKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUID, query string, limit int, forAnswer bool) ([]kbSource, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
 	}
+	slug, err := s.kbBrandSlug(ctx, wid, brand)
+	if err != nil {
+		return nil, err
+	}
 	if s.semantic() {
-		out, err := s.semanticKB(ctx, wid, wsSlug, query, limit, forAnswer)
+		out, err := s.semanticKB(ctx, wid, brand, slug, query, limit, forAnswer)
 		if err == nil && len(out) > 0 {
 			return out, nil
 		}
@@ -156,10 +197,10 @@ func (s *Service) retrieveKB(ctx context.Context, wid uuid.UUID, wsSlug, query s
 			s.d.Log.Warn("ai semantic retrieval failed, using full-text search", "err", err)
 		}
 	}
-	return s.ftsKB(ctx, wid, wsSlug, query, limit, forAnswer)
+	return s.ftsKB(ctx, wid, brand, slug, query, limit, forAnswer)
 }
 
-func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, wsSlug, query string, limit int, forAnswer bool) ([]kbSource, error) {
+func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUID, slug, query string, limit int, forAnswer bool) ([]kbSource, error) {
 	vecs, err := s.embedder.Embed(ctx, []string{clip(query, 4000)}, true)
 	if err != nil {
 		return nil, err
@@ -168,21 +209,21 @@ func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, wsSlug, query s
 	if forAnswer {
 		minSim = minSimilarityAnswer
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.title, a.slug, e.content, 1 - (e.embedding <=> $3::vector) AS sim
-		FROM ai_embeddings e JOIN kb_articles a ON a.id = e.ref_id AND a.workspace_id = e.workspace_id
-		WHERE e.workspace_id = $1 AND e.kind = 'article' AND e.model = $2 AND e.dims = $4 AND a.status = 'published'
-		ORDER BY e.embedding <=> $3::vector LIMIT $5`, wid, s.embedder.Model(), vectorLiteral(vecs[0]), len(vecs[0]), limit*4)
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.title, a.slug, COALESCE(eb.slug, $7), e.content, 1 - (e.embedding <=> $3::vector) AS sim
+		FROM ai_embeddings e JOIN kb_articles a ON a.id = e.ref_id AND a.workspace_id = e.workspace_id`+kbBrandJoin+`
+		WHERE e.workspace_id = $1 AND e.kind = 'article' AND e.model = $2 AND e.dims = $4 AND a.status = 'published' AND `+kbBrandSQL(6)+`
+		ORDER BY e.embedding <=> $3::vector LIMIT $5`, wid, s.embedder.Model(), vectorLiteral(vecs[0]), len(vecs[0]), limit*4, brand, slug)
 	if err != nil {
 		return nil, err
 	}
 	type hit struct {
-		id                   uuid.UUID
-		title, slug, passage string
-		sim                  float64
+		id                              uuid.UUID
+		title, slug, brandSlug, passage string
+		sim                             float64
 	}
 	hits, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (hit, error) {
 		var h hit
-		err := r.Scan(&h.id, &h.title, &h.slug, &h.passage, &h.sim)
+		err := r.Scan(&h.id, &h.title, &h.slug, &h.brandSlug, &h.passage, &h.sim)
 		return h, err
 	})
 	if err != nil {
@@ -205,19 +246,20 @@ func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, wsSlug, query s
 			continue
 		}
 		idx[h.id] = len(out)
-		out = append(out, kbSource{ArticleID: h.id.String(), Title: h.title, URL: s.articleURL(wsSlug, h.slug), Passage: h.passage, Score: h.sim})
+		out = append(out, kbSource{ArticleID: h.id.String(), Title: h.title, URL: s.articleURL(h.brandSlug, h.slug), Passage: h.passage, Score: h.sim})
 	}
 	return out, nil
 }
 
-func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, wsSlug, query string, limit int, forAnswer bool) ([]kbSource, error) {
+func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUID, slug, query string, limit int, forAnswer bool) ([]kbSource, error) {
 	words := keywords(query)
 	if len(words) == 0 {
 		return nil, nil
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.title, a.slug, a.excerpt, a.body_html
-		FROM kb_articles a WHERE a.workspace_id = $1 AND a.status = 'published' AND a.search @@ to_tsquery('simple', $2)
-		ORDER BY ts_rank_cd(a.search, to_tsquery('simple', $2)) DESC, a.updated_at DESC LIMIT $3`, wid, orQuery(words), limit*3)
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.title, a.slug, COALESCE(eb.slug, $5), a.excerpt, a.body_html
+		FROM kb_articles a`+kbBrandJoin+`
+		WHERE a.workspace_id = $1 AND a.status = 'published' AND a.search @@ to_tsquery('simple', $2) AND `+kbBrandSQL(4)+`
+		ORDER BY ts_rank_cd(a.search, to_tsquery('simple', $2)) DESC, a.updated_at DESC LIMIT $3`, wid, orQuery(words), limit*3, brand, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +271,8 @@ func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, wsSlug, query string
 	var cands []cand
 	for rows.Next() {
 		var id uuid.UUID
-		var title, slug, excerpt, body string
-		if err := rows.Scan(&id, &title, &slug, &excerpt, &body); err != nil {
+		var title, slug, brandSlug, excerpt, body string
+		if err := rows.Scan(&id, &title, &slug, &brandSlug, &excerpt, &body); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -241,7 +283,7 @@ func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, wsSlug, query string
 		}
 		hits := keywordHits(words, title+" "+excerpt+" "+text)
 		cov := coverage(words, title+" "+excerpt+" "+text, capWords)
-		cands = append(cands, cand{kbSource{ArticleID: id.String(), Title: title, URL: s.articleURL(wsSlug, slug),
+		cands = append(cands, cand{kbSource{ArticleID: id.String(), Title: title, URL: s.articleURL(brandSlug, slug),
 			Passage: bestPassage(text, words, passageChars), Score: min(cov, 1)}, cov, hits})
 	}
 	rows.Close()

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/ai/decide"
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/db"
@@ -26,7 +27,7 @@ import (
 // The widget agent's job side (contracts/agent.md): when it answers, posting, handoff,
 // visitor actions and the monthly cap. The model loop is in agent.go.
 
-func isNoCredits(err error) bool { return errors.Is(err, plan.ErrNoCredits) }
+func isNoBalance(err error) bool { return errors.Is(err, plan.ErrNoBalance) }
 
 // wantsPerson spots a request for a human in common languages without a model call.
 var wantsPerson = regexp.MustCompile(`(?i)\b(human|real person|a person|live agent|an agent|representative|operator|someone real|talk to (?:someone|support|a person)|speak (?:to|with) (?:someone|a person|an agent)|mensch|mitarbeiter|humain|une personne|conseiller|humano|una persona|persona real|agente|operatore|atendente|uma pessoa|medewerker|człowiek|konsultant)\b`)
@@ -83,7 +84,7 @@ func (w *WidgetActionWorker) Work(ctx context.Context, job *river.Job[jobs.AIWid
 type agentConv struct {
 	tc      *ticketCtx
 	set     hd.AISettings
-	botName string
+	bot     bots.Bot
 	visitor AgentVisitor
 	texts   []string // visitor messages, oldest first
 	burst   int      // visitor messages since the last reply
@@ -118,10 +119,11 @@ func (s *Service) loadAgentConv(ctx context.Context, wid, tid uuid.UUID) (*agent
 	if v, _ := t.Custom["ai_handoff"].(bool); v {
 		return nil, nil
 	}
-	ac := &agentConv{tc: tc, set: set, botName: st.WidgetOrDefault().BotName}
-	if strings.TrimSpace(ac.botName) == "" {
-		ac.botName = AssistantName
+	bot, err := bots.ForWidget(ctx, s.d.DB.Pool, wid, t.WidgetID)
+	if err != nil {
+		return nil, err
 	}
+	ac := &agentConv{tc: tc, set: set, bot: bot}
 	for _, m := range tc.Msgs {
 		switch {
 		case m.Author.Type == "user":
@@ -138,9 +140,12 @@ func (s *Service) loadAgentConv(ctx context.Context, wid, tid uuid.UUID) (*agent
 		ac.visitor.ContactID = t.Contact.ID
 		var external *string
 		var verified bool
+		// Verified only by a session of the conversation's own widget, which checked user_hash
+		// with that widget's secret (contracts/teams.md "Widget identity").
 		if err := s.d.DB.Pool.QueryRow(ctx, `SELECT c.external_id, EXISTS (SELECT 1 FROM widget_sessions s
-			WHERE s.workspace_id = c.workspace_id AND s.contact_id = c.id AND s.verified)
-			FROM contacts c WHERE c.workspace_id = $1 AND c.id = $2`, wid, t.Contact.ID).Scan(&external, &verified); err != nil && !db.IsNotFound(err) {
+			WHERE s.workspace_id = c.workspace_id AND s.contact_id = c.id AND s.verified
+			AND s.widget_id IS NOT DISTINCT FROM (SELECT k.widget_id FROM tickets k WHERE k.workspace_id = $1 AND k.id = $3))
+			FROM contacts c WHERE c.workspace_id = $1 AND c.id = $2`, wid, t.Contact.ID, tid).Scan(&external, &verified); err != nil && !db.IsNotFound(err) {
 			return nil, err
 		}
 		if verified && external != nil {
@@ -164,7 +169,7 @@ func (ac *agentConv) input(wid, tid uuid.UUID, pageURL string) agentInput {
 		msgs = msgs[len(msgs)-agentThreadMsgs:]
 	}
 	tidCopy := tid
-	return agentInput{wid: wid, ticketID: &tidCopy, feature: "answer", set: ac.set, botName: ac.botName,
+	return agentInput{wid: wid, ticketID: &tidCopy, brandID: ticketBrand(ac.tc.T), feature: "answer", set: ac.set, bot: ac.bot,
 		company: ac.tc.Workspace.Name, thread: renderThread(msgs, "", agentThreadChars),
 		query: agentQuery(ac.texts, ac.burst), pageURL: pageURL, visitor: ac.visitor}
 }
@@ -189,10 +194,10 @@ func (s *Service) WidgetAnswer(ctx context.Context, a jobs.AIWidgetAnswerArgs) e
 		return nil // the visitor wrote again (that job replies) or someone replied
 	}
 	if ac.replies >= max(ac.set.WidgetMaxReplies, 1) {
-		return s.handoff(ctx, a.WorkspaceID, a.TicketID, a.MessageID, nil)
+		return s.handoff(ctx, a.WorkspaceID, a.TicketID, a.MessageID, handoffBot(ac.bot))
 	}
 	if wantsPerson.MatchString(messageText(last)) {
-		return s.handoff(ctx, a.WorkspaceID, a.TicketID, a.MessageID, nil)
+		return s.handoff(ctx, a.WorkspaceID, a.TicketID, a.MessageID, handoffBot(ac.bot))
 	}
 	if capped, err := s.agentCapped(ctx, a.WorkspaceID, ac.set); err != nil || capped {
 		if capped {
@@ -304,8 +309,20 @@ type liveStream struct {
 	last    time.Time
 }
 
-func (s *Service) newLiveStream(wid, tid, contactID uuid.UUID) *liveStream {
-	return &liveStream{s: s, replyID: uuid.New(), ev: events.LiveEvent{WorkspaceID: wid, TicketID: tid, ContactID: contactID}}
+// newLiveStream marks the stream with the ticket's private team, so the gateway shows the
+// preview only to agents who may see the ticket.
+func (s *Service) newLiveStream(ctx context.Context, wid, tid, contactID uuid.UUID) (*liveStream, error) {
+	team, err := events.PrivateTeam(ctx, s.d.DB.Pool, wid, tid)
+	if err != nil {
+		return nil, err
+	}
+	// The brand keeps the preview off the visitor's widgets of other brands.
+	var brand uuid.UUID
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT brand_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, tid).Scan(&brand); err != nil {
+		return nil, err
+	}
+	return &liveStream{s: s, replyID: uuid.New(), ev: events.LiveEvent{WorkspaceID: wid, TicketID: tid, ContactID: contactID, TeamID: team,
+		BrandID: &brand}}, nil
 }
 
 func (l *liveStream) publish(typ string, data map[string]any) {
@@ -353,8 +370,12 @@ func (l *liveStream) end(messageID, actionID *uuid.UUID, handoff bool) {
 // replyAndPost runs the loop with live events and posts the reply if nothing changed
 // since trigger (the message replied to) was the latest message.
 func (s *Service) replyAndPost(ctx context.Context, in agentInput, trigger uuid.UUID) error {
-	live := s.newLiveStream(in.wid, *in.ticketID, in.visitor.ContactID)
-	live.publish("ai.reply.started", map[string]any{"bot": map[string]any{"name": in.botName}})
+	live, err := s.newLiveStream(ctx, in.wid, *in.ticketID, in.visitor.ContactID)
+	if err != nil {
+		return err
+	}
+	live.publish("ai.reply.started", map[string]any{"bot": map[string]any{"id": in.bot.IDPtr(), "name": in.bot.Name,
+		"look": in.bot.Look, "avatar_url": in.bot.AvatarURL}})
 	res, err := s.runAgent(ctx, in, agentEvents{delta: live.delta, tool: live.tool})
 	if err != nil {
 		live.end(nil, nil, false)
@@ -415,7 +436,7 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 		}
 		if body != "" {
 			nm := domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: "reply", Direction: "outbound", AuthorType: "system",
-				BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject, Trigger: "none", AI: true, FromName: in.botName}
+				BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject, Trigger: "none", AI: true, FromName: in.bot.Name, BotID: in.bot.IDPtr()}
 			var aid uuid.UUID
 			if res.Action != nil {
 				aid = uuid.New()
@@ -452,7 +473,7 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 			}
 		}
 		if res.Handoff {
-			if _, err := hd.MarkAIHandoff(ctx, tx, wid, tid, "ai"); err != nil && !db.IsNotFound(err) {
+			if _, err := hd.MarkAIHandoff(ctx, tx, wid, tid, "ai", handoffBot(in.bot)); err != nil && !db.IsNotFound(err) {
 				return err
 			}
 		}
@@ -468,14 +489,18 @@ func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID) error {
 	return err
 }
 
+// handoffBot is the bot as a handoff records it.
+func handoffBot(b bots.Bot) hd.HandoffBot { return hd.HandoffBot{ID: b.IDPtr(), Name: b.Name} }
+
 // handoff stops the agent for this conversation and alerts the team, without a reply.
-func (s *Service) handoff(ctx context.Context, wid, tid, mid uuid.UUID, _ *string) error {
+// bot is the bot handing over.
+func (s *Service) handoff(ctx context.Context, wid, tid, mid uuid.UUID, bot hd.HandoffBot) error {
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO ai_widget_answers (message_id, workspace_id, ticket_id, answered, handoff) VALUES ($1, $2, $3, false, true)
 			ON CONFLICT DO NOTHING`, mid, wid, tid); err != nil {
 			return err
 		}
-		_, err := hd.MarkAIHandoff(ctx, tx, wid, tid, "ai")
+		_, err := hd.MarkAIHandoff(ctx, tx, wid, tid, "ai", bot)
 		if db.IsNotFound(err) {
 			return nil
 		}
@@ -487,17 +512,17 @@ func (s *Service) handoff(ctx context.Context, wid, tid, mid uuid.UUID, _ *strin
 // agentCapped reports whether the agent used its monthly cap, notifying owners and
 // admins the first time each month.
 func (s *Service) agentCapped(ctx context.Context, wid uuid.UUID, set hd.AISettings) (bool, error) {
-	if set.WidgetMonthlyCap <= 0 {
+	if set.WidgetMonthlyCapUSD <= 0 {
 		return false, nil
 	}
 	month := time.Now().UTC()
 	month = time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
-	var used int64
-	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(SUM(millicredits), 0) FROM ai_usage
+	var used plan.Micro
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(SUM(micro_usd), 0)::bigint FROM ai_usage
 		WHERE workspace_id = $1 AND feature = ANY($2) AND created_at >= $3`, wid, agentFeatures, month).Scan(&used); err != nil {
 		return false, err
 	}
-	if used < int64(set.WidgetMonthlyCap)*1000 {
+	if used < plan.FromUSD(set.WidgetMonthlyCapUSD) {
 		return false, nil
 	}
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -519,7 +544,7 @@ func (s *Service) agentCapped(ctx context.Context, wid uuid.UUID, set hd.AISetti
 			return err
 		}
 		for _, uid := range users {
-			if err := hd.Notify(ctx, tx, wid, uid, NotifyAICapReached, nil, map[string]any{"cap": set.WidgetMonthlyCap}); err != nil {
+			if err := hd.Notify(ctx, tx, wid, uid, NotifyAICapReached, nil, map[string]any{"cap_usd": set.WidgetMonthlyCapUSD}); err != nil {
 				return err
 			}
 		}

@@ -70,6 +70,11 @@ export const en = {
   rateDown: "Not helpful",
   ratedThanks: "Thanks for the feedback",
   jumpLatest: "Jump to latest",
+  topicsTitle: "What can we help with?",
+  topicsHint: "Pick a topic so your message reaches the right people.",
+  placeholderTopic: "Pick a topic to start",
+  changeTopic: "Change topic",
+  offlineDefault: "We're away right now. Leave a message and we'll reply as soon as we're back.",
 };
 
 export type Dict = typeof en;

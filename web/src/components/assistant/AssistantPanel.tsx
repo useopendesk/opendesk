@@ -277,7 +277,7 @@ export function AssistantDock() {
           className="relative hidden shrink-0 overflow-hidden md:block"
           data-ollie-panel="docked"
         >
-          <div className="absolute inset-y-0 left-0 flex flex-col border-l border-t border-line bg-surface md:ml-2 md:rounded-tl-2xl" style={{ width: PANEL_WIDTH - 8 }}>
+          <div className="absolute inset-y-0 left-0 flex flex-col border-l border-t border-line bg-surface md:ml-2 md:rounded-tl-2xl desktop:overflow-hidden desktop:rounded-2xl desktop:border desktop:border-panel-line" style={{ width: PANEL_WIDTH - 8 }}>
             <PanelBody />
           </div>
         </motion.aside>
@@ -341,7 +341,7 @@ export function AssistantFloat() {
             exit={reduce ? { opacity: 0 } : { x: PANEL_WIDTH + 24 }}
             transition={reduce ? { duration: 0.12 } : { type: "spring", stiffness: 380, damping: 40 }}
             style={{ width: PANEL_WIDTH }}
-            className="fixed bottom-0 right-0 top-12 z-40 flex flex-col overflow-hidden rounded-tl-2xl border-l border-t border-line bg-surface shadow-float"
+            className="fixed bottom-0 right-0 top-12 z-40 flex flex-col overflow-hidden rounded-tl-2xl border-l border-t border-line bg-surface shadow-float desktop:bottom-2 desktop:right-2 desktop:rounded-2xl desktop:border desktop:border-panel-line"
             data-ollie-panel="docked"
           >
             <PanelBody />

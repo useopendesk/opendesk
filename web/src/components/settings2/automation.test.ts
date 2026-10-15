@@ -22,7 +22,9 @@ describe("automation labels", () => {
   it("reads every label from the catalogs", () => {
     expect(triggerLabel.ticket_created).toBe("A ticket is created");
     expect(opLabel.not_contains).toBe("doesn't contain");
-    expect(actionLabel.add_tag).toBe("Add tag");
+    expect(actionLabel.add_tag).toBe("Add label");
+    expect(actionLabel.remove_tag).toBe("Remove label");
+    expect(fieldLabel.tag).toBe("Label");
     expect(fieldLabel.from_email).toBe("Sender email");
     expect(Object.keys(fieldLabel)).toContain("sentiment");
     expect(Object.keys(actionLabel).at(-1)).toBe("ai_triage");

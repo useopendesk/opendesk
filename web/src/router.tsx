@@ -14,10 +14,11 @@ import { RootLayout } from "./app/RootLayout";
 import { AppLayout } from "./app/AppLayout";
 import { AuthLayout } from "./app/AuthLayout";
 import { NotFound, RouteError, RoutePending } from "./app/RouteStates";
-import { bootSession } from "./lib/session";
+import { bootSession, openLinkedWorkspace } from "./lib/session";
+import { stripWorkspaceParam, workspaceParam } from "./lib/workspaceParam";
 import { queryClient } from "./lib/queryClient";
 import { q } from "./lib/queries";
-import { folderById, listQuery, parseInboxSearch } from "./lib/folders";
+import { folderById, listQuery, parseInboxSearch, teamQuery } from "./lib/folders";
 
 export type RouterContext = { queryClient: QueryClient };
 
@@ -49,10 +50,13 @@ async function requireWorkspace(href: string) {
   return s;
 }
 
-async function guestOnly() {
+/** Sign-in pages, except in add-account mode, where the signed-in accounts stay. */
+async function guestOnly({ search }: { search: { add?: string } }) {
   const s = await bootSession();
-  if (s.status === "authed") throw redirect({ to: "/" });
+  if (s.status === "authed" && search.add !== "1") throw redirect({ to: "/" });
 }
+
+const addMode = (v: unknown) => (v === "1" || v === 1 || v === true ? "1" : undefined);
 
 // ─── Root ──────────────────────────────────────────────────────────────────
 
@@ -111,7 +115,13 @@ const authLayout = createRoute({ getParentRoute: () => rootRoute, id: "auth", co
 const loginRoute = createRoute({
   getParentRoute: () => authLayout,
   path: "/login",
-  validateSearch: (s: Record<string, unknown>): { next?: string; error?: string } => ({ next: str(s.next), error: str(s.error) }),
+  // add=1: add another account, keeping the ones signed in; email prefills the address.
+  validateSearch: (s: Record<string, unknown>): { next?: string; error?: string; add?: string; email?: string } => ({
+    next: str(s.next),
+    error: str(s.error),
+    add: addMode(s.add),
+    email: str(s.email),
+  }),
   beforeLoad: guestOnly,
   loader: ({ context }) => context.queryClient.prefetchQuery(q.authConfig()),
   component: page(() => import("./pages/auth/Login")),
@@ -120,7 +130,7 @@ const loginRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => authLayout,
   path: "/register",
-  validateSearch: (s: Record<string, unknown>): { next?: string; email?: string } => ({ next: str(s.next), email: str(s.email) }),
+  validateSearch: (s: Record<string, unknown>): { next?: string; email?: string; add?: string } => ({ next: str(s.next), email: str(s.email), add: addMode(s.add) }),
   beforeLoad: guestOnly,
   loader: ({ context }) => context.queryClient.prefetchQuery(q.authConfig()),
   component: page(() => import("./pages/auth/Register")),
@@ -153,6 +163,14 @@ const callbackRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { code?: string; error?: string; next?: string } => ({ code: str(s.code), error: str(s.error), next: str(s.next) }),
   component: page(() => import("./pages/auth/Callback")),
   staticData: { title: "Signing in" },
+});
+// The footer link of notification emails. It never acts on load (link scanners open it), only on the click.
+const unsubscribeRoute = createRoute({
+  getParentRoute: () => authLayout,
+  path: "/unsubscribe",
+  validateSearch: (s: Record<string, unknown>): { token?: string } => ({ token: str(s.token) }),
+  component: page(() => import("./pages/auth/Unsubscribe")),
+  staticData: { title: "Notification emails" },
 });
 const inviteRoute = createRoute({
   getParentRoute: () => authLayout,
@@ -196,7 +214,15 @@ const onboardingMailboxRoute = createRoute({
 const appLayout = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  beforeLoad: ({ location }) => requireWorkspace(location.href),
+  beforeLoad: async ({ location }) => {
+    await requireWorkspace(location.href);
+    // ?ws=<workspace id> (notification email links): open that workspace when this
+    // person is in it, then drop the parameter so it never reaches a page's search.
+    const ws = workspaceParam(location.search as Record<string, unknown>);
+    if (ws === undefined) return;
+    if (ws) await openLinkedWorkspace(ws);
+    throw redirect({ href: stripWorkspaceParam(location.href), replace: true });
+  },
   loader: ({ context }) => {
     // The shell's own data: counts and views for the sidebar, members/tags/teams
     // for pickers everywhere. Started together, awaited for the sidebar only.
@@ -228,6 +254,7 @@ const inboxRoute = createRoute({
     if (!f) throw redirect({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
     const qc = context.queryClient;
     if (params.ticketId) prefetchTicket(qc, params.ticketId);
+    prefetchInboxShared(qc);
     return qc.ensureInfiniteQueryData(q.tickets(listQuery(f.query, deps)));
   },
   component: page(() => import("./pages/inbox/InboxPage")),
@@ -242,11 +269,34 @@ const viewRoute = createRoute({
   loader: ({ context, params, deps }) => {
     const qc = context.queryClient;
     if (params.ticketId) prefetchTicket(qc, params.ticketId);
+    prefetchInboxShared(qc);
     return qc.ensureInfiniteQueryData(q.tickets(listQuery({ view_id: params.viewId }, deps)));
   },
   component: page(() => import("./pages/inbox/InboxPage")),
   staticData: { title: "View" },
 });
+
+// A team's inbox; teamId "mine" is every team the caller is on.
+const teamRoute = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/teams/$teamId/{-$ticketId}",
+  validateSearch: parseInboxSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, params, deps }) => {
+    const qc = context.queryClient;
+    if (params.ticketId) prefetchTicket(qc, params.ticketId);
+    prefetchInboxShared(qc);
+    return qc.ensureInfiniteQueryData(q.tickets(listQuery(teamQuery(params.teamId, deps.tab), deps)));
+  },
+  component: page(() => import("./pages/inbox/InboxPage")),
+  staticData: { title: "Team" },
+});
+
+/** Addresses and brands name the chips on every row and the reply address. */
+function prefetchInboxShared(qc: QueryClient) {
+  void qc.prefetchQuery(q.mailboxes());
+  void qc.prefetchQuery({ ...q.brands(), retry: false });
+}
 
 function prefetchTicket(qc: QueryClient, id: string) {
   void qc.prefetchQuery(q.ticket(id));
@@ -294,17 +344,21 @@ const companiesRoute = createRoute({
 const kbRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/kb",
-  validateSearch: (s: Record<string, unknown>): { collection?: string; status?: "draft" | "published"; q?: string } => ({
+  // brand: what that brand's help center shows, its own articles and the shared ones.
+  validateSearch: (s: Record<string, unknown>): { collection?: string; status?: "draft" | "published"; q?: string; brand?: string } => ({
     collection: str(s.collection),
     status: s.status === "draft" || s.status === "published" ? (s.status as "draft" | "published") : undefined,
     q: str(s.q),
+    brand: str(s.brand),
   }),
   loaderDeps: ({ search }) => search,
-  loader: ({ context, deps }) =>
-    Promise.all([
+  loader: ({ context, deps }) => {
+    void context.queryClient.prefetchQuery({ ...q.brands(), retry: false });
+    return Promise.all([
       context.queryClient.ensureQueryData(q.kbCollections()),
-      context.queryClient.ensureQueryData(q.kbArticles({ collection_id: deps.collection, status: deps.status, q: deps.q })),
-    ]),
+      context.queryClient.ensureQueryData(q.kbArticles({ collection_id: deps.collection, status: deps.status, q: deps.q, for_brand_id: deps.brand })),
+    ]);
+  },
   component: page(() => import("./pages/kb/KbPage")),
   staticData: { title: "Knowledge base" },
 });
@@ -316,6 +370,7 @@ const kbArticleRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { collection?: string; title?: string } => ({ collection: str(s.collection), title: str(s.title)?.slice(0, 200) }),
   loader: ({ context, params }) => {
     void context.queryClient.prefetchQuery(q.kbCollections());
+    void context.queryClient.prefetchQuery({ ...q.brands(), retry: false });
     if (params.articleId !== "new") return context.queryClient.ensureQueryData(q.kbArticle(params.articleId));
   },
   component: page(() => import("./pages/kb/ArticleEditor")),
@@ -336,15 +391,29 @@ export function reportsRange(s: { from?: string; to?: string }) {
   return { from: s.from ?? d.from, to: s.to ?? d.to };
 }
 
+/** The overview query from the URL: the range, and the team (`none`: no team) and brand filters. */
+export function reportsQuery(s: { from?: string; to?: string; team?: string; brand?: string }) {
+  return { ...reportsRange(s), team_id: s.team, brand_id: s.brand };
+}
+
+const isRef = (v: unknown): v is string => typeof v === "string" && /^[\w-]{1,64}$/.test(v);
+
 const reportsRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/reports",
-  validateSearch: (s: Record<string, unknown>): { from?: string; to?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { from?: string; to?: string; team?: string; brand?: string } => ({
     from: isDay(s.from) ? s.from : undefined,
     to: isDay(s.to) ? s.to : undefined,
+    team: isRef(s.team) ? s.team : undefined,
+    brand: isRef(s.brand) ? s.brand : undefined,
   }),
   loaderDeps: ({ search }) => search,
-  loader: ({ context, deps }) => context.queryClient.ensureQueryData(q.reports(reportsRange(deps))),
+  loader: ({ context, deps }) => {
+    // The filters' names: teams and brands.
+    void context.queryClient.prefetchQuery(q.teams());
+    void context.queryClient.prefetchQuery({ ...q.brands(), retry: false });
+    return context.queryClient.ensureQueryData(q.reports(reportsQuery(deps)));
+  },
   component: page(() => import("./pages/reports/ReportsPage")),
   staticData: { title: "Reports" },
 });
@@ -379,15 +448,85 @@ function settingsPage<P extends string>(path: P, title: string, load: () => Prom
 
 const sProfile = settingsPage("/profile", "Profile", () => import("./pages/settings/Profile"));
 const sSecurity = settingsPage("/security", "Security", () => import("./pages/settings/Security"), (qc) => qc.ensureQueryData(q.sessions()));
-const sWorkspace = settingsPage("/workspace", "Workspace", () => import("./pages/settings/WorkspaceSettings"), (qc) =>
+const sNotifications = settingsPage("/notifications", "Notifications", () => import("./pages/settings/Notifications"), (qc) =>
+  qc.ensureQueryData(q.notificationPreferences()),
+);
+const sWorkspace = settingsPage("/workspace", "General", () => import("./pages/settings/WorkspaceSettings"), (qc) =>
   Promise.all([qc.ensureQueryData(q.workspace()), qc.ensureQueryData(q.members())]),
 );
 const sMembers = settingsPage("/members", "Members", () => import("./pages/settings/Members"), (qc) =>
   Promise.all([qc.ensureQueryData(q.members()), qc.ensureQueryData(q.invitations())]),
 );
-const sTeams = settingsPage("/teams", "Teams", () => import("./pages/settings/Teams"), (qc) =>
-  Promise.all([qc.ensureQueryData(q.teams()), qc.ensureQueryData(q.members())]),
-);
+const sTeams = settingsPage("/teams", "Teams", () => import("./pages/settings/Teams"), (qc) => {
+  void qc.prefetchQuery(q.mailboxes());
+  return Promise.all([qc.ensureQueryData(q.teams()), qc.ensureQueryData(q.members())]);
+});
+// Teams, brands, widgets and routing (contracts/teams.md).
+const sTeamDetail = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/teams/$teamId",
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.mailboxes());
+    void qc.prefetchQuery(q.businessHours());
+    void qc.prefetchQuery(q.assignment());
+    return Promise.all([qc.ensureQueryData(q.teams()), qc.ensureQueryData(q.members())]);
+  },
+  component: page(() => import("./pages/settings/TeamDetail")),
+  staticData: { title: "Team" },
+});
+const sBrands = settingsPage("/brands", "Brands", () => import("./pages/settings/Brands"), (qc) => qc.ensureQueryData(q.brands()));
+const sBrandDetail = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/brands/$brandId",
+  validateSearch: (s: Record<string, unknown>): { tab?: "overview" | "addresses" | "widgets" | "help" } => ({
+    tab: s.tab === "addresses" || s.tab === "widgets" || s.tab === "help" ? s.tab : undefined,
+  }),
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.mailboxes());
+    void qc.prefetchQuery(q.teams());
+    return Promise.all([qc.ensureQueryData(q.brands()), qc.ensureQueryData(q.widgets())]);
+  },
+  component: page(() => import("./pages/settings/BrandDetail")),
+  staticData: { title: "Brand" },
+});
+const sWidgetDetail = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/brands/$brandId/widgets/$widgetId",
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.members());
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.aiConfig());
+    void qc.prefetchQuery(q.bots());
+    return Promise.all([qc.ensureQueryData(q.widgets()), qc.ensureQueryData(q.brands()), qc.ensureQueryData(q.workspace())]);
+  },
+  component: page(() => import("./pages/settings/WidgetDetail")),
+  staticData: { title: "Chat widget" },
+});
+const sRouting = settingsPage("/routing", "Routing", () => import("./pages/settings/Routing"), (qc) => {
+  void qc.prefetchQuery(q.teams());
+  void qc.prefetchQuery(q.mailboxes());
+  void qc.prefetchQuery(q.widgets());
+  void qc.prefetchQuery(q.brands());
+  return qc.ensureQueryData(q.routingRules());
+});
+const sRoutingRule = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/routing/$ruleId",
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.mailboxes());
+    void qc.prefetchQuery(q.widgets());
+    void qc.prefetchQuery(q.brands());
+    void qc.prefetchQuery(q.customFields());
+    return qc.ensureQueryData(q.routingRules());
+  },
+  component: page(() => import("./pages/settings/RoutingRuleEdit")),
+  staticData: { title: "Routing rule" },
+});
 const sMailboxes = createRoute({
   getParentRoute: () => settingsLayout,
   path: "/mailboxes",
@@ -396,11 +535,24 @@ const sMailboxes = createRoute({
   component: page(() => import("./pages/settings/Mailboxes")),
   staticData: { title: "Mailboxes" },
 });
-const sMailboxNew = settingsPage("/mailboxes/new", "Add a mailbox", () => import("./pages/settings/MailboxNew"), (qc) => qc.prefetchQuery(q.teams()));
+const sMailboxNew = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/mailboxes/new",
+  validateSearch: (s: Record<string, unknown>): { brand?: string } => ({ brand: str(s.brand) }),
+  loader: ({ context }) => {
+    void context.queryClient.prefetchQuery(q.brands());
+    return context.queryClient.prefetchQuery(q.teams());
+  },
+  component: page(() => import("./pages/settings/MailboxNew")),
+  staticData: { title: "Add a mailbox" },
+});
 const sMailboxDetail = createRoute({
   getParentRoute: () => settingsLayout,
   path: "/mailboxes/$mailboxId",
-  loader: ({ context }) => context.queryClient.ensureQueryData(q.mailboxes()),
+  loader: ({ context }) => {
+    void context.queryClient.prefetchQuery(q.bots());
+    return context.queryClient.ensureQueryData(q.mailboxes());
+  },
   component: page(() => import("./pages/settings/MailboxDetail")),
   staticData: { title: "Mailbox" },
 });
@@ -433,10 +585,18 @@ const sAutomationEdit = createRoute({
   component: page(() => import("./pages/settings/AutomationEdit")),
   staticData: { title: "Automation" },
 });
-const sWidget = settingsPage("/widget", "Chat widget", () => import("./pages/settings/WidgetSettings"), (qc) => {
-  void qc.prefetchQuery(q.members());
-  void qc.prefetchQuery(q.aiConfig());
-  return Promise.all([qc.ensureQueryData(q.widgetSettings()), qc.ensureQueryData(q.workspace())]);
+// The old single widget page: the default brand's first widget, else the brand's widgets.
+const sWidget = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/widget",
+  beforeLoad: async ({ context }) => {
+    const [brands, widgets] = await Promise.all([context.queryClient.ensureQueryData(q.brands()), context.queryClient.ensureQueryData(q.widgets())]);
+    const brand = brands.find((b) => b.is_default) ?? brands[0];
+    const widget = widgets.filter((w) => w.brand_id === brand?.id).sort((a, b) => a.position - b.position)[0];
+    if (brand && widget) throw redirect({ to: "/settings/brands/$brandId/widgets/$widgetId", params: { brandId: brand.id, widgetId: widget.id } });
+    if (brand) throw redirect({ to: "/settings/brands/$brandId", params: { brandId: brand.id }, search: { tab: "widgets" } });
+    throw redirect({ to: "/settings/brands" });
+  },
 });
 const sApiKeys = settingsPage("/api-keys", "API keys", () => import("./pages/settings/ApiKeys"), (qc) => qc.ensureQueryData(q.apiKeys()));
 // Connecting AI clients to opendesk's MCP server (contracts/agent.md "opendesk MCP server").
@@ -462,9 +622,9 @@ const sAudit = settingsPage("/audit-log", "Audit log", () => import("./pages/set
 const sBilling = createRoute({
   getParentRoute: () => settingsLayout,
   path: "/billing",
-  validateSearch: (s: Record<string, unknown>): { checkout?: string; credits?: string; payment_method?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { checkout?: string; top_up?: string; payment_method?: string } => ({
     checkout: str(s.checkout),
-    credits: str(s.credits),
+    top_up: str(s.top_up),
     payment_method: str(s.payment_method),
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(q.billing()),
@@ -485,8 +645,31 @@ const sAgent = settingsPage("/ai/agent", "AI agent", () => import("./pages/setti
 });
 const sAgentBehaviour = settingsPage("/ai/behaviour", "Agent behaviour", () => import("./pages/settings/agent/AgentBehaviour"), (qc) => {
   void qc.prefetchQuery(q.aiModels());
+  void qc.prefetchQuery(q.bots());
   void qc.prefetchQuery(q.widgetSettings());
   return Promise.all([qc.ensureQueryData(q.aiConfig()), qc.ensureQueryData(q.workspace())]);
+});
+// The bots customers talk to (contracts/bots.md).
+const sAgentBots = settingsPage("/ai/bots", "Bots", () => import("./pages/settings/agent/Bots"), (qc) => {
+  void qc.prefetchQuery(q.widgets());
+  void qc.prefetchQuery(q.mailboxes());
+  return qc.ensureQueryData(q.bots());
+});
+const sAgentBot = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/ai/bots/$botId",
+  validateSearch: (s: Record<string, unknown>): { tab?: "personality" | "test" } => ({
+    tab: s.tab === "personality" || s.tab === "test" ? s.tab : undefined,
+  }),
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.widgetSettings());
+    void qc.prefetchQuery(q.members());
+    void qc.prefetchQuery(q.aiConfig());
+    return Promise.all([qc.ensureQueryData(q.bots()), qc.ensureQueryData(q.workspace())]);
+  },
+  component: page(() => import("./pages/settings/agent/BotDetail")),
+  staticData: { title: "Bot" },
 });
 const sAgentKnowledge = settingsPage("/ai/knowledge", "Knowledge", () => import("./pages/settings/agent/AgentKnowledge"), (qc) =>
   qc.ensureQueryData(q.knowledge()),
@@ -501,6 +684,7 @@ const sAgentTools = createRoute({
 });
 const sAgentPlayground = settingsPage("/ai/playground", "Agent playground", () => import("./pages/settings/agent/AgentPlayground"), (qc) => {
   void qc.prefetchQuery(q.aiModels());
+  void qc.prefetchQuery(q.bots());
   void qc.prefetchQuery(q.widgetSettings());
   return Promise.all([qc.ensureQueryData(q.aiConfig()), qc.ensureQueryData(q.workspace())]);
 });
@@ -532,6 +716,7 @@ const routeTree = rootRoute.addChildren([
     verifyRoute,
     callbackRoute,
     inviteRoute,
+    unsubscribeRoute,
     oauthConsentRoute,
     onboardingRoute,
     onboardingMailboxRoute,
@@ -540,6 +725,7 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     inboxRoute,
     viewRoute,
+    teamRoute,
     contactsRoute,
     companiesRoute,
     kbRoute,
@@ -549,9 +735,16 @@ const routeTree = rootRoute.addChildren([
       settingsIndex,
       sProfile,
       sSecurity,
+      sNotifications,
       sWorkspace,
       sMembers,
       sTeams,
+      sTeamDetail,
+      sBrands,
+      sBrandDetail,
+      sWidgetDetail,
+      sRouting,
+      sRoutingRule,
       sMailboxes,
       sMailboxNew,
       sMailboxDetail,
@@ -575,6 +768,8 @@ const routeTree = rootRoute.addChildren([
       sAi,
       sAgent,
       sAgentBehaviour,
+      sAgentBots,
+      sAgentBot,
       sAgentKnowledge,
       sAgentTools,
       sAgentPlayground,

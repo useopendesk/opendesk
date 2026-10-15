@@ -1,0 +1,133 @@
+---
+title: Knowledge base and help center
+description: Write help articles in collections and publish them to a public help center for each brand.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+The knowledge base holds your help articles, grouped into **collections**. Published articles appear in your public **help center**, which customers browse and search, and which the chat widget links to. Each [brand](/guides/brands-and-widgets/) has its own help center at `/help/<brand slug>`.
+
+Open **Knowledge base** in the sidebar.
+
+<Screenshot src="/guides/kb/overview" alt="The Knowledge base page: New article ringed as 1, Draft from tickets as 2, View help center as 3, the collection cards and New collection as 4, and the brand filter, the All, Published and Drafts filter and the search box as 5" />
+
+<Legend>
+
+1. **New article**: start a blank article.
+2. **Draft from tickets**: let Ollie write a first draft from solved conversations.
+3. **View help center**: open the public help center in a new tab.
+4. **Collections**: broad topics such as "Getting started" or "Billing", with their article and draft counts. **New collection** adds one.
+5. **Filter and search**: one brand's articles (once you have more than one brand), all articles, only published ones, or only drafts, and search.
+
+</Legend>
+
+## Write an article
+
+<Steps>
+<Step title="Make a collection">
+
+Click **New collection**, give it a **Name**, and a **Description** that shows under its title in the help center. With more than one brand, pick its **Brand**: **All brands** shows it in every help center.
+
+<Screenshot src="/guides/kb/new-collection" alt="The new collection dialog with the Name field ringed as 1, the Description field ringed as 2 and the Brand picker ringed as 3" />
+
+</Step>
+<Step title="Write the article">
+
+Click **New article**. Pick its collection at the top, then write a title, a one-line summary for search results, and the body. Use headings so readers can scan, and drop images straight into the text.
+
+<Screenshot src="/guides/kb/editor" alt="The article editor: the collection picker ringed as 1, the title and summary as 2, the formatting toolbar as 3, the article's URL as 4, Save with the more actions menu as 5, and the Brand picker as 6" />
+
+<Legend>
+
+1. **Collection**: where it appears in the help center.
+2. **Title and summary**: the summary shows in search results and collection lists.
+3. **Toolbar**: headings, bold, italic, strikethrough, links, lists, quotes, code and images.
+4. **URL**: the article's address in the help center. Changing it breaks old links.
+5. **Save** and **more actions**: a new article has **Save draft** and **Publish** instead.
+6. **Brand**: which help centers show the article. It follows its collection when the collection belongs to a brand.
+
+</Legend>
+
+</Step>
+<Step title="Publish it">
+
+Click **Publish** and the article is live in the help center and its search. To take a published article down, open **more actions** and choose **Unpublish**: it goes back to being a draft.
+
+<Screenshot src="/guides/kb/more" alt="The more actions menu of a published article with Unpublish ringed as 1, above Delete article" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+- Drafts are visible only to your team. Only published articles are ever shown to customers.
+- Each published article counts its views, and the page's **Views** tile names the most read one.
+- Article bodies are sanitized before they are stored, so only safe formatting reaches readers.
+
+</Callout>
+
+## Draft an article from tickets
+
+When the same question keeps coming in, let Ollie turn the answers into an article. Click **Draft from tickets**, add up to 10 tickets that answer the question, or describe the topic, then click **Draft article**.
+
+<Screenshot src="/guides/kb/draft" alt="The Draft an article from tickets dialog: Add a ticket ringed as 1, the Topic field ringed as 2, and Draft article with its cost ringed as 3" />
+
+The draft fills the editor; nothing is saved or published until you do. On Cloud it costs about $0.05 from the AI balance (see [AI features](/guides/ai/#ai-usage-on-cloud)). You can also ask [Ollie](/guides/ollie/) to draft one from recently solved tickets.
+
+## The help center
+
+Each brand's help center lists its collections, popular articles and a search box. Only published articles are shown.
+
+<Screenshot src="/guides/kb/help-center" alt="The public help center for Margin: the search box ringed as 1, the topics as 2, and the popular articles as 3" />
+
+### Turn it on for a brand
+
+<Steps>
+<Step title="Open the brand">
+
+Go to **Settings, Brands and widgets**, choose the brand, and open its **Help center** tab.
+
+</Step>
+<Step title="Publish it and set its look">
+
+Turn on **Published**, set a **Title**, and copy the **Public link** to share it. The path after `/help/` is the brand's slug. Add a help center logo and favicon under **Look**.
+
+<Screenshot src="/guides/kb/brand-help-center" alt="A brand's Help center tab ringed as 1, with Published ringed as 2, the public link https://app.opendesk.sh/help/margin ringed as 3, and the link to the knowledge base articles ringed as 4" />
+
+</Step>
+</Steps>
+
+<Fold>
+
+## Articles and brands
+
+A collection or article can belong to one brand, or to every brand:
+
+- A brand's help center shows its own collections and articles, plus the ones shared by every brand.
+- An article in a collection that belongs to a brand belongs to that brand too.
+- The default brand's slug is the workspace's, so links to the help center from before you added brands keep working.
+
+New collections and articles are shared by every brand. To give one to a single brand, pick it under **Brand** in the collection's dialog or the article's settings. Collections and articles of one brand carry its name in the knowledge base, and the brand filter above the list shows what one brand's help center has. The [Knowledge base API](/api/resources/knowledge-base/) sets the same thing as `brand_id`.
+
+</Fold>
+
+<Fold>
+
+## Using articles in the inbox and the AI
+
+- Global search in the inbox finds articles alongside tickets and contacts, so agents can link a customer to the right answer. Combine this with [saved replies](/guides/saved-replies-and-views/) for common questions.
+- AI drafts cite the most relevant articles of the ticket's brand.
+- The [AI agent](/guides/ai/#the-ai-agent-for-chat-and-email) answers chat and email from published articles, along with any other knowledge you add.
+
+</Fold>
+
+## Related
+
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Knowledge base API](/api/resources/knowledge-base/)
+- [Public help center API](/api/resources/public/)

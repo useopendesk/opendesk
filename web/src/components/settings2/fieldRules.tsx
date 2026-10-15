@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { isTone, tone as tones } from "@/lib/tones";
 import { MultiPick, SinglePick, useMemberItems } from "./pickers";
 import { typeIcon } from "./fields/model";
+import { DateField } from "@/components/ui/date-picker";
 
 export type FieldRef = `field.${string}` | `contact.field.${string}`;
 
@@ -149,14 +150,13 @@ export function FieldValueInput({
       );
     case "date":
       return (
-        <TextInput
-          inputSize="sm"
-          type="date"
+        <DateField
+          size="sm"
           value={value}
           invalid={invalid}
           aria-label={t("customFields.valueFor", { name: field.name })}
-          onChange={(e) => onChange(e.target.value)}
-          className="mono w-[170px]"
+          onChange={onChange}
+          className="w-[170px]"
         />
       );
     case "number":

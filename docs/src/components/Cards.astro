@@ -1,0 +1,37 @@
+---
+/**
+ * A grid of GuideCards or StartPaths, `cols` across on a wide page (default 3), two on a
+ * tablet and one on a phone.
+ *
+ *   <Cards cols={4}>
+ *   <GuideCard ... />
+ *   </Cards>
+ */
+interface Props {
+  cols?: 2 | 3 | 4;
+}
+const { cols = 3 } = Astro.props;
+---
+
+<div class="od-grid not-content" style={`--od-grid-cols: ${cols}`}>
+  <slot />
+</div>
+
+<style>
+  .od-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--od-grid-cols), minmax(0, 1fr));
+    gap: 0.875rem;
+    margin: 1.25rem 0 0;
+  }
+  @media (max-width: 64em) {
+    .od-grid {
+      grid-template-columns: repeat(min(var(--od-grid-cols), 2), minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 36em) {
+    .od-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

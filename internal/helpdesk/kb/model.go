@@ -16,12 +16,13 @@ import (
 
 // Collection is KbCollection from contracts/api.md.
 type KbCollection struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Slug         string    `json:"slug"`
-	Description  string    `json:"description"`
-	Position     int       `json:"position"`
-	ArticleCount int       `json:"article_count"`
+	ID           uuid.UUID  `json:"id"`
+	Name         string     `json:"name"`
+	Slug         string     `json:"slug"`
+	Description  string     `json:"description"`
+	Position     int        `json:"position"`
+	ArticleCount int        `json:"article_count"`
+	BrandID      *uuid.UUID `json:"brand_id" doc:"The brand whose help center shows it; null = every brand"`
 }
 
 // Article is KbArticle from contracts/api.md.
@@ -37,17 +38,34 @@ type KbArticle struct {
 	Views        int64           `json:"views"`
 	PublishedAt  *time.Time      `json:"published_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+	BrandID      *uuid.UUID      `json:"brand_id" doc:"The brand whose help center shows it; null = every brand. An article in a collection with a brand follows the collection's"`
 }
 
 // collectionSelect counts every article, or only published ones when $published is true.
 // The caller supplies the count flag as the first parameter.
 const collectionSelect = `SELECT k.id, k.name, k.slug, k.description, k.position,
-	(SELECT count(*) FROM kb_articles a WHERE a.collection_id = k.id AND (NOT $1 OR a.status = 'published'))
+	(SELECT count(*) FROM kb_articles a WHERE a.collection_id = k.id AND (NOT $1 OR a.status = 'published')), k.brand_id
 FROM kb_collections k`
+
+// publicCollectionSelect counts the published articles the help center of brand $1 shows.
+const publicCollectionSelect = `SELECT k.id, k.name, k.slug, k.description, k.position,
+	(SELECT count(*) FROM kb_articles a WHERE a.collection_id = k.id AND a.status = 'published' AND COALESCE(k.brand_id, a.brand_id, $1) = $1),
+	k.brand_id
+FROM kb_collections k`
+
+// articleBrand is the brand an article belongs to: its collection's when that has one,
+// else its own; NULL is every brand.
+const articleBrand = `COALESCE((SELECT kc.brand_id FROM kb_collections kc WHERE kc.id = a.collection_id), a.brand_id)`
+
+// forBrand is the predicate for articles the help center of the brand bound as $n shows.
+func forBrand(n int) string {
+	p := "$" + strconv.Itoa(n)
+	return `COALESCE(` + articleBrand + `, ` + p + `) = ` + p
+}
 
 func scanCollection(row pgx.Row) (KbCollection, error) {
 	var c KbCollection
-	err := row.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Position, &c.ArticleCount)
+	err := row.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Position, &c.ArticleCount, &c.BrandID)
 	return c, err
 }
 
@@ -67,7 +85,7 @@ func loadCollection(ctx context.Context, q db.Querier, wid, id uuid.UUID) (KbCol
 }
 
 const articleSelect = `SELECT a.id, a.collection_id, a.title, a.slug, a.excerpt, a.body_html, a.status, a.views,
-	a.published_at, a.updated_at, u.id, u.name, u.email, u.avatar_url
+	a.published_at, a.updated_at, u.id, u.name, u.email, u.avatar_url, a.brand_id
 FROM kb_articles a LEFT JOIN users u ON u.id = a.author_id`
 
 func scanArticle(row pgx.Row) (KbArticle, error) {
@@ -75,7 +93,7 @@ func scanArticle(row pgx.Row) (KbArticle, error) {
 	var uID *uuid.UUID
 	var uName, uEmail, uAvatar *string
 	err := row.Scan(&a.ID, &a.CollectionID, &a.Title, &a.Slug, &a.Excerpt, &a.BodyHTML, &a.Status, &a.Views,
-		&a.PublishedAt, &a.UpdatedAt, &uID, &uName, &uEmail, &uAvatar)
+		&a.PublishedAt, &a.UpdatedAt, &uID, &uName, &uEmail, &uAvatar, &a.BrandID)
 	if err != nil {
 		return a, err
 	}

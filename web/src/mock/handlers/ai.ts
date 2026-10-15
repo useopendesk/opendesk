@@ -4,7 +4,7 @@
 
 import type { AIConfig, AIModels, AISettings, DecisionEngine, KbArticle, KBArticleDraft, SearchResults, Ticket } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
-import { COSTS, effectiveModels, offeredModels, offersModel, reserve, spend } from "../credits";
+import { configCosts, effectiveModels, offeredModels, offersModel, reserve, spend } from "../aiBalance";
 import { aiKeyOf } from "../aiKey";
 import { registerAiProvider } from "./aiProvider";
 import { publish } from "../gateway";
@@ -60,7 +60,7 @@ function config(ws: WsData): AIConfig {
     models: { default: m.model, fast: m.fast },
     embeddings: true,
     features: ws.ai,
-    costs: { ...COSTS },
+    costs: configCosts(ws),
     metered: true,
     assistant_name: ASSISTANT_NAME,
     decisions: decisionEngine(),
@@ -237,11 +237,6 @@ function settingsPatch(ctx: Ctx): Partial<AISettings> {
     if (typeof v !== "string" || (v !== "" && !offersModel(ctx.ws, v))) throw invalid(`${k} must be empty or one of the offered models`);
     out[k] = v;
   }
-  if ("widget_instructions" in b) {
-    if (typeof b.widget_instructions !== "string") throw invalid("widget_instructions must be text");
-    if (b.widget_instructions.length > 4000) throw invalid("Keep the agent instructions under 4,000 characters");
-    out.widget_instructions = stripControl(b.widget_instructions);
-  }
   if ("widget_max_replies" in b) {
     const n = b.widget_max_replies;
     if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > 100) throw invalid("widget_max_replies must be a whole number from 1 to 100");
@@ -258,10 +253,10 @@ function settingsPatch(ctx: Ctx): Partial<AISettings> {
     }
     out.widget_blocked_topics = [...new Set(topics)];
   }
-  if ("widget_monthly_cap" in b) {
-    const n = b.widget_monthly_cap;
-    if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 1_000_000) throw invalid("widget_monthly_cap must be from 0 to 1,000,000 credits (0 is no cap)");
-    out.widget_monthly_cap = Math.round(n * 1000) / 1000;
+  if ("widget_monthly_cap_usd" in b) {
+    const n = b.widget_monthly_cap_usd;
+    if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 10_000) throw invalid("widget_monthly_cap_usd must be from $0 to $10,000 (0 is no cap)");
+    out.widget_monthly_cap_usd = Math.round(n * 100) / 100;
   }
   if ("widget_collect_email" in b) {
     if (typeof b.widget_collect_email !== "boolean") throw invalid("widget_collect_email must be true or false");

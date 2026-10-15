@@ -2,7 +2,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-qu
 import { getRouteApi } from "@tanstack/react-router";
 import { differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
 import { BarChart3, CircleCheck, CircleDot, Inbox, Reply, ShieldAlert, Smile, Timer } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/layout";
 import { EmptyState } from "@/components/ui/empty";
@@ -19,36 +19,51 @@ import { SeverityBars } from "@/components/reports/SeverityBars";
 import { AgentTable } from "@/components/reports/AgentTable";
 import { AnimatedNumber } from "@/components/motion";
 import { Bar, BreakdownBars, ShareBar, type BarRow } from "@/components/reports/Bars";
+import { BrandFilter, GroupTable, NO_TEAM, TeamFilter, brandRows, teamRows, useReportScope, type GroupRow } from "@/components/reports/TeamBrand";
 import { PriorityIcon, StatusIcon, priorityLabel, priorityOrder, statusLabel } from "@/components/tickets/bits";
-import type { ReportsOverview, ReportsRange, Ticket } from "@/lib/api/types";
+import type { ReportsOverview, ReportsQuery, ReportsRange, Ticket } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { minutes } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { isTone, priorityTone, SERIES, statusTone, tone, toneFor, toneVar, type Tone } from "@/lib/tones";
-import { reportsRange } from "@/router";
+import { reportsQuery } from "@/router";
 
 const route = getRouteApi("/app/reports");
 
-/** The same-length period just before `r`, for deltas. */
-function previous(r: ReportsRange): ReportsRange {
+/** The same-length period just before `r`, with the same filters, for deltas. */
+function previous<R extends ReportsRange>(r: R): R {
   const from = parseISO(r.from);
   const len = differenceInCalendarDays(parseISO(r.to), from) + 1;
-  return { from: format(subDays(from, len), "yyyy-MM-dd"), to: format(subDays(from, 1), "yyyy-MM-dd") };
+  return { ...r, from: format(subDays(from, len), "yyyy-MM-dd"), to: format(subDays(from, 1), "yyyy-MM-dd") };
 }
 
-const OPEN_WORK = { status: ["open", "pending", "on_hold"] as Ticket["status"][] };
+const OPEN_STATUSES = ["open", "pending", "on_hold"] as Ticket["status"][];
+
+/** The open tickets behind the backlog and open work cards, narrowed like the report. */
+function openWork(r: ReportsQuery) {
+  return { status: OPEN_STATUSES, team_id: r.team_id, brand_id: r.brand_id };
+}
 
 export default function ReportsPage() {
   const { t } = useTranslation("reports");
   const search = route.useSearch();
   const navigate = route.useNavigate();
-  const range = reportsRange(search);
+  const range = reportsQuery(search);
+  const scope = useReportScope();
+  const filtered = !!(range.team_id || range.brand_id);
+  // A link to a team the caller may not see (a private team they are not on) drops the filter.
+  const lostTeam = !!search.team && search.team !== NO_TEAM && scope.teamsLoaded && !scope.team(search.team);
+  useEffect(() => {
+    if (lostTeam) void navigate({ search: (s) => ({ ...s, team: undefined }), replace: true });
+  }, [lostTeam, navigate]);
   const report = useQuery({ ...q.reports(range), placeholderData: keepPreviousData });
   const prev = useQuery({ ...q.reports(previous(range)), placeholderData: keepPreviousData });
   const d = report.data;
   const p = prev.data;
   const refetching = report.isFetching && report.isPlaceholderData;
   const empty = d && d.created === 0 && d.solved === 0 && d.open_now === 0;
+  const teamTable = d && scope.hasTeams && !range.team_id ? teamRows(d, scope, t("filter.noTeam")) : null;
+  const brandTable = d && scope.multiBrand && !range.brand_id ? brandRows(d, scope) : null;
   const days = differenceInCalendarDays(parseISO(range.to), parseISO(range.from)) + 1;
 
   return (
@@ -57,7 +72,13 @@ export default function ReportsPage() {
         title={t("title")}
         icon={<BarChart3 />}
         subtitle={<span className="hidden sm:inline">{t("compared", { count: days })}</span>}
-        actions={<RangePicker value={range} onChange={(r) => void navigate({ search: r })} />}
+        actions={
+          <>
+            {scope.hasTeams && <TeamFilter scope={scope} value={search.team} onChange={(team) => void navigate({ search: (s) => ({ ...s, team }) })} />}
+            {(scope.multiBrand || search.brand) && <BrandFilter scope={scope} value={search.brand} onChange={(brand) => void navigate({ search: (s) => ({ ...s, brand }) })} />}
+            <RangePicker value={range} onChange={(r) => void navigate({ search: (s) => ({ ...s, ...r }) })} />
+          </>
+        }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {report.isLoading ? (
@@ -69,14 +90,22 @@ export default function ReportsPage() {
             description={t("error.description")}
             action={<Button onClick={() => void report.refetch()}>{t("error.retry")}</Button>}
           />
-        ) : !d || empty ? (
+        ) : !d || (empty && !filtered) ? (
           <SamplePreview />
+        ) : empty ? (
+          <EmptyState
+            lit={1}
+            art="search"
+            title={t("filtered.emptyTitle")}
+            description={t("filtered.emptyDescription")}
+            action={<Button onClick={() => void navigate({ search: (s) => ({ ...s, team: undefined, brand: undefined }) })}>{t("filtered.clear")}</Button>}
+          />
         ) : (
           <div className={cn("flex flex-col gap-4 px-4 pb-12 pt-4 transition-opacity duration-150 md:px-6 md:pt-5", refetching && "opacity-60")}>
             <Kpis d={d} p={p} />
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <VolumeCard d={d} className="xl:col-span-2" />
-              <BacklogCard />
+              <BacklogCard filter={range} openNow={d.open_now} />
             </div>
             <div className={cn("grid grid-cols-1 gap-4", d.by_severity ? "md:grid-cols-2 xl:grid-cols-4" : "lg:grid-cols-3")}>
               <Card title={t("channel.title")} subtitle={t("channel.subtitle")}>
@@ -87,8 +116,14 @@ export default function ReportsPage() {
                   <SeverityBars data={d.by_severity} />
                 </Card>
               )}
-              <OpenWorkCards />
+              <OpenWorkCards filter={range} />
             </div>
+            {(teamTable || brandTable) && (
+              <div className={cn("grid grid-cols-1 gap-4", teamTable && brandTable && "xl:grid-cols-2")}>
+                {teamTable && <TeamCard rows={teamTable.rows} hidden={teamTable.hidden} />}
+                {brandTable && <BrandCard rows={brandTable} />}
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <Card title={t("agents.title")} subtitle={t("agents.subtitle")} flush className="xl:col-span-2">
                 {d.by_agent.length ? (
@@ -293,11 +328,25 @@ function VolumeCard({ d, className }: { d: ReportsOverview; className?: string }
   );
 }
 
-/** Open work right now, by status, from the inbox counts. */
-function BacklogCard() {
+/**
+ * Open work right now, by status: from the inbox counts, or, with a team or brand
+ * filter, from the open tickets of that team or brand.
+ */
+function BacklogCard({ filter, openNow }: { filter: ReportsQuery; openNow: number }) {
   const { t } = useTranslation("reports");
-  const counts = useQuery(q.counts());
-  const c = counts.data;
+  const narrowed = !!(filter.team_id || filter.brand_id);
+  const counts = useQuery({ ...q.counts(), enabled: !narrowed });
+  const list = useInfiniteQuery({ ...q.tickets(openWork(filter)), enabled: narrowed });
+  const tickets = list.data?.pages.flatMap((pg) => pg.data) ?? [];
+  const c = narrowed
+    ? list.data && {
+        open: tickets.filter((x) => x.status === "open").length,
+        pending: tickets.filter((x) => x.status === "pending").length,
+        on_hold: tickets.filter((x) => x.status === "on_hold").length,
+        unassigned: tickets.filter((x) => !x.assignee).length,
+      }
+    : counts.data;
+  const loading = narrowed ? list.isLoading : counts.isLoading;
   const rows: BarRow[] = c
     ? (["open", "pending", "on_hold"] as const).map((s) => ({
         id: s,
@@ -308,16 +357,18 @@ function BacklogCard() {
         icon: <StatusIcon status={s} />,
       }))
     : [];
-  const total = rows.reduce((a, r) => a + r.value, 0);
+  const listed = rows.reduce((a, r) => a + r.value, 0);
+  // A partial list still knows the true total: the report's open now.
+  const total = narrowed && list.hasNextPage ? openNow : listed;
   return (
-    <Card title={t("backlog.title")} subtitle={t("backlog.subtitle")}>
-      {counts.isLoading ? (
+    <Card title={t("backlog.title")} subtitle={narrowed && list.hasNextPage ? t("open.sample", { count: tickets.length }) : t("backlog.subtitle")}>
+      {loading ? (
         <BarsSkeleton />
       ) : !c ? null : (
         <div className="flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
             <Figure label={t("backlog.open")} value={<AnimatedNumber value={total} />} sub={t("backlog.tickets")} />
-            <Figure label={t("backlog.unassigned")} value={<AnimatedNumber value={c.unassigned} />} sub={total ? `${Math.round((c.unassigned / total) * 100)}%` : undefined} />
+            <Figure label={t("backlog.unassigned")} value={<AnimatedNumber value={c.unassigned} />} sub={listed ? `${Math.round((c.unassigned / listed) * 100)}%` : undefined} />
           </div>
           <ShareBar rows={rows} />
           <BreakdownBars
@@ -331,10 +382,39 @@ function BacklogCard() {
   );
 }
 
-/** Priority and label mix of the open work, from the loaded open tickets. */
-function OpenWorkCards() {
+/** Tickets per team the caller may see, and those without a team. */
+function TeamCard({ rows, hidden }: { rows: GroupRow[]; hidden: boolean }) {
   const { t } = useTranslation("reports");
-  const list = useInfiniteQuery(q.tickets(OPEN_WORK));
+  return (
+    <Card title={t("byTeam.title")} subtitle={t("byTeam.subtitle")} flush>
+      {rows.length ? (
+        <GroupTable rows={rows} caption={t("byTeam.caption")} head={t("byTeam.team")} />
+      ) : (
+        <EmptyState compact lit={0} title={t("byTeam.emptyTitle")} description={t("byTeam.emptyDescription")} />
+      )}
+      {hidden && <p className="border-t border-line-soft px-4 py-2.5 text-[11.5px] text-fg-4">{t("byTeam.hidden")}</p>}
+    </Card>
+  );
+}
+
+/** Tickets per brand, once the workspace has a second brand. */
+function BrandCard({ rows }: { rows: GroupRow[] }) {
+  const { t } = useTranslation("reports");
+  return (
+    <Card title={t("byBrand.title")} subtitle={t("byBrand.subtitle")} flush>
+      {rows.length ? (
+        <GroupTable rows={rows} caption={t("byBrand.caption")} head={t("byBrand.brand")} />
+      ) : (
+        <EmptyState compact lit={0} title={t("byBrand.emptyTitle")} description={t("byBrand.emptyDescription")} />
+      )}
+    </Card>
+  );
+}
+
+/** Priority and label mix of the open work, from the loaded open tickets. */
+function OpenWorkCards({ filter }: { filter: ReportsQuery }) {
+  const { t } = useTranslation("reports");
+  const list = useInfiniteQuery(q.tickets(openWork(filter)));
   const tickets = list.data?.pages.flatMap((pg) => pg.data) ?? [];
   const sample = list.hasNextPage ? t("open.sample", { count: tickets.length }) : t("open.subtitle");
 

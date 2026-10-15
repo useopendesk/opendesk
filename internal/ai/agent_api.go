@@ -13,10 +13,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/plan"
 )
 
 // The agent's admin routes (contracts/agent.md "Playground", "Report").
@@ -32,11 +35,14 @@ type PlaygroundInput struct {
 // saved ones.
 type AgentDraft struct {
 	WidgetModel         *string   `json:"widget_model,omitempty"`
-	WidgetInstructions  *string   `json:"widget_instructions,omitempty"`
 	WidgetBlockedTopics *[]string `json:"widget_blocked_topics,omitempty"`
 	Tone                *string   `json:"tone,omitempty"`
 	ReplyLanguage       *string   `json:"reply_language,omitempty"`
 	Instructions        *string   `json:"instructions,omitempty"`
+	// BotID answers as this bot of the workspace; empty = the default bot.
+	BotID *string `json:"bot_id,omitempty" doc:"Answer as this bot (contracts/bots.md); empty = the default bot"`
+	// Bot is an unsaved edit of that bot.
+	Bot *bots.Draft `json:"bot,omitempty" doc:"Unsaved edits of the bot: name, role, language, personality"`
 }
 
 // PlaygroundVisitor is who the agent talks to in the playground and in tests.
@@ -65,7 +71,7 @@ type PlaygroundOutput struct {
 	Sources  []CitedSource     `json:"sources"`
 	Handoff  bool              `json:"handoff"`
 	Action   *PlaygroundAction `json:"action"`
-	Credits  float64           `json:"credits"`
+	USD      float64           `json:"usd" doc:"What the reply cost, in US dollars"`
 }
 
 // AgentReport is GET /v1/ai/agent/report.
@@ -77,7 +83,7 @@ type AgentReport struct {
 	Resolved      int                `json:"resolved"`
 	Handoffs      int                `json:"handoffs"`
 	Ratings       AgentRatings       `json:"ratings"`
-	Credits       float64            `json:"credits"`
+	USD           float64            `json:"usd" doc:"AI usage of the agent, in US dollars"`
 	ByDay         []AgentReportDay   `json:"by_day"`
 	Tools         []AgentToolUse     `json:"tools"`
 	Gaps          []AgentQuestionGap `json:"gaps"`
@@ -136,7 +142,7 @@ func (s *Service) registerAgent(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "ai-agent-report", Method: http.MethodGet, Path: "/v1/ai/agent/report",
-		Summary: "Widget agent report", Description: "Conversations, replies, resolutions, handoffs, ratings, credits, tool use and unanswered questions.", Tags: tags},
+		Summary: "Widget agent report", Description: "Conversations, replies, resolutions, handoffs, ratings, AI usage in US dollars, tool use and unanswered questions.", Tags: tags},
 		func(ctx context.Context, in *struct {
 			From string `query:"from" doc:"RFC 3339 time or YYYY-MM-DD (default: 30 days ago)"`
 			To   string `query:"to" doc:"RFC 3339 time (exclusive) or YYYY-MM-DD (that day included) (default: now)"`
@@ -149,7 +155,7 @@ func (s *Service) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			r, err := s.agentReport(ctx, p.WorkspaceID, from, to)
+			r, err := s.agentReport(ctx, p, from, to)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -214,7 +220,7 @@ func (s *Service) Playground(ctx context.Context, p *auth.Principal, in Playgrou
 		return nil, err
 	}
 	body, cited := finishReply(res.Text, res.Passages)
-	out := &PlaygroundOutput{TextHTML: body, Sources: toSources(cited), Handoff: res.Handoff, Credits: res.Credits.Credits()}
+	out := &PlaygroundOutput{TextHTML: body, Sources: toSources(cited), Handoff: res.Handoff, USD: res.USD.USD()}
 	if a := res.Action; a != nil {
 		out.Action = &PlaygroundAction{Tool: a.Tool.displayName(), Title: firstNonEmpty(a.Tool.Title, a.Tool.displayName()), Summary: a.Summary}
 	}
@@ -239,9 +245,9 @@ func (s *Service) agentTrial(ctx context.Context, wid uuid.UUID, msgs []Playgrou
 	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT name FROM workspaces WHERE id = $1`, wid).Scan(&company); err != nil {
 		return agentInput{}, err
 	}
-	botName := st.WidgetOrDefault().BotName
-	if strings.TrimSpace(botName) == "" {
-		botName = AssistantName
+	bot, err := s.trialBot(ctx, wid, draft)
+	if err != nil {
+		return agentInput{}, err
 	}
 	var thread strings.Builder
 	texts, burst := []string{}, 0
@@ -261,7 +267,7 @@ func (s *Service) agentTrial(ctx context.Context, wid uuid.UUID, msgs []Playgrou
 		thread.WriteString(block("message", []string{"n", strconv.Itoa(i + 1), "from", from}, clip(untrusted(text), perMessageChars)))
 		thread.WriteString("\n")
 	}
-	ai := agentInput{wid: wid, feature: "playground", set: set, botName: botName, company: company,
+	ai := agentInput{wid: wid, feature: "playground", set: set, bot: bot, company: company,
 		thread: block("ticket_thread", nil, strings.TrimSpace(thread.String())), query: agentQuery(texts, burst), playground: true}
 	if v != nil {
 		ai.visitor = AgentVisitor{Verified: v.Verified, Name: clip(strings.TrimSpace(v.Name), 100)}
@@ -275,12 +281,31 @@ func (s *Service) agentTrial(ctx context.Context, wid uuid.UUID, msgs []Playgrou
 	return ai, nil
 }
 
+// trialBot is the bot a trial answers as: the one the draft names (of this workspace),
+// else the default, with the draft's unsaved edits.
+func (s *Service) trialBot(ctx context.Context, wid uuid.UUID, d *AgentDraft) (bots.Bot, error) {
+	var id *uuid.UUID
+	var edit *bots.Draft
+	if d != nil {
+		var err error
+		if id, err = bots.ParseRef(ctx, s.d.DB.Pool, wid, d.BotID); err != nil {
+			return bots.Bot{}, err
+		}
+		edit = d.Bot
+	}
+	b, err := bots.Resolve(ctx, s.d.DB.Pool, wid, id)
+	if err != nil {
+		return b, err
+	}
+	return b.WithDraft(edit)
+}
+
 // draftSettings applies unsaved settings on top of the saved ones.
 func (s *Service) draftSettings(ctx context.Context, wid uuid.UUID, set hd.AISettings, d *AgentDraft) (hd.AISettings, error) {
 	if d == nil {
 		return set, nil
 	}
-	patch, err := hd.ValidateAIPatch(hd.AISettingsPatch{WidgetModel: d.WidgetModel, WidgetInstructions: d.WidgetInstructions,
+	patch, err := hd.ValidateAIPatch(hd.AISettingsPatch{WidgetModel: d.WidgetModel,
 		WidgetBlockedTopics: d.WidgetBlockedTopics, Tone: d.Tone, ReplyLanguage: d.ReplyLanguage, Instructions: d.Instructions}, s.modelCheck(ctx, wid))
 	if err != nil {
 		return set, err
@@ -336,8 +361,9 @@ func reportRange(fromQ, toQ string) (time.Time, time.Time, error) {
 	return from, to, nil
 }
 
-func (s *Service) agentReport(ctx context.Context, wid uuid.UUID, from, to time.Time) (AgentReport, error) {
+func (s *Service) agentReport(ctx context.Context, p *auth.Principal, from, to time.Time) (AgentReport, error) {
 	q := s.d.DB.Pool
+	wid := p.WorkspaceID
 	r := AgentReport{From: from, To: to, ByDay: []AgentReportDay{}, Tools: []AgentToolUse{}, Gaps: []AgentQuestionGap{}}
 	// Agent replies in the range, by day, with the conversations they belong to.
 	const replies = `WITH r AS (
@@ -358,12 +384,12 @@ func (s *Service) agentReport(ctx context.Context, wid uuid.UUID, from, to time.
 		AND created_at >= $2 AND created_at < $3`, wid, from, to).Scan(&r.Handoffs); err != nil {
 		return r, err
 	}
-	var milli int64
-	if err := q.QueryRow(ctx, `SELECT COALESCE(sum(millicredits), 0)::bigint FROM ai_usage WHERE workspace_id = $1
-		AND feature = ANY($4) AND created_at >= $2 AND created_at < $3`, wid, from, to, agentFeatures).Scan(&milli); err != nil {
+	var usd plan.Micro
+	if err := q.QueryRow(ctx, `SELECT COALESCE(sum(micro_usd), 0)::bigint FROM ai_usage WHERE workspace_id = $1
+		AND feature = ANY($4) AND created_at >= $2 AND created_at < $3`, wid, from, to, agentFeatures).Scan(&usd); err != nil {
 		return r, err
 	}
-	r.Credits = float64(milli) / 1000
+	r.USD = usd.USD()
 	channels, err := s.agentReportChannels(ctx, wid, from, to)
 	if err != nil {
 		return r, err
@@ -412,11 +438,18 @@ func (s *Service) agentReport(ctx context.Context, wid uuid.UUID, from, to time.
 	if err := rows.Err(); err != nil {
 		return r, err
 	}
-	// Questions the agent handed off or did not answer, grouped by their text.
+	// Questions the agent handed off or did not answer, grouped by their text. The text of a
+	// private team's conversation is left out for whoever may not see it.
+	hidden, err := domain.HiddenTeams(ctx, q, p)
+	if err != nil {
+		return r, err
+	}
 	rows, err = q.Query(ctx, `SELECT left(btrim(regexp_replace(m.body_text, '\s+', ' ', 'g')), 200) AS question, count(*)::int, max(a.created_at)
 		FROM ai_widget_answers a JOIN messages m ON m.workspace_id = a.workspace_id AND m.id = a.message_id AND m.direction = 'inbound'
+		JOIN tickets t ON t.workspace_id = m.workspace_id AND t.id = m.ticket_id
 		WHERE a.workspace_id = $1 AND (a.handoff OR NOT a.answered) AND a.created_at >= $2 AND a.created_at < $3
-		GROUP BY 1 HAVING left(btrim(regexp_replace(m.body_text, '\s+', ' ', 'g')), 200) <> '' ORDER BY 3 DESC LIMIT 20`, wid, from, to)
+			AND `+domain.VisibleSQLUser("t", 4, 5)+`
+		GROUP BY 1 HAVING left(btrim(regexp_replace(m.body_text, '\s+', ' ', 'g')), 200) <> '' ORDER BY 3 DESC LIMIT 20`, wid, from, to, hidden, p.UserID)
 	if err != nil {
 		return r, err
 	}

@@ -65,7 +65,7 @@ export function LabelPicker({
       side={side}
       width={260}
       values={values}
-      placeholder="Add or create a tag"
+      placeholder={canCreate ? t("labels.addOrCreate") : t("labels.add")}
       emptyText={canCreate ? t("labels.typeToCreate") : t("labels.none")}
       createLabel={t("props.createTag")}
       items={items}

@@ -1,7 +1,7 @@
 // Value pickers shared by the view filter builder and the automation builder.
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Inbox, MessageSquareReply, PencilLine, Reply, SquarePlus, Users } from "lucide-react";
+import { ChevronDown, Inbox, Lock, MessageSquareReply, PencilLine, Reply, SquarePlus } from "lucide-react";
 import { forwardRef, type ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Picker, type PickerItem } from "@/components/ui/picker";
@@ -106,7 +106,8 @@ export function useTeamItems(): PickerItem[] {
   return (data ?? []).map((t) => ({
     value: t.id,
     label: t.name,
-    icon: <Users />,
+    icon: <span aria-hidden className={cn("size-2 shrink-0 rounded-[3px]", tone[isTone(t.color) ? t.color : toneFor(t.name)].solid)} />,
+    hint: t.private ? <Lock className="size-3 text-fg-4" aria-label="Private" /> : undefined,
   }));
 }
 
@@ -129,18 +130,26 @@ export function useTagItems(): PickerItem[] {
   }));
 }
 
+/**
+ * Trigger heights: `sm` (28 px) for builder rows and dense lists, `md` (32 px) for a
+ * form field beside text inputs and selects, which are 32 px.
+ */
+export type PickSize = "sm" | "md";
+const pickHeights: Record<PickSize, string> = { sm: "h-7 text-[12.5px]", md: "h-8 px-2.5 text-[13px]" };
+
 /** The trigger every builder picker uses: a quiet bordered button showing the current value. */
 type ValueButtonProps = {
   children?: ReactNode;
   placeholder: string;
   icon?: ReactNode;
   className?: string;
+  size?: PickSize;
   invalid?: boolean;
   disabled?: boolean;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">;
 
 export const ValueButton = forwardRef<HTMLButtonElement, ValueButtonProps>(function ValueButton(
-  { children, placeholder, icon, className, invalid, disabled, ...rest },
+  { children, placeholder, icon, className, invalid, disabled, size = "sm", ...rest },
   ref,
 ) {
   const empty = children === undefined || children === null || children === "";
@@ -152,13 +161,14 @@ export const ValueButton = forwardRef<HTMLButtonElement, ValueButtonProps>(funct
       aria-invalid={invalid || undefined}
       {...rest}
       className={cn(
-        "inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-[12.5px] text-fg outline-none transition-colors hover:border-line-strong focus-visible:shadow-[0_0_0_3px_var(--focus)] disabled:opacity-60 data-[state=open]:border-fg-3 aria-[invalid=true]:border-danger [&_svg]:size-3.5 [&_svg]:shrink-0",
+        "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-fg outline-none transition-colors hover:border-line-strong focus-visible:shadow-[0_0_0_3px_var(--focus)] disabled:opacity-60 data-[state=open]:border-fg-3 aria-[invalid=true]:border-danger [&_svg]:size-3.5 [&_svg]:shrink-0",
+        pickHeights[size],
         className,
       )}
     >
       {icon}
       <span className={cn("min-w-0 truncate", empty && "text-fg-4")}>{empty ? placeholder : children}</span>
-      <ChevronDown className="ml-auto !size-3 text-fg-4" />
+      <ChevronDown className={cn("ml-auto", size === "md" ? "text-fg-3" : "!size-3 text-fg-4")} />
     </button>
   );
 });
@@ -175,6 +185,7 @@ export function SinglePick({
   disabled,
   width,
   className,
+  size,
   renderValue,
 }: {
   items: PickerItem[];
@@ -187,13 +198,14 @@ export function SinglePick({
   disabled?: boolean;
   width?: number;
   className?: string;
+  size?: PickSize;
   /** Draw the chosen value in the trigger yourself (a tag chip, say); the icon is then left out. */
   renderValue?: (value: string) => ReactNode;
 }) {
   const cur = items.find((i) => i.value === value);
   const custom = value && renderValue ? renderValue(value) : null;
   const trigger = (
-    <ValueButton placeholder={placeholder} icon={custom ? undefined : cur?.icon} invalid={invalid} disabled={disabled} className={className}>
+    <ValueButton placeholder={placeholder} icon={custom ? undefined : cur?.icon} invalid={invalid} disabled={disabled} className={className} size={size}>
       {custom ?? cur?.label ?? (value || undefined)}
     </ValueButton>
   );
@@ -219,6 +231,7 @@ export function MultiPick({
   placeholder,
   disabled,
   className,
+  size,
 }: {
   items: PickerItem[];
   values: string[];
@@ -226,6 +239,7 @@ export function MultiPick({
   placeholder: string;
   disabled?: boolean;
   className?: string;
+  size?: PickSize;
 }) {
   const chosen = items.filter((i) => values.includes(i.value));
   const summary =
@@ -247,7 +261,7 @@ export function MultiPick({
     </span>
   );
   const trigger = (
-    <ValueButton placeholder={placeholder} icon={chosen.length ? icons : undefined} disabled={disabled} className={className}>
+    <ValueButton placeholder={placeholder} icon={chosen.length ? icons : undefined} disabled={disabled} className={className} size={size}>
       {summary}
     </ValueButton>
   );

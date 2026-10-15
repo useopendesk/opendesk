@@ -17,6 +17,7 @@ import { toast } from "@/components/ui/toast";
 import { ListSkeleton, StatePill, SummaryStrip } from "@/components/settings2/bits";
 import { orderBy, useListMutation } from "@/components/settings2/optimistic";
 import { SortableList } from "@/components/settings2/Sortable";
+import { TeamChip, TeamPick, useTeams } from "@/components/settings2/teams";
 import { PriorityIcon, PriorityPill, priorityLabel, priorityOrder } from "@/components/tickets/bits";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
@@ -70,6 +71,8 @@ export default function Sla() {
   const confirm = useConfirm();
   const [editing, setEditing] = useState<SlaPolicy | "new" | null>(null);
   const sorted = useMemo(() => [...(policies ?? [])].sort((a, b) => a.position - b.position), [policies]);
+  const { teams } = useTeams();
+  const teamById = new Map(teams.map((x) => [x.id, x]));
 
   const toggle = useListMutation<SlaPolicy, { id: string; enabled: boolean }>(
     qk.slaPolicies,
@@ -176,6 +179,7 @@ export default function Sla() {
                             {t("sla.allPriorities")}
                           </span>
                         )}
+                        {p.team_id && teamById.get(p.team_id) && <TeamChip team={teamById.get(p.team_id)!} />}
                         {!p.enabled && <StatePill state="disabled">{t("sla.off")}</StatePill>}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -245,7 +249,22 @@ export default function Sla() {
   );
 }
 
-function DurationField({ label, value, onChange, hint }: { label: string; value: number; onChange: (n: number) => void; hint?: string }) {
+/** The server's bounds for a target: a minute to a year. */
+const MAX_MINUTES = 525600;
+
+function DurationField({
+  label,
+  value,
+  onChange,
+  onValidChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  onValidChange: (valid: boolean) => void;
+  hint?: string;
+}) {
   const { t } = useTranslation("settingsInbox");
   const [unit, setUnit] = useState<Unit>(() => split(value).unit);
   const n = Math.round((value / factor[unit]) * 100) / 100;
@@ -257,8 +276,11 @@ function DurationField({ label, value, onChange, hint }: { label: string; value:
             id={p.id}
             aria-describedby={p["aria-describedby"]}
             value={n}
-            min={1}
-            onChange={(v) => onChange(Math.max(1, Math.round(v * factor[unit])))}
+            decimal={unit !== "m"}
+            min={unit === "m" ? 1 : 0.01}
+            max={MAX_MINUTES / factor[unit]}
+            onChange={(v) => onChange(Math.min(MAX_MINUTES, Math.max(1, Math.round(v * factor[unit]))))}
+            onValidChange={onValidChange}
             className="w-[120px]"
           />
           <Segmented
@@ -285,8 +307,14 @@ function PolicyDialog({ policy, nextPosition, onClose }: { policy: SlaPolicy | n
   const [first, setFirst] = useState(policy?.first_response_minutes ?? 60);
   const [resolution, setResolution] = useState(policy?.resolution_minutes ?? 1440);
   const [businessHours, setBusinessHours] = useState(policy?.business_hours ?? false);
+  const [teamId, setTeamId] = useState<string | null>(policy?.team_id ?? null);
+  const { teams } = useTeams();
+  const { t: tt } = useTranslation("settingsTeams");
   const { data: hours } = useQuery(q.businessHours());
   const [error, setError] = useState<string | null>(null);
+  // A target whose text is not a time in range yet (it settles when the field is left).
+  const [badFirst, setBadFirst] = useState(false);
+  const [badResolution, setBadResolution] = useState(false);
 
   const save = useMutation({
     mutationFn: () => {
@@ -296,6 +324,7 @@ function PolicyDialog({ policy, nextPosition, onClose }: { policy: SlaPolicy | n
         first_response_minutes: first,
         resolution_minutes: resolution,
         business_hours: businessHours,
+        team_id: teamId,
         enabled: policy?.enabled ?? true,
         position: policy?.position ?? nextPosition,
       };
@@ -312,6 +341,7 @@ function PolicyDialog({ policy, nextPosition, onClose }: { policy: SlaPolicy | n
   const submit = () => {
     setError(null);
     if (!name.trim()) return setError(t("sla.needName"));
+    if (badFirst || badResolution) return setError(t("sla.badDuration"));
     if (resolution < first) return setError(t("sla.resolutionTooSoon"));
     save.mutate();
   };
@@ -363,8 +393,13 @@ function PolicyDialog({ policy, nextPosition, onClose }: { policy: SlaPolicy | n
             />
           )}
         </Field>
-        <DurationField label={t("sla.firstWithin")} value={first} onChange={setFirst} hint={t("sla.currently", { time: minutes(first) })} />
-        <DurationField label={t("sla.resolveWithin")} value={resolution} onChange={setResolution} hint={t("sla.currently", { time: minutes(resolution) })} />
+        {(teams.length > 0 || teamId) && (
+          <Field label={tt("scoped.slaTeam")} hint={teamId ? tt("scoped.slaTeamHint") : tt("scoped.slaAnyHint")}>
+            {() => <TeamPick className="w-full" size="md" value={teamId} noneLabel={tt("scoped.anyTeam")} onChange={setTeamId} />}
+          </Field>
+        )}
+        <DurationField label={t("sla.firstWithin")} value={first} onChange={setFirst} onValidChange={(ok) => setBadFirst(!ok)} hint={t("sla.currently", { time: minutes(first) })} />
+        <DurationField label={t("sla.resolveWithin")} value={resolution} onChange={setResolution} onValidChange={(ok) => setBadResolution(!ok)} hint={t("sla.currently", { time: minutes(resolution) })} />
         <div className="flex items-start justify-between gap-4 rounded-md border border-line-soft bg-sunken/60 px-3 py-2.5">
           <div className="min-w-0">
             <div className="text-[12.5px] font-medium">{t("sla.businessHours")}</div>

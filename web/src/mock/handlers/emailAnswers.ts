@@ -6,10 +6,10 @@
 import type { AgentChannelReport, AgentReport, SuggestedReply, Ticket } from "@/lib/api/types";
 import { db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
-import { reserve, spend } from "../credits";
+import { reserve, spend } from "../aiBalance";
 import { del, forbidden, get, HttpError, notFound, post, respond, type Ctx } from "../router";
 import { addMessage, findTicket, OPENISH } from "../tickets";
-import { escapeHtml, nowIso, uuid } from "../util";
+import { escapeHtml, nowIso, sentencesUpTo, uuid } from "../util";
 import { aiOff } from "./ai";
 import { botName } from "./aiTicket";
 import { retrieve } from "./agent";
@@ -56,17 +56,17 @@ export function suggestReply(ws: WsData, t: Ticket, opts: { publish?: boolean; a
     try {
       reserve(ws, "answer_email");
     } catch {
-      return null; // out of credits: Ollie stays silent and the team takes over
+      return null; // AI balance too low: Ollie stays silent and the team takes over
     }
   }
-  const bot = botName(ws);
+  const bot = botName(ws, t);
   const found = retrieve(ws, `${t.subject} ${latest.body_text}`, 2);
   const lead = found[0];
   const body = [
     `<p>Hi ${escapeHtml(firstName(t.contact?.name) || "there")},</p>`,
     `<p>Thanks for getting in touch about “${escapeHtml(t.subject)}”.</p>`,
     lead
-      ? `<p>${escapeHtml(lead.text.slice(0, 260).trim())}${lead.text.length > 260 ? "…" : ""}</p><p>There are more details in <a href="${escapeHtml(lead.source.url ?? "#")}">${escapeHtml(lead.source.title)}</a>.</p>`
+      ? `<p>${escapeHtml(sentencesUpTo(lead.text.replace(/\s+/g, " ").trim(), 280))}</p><p>There are more details in <a href="${escapeHtml(lead.source.url ?? "#")}">${escapeHtml(lead.source.title)}</a>.</p>`
       : `<p>I've passed this on and someone from the team will follow up with the details.</p>`,
     `<p>Best regards,<br>${escapeHtml(bot)}<br>${escapeHtml(ws.workspace.name)}</p>`,
   ].join("");
@@ -138,7 +138,7 @@ export function registerEmailAnswers() {
       if (!suggestions(ctx.ws).some((x) => x.id === ctx.params.sid && x.ticket_id === t.id)) throw notFound("Suggested reply");
       throw new HttpError(409, "suggestion_not_pending", "This suggested reply was already sent, discarded or replaced.");
     }
-    const msg = addMessage(ctx.ws, t, { kind: "reply", direction: "outbound", html: s.body_html, bot: botName(ctx.ws), delivery: "pending" });
+    const msg = addMessage(ctx.ws, t, { kind: "reply", direction: "outbound", html: s.body_html, bot: botName(ctx.ws, t), delivery: "pending" });
     Object.assign(s, { status: "sent", reply_id: msg.id });
     const activity = {
       id: uuid(),

@@ -125,7 +125,7 @@ function genericTools(): ToolDef[] {
 function catalogueFor(s: McpServer): { tools: ToolDef[]; info: McpServer["server_info"] } {
   const hay = `${s.name} ${s.url}`.toLowerCase();
   if (hay.includes("linear")) return { tools: LINEAR_TOOLS, info: { name: "linear-mcp", version: "2.3.0" } };
-  if (hay.includes("shop")) return { tools: SHOP_TOOLS, info: { name: "fieldnote-shop", version: "1.4.2" } };
+  if (hay.includes("shop")) return { tools: SHOP_TOOLS, info: { name: "margin-shop", version: "1.4.2" } };
   return { tools: genericTools(), info: { name: s.slug, version: "1.0.0" } };
 }
 
@@ -308,14 +308,14 @@ function testResult(server: McpServer, tool: McpTool, args: Record<string, unkno
     },
     list_invoices: {
       invoices: [
-        { id: "in_1Q8x2k", number: "FN-2026-0912", amount: "$96.00", status: "paid", date: "2026-10-01", pdf: "https://fieldnote-shop.com/invoices/FN-2026-0912.pdf" },
-        { id: "in_1PzT7c", number: "FN-2026-0841", amount: "$96.00", status: "paid", date: "2026-09-01", pdf: "https://fieldnote-shop.com/invoices/FN-2026-0841.pdf" },
+        { id: "in_1Q8x2k", number: "FN-2026-0912", amount: "$96.00", status: "paid", date: "2026-10-01", pdf: "https://margin-shop.com/invoices/FN-2026-0912.pdf" },
+        { id: "in_1PzT7c", number: "FN-2026-0841", amount: "$96.00", status: "paid", date: "2026-09-01", pdf: "https://margin-shop.com/invoices/FN-2026-0841.pdf" },
       ],
     },
     update_shipping_address: { ok: true, order_id: id, address: { line1: args.line1, city: args.city, postal_code: args.postal_code, country: args.country } },
     cancel_order: { ok: true, order_id: id, status: "cancelled", refund: { amount: "$48.00", to: "card ending 4242" } },
     search_issues: { issues: [{ id: "FN-482", title: "PDF export stalls at 90% for large notebooks", state: "in_progress" }, { id: "FN-455", title: "Sync paused on iPad after 6.2 update", state: "todo" }] },
-    create_issue: { id: "FN-497", url: "https://linear.app/fieldnote/issue/FN-497", title: args.title },
+    create_issue: { id: "FN-497", url: "https://linear.app/margin/issue/FN-497", title: args.title },
     search: { results: [{ id: "rec_7Hc2", title: `First match for "${String(args.query ?? "")}"` }], total: 1 },
     get_record: { id: args.id, title: "Sample record", updated_at: "2026-10-10T09:30:00Z" },
     create_record: { id: "rec_9Kd4", title: args.title, created: true },
@@ -331,12 +331,12 @@ function seedServers(ws: WsData) {
     id: uuid(),
     name: "Shop",
     slug: "shop",
-    url: "https://mcp.fieldnote-shop.com/mcp",
+    url: "https://mcp.margin-shop.com/mcp",
     enabled: true,
     auth: { kind: "bearer", has_secret: true },
     status: "connected",
     error: null,
-    server_info: { name: "fieldnote-shop", version: "1.4.2" },
+    server_info: { name: "margin-shop", version: "1.4.2" },
     tools: withSettings(SHOP_TOOLS, []),
     last_synced_at: iso(NOW - 25 * MIN),
     created_at: iso(NOW - 34 * DAY),
@@ -369,8 +369,8 @@ function seedServers(ws: WsData) {
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 export function registerMcp() {
-  const fieldnote = db.workspaces[0];
-  if (fieldnote && !fieldnote.mcpServers.length) seedServers(fieldnote);
+  const margin = db.workspaces[0];
+  if (margin && !margin.mcpServers.length) seedServers(margin);
 
   get("/v1/ai/mcp-servers", (ctx) => {
     guard(ctx);

@@ -14,11 +14,13 @@ Figma source: https://www.figma.com/design/JfEIfmFuwLsDJCSRXOUQGH/Branding
 | `logo/wordmark*.svg` | Wordmark on its own, outlined |
 | `icons/favicon.svg` | Favicon that adapts to light and dark |
 | `icons/icon-*.png`, `icons/apple-touch-icon.png` | PWA, browser and app icons |
-| `social/og.png` | Open Graph / GitHub social preview (1200×630) |
+| `social/og.jpg` | Open Graph / GitHub social preview (1920×1008), from `pnpm og` in `site/` |
+| `social/avatar.jpg`, `social/avatar-light.jpg` | Profile pictures (1024×1024, square): white mark on ink, ink mark on white. Safe in a circle crop |
+| `social/avatar-painted.jpg` | Profile picture: the mark on a frosted tile over the hero painting, to match the social card |
 | `tokens.css`, `tokens.json` | Colours and type tokens |
 | `logo/concepts/` | The 10 explored directions, kept for reference |
 
-Regenerate the SVGs with `node scripts/build-brand.mjs`.
+Regenerate the SVGs with `node scripts/build-brand.mjs`, then the social card and profile pictures with `pnpm og` in `site/`.
 
 ## Rules
 

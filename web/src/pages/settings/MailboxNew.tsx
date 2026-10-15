@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Section, SettingsPage } from "@/components/layout";
 import { AddMailboxWizard } from "@/components/mailboxes/AddMailboxWizard";
@@ -13,6 +13,7 @@ export default function MailboxNew() {
   const navigate = useNavigate();
   const role = useRole();
   const limit = useLimit("mailboxes");
+  const { brand } = useSearch({ from: "/app/settings/mailboxes/new" });
   return (
     <SettingsPage
       title={t("new.title")}
@@ -34,6 +35,7 @@ export default function MailboxNew() {
         </Section>
       ) : atLeast(role, "admin") ? (
         <AddMailboxWizard
+          brandId={brand}
           onCancel={() => void navigate({ to: "/settings/mailboxes" })}
           onDone={(m) =>
             m ? void navigate({ to: "/settings/mailboxes/$mailboxId", params: { mailboxId: m.id } }) : void navigate({ to: "/settings/mailboxes" })

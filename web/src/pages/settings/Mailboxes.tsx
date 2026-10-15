@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { SummaryStrip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
-import { MailboxIcon, MailboxStatus } from "@/components/mailboxes/kinds";
+import { connectionLabel, MailboxIcon, MailboxStatus } from "@/components/mailboxes/kinds";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import type { Mailbox } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
@@ -46,7 +46,7 @@ type OauthError = (typeof oauthErrorKeys)[number];
 
 // Fixed column widths so rows and the header line up.
 const COLS = {
-  kind: "hidden w-28 lg:block",
+  kind: "hidden w-44 lg:block",
   team: "hidden w-24 xl:block",
   status: "hidden w-[120px] sm:block",
   synced: "hidden w-24 text-right md:block",
@@ -152,7 +152,7 @@ export default function Mailboxes() {
                       <div className="truncate text-[13px] font-medium">{m.name}</div>
                       <div className="mono truncate text-xs text-fg-3">{m.email}</div>
                     </div>
-                    <span className={cn(COLS.kind, "truncate text-xs text-fg-2")}>{t(`kind.${m.inbound_kind}`)}</span>
+                    <span className={cn(COLS.kind, "truncate text-xs text-fg-2")}>{connectionLabel(m, t)}</span>
                     <span className={cn(COLS.team, "truncate text-xs", teamName(m.team_id) ? "text-fg-2" : "text-fg-4")}>{teamName(m.team_id) ?? t("list.noTeam")}</span>
                     <div className={COLS.status}>
                       <MailboxStatus mailbox={m} />

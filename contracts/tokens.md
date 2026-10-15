@@ -15,6 +15,7 @@ and a consumer accepts exactly one purpose. `exp` is required.
 | `passkey_register` | `POST /v1/me/passkeys/register/begin` | 5 min | `POST /v1/me/passkeys/register/finish` |
 | `assistant_approval` | a Ollie run's `approval` event | 15 min | `POST /v1/assistant/actions/{id}/decision` |
 | `mcp_access` | `POST /oauth/token` (MCP OAuth, `contracts/agent.md`) | 1 h | the MCP server, `{API_URL}/mcp` (Bearer), when `aud` is the MCP resource |
+| `notification_unsubscribe` | notification emails (`contracts/api.md` "Notification preferences and emails") | 90 days | `POST /v1/notifications/unsubscribe` and `/unsubscribe/one-click` |
 
 ## Claims
 
@@ -32,6 +33,10 @@ and a consumer accepts exactly one purpose. `exp` is required.
 { "purpose": "passkey_register", "sub": "<user_id>", "sid": "<session_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
 { "purpose": "assistant_approval", "sub": "<user_id>", "sid": "<session_id>", "wid": "<workspace_id>", "jti": "<action_id>", "iat": 0, "exp": 0 }
 
+// notification_unsubscribe: turns off notification emails from one workspace for one user. Harmless to
+// replay (it only switches email off), so it is not single use.
+{ "purpose": "notification_unsubscribe", "sub": "<user_id>", "wid": "<workspace_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
+
 // mcp_access: an AI client acting for a user in one workspace. aud is the MCP resource
 // ({API_URL}/mcp, RFC 8707); gid is the grant, checked on every request (revoked grants and
 // ended memberships stop working at once); scope is space-separated and is bounded again by
@@ -42,10 +47,11 @@ and a consumer accepts exactly one purpose. `exp` is required.
 // ws (agent / API-key socket)
 { "purpose": "ws", "sub": "<user_id or api_key_id>", "kind": "user" | "api_key",
   "wid": "<workspace_id>", "role": "owner|admin|agent|viewer",
-  "name": "Anna", "avatar": "https://...", "jti": "<uuid>", "iat": 0, "exp": 0 }
+  "name": "Anna", "avatar": "https://...", "teams": ["<private team id>"], "jti": "<uuid>", "iat": 0, "exp": 0 }
+// teams: the private teams whose topics the socket may join (contracts/teams.md "Visibility"); omitted when none
 
 // widget_ws (end customer in the chat widget)
-{ "purpose": "widget_ws", "sub": "<contact_id>", "wid": "<workspace_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
+{ "purpose": "widget_ws", "sub": "<contact_id>", "wid": "<workspace_id>", "bid": "<brand_id>" /* the widget's brand: the socket receives only that brand's chats */, "jti": "<uuid>", "iat": 0, "exp": 0 }
 ```
 
 The gateway never touches the database: everything it needs to authorize a join is
@@ -55,13 +61,62 @@ in the claims.
 
 | credential      | format                          | where                                            |
 | --------------- | ------------------------------- | ------------------------------------------------ |
-| refresh token   | 32 random bytes, base64url      | `od_refresh` cookie, HttpOnly, Secure, SameSite=Lax, Path=`/v1/auth`, Domain=`COOKIE_DOMAIN` |
+| refresh token   | 32 random bytes, base64url      | one cookie per signed-in account, `od_rt_<user id as 32 hex chars>`: HttpOnly, Secure (https), SameSite=Lax, Path=`/v1/auth`, Domain=`COOKIE_DOMAIN` (see "Several accounts in one browser"). Native requests (below): `refresh_token` in the response body instead, sent back as `{refresh_token}` to `/v1/auth/refresh` and `/v1/auth/logout` |
+| App Attest challenge | 32 random bytes, base64url, single use, 5 min | `POST /v1/auth/app-attest/challenge`; consumed by the first key registration or proof that names it, success or not |
+| push device token | APNs token (hex) or relay token | `POST /v1/me/devices`; stored SHA-256 hashed for lookup and sealed with `d.Box` for sending |
 | API key         | `od_live_` + 32 bytes base64url | `Authorization: Bearer od_live_...`              |
 | visitor token   | `od_vis_` + 32 bytes base64url  | `Authorization: Visitor od_vis_...` (widget API) |
 | one-time tokens | 32 bytes base64url              | email links (verify, reset, invite, oauth login) |
 | MCP OAuth code  | 32 bytes base64url, single use, 60 s | `code` on the client's redirect; exchanged with the PKCE verifier |
 | MCP refresh token | `od_mcpr_` + 32 bytes base64url, 30 days, rotates on use | `POST /oauth/token`; a rotated one presented again revokes the grant |
 | MCP client secret | `od_mcps_` + 32 bytes base64url | confidential clients from `POST /oauth/register` |
+
+## Several accounts in one browser
+
+A browser can be signed in to up to **5** accounts at once (different users), like Linear. Each account has its own
+refresh cookie, `od_rt_<user id hex>`, with the attributes above; nothing else about a session changes (stored hashed,
+rotates on use, reuse outside the 30 s grace window revokes it, 30-day idle and 90-day absolute caps).
+
+- **Issuing.** Every session-issuing answer to a browser (register, login, `mfa`, `oauth/exchange`, `oauth/link`,
+  passkey login) sets that account's cookie and leaves the other accounts' cookies alone. If the browser already held a
+  session for that account, that session is revoked (with `od.control.disconnect`) and its cookie replaced. Signing in
+  to a sixth account answers `409 too_many_accounts` and creates nothing (a registration is rolled back); signing in
+  again to a held account is always allowed. Cookies that no longer name a live session of their account are cleared.
+- **A cookie belongs to its account.** The session behind `od_rt_<id>` must be that user's; a cookie whose session
+  belongs to anyone else is refused and nothing rotates.
+- **Refresh** (`POST /v1/auth/refresh {user_id}`) rotates only the named account's cookie. Without `user_id` it refreshes
+  the account whose session was used most recently. A refused refresh clears only that account's cookie; a replay
+  inside the grace window (another tab just rotated it) answers 401 without touching the cookie.
+- **Listing** (`POST /v1/auth/accounts`) reads every cookie without rotating anything and answers the accounts with
+  live sessions, in the order they were added; ended ones are left out and their cookies cleared.
+- **Logout** signs out of the access token's account (or `user_id` when there is no valid access token) and clears its
+  cookie; `{all: true}` ends every session the browser holds. Each ended session is audit-logged (`logout`) and
+  publishes `od.control.disconnect`. Password change, session revocation and member removal act per account, as before.
+- **Legacy cookie.** The single `od_refresh` cookie of earlier versions is still read: a refresh or listing that uses
+  it moves its value to `od_rt_<id>` (a refresh also rotates it) and clears `od_refresh`, so nobody is signed out by
+  the upgrade. No answer sets `od_refresh` any more.
+- **The web app** keeps access tokens in memory, one per account, and persists only ids in `localStorage`: the active
+  account (`od-account`) and each account's last workspace (`od-ws:<user id>`). Switching account clears the whole
+  query cache and restarts realtime, so no data of one account renders under another.
+
+## Native apps (`contracts/native.md`)
+
+- **Native request**: `OD-Client: ios/<version>` and no `Origin` header. Browsers always send `Origin` on `POST`, so
+  page script can never read a refresh token from a body. Every session-issuing answer to a native request carries
+  `refresh_token` in the body and sets no cookie; the session is otherwise the same (stored hashed, rotates on use,
+  reuse outside the 30 s grace window revokes it, 90-day cap).
+- **App Attest key**: an ECDSA P-256 key attested by Apple (`internal/appattest`, the Apple App Attestation Root CA
+  embedded), stored in `app_attest_keys` with its app id, environment and counter. Each proof is an assertion over
+  `"opendesk-app-attest/v1\n" + action + "\n" + challenge`; the counter must grow. Keys unused for 180 days are deleted.
+- **Relay token**: `base64url(d.Box.Seal({t: APNs token, e: environment, i: instance API URL}))`, minted by the
+  relay's `/v1/push/relay/register`. Only the relay can open it, and it delivers only for requests signed by `i`.
+- **Instance key**: Ed25519, seed = HKDF-SHA256(`AUTH_SECRET`, no salt, info `opendesk-push-instance/v1`); not stored,
+  changes with `AUTH_SECRET`. Public half at `GET /v1/push/instance-key`. Relay requests carry
+  `OD-Push-Instance: <API_URL>`, `OD-Push-Timestamp: <unix seconds>` and
+  `OD-Push-Signature: base64url(Ed25519(timestamp + "\n" + body))`; the relay fetches the key over HTTPS from public
+  addresses only, caches it an hour, and refuses timestamps more than 5 minutes off.
+- **APNs provider token**: ES256 JWT (`iss` = `APNS_TEAM_ID`, `kid` = `APNS_KEY_ID`, signed with `APNS_KEY`), renewed
+  every 50 minutes. Never logged; device tokens never appear in log lines or errors.
 
 Passwords: Argon2id only (`m=64MiB, t=3, p=2`, 16-byte salt, 32-byte key), PHC string format.
 

@@ -1,6 +1,8 @@
 import { Check, Forward, Server, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { Mailbox, MailboxTest } from "@/lib/api/types";
+import type { TFunction } from "i18next";
+import type { Mailbox, MailboxTest, MailboxTestLeg } from "@/lib/api/types";
+import { connectionMethod, mailboxHost, mailHostLabel } from "@/lib/mailHost";
 import { cn } from "@/lib/cn";
 import { tone, type Tone } from "@/lib/tones";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -85,9 +87,10 @@ export function MailboxStatus({ mailbox }: { mailbox: Pick<Mailbox, "status" | "
   );
 }
 
-export function TestResults({ result }: { result: MailboxTest }) {
+/** A connection check: each side, then the cause and its fix. `only` shows one side. */
+export function TestResults({ result, only }: { result: MailboxTest; only?: "inbound" | "outbound" }) {
   const { t } = useTranslation("settingsChannels");
-  const line = (label: string, r: { ok: boolean; error: string }) => (
+  const line = (label: string, r: MailboxTestLeg) => (
     <div className="flex items-start gap-2.5 py-2">
       <span
         className={cn(
@@ -100,14 +103,37 @@ export function TestResults({ result }: { result: MailboxTest }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-medium">{r.ok ? t("test.works", { what: label }) : t("test.failed", { what: label })}</div>
-        {!r.ok && r.error && <div className="mono mt-0.5 break-words text-xs text-fg-3">{r.error}</div>}
+        {!r.ok && r.error && <div className="mt-0.5 break-words text-xs text-fg-3">{r.error}</div>}
+        {!r.ok && r.detail && r.detail !== r.error && (
+          <div className="mono mt-0.5 break-words text-[11.5px] text-fg-4">
+            {t("test.detail")}: {r.detail}
+          </div>
+        )}
       </div>
     </div>
   );
+  const cause = result.cause;
+  const failed = only ? !result[only].ok : !result.inbound.ok || !result.outbound.ok;
   return (
-    <div role="status" className="divide-y divide-line-soft rounded-lg border border-line bg-sunken px-3">
-      {line(t("test.receiving"), result.inbound)}
-      {line(t("test.sending"), result.outbound)}
+    <div role="status" className="overflow-hidden rounded-lg border border-line bg-sunken">
+      <div className="divide-y divide-line-soft px-3">
+        {only !== "outbound" && line(t("test.receiving"), result.inbound)}
+        {only !== "inbound" && line(t("test.sending"), result.outbound)}
+      </div>
+      {cause && failed && (
+        <div className="border-t border-line-soft bg-surface px-3 py-2.5">
+          <div className="text-[12.5px] font-medium">{cause.title}</div>
+          <p className="mt-0.5 break-words text-xs leading-[18px] text-fg-2">{cause.fix}</p>
+        </div>
+      )}
     </div>
   );
+}
+
+/** "Gmail · App password": the host, when known, and how the mailbox signs in. */
+export function connectionLabel(m: Mailbox, t: TFunction<"settingsChannels">): string {
+  const host = mailboxHost(m);
+  const how = t(`connect.method_label.${connectionMethod(m)}`);
+  if (host && host !== "other") return `${mailHostLabel(host)} · ${how}`;
+  return m.inbound_kind === "imap" ? `${t("kind.imap")} · ${how}` : how;
 }

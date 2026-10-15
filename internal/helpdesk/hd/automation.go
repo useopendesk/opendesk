@@ -20,9 +20,10 @@ import (
 // Automation enums (contracts/api.md).
 var (
 	AutomationTriggers = []string{jobs.TriggerTicketCreated, jobs.TriggerCustomerReplied, jobs.TriggerAgentReplied, jobs.TriggerTicketUpdated}
-	ConditionFields    = []string{"subject", "body", "from_email", "channel", "mailbox_id", "priority", "severity", "status", "tag", "sentiment", "ai_decide"}
-	ConditionOps       = []string{"contains", "not_contains", "equals", "not_equals"}
-	ActionTypes        = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "ai_triage", "set_field"}
+	ConditionFields    = []string{"subject", "body", "from_email", "channel", "mailbox_id", "priority", "severity", "status", "tag", "sentiment", "ai_decide",
+		"team_id", "brand_id", "widget_id", "received_at"}
+	ConditionOps = []string{"contains", "not_contains", "equals", "not_equals"}
+	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "ai_triage", "set_field", "set_reply_address"}
 	// Sentiments are the values triage writes to custom.ai_sentiment (contracts/ai.md).
 	Sentiments = []string{"positive", "neutral", "negative", "frustrated"}
 )
@@ -35,7 +36,7 @@ const (
 )
 
 type Condition struct {
-	Field string `json:"field" maxLength:"60" doc:"subject, body, from_email, channel, mailbox_id, priority, severity, status, tag, sentiment, ai_decide, field.<key> (ticket custom field) or contact.field.<key>"`
+	Field string `json:"field" maxLength:"60" doc:"subject, body, from_email, channel, mailbox_id, priority, severity, status, tag, sentiment, ai_decide, team_id, brand_id, widget_id, received_at, field.<key> (ticket custom field) or contact.field.<key>"`
 	Op    string `json:"op" enum:"contains,not_contains,equals,not_equals,eq,ne,gt,gte,lt,lte,any,all,none,set,not_set" doc:"eq is an alias of equals, ne of not_equals; custom fields take the ops of their type"`
 	Value string `json:"value" maxLength:"500"`
 	// Question is the yes/no question of an ai_decide condition (contracts/ai.md "Automations").
@@ -43,7 +44,7 @@ type Condition struct {
 }
 
 type Action struct {
-	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,ai_triage,set_field"`
+	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,ai_triage,set_field,set_reply_address"`
 	Value string `json:"value" maxLength:"20000"`
 	// Field is the ticket custom field key of set_field.
 	Field string `json:"field,omitempty" maxLength:"40"`
@@ -150,6 +151,33 @@ func ValidateConditions(ctx context.Context, q db.Querier, wid uuid.UUID, cs []C
 				}
 				c.Value = id.String()
 			}
+		case "team_id", "brand_id", "widget_id":
+			// The ticket's team, brand or widget: an id of the workspace, or "none".
+			if !exact {
+				return nil, httpx.Validation(c.Field + " conditions use equals or not_equals")
+			}
+			kind := strings.TrimSuffix(c.Field, "_id")
+			if v := strings.TrimSpace(c.Value); v == "" || v == "none" {
+				if kind == "brand" {
+					return nil, httpx.Validation("brand_id conditions need a brand id")
+				}
+				c.Value = "none"
+				break
+			}
+			id, err := ParseRef(c.Value, c.Field)
+			if err != nil {
+				return nil, err
+			}
+			if err := CheckRef(ctx, q, wid, kind, id); err != nil {
+				return nil, err
+			}
+			c.Value = id.String()
+		case "received_at":
+			// The exact address the customer wrote to.
+			if c.Op != "equals" && c.Op != "not_equals" && c.Op != "contains" {
+				return nil, httpx.Validation("received_at conditions use equals, not_equals or contains")
+			}
+			c.Value = strings.ToLower(strings.TrimSpace(c.Value))
 		}
 		out = append(out, c)
 	}
@@ -212,6 +240,16 @@ func ValidateActions(ctx context.Context, q db.Querier, wid uuid.UUID, as []Acti
 			}
 		case "ai_triage":
 			a.Value = ""
+		case "set_reply_address":
+			// An address the ticket replies from; skipped on tickets of another brand.
+			id, err := ParseRef(a.Value, "set_reply_address value")
+			if err != nil {
+				return nil, err
+			}
+			if err := CheckRef(ctx, q, wid, "mailbox", id); err != nil {
+				return nil, err
+			}
+			a.Value = id.String()
 		case "set_field":
 			a.Field = strings.TrimSpace(a.Field)
 			defs, err := domain.LoadFieldDefs(ctx, q, wid, domain.FieldEntityTicket)

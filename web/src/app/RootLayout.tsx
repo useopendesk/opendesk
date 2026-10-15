@@ -1,11 +1,13 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, useMatches, useRouterState } from "@tanstack/react-router";
+import { Outlet, useMatches, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { pageview } from "@/lib/analytics";
 import { queryClient } from "@/lib/queryClient";
+import { onAccountFallback } from "@/lib/session";
+import { useDesktopNavigation } from "./useDesktopBridge";
 
 function useRouteTitle() {
   const matches = useMatches();
@@ -20,9 +22,28 @@ function usePageviews() {
   useEffect(() => pageview(path), [path]);
 }
 
+/**
+ * When the active account's session ends on its own (revoked elsewhere, expired),
+ * another signed-in account takes over: start it fresh from its inbox, or go to
+ * sign-in when none is left.
+ */
+function useAccountFallback() {
+  const navigate = useNavigate();
+  useEffect(
+    () =>
+      onAccountFallback((s) => {
+        if (s.status === "authed") void navigate({ to: s.workspaceId ? "/" : "/onboarding" });
+        else void navigate({ to: "/login", search: { next: location.pathname + location.search } });
+      }),
+    [navigate],
+  );
+}
+
 export function RootLayout() {
   useRouteTitle();
   usePageviews();
+  useAccountFallback();
+  useDesktopNavigation();
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={400} skipDelayDuration={200}>

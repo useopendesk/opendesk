@@ -1,0 +1,66 @@
+---
+/**
+ * Cloud and self-hosted as one codebase with two configurations: the setting in
+ * the middle, what opendesk Cloud sets on one side, what a self-hosted install
+ * sets on the other. The wires carry a slow, steady pulse.
+ */
+import Backdrop from '../home/Backdrop.astro';
+import Icon from '../Icon.astro';
+
+const rows: { key: string; what: string; cloud: string; self: string }[] = [
+  { key: 'STRIPE_SECRET_KEY', what: 'Billing', cloud: 'Set: plans, seats and AI usage', self: 'Unset: no plans and no limits' },
+  { key: 'ANTHROPIC_API_KEY', what: 'AI', cloud: 'The instance’s provider, paid as AI usage in dollars', self: 'Your key, or a local model on any OpenAI-compatible endpoint' },
+  { key: 'DATABASE_URL', what: 'Data', cloud: 'Neon Postgres, pooled', self: 'Stock Postgres beside it' },
+  { key: 'NATS_URL', what: 'Events', cloud: 'A three-node NATS cluster', self: 'Unset: NATS runs inside the binary' },
+  { key: 'SERVE_WEB', what: 'Web app', cloud: 'Served from Cloudflare Pages', self: 'true: opendesk serves it too' },
+];
+---
+<div class="relative overflow-hidden rounded-[22px] ring-1 ring-line" data-live>
+  <Backdrop name="green-valley" sizes="(min-width: 1440px) 1360px, 100vw" class="absolute inset-0 h-full w-full" style="object-position:50% 40%" />
+  <div class="relative p-3 sm:p-8 md:p-12">
+    <div class="rounded-[18px] bg-bg/95 text-left shadow-[0_40px_80px_-40px_rgb(10_30_80/0.6)] ring-1 ring-line backdrop-blur-md">
+      <div class="grid grid-cols-2 items-center gap-y-3 border-b border-line px-5 py-5 md:grid-cols-[1fr_300px_1fr] md:px-8">
+        <div class="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-fg"><span class="flex size-8 items-center justify-center rounded-[9px] bg-[color-mix(in_oklab,var(--c-blue)_12%,transparent)] text-[var(--c-blue)]"><Icon name="cloud" size={16} /></span>opendesk Cloud</div>
+        <div class="order-first col-span-2 flex justify-center md:order-none md:col-span-1">
+          <span class="flex h-9 items-center gap-2 rounded-full bg-fg px-4 font-mono text-[12px] text-bg">
+            <svg viewBox="0 0 64 64" class="size-3.5" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z"/></svg>
+            one codebase
+          </span>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-fg md:justify-end">Your server<span class="flex size-8 items-center justify-center rounded-[9px] bg-[color-mix(in_oklab,var(--c-green)_12%,transparent)] text-[var(--c-green)]"><Icon name="server" size={16} /></span></div>
+      </div>
+      <dl>
+        {rows.map((r, i) => (
+          <div class="grid grid-cols-2 items-center gap-x-4 gap-y-2 border-b border-line-soft px-5 py-4 last:border-b-0 md:grid-cols-[1fr_300px_1fr] md:gap-0 md:px-8 md:py-5">
+            <dt class="col-span-2 flex items-center md:order-2 md:col-span-1">
+              <span class="sc-wire hidden flex-1 md:block" style={`--sc-d:${i * -0.6}s`}></span>
+              <span class="flex flex-col items-start md:items-center">
+                <span class="font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">{r.what}</span>
+                <code class="mt-1 rounded-md bg-surface-2 px-2 py-1 font-mono text-[12px] text-fg ring-1 ring-line">{r.key}</code>
+              </span>
+              <span class="sc-wire sc-wire-r hidden flex-1 md:block" style={`--sc-d:${i * -0.6}s`}></span>
+            </dt>
+            <dd class="text-[13.5px] leading-snug text-body md:order-1 md:pr-2 md:text-right">{r.cloud}</dd>
+            <dd class="text-right text-[13.5px] leading-snug text-body md:order-3 md:pl-2 md:text-left">{r.self}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sc-wire {
+    height: 1px;
+    margin-inline: 14px;
+    background-image: linear-gradient(90deg, var(--line-strong) 50%, transparent 0), linear-gradient(90deg, transparent, var(--c-blue), transparent);
+    background-size: 6px 1px, 40% 1px;
+    background-repeat: repeat-x, no-repeat;
+    background-position: 0 0, -40% 0;
+    animation: sc-pulse 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    animation-delay: var(--sc-d, 0s);
+  }
+  .sc-wire-r { transform: scaleX(-1); background-image: linear-gradient(90deg, var(--line-strong) 50%, transparent 0), linear-gradient(90deg, transparent, var(--c-green), transparent); }
+  @keyframes sc-pulse { 0% { background-position: 0 0, -60% 0; } 70%, 100% { background-position: 0 0, 160% 0; } }
+  @media (prefers-reduced-motion: reduce) { .sc-wire { animation: none; background-position: 0 0, 200% 0; } }
+</style>

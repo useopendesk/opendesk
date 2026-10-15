@@ -15,7 +15,7 @@ export function isAbort(e: unknown) {
   return (e as { name?: string } | null)?.name === "AbortError";
 }
 
-/** Credits changed: refresh the billing meter wherever it is shown. */
-export function creditsSpent(qc: QueryClient) {
+/** The AI balance changed: refresh the billing meter wherever it is shown. */
+export function balanceSpent(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
 }

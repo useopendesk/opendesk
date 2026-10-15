@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { intlLocale } from "@/i18n";
-import { credits } from "@/lib/format";
+import { formatUsd } from "@/lib/format";
 import { isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { AutoRechargePatch, Billing } from "@/lib/api/types";
@@ -39,7 +40,38 @@ function useRedirect<A>(fn: (a: A) => Promise<{ url: string }>) {
 
 export const useCheckout = () => useRedirect((interval: "month" | "year") => api.billing.checkout(interval));
 export const usePortal = () => useRedirect((_: void) => api.billing.portal());
-export const useBuyCredits = () => useRedirect((packs: number) => api.billing.creditsCheckout(packs));
+/** Stripe Checkout for `usd` of AI usage. */
+export const useBuyTopUps = () => useRedirect((usd: number) => api.billing.topUpCheckout(usd));
+
+/**
+ * Buys `usd` of AI usage with the saved payment method, in place. When the bank wants the
+ * buyer to confirm the payment, it carries on in Stripe Checkout with the same amount.
+ */
+export function useTopUp() {
+  const qc = useQueryClient();
+  const { t } = useTranslation("billing");
+  return useMutation({
+    mutationFn: (usd: number) => api.billing.topUp(usd),
+    onSuccess: (r) => {
+      qc.setQueryData(qk.billing, r.billing);
+      void qc.invalidateQueries({ queryKey: qk.billingInvoices });
+      if (r.status === "paid") toast.success(t("toast.topUpAdded", { usd: formatUsd(r.usd, { trim: true }) }), { description: t("toast.topUpBody") });
+      else toast.info(t("toast.topUpPending"));
+    },
+    onError: async (e, usd) => {
+      if (!isApiError(e, "authentication_required")) {
+        toast.error(e);
+        return;
+      }
+      toast.info(t("toast.confirmInCheckout"));
+      try {
+        location.assign((await api.billing.topUpCheckout(usd)).url);
+      } catch (err) {
+        toast.error(err);
+      }
+    },
+  });
+}
 /** Stripe Checkout in setup mode: saves a card for auto-recharge. */
 export const useAddPaymentMethod = () => useRedirect((_: void) => api.billing.paymentMethod());
 
@@ -77,8 +109,8 @@ export function useFmt() {
   return {
     locale,
     num: (n: number) => nf.format(n),
-    /** Credits are decimals (metered to 0.001): 1,234.5, 0.42. */
-    credits,
+    /** US dollars of AI usage: "$0.50"; `precise` keeps small amounts, "$0.0042". */
+    usd: formatUsd,
     date: (iso: string | null | undefined) => {
       if (!iso) return "";
       const d = new Date(iso);

@@ -9,9 +9,12 @@ import { AuthField, Notice, slugify } from "@/components/auth/parts";
 import { OnboardingSteps } from "@/components/auth/OnboardingSteps";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import { reloadSession, selectWorkspace, signOut, useSession, useWorkspace } from "@/lib/session";
+import { appOrigin } from "@/lib/config";
+import { reloadSession, selectWorkspace, useSession, useWorkspace } from "@/lib/session";
 import { DeleteAccountDialog } from "@/components/account/DeleteAccountDialog";
-import { resetAnalytics, track } from "@/lib/analytics";
+import { track } from "@/lib/analytics";
+import { useTranslation } from "react-i18next";
+import { useAccountActions, useSwitcherEntries } from "@/app/useAccounts";
 
 export default function Workspace() {
   const navigate = useNavigate();
@@ -19,6 +22,11 @@ export default function Workspace() {
   const current = useWorkspace();
   const hasWorkspaces = useSession((s) => s.memberships.length > 0);
   const email = useSession((s) => s.user?.email);
+  const meId = useSession((s) => s.user?.id);
+  const { t } = useTranslation("shell");
+  const { logOut, switchTo } = useAccountActions();
+  // Another account signed in here, to go back to.
+  const other = useSwitcherEntries().find((e) => e.account.user.id !== meId);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,7 +50,8 @@ export default function Workspace() {
     }
   };
 
-  const host = location.host.includes("localhost") ? "app.opendesk.sh" : location.host;
+  // The help center is served where the app is: app.opendesk.sh, or this instance's own address.
+  const host = appOrigin().replace(/^https?:\/\//, "");
 
   return (
     <div>
@@ -76,15 +85,22 @@ export default function Workspace() {
           <button
             type="button"
             className="underline-offset-2 hover:text-fg hover:underline"
-            onClick={async () => {
-              await signOut();
-              resetAnalytics();
-              qc.clear();
-              void navigate({ to: "/login", search: { next: undefined, error: undefined } });
-            }}
+            onClick={() => void logOut()}
           >
             Log out
           </button>{" "}
+          {other && (
+            <>
+              ·{" "}
+              <button
+                type="button"
+                className="underline-offset-2 hover:text-fg hover:underline"
+                onClick={() => void switchTo(other.account.user.id, other.membership.workspace.id)}
+              >
+                {t("accounts.back", { name: other.membership.workspace.name })}
+              </button>{" "}
+            </>
+          )}
           ·{" "}
           <button type="button" className="underline-offset-2 hover:text-fg hover:underline" onClick={() => setDeleting(true)}>
             Delete account

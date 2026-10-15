@@ -1,0 +1,39 @@
+---
+/**
+ * One stop on /features: a label, a short headline and one line beside it,
+ * then the product itself, large, standing on its own painting. The screen in
+ * the slot is drawn 1:1 at `w` x `h` and scaled to the frame.
+ */
+import Backdrop from '../home/Backdrop.astro';
+import Stage from '../Stage.astro';
+import SectionHead from '../SectionHead.astro';
+
+interface Props {
+  id: string;
+  label: string;
+  title: string;
+  body: string;
+  painting: string;
+  focus?: string;
+  /** The screen's design size. Leave both out to place the slot freely. */
+  w?: number;
+  h?: number;
+  /** What the screen shows, for assistive tech. */
+  alt: string;
+  href?: string;
+}
+const { id, label, title, body, painting, focus = '50% 50%', w, h, alt, href } = Astro.props;
+---
+<section id={id} class="container-page mt-28 scroll-mt-24 md:mt-40">
+  <SectionHead label={label} title={title} body={body} href={href} />
+  <div class="relative isolate mt-10 overflow-hidden rounded-[22px] md:mt-14 md:rounded-[28px]">
+    <Backdrop name={painting} sizes="(min-width: 1440px) 1360px, 100vw" class="absolute inset-0 -z-10 h-full w-full" style={`object-position:${focus}`} />
+    {w && h
+      ? <div class="px-3 pt-6 sm:px-8 sm:pt-12 lg:px-16 lg:pt-16"><Stage w={w} h={h} tone="none" label={alt} class="sc-shot rounded-t-[12px]"><slot /></Stage></div>
+      : <div role="img" aria-label={alt}><slot /></div>}
+  </div>
+</section>
+
+<style is:global>
+  .sc-shot { box-shadow: 0 40px 90px -30px rgb(10 30 80 / 0.55); }
+</style>

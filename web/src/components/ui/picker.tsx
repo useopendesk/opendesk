@@ -14,6 +14,17 @@ export type PickerItem = {
   group?: string;
 };
 
+/**
+ * The search row of a popover picker. The panel clips its overflow, so the
+ * field sits inside a little padding and draws its focus ring inset: the ring
+ * stays whole on every side.
+ */
+export const pickerSearch = {
+  row: "border-b border-line p-1",
+  input:
+    "h-7 w-full rounded-md bg-transparent px-1.5 text-[12.5px] text-fg outline-none placeholder:text-fg-4 focus-visible:shadow-[inset_0_0_0_1.5px_var(--focus)]",
+};
+
 type Common = {
   trigger: ReactNode;
   items: PickerItem[];
@@ -81,14 +92,8 @@ export function Picker(props: Single | Multi) {
           onClick={(e) => e.stopPropagation()}
         >
           <Command loop shouldFilter={!props.onQueryChange} className="flex flex-col">
-            <div className="border-b border-line px-2.5">
-              <Command.Input
-                autoFocus
-                value={query}
-                onValueChange={setQuery}
-                placeholder={placeholder}
-                className="h-9 w-full bg-transparent text-[12.5px] text-fg outline-none placeholder:text-fg-4"
-              />
+            <div className={pickerSearch.row}>
+              <Command.Input autoFocus value={query} onValueChange={setQuery} placeholder={placeholder} className={pickerSearch.input} />
             </div>
             <Command.List className="max-h-[280px] overflow-y-auto p-1">
               <Command.Empty className="px-2 py-5 text-center text-xs text-fg-3">{emptyText}</Command.Empty>

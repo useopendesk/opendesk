@@ -1,27 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { InBrowserNote } from "@/components/desktop/InBrowser";
+import { isDesktop, openInBrowser } from "@/lib/desktop";
 import { RefreshCw, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Row, Section, SettingsPage } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
-import { Field, NumberInput, TextInput } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Field, TextInput } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
+import { Tooltip } from "@/components/ui/tooltip";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { SaveBar } from "@/components/settings/SaveBar";
-import { MailboxIcon, MailboxStatus, TestResults } from "@/components/mailboxes/kinds";
+import { connectionLabel, MailboxIcon, MailboxStatus, TestResults } from "@/components/mailboxes/kinds";
 import { ForwardingInstructions } from "@/components/mailboxes/AddMailboxWizard";
+import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
+import { CauseCallout, connectFailure, useConnectOptions, useMailDetection, type ConnectFailure } from "@/components/mailboxes/connect";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
+import { AliasesField, FromNameField, fromNameProblem, MailboxBrandField, MailboxTeamField } from "@/components/mailboxes/addressing";
+import { useBrands } from "@/components/settings2/teams";
+import { ContactFormsField } from "@/components/settings/ContactFormsField";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Mailbox, MailboxConfig, MailboxTest, TlsMode } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
+import { isMicrosoftHost, mailboxHost, offersNoTls } from "@/lib/mailHost";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 
@@ -29,6 +37,10 @@ type Draft = {
   name: string;
   display_name: string;
   team_id: string | null;
+  brand_id: string;
+  aliases: string[];
+  trusted_form_senders: string[];
+  from_name_format: string;
   signature_html: string;
   auto_reply_enabled: boolean;
   auto_reply_subject: string;
@@ -36,16 +48,32 @@ type Draft = {
   ai_answers: boolean;
   ai_answers_mode: Mailbox["ai_answers_mode"];
   ai_answers_outside_hours: boolean;
+  bot_id: string | null;
+  outbound_kind: Mailbox["outbound_kind"];
   config: MailboxConfig;
   password: string;
   smtp_password: string;
 };
+
+const IMAP_KEYS = ["imap_host", "imap_port", "imap_username", "imap_tls"] as const;
+const SMTP_KEYS = ["smtp_host", "smtp_port", "smtp_username", "smtp_tls"] as const;
+type ServerKey = (typeof IMAP_KEYS)[number] | (typeof SMTP_KEYS)[number];
+
+const sameKeys = (a: MailboxConfig, b: MailboxConfig, keys: readonly ServerKey[]) => keys.every((k) => (a[k] ?? "") === (b[k] ?? ""));
+const pick = (c: MailboxConfig, keys: readonly ServerKey[]): MailboxConfig => Object.fromEntries(keys.map((k) => [k, c[k]])) as MailboxConfig;
+
+/** Replies go out through opendesk or the mailbox's own SMTP server (not a provider sign-in). */
+const ownSending = (k: Mailbox["outbound_kind"]) => k === "system" || k === "smtp";
 
 function toDraft(m: Mailbox): Draft {
   return {
     name: m.name,
     display_name: m.display_name,
     team_id: m.team_id,
+    brand_id: m.brand_id ?? "",
+    aliases: [...(m.aliases ?? [])],
+    trusted_form_senders: [...(m.trusted_form_senders ?? [])],
+    from_name_format: m.from_name_format ?? "",
     signature_html: m.signature_html,
     auto_reply_enabled: m.auto_reply_enabled,
     auto_reply_subject: m.auto_reply_subject,
@@ -53,6 +81,8 @@ function toDraft(m: Mailbox): Draft {
     ai_answers: m.ai_answers ?? false,
     ai_answers_mode: m.ai_answers_mode ?? "draft",
     ai_answers_outside_hours: m.ai_answers_outside_hours ?? false,
+    bot_id: m.bot_id ?? null,
+    outbound_kind: m.outbound_kind,
     config: { ...m.config },
     password: "",
     smtp_password: "",
@@ -111,12 +141,16 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const { t } = useTranslation("settingsChannels");
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: teams } = useQuery(q.teams());
+  const { multi: multiBrand } = useBrands();
   const { setStatus, remove, testDialog } = useMailboxActions();
   const base = useMemo(() => toDraft(mailbox), [mailbox]);
   const [draft, setDraft] = useState<Draft>(base);
   const [test, setTest] = useState<MailboxTest | null>(null);
   const [testing, setTesting] = useState(false);
+  // The Sending section's own check, and a save whose sign-in was refused.
+  const [sendTest, setSendTest] = useState<MailboxTest | null>(null);
+  const [sendTesting, setSendTesting] = useState(false);
+  const [refused, setRefused] = useState<ConnectFailure | null>(null);
 
   // Someone else saved: take their version unless we are mid-edit.
   const [prevBase, setPrevBase] = useState(base);
@@ -130,12 +164,45 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setCfg = <K extends keyof MailboxConfig>(k: K, v: MailboxConfig[K]) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
 
+  const imap = mailbox.inbound_kind === "imap";
+  const smtp = draft.outbound_kind === "smtp";
+  const imapChanged = imap && (!sameKeys(draft.config, base.config, IMAP_KEYS) || !!draft.password);
+  const sendChanged = draft.outbound_kind !== base.outbound_kind || (smtp && (!sameKeys(draft.config, base.config, SMTP_KEYS) || !!draft.smtp_password));
+  // Moving to SMTP from opendesk: no password is stored yet.
+  const smtpPasswordNeeded = smtp && base.outbound_kind !== "smtp";
+  const sendingValid = !smtp || (!!draft.config.smtp_host?.trim() && validPort(draft.config.smtp_port ?? 0) && (!smtpPasswordNeeded || !!draft.smtp_password));
+
+  // Where replies would go through the mailbox's own server: the address's SMTP server, when detection knows it.
+  const { data: opts } = useConnectOptions();
+  const detection = useMailDetection(ownSending(mailbox.outbound_kind) && mailbox.outbound_kind !== "smtp" ? mailbox.email : null).data;
+  const chooseSending = (kind: "system" | "smtp") =>
+    setDraft((d) => {
+      if (kind === "system") return { ...d, outbound_kind: kind, smtp_password: "", config: { ...d.config, ...pick(base.config, SMTP_KEYS) } };
+      if (base.outbound_kind === "smtp") return { ...d, outbound_kind: kind, config: { ...d.config, ...pick(base.config, SMTP_KEYS) } };
+      const found = detection?.settings?.smtp;
+      return {
+        ...d,
+        outbound_kind: kind,
+        config: {
+          ...d.config,
+          smtp_host: d.config.smtp_host || found?.host || "",
+          smtp_port: d.config.smtp_port || found?.port || 587,
+          smtp_tls: d.config.smtp_tls || found?.security || "starttls",
+          smtp_username: d.config.smtp_username || mailbox.email,
+        },
+      };
+    });
+
   const save = useMutation({
     mutationFn: () =>
       api.mailboxes.update(mailbox.id, {
         name: draft.name.trim(),
         display_name: draft.display_name.trim(),
         team_id: draft.team_id ?? "", // "" clears the team; null would mean "unchanged"
+        ...(draft.brand_id && draft.brand_id !== base.brand_id ? { brand_id: draft.brand_id } : {}),
+        ...(JSON.stringify(draft.aliases) !== JSON.stringify(base.aliases) ? { aliases: draft.aliases } : {}),
+        ...(JSON.stringify(draft.trusted_form_senders) !== JSON.stringify(base.trusted_form_senders) ? { trusted_form_senders: draft.trusted_form_senders } : {}),
+        ...(draft.from_name_format !== base.from_name_format ? { from_name_format: draft.from_name_format.trim() } : {}),
         signature_html: draft.signature_html,
         auto_reply_enabled: draft.auto_reply_enabled,
         auto_reply_subject: draft.auto_reply_subject.trim(),
@@ -144,26 +211,44 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         ...(draft.ai_answers !== base.ai_answers ? { ai_answers: draft.ai_answers } : {}),
         ...(draft.ai_answers_mode !== base.ai_answers_mode ? { ai_answers_mode: draft.ai_answers_mode } : {}),
         ...(draft.ai_answers_outside_hours !== base.ai_answers_outside_hours ? { ai_answers_outside_hours: draft.ai_answers_outside_hours } : {}),
-        ...(mailbox.inbound_kind === "imap" ? { config: draft.config } : {}),
+        ...(draft.bot_id !== base.bot_id ? { bot_id: draft.bot_id } : {}),
+        ...(draft.outbound_kind !== base.outbound_kind ? { outbound_kind: draft.outbound_kind } : {}),
+        // Only the server settings: the rest of config is the API's.
+        ...(imap || smtp ? { config: { ...(imap ? pick(draft.config, IMAP_KEYS) : {}), ...(smtp ? pick(draft.config, SMTP_KEYS) : {}) } } : {}),
         ...(draft.password ? { password: draft.password } : {}),
-        ...(draft.smtp_password ? { smtp_password: draft.smtp_password } : {}),
+        ...(smtp && draft.smtp_password ? { smtp_password: draft.smtp_password } : {}),
+        // A changed server or password is signed in to before it is saved.
+        ...(imapChanged || sendChanged ? { verify: true } : {}),
       }),
+    onMutate: () => setRefused(null),
     onSuccess: (m) => {
       upsertInList(qc, qk.mailboxes, m);
       setDraft(toDraft(m));
+      setSendTest(null);
       toast.success(t("detail.saved"));
     },
-    onError: (e) => toast.error(e),
+    onError: (e) => {
+      const failed = connectFailure(e);
+      if (failed) setRefused(failed);
+      else toast.error(e);
+    },
   });
 
+  // The desktop app reconnects in the browser (contracts/native.md).
+  const [openedInBrowser, setOpenedInBrowser] = useState(false);
   const reconnect = useMutation({
-    mutationFn: () =>
-      api.mailboxes.oauthStart(mailbox.inbound_kind === "microsoft" ? "microsoft" : "google", {
+    mutationFn: async () => {
+      if (isDesktop) {
+        openInBrowser(location.pathname);
+        return null;
+      }
+      return api.mailboxes.oauthStart(mailbox.inbound_kind === "microsoft" ? "microsoft" : "google", {
         mailbox_id: mailbox.id,
         name: mailbox.name,
         email: mailbox.email,
-      }),
-    onSuccess: (r) => window.location.assign(r.url),
+      });
+    },
+    onSuccess: (r) => (r ? window.location.assign(r.url) : setOpenedInBrowser(true)),
     onError: (e) => toast.error(e),
   });
 
@@ -179,7 +264,22 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     }
   };
 
+  const runSendTest = async () => {
+    setSendTesting(true);
+    setSendTest(null);
+    setRefused(null);
+    try {
+      setSendTest(await api.mailboxes.test(mailbox.id));
+    } catch (e) {
+      toast.error(errorMessage(e, t("detail.testRunFailed")));
+    } finally {
+      setSendTesting(false);
+    }
+  };
+
   const oauth = mailbox.inbound_kind === "google" || mailbox.inbound_kind === "microsoft";
+  const microsoft = isMicrosoftHost(mailboxHost(mailbox));
+  const refusedOut = refused && !refused.outbound.ok;
 
   return (
     <SettingsPage
@@ -197,7 +297,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     >
       <Section
         title={t("detail.connection")}
-        description={t(`kind.${mailbox.inbound_kind}`)}
+        description={connectionLabel(mailbox, t)}
         actions={
           <Button size="sm" icon={<Zap className="size-3.5" />} loading={testing} onClick={runTest}>
             {t("detail.testConnection")}
@@ -231,13 +331,21 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             </Button>
           </Row>
         )}
+        {oauth && openedInBrowser && (
+          <InBrowserNote name={mailbox.inbound_kind === "microsoft" ? "Microsoft" : "Google"} opened className="my-3" />
+        )}
         {mailbox.inbound_kind === "forwarding" && (
           <div className="py-3.5">
             <ForwardingInstructions mailbox={mailbox} />
           </div>
         )}
-        {mailbox.inbound_kind === "imap" && (
-          <div className="grid gap-4 py-4 lg:grid-cols-2">
+        {refused && !refusedOut && (
+          <div className="py-3.5">
+            <CauseCallout failure={refused} />
+          </div>
+        )}
+        {imap && (
+          <div className="py-4">
             <ServerEdit
               title={t("detail.incoming")}
               host={draft.config.imap_host ?? ""}
@@ -250,23 +358,76 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
               onTls={(v) => setCfg("imap_tls", v)}
               onUsername={(v) => setCfg("imap_username", v)}
               onPassword={(v) => set("password", v)}
-            />
-            <ServerEdit
-              title={t("detail.outgoing")}
-              host={draft.config.smtp_host ?? ""}
-              port={draft.config.smtp_port ?? 587}
-              tls={draft.config.smtp_tls ?? "starttls"}
-              username={draft.config.smtp_username ?? ""}
-              password={draft.smtp_password}
-              onHost={(v) => setCfg("smtp_host", v)}
-              onPort={(v) => setCfg("smtp_port", v)}
-              onTls={(v) => setCfg("smtp_tls", v)}
-              onUsername={(v) => setCfg("smtp_username", v)}
-              onPassword={(v) => set("smtp_password", v)}
+              defaultPorts={[993, 143]}
             />
           </div>
         )}
       </Section>
+
+      {ownSending(mailbox.outbound_kind) && (
+        <Section
+          title={t("detail.send.title")}
+          description={t("detail.send.hint")}
+          actions={
+            <Tooltip content={sendChanged ? t("detail.send.saveToTest") : t("detail.send.testHint")}>
+              <span className="inline-flex">
+                <Button size="sm" icon={<Zap className="size-3.5" />} loading={sendTesting} disabled={sendChanged} onClick={runSendTest}>
+                  {t("detail.testConnection")}
+                </Button>
+              </span>
+            </Tooltip>
+          }
+        >
+          {refusedOut && (
+            <div className="border-b border-line-soft py-3.5">
+              <CauseCallout failure={refused} />
+            </div>
+          )}
+          {sendTest && !refusedOut && (
+            <div className="border-b border-line-soft py-3.5">
+              <TestResults result={sendTest} only="outbound" />
+            </div>
+          )}
+          <Row
+            label={t("connect.sending")}
+            description={
+              smtp
+                ? t("connect.sendSmtpBody", { email: mailbox.email })
+                : t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: mailbox.email })
+            }
+          >
+            <Segmented
+              value={smtp ? "smtp" : "system"}
+              onChange={chooseSending}
+              options={[
+                { value: "system", label: t("connect.sendSystem") },
+                { value: "smtp", label: t("connect.sendSmtp") },
+              ]}
+            />
+          </Row>
+          {smtp && (
+            <div className="flex flex-col gap-3 py-4">
+              {microsoft && <p className="text-xs leading-[18px] text-tone-amber">{t("connect.sendSmtpMicrosoft")}</p>}
+              <ServerEdit
+                title={t("detail.send.server")}
+                host={draft.config.smtp_host ?? ""}
+                port={draft.config.smtp_port ?? 587}
+                tls={draft.config.smtp_tls ?? "starttls"}
+                username={draft.config.smtp_username ?? ""}
+                password={draft.smtp_password}
+                passwordHint={smtpPasswordNeeded ? t("detail.send.passwordNeeded") : undefined}
+                hostPlaceholder="smtp.company.com"
+                onHost={(v) => setCfg("smtp_host", v)}
+                onPort={(v) => setCfg("smtp_port", v)}
+                onTls={(v) => setCfg("smtp_tls", v)}
+                onUsername={(v) => setCfg("smtp_username", v)}
+                onPassword={(v) => set("smtp_password", v)}
+                defaultPorts={[465, 587]}
+              />
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section title={t("detail.sending")} description={t("detail.sendingHint")}>
         <Row label={t("detail.name")} description={t("detail.nameHint")} htmlFor="mb-name">
@@ -275,20 +436,33 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         <Row label={t("detail.senderName")} description={t("detail.senderNameHint")} htmlFor="mb-display">
           <TextInput id="mb-display" className="w-[260px]" value={draft.display_name} placeholder={mailbox.name} onChange={(e) => set("display_name", e.target.value)} />
         </Row>
-        <Row label={t("detail.team")} description={t("detail.teamHint")}>
-          <Select
-            className="w-[260px]"
-            aria-label={t("detail.team")}
-            value={draft.team_id ?? "__none"}
-            onChange={(v) => set("team_id", v === "__none" ? null : v)}
-            options={[{ value: "__none", label: t("detail.noTeam") }, ...(teams ?? []).map((t) => ({ value: t.id, label: t.name }))]}
-          />
-        </Row>
-        {mailbox.outbound_kind === "system" && (
-          <Row label={t("detail.sentFrom")} description={t("detail.sentFromHint")}>
-            <span className="mono text-xs text-fg-3">opendesk</span>
+        {multiBrand && (
+          <Row label={t("addressing.brand")} description={t("addressing.brandHint")}>
+            <MailboxBrandField className="w-[260px]" value={draft.brand_id} onChange={(v) => set("brand_id", v)} />
           </Row>
         )}
+        <Row label={t("addressing.team")} description={t("addressing.teamHint")}>
+          <MailboxTeamField className="w-[260px]" value={draft.team_id} onChange={(v) => set("team_id", v)} />
+        </Row>
+        <Row label={t("addressing.fromName")} description={t("addressing.fromNameHint")} stack>
+          <FromNameField
+            value={draft.from_name_format}
+            onChange={(v) => set("from_name_format", v)}
+            email={mailbox.email}
+            mailboxName={draft.display_name.trim() || draft.name.trim()}
+            teamId={draft.team_id}
+            brandId={draft.brand_id}
+          />
+        </Row>
+        <Row label={t("addressing.aliases")} description={t("addressing.aliasesHint")} stack>
+          <AliasesField value={draft.aliases} onChange={(v) => set("aliases", v)} email={mailbox.email} />
+        </Row>
+      </Section>
+
+      <Section title={t("forms.title")} description={t("forms.hint")}>
+        <div className="py-3.5">
+          <ContactFormsField value={draft.trusted_form_senders} onChange={(v) => set("trusted_form_senders", v)} own={[mailbox.email, ...draft.aliases]} />
+        </div>
       </Section>
 
       <Section title={t("detail.signature")} description={t("detail.signatureHint")}>
@@ -353,7 +527,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
       </Section>
 
       {testDialog}
-      <SaveBar dirty={dirty} saving={save.isPending} disabled={!draft.name.trim()} onSave={() => save.mutate()} onDiscard={() => setDraft(base)} />
+      <SaveBar dirty={dirty} saving={save.isPending} disabled={!draft.name.trim() || !!fromNameProblem(draft.from_name_format) || (imap && !validPort(draft.config.imap_port ?? 993)) || !sendingValid} onSave={() => save.mutate()} onDiscard={() => setDraft(base)} />
     </SettingsPage>
   );
 }
@@ -365,6 +539,11 @@ function ServerEdit(p: {
   tls: TlsMode;
   username: string;
   password: string;
+  /** Shown under the password; by default, that an empty one keeps the saved one. */
+  passwordHint?: string;
+  hostPlaceholder?: string;
+  /** The usual ports for TLS and STARTTLS: picking a security mode on one of them moves to the other. */
+  defaultPorts: [number, number];
   onHost: (v: string) => void;
   onPort: (v: number) => void;
   onTls: (v: TlsMode) => void;
@@ -376,13 +555,17 @@ function ServerEdit(p: {
     <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-sunken/50 p-3.5">
       <legend className="px-1 text-[12.5px] font-medium">{p.title}</legend>
       <div className="grid grid-cols-[1fr_110px] gap-3">
-        <Field label={t("detail.server")}>{({ id }) => <TextInput id={id} className="mono" value={p.host} onChange={(e) => p.onHost(e.target.value)} />}</Field>
-        <Field label={t("detail.port")}>{({ id }) => <NumberInput id={id} value={p.port} min={1} max={65535} onChange={p.onPort} />}</Field>
+        <Field label={t("detail.server")}>
+          {({ id }) => <TextInput id={id} className="mono" invalid={!p.host.trim()} value={p.host} placeholder={p.hostPlaceholder} onChange={(e) => p.onHost(e.target.value)} />}
+        </Field>
+        <Field label={t("detail.port")} error={validPort(p.port) ? undefined : t("wizard.err.port")}>
+          {({ id, invalid }) => <PortInput id={id} value={p.port} invalid={invalid} onChange={p.onPort} />}
+        </Field>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         <Field label={t("detail.username")}>{({ id }) => <TextInput id={id} className="mono" autoComplete="off" value={p.username} onChange={(e) => p.onUsername(e.target.value)} />}</Field>
-        <Field label={t("detail.password")} hint={t("detail.passwordKeep")}>
-          {({ id }) => <TextInput id={id} type="password" autoComplete="new-password" value={p.password} placeholder="••••••••" onChange={(e) => p.onPassword(e.target.value)} />}
+        <Field label={t("detail.password")} hint={p.passwordHint ?? t("detail.passwordKeep")}>
+          {({ id }) => <TextInput id={id} type="password" autoComplete="new-password" value={p.password} placeholder={p.passwordHint ? undefined : "••••••••"} onChange={(e) => p.onPassword(e.target.value)} />}
         </Field>
       </div>
       <div className="flex items-center justify-between gap-3">
@@ -390,11 +573,17 @@ function ServerEdit(p: {
         <Segmented
           size="xs"
           value={p.tls}
-          onChange={p.onTls}
+          onChange={(v) => {
+            p.onTls(v);
+            // A usual port follows the security mode; a custom one stays.
+            const [tlsPort, startPort] = p.defaultPorts;
+            if (v === "tls" && p.port === startPort) p.onPort(tlsPort);
+            if (v === "starttls" && p.port === tlsPort) p.onPort(startPort);
+          }}
           options={[
             { value: "tls", label: "TLS" },
             { value: "starttls", label: "STARTTLS" },
-            { value: "none", label: t("detail.tlsNone") },
+            ...(p.tls === "none" || offersNoTls(p.host) ? [{ value: "none" as const, label: t("detail.tlsNone") }] : []),
           ]}
         />
       </div>

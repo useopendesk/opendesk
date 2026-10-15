@@ -1,15 +1,21 @@
 package billing
 
-// Auto-recharge and running-low handling for AI credits (contracts/billing.md
-// "Auto-recharge"). When a charged AI call takes a workspace below its threshold, a
-// unique River job buys credit packs off-session on the customer's saved payment method
-// and grants them once per PaymentIntent. With auto-recharge off (or at its monthly
-// limit), owners and admins are told once when credits run low and once when they run out.
+// Auto-recharge, top-ups paid with the saved payment method, and running-low handling for
+// the AI balance (contracts/billing.md "AI top-ups" and "Auto-recharge").
+//
+// Every charge on the saved payment method is a Stripe invoice that billing creates,
+// finalizes and pays, so the customer has an invoice for each one. Its AI usage is granted
+// once per invoice, by whichever sees it paid first: the request or worker that paid it,
+// or the invoice.paid webhook. When a charged AI call takes a workspace below its
+// threshold, a unique River job recharges it; a soft decline is tried again a few times
+// before auto-recharge turns itself off. With auto-recharge off (or at its monthly limit),
+// owners and admins are told once when the balance runs low and once when it runs out.
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,58 +31,118 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/jobs"
-	"github.com/useopendesk/opendesk/internal/mailer"
 	"github.com/useopendesk/opendesk/internal/plan"
 )
 
-// Auto-recharge defaults and bounds (the ai_auto_recharge columns).
+// Amounts and bounds (the ai_auto_recharge columns). AI usage is bought dollar for dollar.
 const (
-	DefaultRechargeThreshold = 200
-	DefaultRechargePacks     = 1
-	DefaultRechargeLimit     = 5
-	MaxRechargeThreshold     = 100000
-	MaxRechargePacks         = 20
-	MaxRechargeLimit         = 30
+	DefaultRechargeThreshold = plan.Micro(5_000_000)      // $5
+	DefaultRechargeAmount    = plan.Micro(25_000_000)     // $25
+	DefaultRechargeLimit     = plan.Micro(250_000_000)    // $250 a month
+	MinRechargeThreshold     = plan.Micro(10_000)         // $0.01
+	MaxRechargeThreshold     = plan.Micro(1_000_000_000)  // $1,000
+	MaxRechargeLimit         = plan.Micro(50_000_000_000) // $50,000 a month
+	// MinTopUp and MaxTopUp bound one purchase or recharge.
+	MinTopUp = plan.Micro(5_000_000)     // $5
+	MaxTopUp = plan.Micro(5_000_000_000) // $5,000
 )
 
-// OutOfCreditsBelow is the balance under which a workspace counts as out of credits: a
-// widget agent reply or a draft (3 credits each) can no longer start.
-const OutOfCreditsBelow = plan.Milli(3000)
+// retryAfter spaces the tries of a recharge the bank declined for now (insufficient funds,
+// the issuer unavailable): three more over about a day, then auto-recharge turns off.
+var retryAfter = []time.Duration{time.Hour, 6 * time.Hour, 18 * time.Hour}
+
+// OutBelow is the balance under which a workspace is out of AI balance: no metered call
+// can start (plan.MinBalance), and the widget agent goes silent.
+const OutBelow = plan.MinBalance
 
 // Notification types sent to owners and admins.
 const (
-	NotifyCreditsLow          = "credits_low"
-	NotifyCreditsOut          = "credits_out"
-	NotifyAutoRechargeFailed  = "auto_recharge_failed"
-	rechargeSource            = "stripe_auto_recharge"
-	rechargeKind              = "auto_recharge"
-	failCardDeclined          = "card_declined"
-	failAuthenticationNeeded  = "authentication_required"
-	failNoPaymentMethod       = "no_payment_method"
-	failPaymentFailed         = "payment_failed"
-	failUnavailable           = "unavailable"
-	errPaymentMethodRequired  = "payment_method_required"
-	paymentMethodRequiredText = "Add a payment method before turning on auto-recharge."
+	NotifyBalanceLow         = "ai_balance_low"
+	NotifyBalanceOut         = "ai_balance_out"
+	NotifyAutoRechargeFailed = "auto_recharge_failed"
 )
+
+// Charge kinds (ai_auto_recharges.kind and the Stripe metadata kind) and grant sources.
+const (
+	topUpKind      = "top_up"
+	rechargeKind   = "auto_recharge"
+	topUpSource    = "stripe_top_up"
+	rechargeSource = "stripe_auto_recharge"
+)
+
+// Why a charge failed (RechargeFailure.code).
+const (
+	failCardDeclined         = "card_declined"
+	failAuthenticationNeeded = "authentication_required"
+	failNoPaymentMethod      = "no_payment_method"
+	failPaymentFailed        = "payment_failed"
+	failUnavailable          = "unavailable"
+)
+
+const (
+	errPaymentMethodRequired  = "payment_method_required"
+	paymentMethodRequiredText = "Add a payment method first."
+)
+
+func errTopUpUnavailable() *httpx.Error {
+	return httpx.E(422, "top_up_unavailable", "AI top-ups are not available.")
+}
+
+// usdText formats an amount for people: "$10", "$2.50", "$0.004".
+func usdText(m plan.Micro) string {
+	switch {
+	case m%1_000_000 == 0:
+		return fmt.Sprintf("$%d", m/1_000_000)
+	case m%10_000 == 0:
+		return fmt.Sprintf("$%.2f", m.USD())
+	}
+	return "$" + strconv.FormatFloat(m.USD(), 'f', -1, 64)
+}
+
+// cents rounds US dollars people typed to cents.
+func cents(usd float64) plan.Micro {
+	return plan.FromUSD(math.Round(usd*100) / 100)
+}
+
+// topUpAmount checks the AI usage one purchase or recharge adds.
+func topUpAmount(usd float64, field string) (plan.Micro, error) {
+	m := cents(usd)
+	if m < MinTopUp || m > MaxTopUp {
+		return 0, httpx.Validation(field + " must be from 5 to 5000.")
+	}
+	return m, nil
+}
+
+// amountFor is what usd of AI usage costs, in the top-up price's currency and minor unit:
+// the price (STRIPE_PRICE_AI_TOPUP) is the cost of plan.TopUpUSD.
+func amountFor(usd plan.Micro, p *Price) int64 {
+	return int64(math.Round(float64(usd) * float64(p.UnitAmount) / float64(plan.TopUpUSD)))
+}
 
 // AutoRecharge is Billing.auto_recharge: the settings and what happened last.
 type AutoRecharge struct {
-	Enabled            bool             `json:"enabled"`
-	Threshold          int              `json:"threshold" doc:"Recharge when the remaining credits fall below this"`
-	Packs              int              `json:"packs" doc:"Credit packs bought per recharge"`
-	MonthlyLimit       int              `json:"monthly_limit" doc:"At most this many recharges per calendar month (UTC)"`
-	RechargesThisMonth int              `json:"recharges_this_month"`
-	LowAt              int              `json:"low_at" doc:"Remaining credits below this read as running low"`
-	LastRecharge       *Recharge        `json:"last_recharge"`
-	Failure            *RechargeFailure `json:"failure" doc:"Why auto-recharge turned itself off; null once it is back on"`
+	Enabled             bool             `json:"enabled"`
+	ThresholdUSD        float64          `json:"threshold_usd" doc:"Recharge when the AI balance falls below this many US dollars"`
+	AmountUSD           float64          `json:"amount_usd" doc:"AI usage each recharge adds, in US dollars (charged dollar for dollar)"`
+	MonthlyLimitUSD     float64          `json:"monthly_limit_usd" doc:"At most this many US dollars are recharged per calendar month (UTC)"`
+	ChargedThisMonthUSD float64          `json:"charged_this_month_usd" doc:"Recharged this month, paid or still being paid"`
+	RechargesThisMonth  int              `json:"recharges_this_month"`
+	LowAtUSD            float64          `json:"low_at_usd" doc:"An AI balance below this many US dollars reads as running low"`
+	LastRecharge        *Recharge        `json:"last_recharge"`
+	Retry               *RechargeRetry   `json:"retry" doc:"A recharge the bank declined for now, tried again at this time"`
+	Failure             *RechargeFailure `json:"failure" doc:"Why auto-recharge turned itself off; null once it is back on"`
 }
 
 type Recharge struct {
 	At       time.Time `json:"at"`
-	Packs    int       `json:"packs"`
-	Credits  int       `json:"credits"`
-	Amount   int64     `json:"amount" doc:"In the currency's minor unit"`
+	USD      float64   `json:"usd" doc:"AI usage added, in US dollars"`
+	Amount   int64     `json:"amount" doc:"What was charged, in the currency's minor unit"`
 	Currency string    `json:"currency"`
+}
+
+type RechargeRetry struct {
+	At   time.Time `json:"at"`
+	Code string    `json:"code" enum:"card_declined"`
 }
 
 type RechargeFailure struct {
@@ -87,24 +153,24 @@ type RechargeFailure struct {
 // rechargeSettings is one ai_auto_recharge row (or the defaults).
 type rechargeSettings struct {
 	Enabled                  bool
-	Threshold, Packs, Limit  int
+	Threshold, Amount, Limit plan.Micro
 	FailureCode              *string
 	FailedAt                 *time.Time
 	LowNotified, OutNotified *time.Time
 }
 
 func defaultSettings() rechargeSettings {
-	return rechargeSettings{Threshold: DefaultRechargeThreshold, Packs: DefaultRechargePacks, Limit: DefaultRechargeLimit}
+	return rechargeSettings{Threshold: DefaultRechargeThreshold, Amount: DefaultRechargeAmount, Limit: DefaultRechargeLimit}
 }
 
 func readSettings(ctx context.Context, q db.Querier, wid uuid.UUID, forUpdate bool) (rechargeSettings, error) {
 	st := defaultSettings()
-	sql := `SELECT enabled, threshold, packs, monthly_limit, failure_code, failed_at, low_notified_at, out_notified_at
+	sql := `SELECT enabled, threshold_micro_usd, amount_micro_usd, monthly_limit_micro_usd, failure_code, failed_at, low_notified_at, out_notified_at
 		FROM ai_auto_recharge WHERE workspace_id = $1`
 	if forUpdate {
 		sql += ` FOR UPDATE`
 	}
-	err := q.QueryRow(ctx, sql, wid).Scan(&st.Enabled, &st.Threshold, &st.Packs, &st.Limit, &st.FailureCode, &st.FailedAt,
+	err := q.QueryRow(ctx, sql, wid).Scan(&st.Enabled, &st.Threshold, &st.Amount, &st.Limit, &st.FailureCode, &st.FailedAt,
 		&st.LowNotified, &st.OutNotified)
 	if db.IsNotFound(err) {
 		return defaultSettings(), nil
@@ -122,45 +188,69 @@ func monthStart(now time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
-// rechargesThisMonth counts recharges that charged or may still charge this month.
-func rechargesThisMonth(ctx context.Context, q db.Querier, wid uuid.UUID) (int, error) {
+// rechargedThisMonth is what auto-recharge charged or may still charge this month: the
+// AI usage and the number of recharges.
+func rechargedThisMonth(ctx context.Context, q db.Querier, wid uuid.UUID) (plan.Micro, int, error) {
+	var sum plan.Micro
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM ai_auto_recharges WHERE workspace_id = $1 AND status IN ('pending', 'succeeded')
-		AND created_at >= $2`, wid, monthStart(time.Now())).Scan(&n)
-	return n, err
+	err := q.QueryRow(ctx, `SELECT COALESCE(sum(micro_usd), 0)::bigint, count(*)::int FROM ai_auto_recharges
+		WHERE workspace_id = $1 AND kind = 'auto_recharge' AND status IN ('pending', 'succeeded') AND created_at >= $2`,
+		wid, monthStart(time.Now())).Scan(&sum, &n)
+	return sum, n, err
 }
 
-// LowAt is the balance (credits) under which a workspace is running low: the
-// auto-recharge threshold, but never more than a fifth of the monthly allowance (at
-// least 5), so a small allowance does not read as low from its first call.
-func LowAt(threshold, monthly int) int {
+// LowAt is the balance under which a workspace is running low: the auto-recharge
+// threshold, but never more than a fifth of the monthly allowance (at least $0.05), so
+// a small allowance does not read as low from its first call.
+func LowAt(threshold, monthly plan.Micro) plan.Micro {
 	if threshold <= 0 {
 		threshold = DefaultRechargeThreshold
 	}
-	return min(threshold, max(monthly/5, 5))
+	return min(threshold, max(monthly/5, lowAtFloor))
 }
 
-func loadAutoRecharge(ctx context.Context, q db.Querier, wid uuid.UUID, monthly int) (*AutoRecharge, error) {
+// lowAtFloor is the smallest running-low line.
+const lowAtFloor = plan.Micro(50_000) // $0.05
+
+func loadAutoRecharge(ctx context.Context, q db.Querier, wid uuid.UUID, monthly plan.Micro) (*AutoRecharge, error) {
 	st, err := readSettings(ctx, q, wid, false)
 	if err != nil {
 		return nil, err
 	}
-	ar := &AutoRecharge{Enabled: st.Enabled, Threshold: st.Threshold, Packs: st.Packs, MonthlyLimit: st.Limit, LowAt: LowAt(st.Threshold, monthly)}
+	ar := &AutoRecharge{Enabled: st.Enabled, ThresholdUSD: st.Threshold.USD(), AmountUSD: st.Amount.USD(), MonthlyLimitUSD: st.Limit.USD(),
+		LowAtUSD: LowAt(st.Threshold, monthly).USD()}
 	if st.Enabled {
-		ar.LowAt = st.Threshold
+		ar.LowAtUSD = st.Threshold.USD()
 	}
-	if ar.RechargesThisMonth, err = rechargesThisMonth(ctx, q, wid); err != nil {
+	charged, n, err := rechargedThisMonth(ctx, q, wid)
+	if err != nil {
 		return nil, err
 	}
+	ar.ChargedThisMonthUSD, ar.RechargesThisMonth = charged.USD(), n
 	var r Recharge
-	err = q.QueryRow(ctx, `SELECT updated_at, packs, credits, amount, currency FROM ai_auto_recharges
-		WHERE workspace_id = $1 AND status = 'succeeded' ORDER BY updated_at DESC LIMIT 1`, wid).
-		Scan(&r.At, &r.Packs, &r.Credits, &r.Amount, &r.Currency)
+	var usage plan.Micro
+	err = q.QueryRow(ctx, `SELECT updated_at, micro_usd, amount, currency FROM ai_auto_recharges
+		WHERE workspace_id = $1 AND kind = 'auto_recharge' AND status = 'succeeded' ORDER BY updated_at DESC LIMIT 1`, wid).
+		Scan(&r.At, &usage, &r.Amount, &r.Currency)
 	switch {
 	case err == nil:
+		r.USD = usage.USD()
 		ar.LastRecharge = &r
 	case !db.IsNotFound(err):
 		return nil, err
+	}
+	if st.Enabled {
+		var at time.Time
+		var code string
+		err = q.QueryRow(ctx, `SELECT retry_at, COALESCE(failure_code, 'card_declined') FROM ai_auto_recharges
+			WHERE workspace_id = $1 AND kind = 'auto_recharge' AND status = 'pending' AND retry_at IS NOT NULL
+			ORDER BY created_at DESC LIMIT 1`, wid).Scan(&at, &code)
+		switch {
+		case err == nil:
+			ar.Retry = &RechargeRetry{At: at, Code: code}
+		case !db.IsNotFound(err):
+			return nil, err
+		}
 	}
 	if !st.Enabled && st.FailureCode != nil && st.FailedAt != nil {
 		ar.Failure = &RechargeFailure{Code: *st.FailureCode, At: *st.FailedAt}
@@ -175,17 +265,26 @@ func rechargeOpts() *river.InsertOpts {
 
 // ─── API ───────────────────────────────────────────────────────────────────
 
+// TopUpResult is the POST /v1/billing/top-up body.
+type TopUpResult struct {
+	// Status is "paid" (the AI usage is in the balance) or "processing" (the payment is
+	// still being confirmed; billing.updated follows when it lands).
+	Status  string  `json:"status" enum:"paid,processing"`
+	USD     float64 `json:"usd" doc:"AI usage bought, in US dollars"`
+	Billing Billing `json:"billing"`
+}
+
 func (s *svc) registerRechargeAPI(api huma.API) {
 	tags := []string{"Billing"}
 
 	huma.Register(api, huma.Operation{OperationID: "update-billing-auto-recharge", Method: http.MethodPatch, Path: "/v1/billing/auto-recharge",
-		Summary: "Change the AI credits auto-recharge settings", Tags: tags},
+		Summary: "Change the AI balance auto-recharge settings", Tags: tags},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Enabled      *bool `json:"enabled,omitempty"`
-				Threshold    *int  `json:"threshold,omitempty" minimum:"1" maximum:"100000" doc:"Recharge when the remaining credits fall below this"`
-				Packs        *int  `json:"packs,omitempty" minimum:"1" maximum:"20" doc:"Credit packs per recharge"`
-				MonthlyLimit *int  `json:"monthly_limit,omitempty" minimum:"1" maximum:"30" doc:"Recharges per calendar month (UTC)"`
+				Enabled         *bool    `json:"enabled,omitempty"`
+				ThresholdUSD    *float64 `json:"threshold_usd,omitempty" minimum:"0.01" maximum:"1000" doc:"Recharge when the AI balance falls below this many US dollars (rounded to cents)"`
+				AmountUSD       *float64 `json:"amount_usd,omitempty" minimum:"5" maximum:"5000" doc:"AI usage each recharge adds, in US dollars (rounded to cents)"`
+				MonthlyLimitUSD *float64 `json:"monthly_limit_usd,omitempty" minimum:"5" maximum:"50000" doc:"Most recharged per calendar month (UTC), in US dollars"`
 			}
 		}) (*struct{ Body Billing }, error) {
 			if !s.enabled() {
@@ -205,17 +304,10 @@ func (s *svc) registerRechargeAPI(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			if body.Enabled != nil && *body.Enabled && !cur.Enabled {
-				if s.d.Cfg.StripePriceCredits == "" {
-					return nil, httpx.E(422, "credits_unavailable", "Credit packs are not available.")
+				if s.d.Cfg.StripePriceTopUp == "" {
+					return nil, errTopUpUnavailable()
 				}
-				cus, err := s.customerID(ctx, s.d.DB.Pool, wid)
-				if err != nil {
-					return nil, httpx.Wrap(err)
-				}
-				if cus == "" {
-					return nil, httpx.E(409, errPaymentMethodRequired, paymentMethodRequiredText)
-				}
-				pm, err := s.paymentMethod(ctx, cus)
+				pm, err := s.savedPaymentMethod(ctx, wid)
 				if err != nil {
 					return nil, s.wrapStripe(err)
 				}
@@ -240,39 +332,50 @@ func (s *svc) registerRechargeAPI(api huma.API) {
 				if body.Enabled != nil {
 					next.Enabled = *body.Enabled
 				}
-				if body.Threshold != nil {
-					next.Threshold = *body.Threshold
+				if body.ThresholdUSD != nil {
+					// Cents: the threshold is a line people set, not a metered amount.
+					if next.Threshold = cents(*body.ThresholdUSD); next.Threshold < MinRechargeThreshold || next.Threshold > MaxRechargeThreshold {
+						return httpx.Validation("threshold_usd must be from 0.01 to 1000.")
+					}
 				}
-				if body.Packs != nil {
-					next.Packs = *body.Packs
+				if body.AmountUSD != nil {
+					if next.Amount, err = topUpAmount(*body.AmountUSD, "amount_usd"); err != nil {
+						return err
+					}
 				}
-				if body.MonthlyLimit != nil {
-					next.Limit = *body.MonthlyLimit
+				if body.MonthlyLimitUSD != nil {
+					if next.Limit = cents(*body.MonthlyLimitUSD); next.Limit < MinTopUp || next.Limit > MaxRechargeLimit {
+						return httpx.Validation("monthly_limit_usd must be from 5 to 50000.")
+					}
 				}
 				// One recharge must lift the balance back above the threshold, or every
 				// charged call after it would buy again until the monthly limit.
-				if next.Packs*plan.CreditPackSize <= next.Threshold {
-					return httpx.E(422, "recharge_too_small", "Each recharge must bring your credits back above the threshold. Buy more packs per recharge or lower the threshold.")
+				if next.Amount <= next.Threshold {
+					return httpx.E(422, "recharge_too_small", "Each recharge must bring your AI balance back above the threshold. Recharge more or lower the threshold.")
+				}
+				if next.Limit < next.Amount {
+					return httpx.E(422, "monthly_limit_too_small", "The monthly limit must cover at least one recharge.")
 				}
 				changes := map[string]any{}
 				if next.Enabled != st.Enabled {
 					changes["enabled"] = next.Enabled
 				}
 				if next.Threshold != st.Threshold {
-					changes["threshold"] = next.Threshold
+					changes["threshold_usd"] = next.Threshold.USD()
 				}
-				if next.Packs != st.Packs {
-					changes["packs"] = next.Packs
+				if next.Amount != st.Amount {
+					changes["amount_usd"] = next.Amount.USD()
 				}
 				if next.Limit != st.Limit {
-					changes["monthly_limit"] = next.Limit
+					changes["monthly_limit_usd"] = next.Limit.USD()
 				}
 				if len(changes) > 0 {
 					// Turning it on clears the last failure.
-					if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharge SET enabled = $2, threshold = $3, packs = $4, monthly_limit = $5,
+					if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharge SET enabled = $2, threshold_micro_usd = $3, amount_micro_usd = $4,
+						monthly_limit_micro_usd = $5,
 						failure_code = CASE WHEN $2 AND NOT enabled THEN NULL ELSE failure_code END,
 						failed_at = CASE WHEN $2 AND NOT enabled THEN NULL ELSE failed_at END,
-						updated_at = now() WHERE workspace_id = $1`, wid, next.Enabled, next.Threshold, next.Packs, next.Limit); err != nil {
+						updated_at = now() WHERE workspace_id = $1`, wid, next.Enabled, next.Threshold, next.Amount, next.Limit); err != nil {
 						return err
 					}
 					if err := audit.Log(ctx, tx, p, wid, "billing.auto_recharge_updated", "workspace", &wid, changes); err != nil {
@@ -285,7 +388,7 @@ func (s *svc) registerRechargeAPI(api huma.API) {
 					if err != nil {
 						return err
 					}
-					if !c.Unlimited && c.Remaining < plan.Milli(next.Threshold)*1000 {
+					if !c.Unlimited && c.Remaining < next.Threshold {
 						if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.AutoRechargeArgs{WorkspaceID: wid}, rechargeOpts()); err != nil {
 							return err
 						}
@@ -303,6 +406,78 @@ func (s *svc) registerRechargeAPI(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			return &struct{ Body Billing }{out}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "create-top-up", Method: http.MethodPost, Path: "/v1/billing/top-up",
+		Summary: "Buy AI usage with the saved payment method", Tags: tags},
+		func(ctx context.Context, in *struct {
+			Body struct {
+				AmountUSD float64 `json:"amount_usd" minimum:"5" maximum:"5000" doc:"AI usage to buy, in US dollars (rounded to cents), charged dollar for dollar"`
+			}
+		}) (*struct{ Body TopUpResult }, error) {
+			if !s.enabled() {
+				return nil, errDisabled()
+			}
+			p, err := requireBillingAdmin(ctx)
+			if err != nil {
+				return nil, err
+			}
+			wid := p.WorkspaceID
+			usd, err := topUpAmount(in.Body.AmountUSD, "amount_usd")
+			if err != nil {
+				return nil, err
+			}
+			if s.d.Cfg.StripePriceTopUp == "" {
+				return nil, errTopUpUnavailable()
+			}
+			if !s.d.Limiter.Allow("billing:top_up:"+wid.String(), 20, time.Hour) {
+				return nil, httpx.RateLimited()
+			}
+			price := s.pricesFor(ctx).AITopUp
+			if price == nil || price.UnitAmount <= 0 {
+				return nil, httpx.E(http.StatusBadGateway, "billing_unavailable", "The billing provider is unavailable. Try again in a moment.")
+			}
+			cus, err := s.customerID(ctx, s.d.DB.Pool, wid)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			pm := ""
+			if cus != "" {
+				if pm, err = s.paymentMethod(ctx, cus); err != nil {
+					return nil, s.wrapStripe(err)
+				}
+			}
+			if pm == "" {
+				return nil, httpx.E(409, errPaymentMethodRequired, paymentMethodRequiredText)
+			}
+			c, err := newCharge(ctx, s.d.DB.Pool, wid, topUpKind, cus, pm, usd, price)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			// The buyer is here, so the bank may ask them to confirm (off_session false).
+			out, err := s.pay(ctx, wid, c, price, false)
+			if err != nil {
+				return nil, s.wrapStripe(err)
+			}
+			if out.declined != "" {
+				s.abandon(ctx, c, out, out.declined)
+				if out.declined == failAuthenticationNeeded {
+					return nil, httpx.E(http.StatusPaymentRequired, failAuthenticationNeeded,
+						"Your bank wants to confirm this payment. Continue in Stripe Checkout to confirm it.")
+				}
+				return nil, httpx.E(http.StatusPaymentRequired, failCardDeclined, "The card was declined, so nothing was charged. Try another card.")
+			}
+			res := TopUpResult{Status: "processing", USD: usd.USD()}
+			if out.paid {
+				res.Status = "paid"
+				if err := s.grantPaid(ctx, wid, c.ID, out.invoice.ID, nil); err != nil {
+					return nil, httpx.Wrap(err)
+				}
+			}
+			if res.Billing, err = s.load(ctx, s.d.DB.Pool, wid, s.pricesFor(ctx)); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body TopUpResult }{res}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "create-billing-payment-method", Method: http.MethodPost, Path: "/v1/billing/payment-method",
@@ -323,7 +498,7 @@ func (s *svc) registerRechargeAPI(api huma.API) {
 				return nil, s.wrapStripe(err)
 			}
 			currency := "usd"
-			if pack := s.pricesFor(ctx).CreditPack; pack != nil && pack.Currency != "" {
+			if pack := s.pricesFor(ctx).AITopUp; pack != nil && pack.Currency != "" {
 				currency = pack.Currency
 			}
 			wid := p.WorkspaceID.String()
@@ -355,8 +530,17 @@ func (s *svc) customerID(ctx context.Context, q db.Querier, wid uuid.UUID) (stri
 	return *cus, err
 }
 
-// paymentMethod is the payment method an off-session charge uses: the customer's
-// default, else the most recently saved one. "" means none is saved.
+// savedPaymentMethod is the payment method charges for wid use, or "" when none is saved.
+func (s *svc) savedPaymentMethod(ctx context.Context, wid uuid.UUID) (string, error) {
+	cus, err := s.customerID(ctx, s.d.DB.Pool, wid)
+	if err != nil || cus == "" {
+		return "", err
+	}
+	return s.paymentMethod(ctx, cus)
+}
+
+// paymentMethod is the payment method a charge uses: the customer's default, else the
+// most recently saved one. "" means none is saved.
 func (s *svc) paymentMethod(ctx context.Context, cus string) (string, error) {
 	c, err := s.sc.V1Customers.Retrieve(ctx, cus, nil)
 	if isMissing(err) {
@@ -387,8 +571,8 @@ func (s *svc) paymentMethod(ctx context.Context, cus string) (string, error) {
 }
 
 // ensureDefaultPM makes a saved payment method the customer's default, so the portal
-// and off-session charges use it: pm when given (a setup Checkout), else the most recent
-// one when the customer has no default yet. Best effort: failures are logged.
+// and charges use it: pm when given (a setup Checkout), else the most recent one when the
+// customer has no default yet. Best effort: failures are logged.
 func (s *svc) ensureDefaultPM(ctx context.Context, cus, pm string) {
 	if cus == "" {
 		return
@@ -421,34 +605,34 @@ func (s *svc) ensureDefaultPM(ctx context.Context, cus, pm string) {
 
 // onSpend runs after every charged AI call (plan.Service.OnSpend). It never fails the
 // call: problems are logged.
-func (s *svc) onSpend(ctx context.Context, wid uuid.UUID, before, after plan.Milli) {
+func (s *svc) onSpend(ctx context.Context, wid uuid.UUID, before, after plan.Micro) {
 	if !s.enabled() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	if err := s.afterSpend(ctx, wid, before, after); err != nil {
-		s.d.Log.Warn("credits after spend", "workspace_id", wid, "err", err)
+		s.d.Log.Warn("ai balance after spend", "workspace_id", wid, "err", err)
 	}
 }
 
-func (s *svc) afterSpend(ctx context.Context, wid uuid.UUID, before, after plan.Milli) error {
+func (s *svc) afterSpend(ctx context.Context, wid uuid.UUID, before, after plan.Micro) error {
 	pool := s.d.DB.Pool
 	st, err := readSettings(ctx, pool, wid, false)
 	if err != nil {
 		return err
 	}
-	threshold := plan.Milli(st.Threshold) * 1000
+	threshold := st.Threshold
 	// LowAt never exceeds the threshold, so nothing below happens above it.
-	if after >= max(threshold, OutOfCreditsBelow) {
+	if after >= max(threshold, OutBelow) {
 		return nil
 	}
 	if st.Enabled && after < threshold {
-		n, err := rechargesThisMonth(ctx, pool, wid)
+		charged, _, err := rechargedThisMonth(ctx, pool, wid)
 		if err != nil {
 			return err
 		}
-		if n < st.Limit {
+		if st.Limit-charged >= MinTopUp {
 			if s.d.Jobs == nil {
 				return nil
 			}
@@ -457,28 +641,28 @@ func (s *svc) afterSpend(ctx context.Context, wid uuid.UUID, before, after plan.
 		}
 		// At its monthly limit, auto-recharge waits for next month: the notices below apply.
 	}
-	if before >= OutOfCreditsBelow && after < OutOfCreditsBelow {
-		return s.notifyOnce(ctx, wid, NotifyCreditsOut, after)
+	if before >= OutBelow && after < OutBelow {
+		return s.notifyOnce(ctx, wid, NotifyBalanceOut, after)
 	}
 	e, err := s.d.Plan.Entitlements(ctx, pool, wid)
 	if err != nil {
 		return err
 	}
-	low := plan.Milli(LowAt(st.Threshold, e.MonthlyCredits)) * 1000
+	low := LowAt(st.Threshold, e.MonthlyUSD)
 	if st.Enabled {
 		low = threshold
 	}
-	if before >= low && after < low && after >= OutOfCreditsBelow {
-		return s.notifyOnce(ctx, wid, NotifyCreditsLow, after)
+	if before >= low && after < low && after >= OutBelow {
+		return s.notifyOnce(ctx, wid, NotifyBalanceLow, after)
 	}
 	return nil
 }
 
-// notifyOnce sends a running-low or out-of-credits notice to owners and admins, once
+// notifyOnce sends a running-low or out-of-balance notice to owners and admins, once
 // per period: a grant or a new month re-arms it.
-func (s *svc) notifyOnce(ctx context.Context, wid uuid.UUID, typ string, remaining plan.Milli) error {
+func (s *svc) notifyOnce(ctx context.Context, wid uuid.UUID, typ string, remaining plan.Micro) error {
 	col := "low_notified_at"
-	if typ == NotifyCreditsOut {
+	if typ == NotifyBalanceOut {
 		col = "out_notified_at"
 	}
 	prices := s.pricesFor(ctx)
@@ -491,7 +675,7 @@ func (s *svc) notifyOnce(ctx context.Context, wid uuid.UUID, typ string, remaini
 			return err
 		}
 		sent := st.LowNotified
-		if typ == NotifyCreditsOut {
+		if typ == NotifyBalanceOut {
 			sent = st.OutNotified
 		}
 		if sent != nil && !sent.Before(monthStart(time.Now())) {
@@ -500,15 +684,9 @@ func (s *svc) notifyOnce(ctx context.Context, wid uuid.UUID, typ string, remaini
 		if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharge SET `+col+` = now() WHERE workspace_id = $1`, wid); err != nil {
 			return err
 		}
-		data := map[string]any{"remaining": remaining.Credits()}
-		var mail *adminMail
-		if typ == NotifyCreditsOut {
-			mail = &adminMail{subject: "AI credits are out", title: "Your workspace is out of AI credits",
-				body: []string{"Ollie has paused: the chat widget agent stops answering and drafts, summaries and other AI features are unavailable until credits are added.",
-					"Buy a credit pack or turn on auto-recharge to keep Ollie working."},
-				cta: "Buy credits"}
-		}
-		if err := s.notifyAdmins(ctx, tx, wid, typ, data, mail); err != nil {
+		// Owners and admins hear of it in the app and, by their notification preferences,
+		// by email (internal/emails has the email's words).
+		if err := s.notifyAdmins(ctx, tx, wid, typ, map[string]any{"remaining_usd": remaining.USD()}); err != nil {
 			return err
 		}
 		// Spends publish nothing; this lets the app's running-low banner appear live.
@@ -516,84 +694,277 @@ func (s *svc) notifyOnce(ctx context.Context, wid uuid.UUID, typ string, remaini
 	})
 }
 
-type adminMail struct {
-	subject, title, cta string
-	body                []string
-}
-
-// notifyAdmins sends an in-app notification to every owner and admin and, with mail,
-// an email too.
-func (s *svc) notifyAdmins(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, data map[string]any, mail *adminMail) error {
-	var name string
-	if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id = $1`, wid).Scan(&name); err != nil {
-		return err
-	}
-	rows, err := tx.Query(ctx, `SELECT u.id, u.email FROM members m JOIN users u ON u.id = m.user_id
-		WHERE m.workspace_id = $1 AND m.role IN ('owner', 'admin')`, wid)
+// notifyAdmins sends a notification to every owner and admin. Its email follows each
+// one's notification preferences (contracts/api.md "Notification preferences and emails").
+func (s *svc) notifyAdmins(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, data map[string]any) error {
+	rows, err := tx.Query(ctx, `SELECT user_id FROM members WHERE workspace_id = $1 AND role IN ('owner', 'admin')`, wid)
 	if err != nil {
 		return err
 	}
-	type admin struct {
-		id    uuid.UUID
-		email string
-	}
-	admins, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (admin, error) {
-		var a admin
-		return a, r.Scan(&a.id, &a.email)
-	})
+	admins, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 	if err != nil {
 		return err
 	}
-	var html, text string
-	if mail != nil {
-		html, text = mailer.Layout(mail.title, mail.body, mail.cta, s.d.Cfg.AppURL+"/settings/billing",
-			"You get this email because you are an owner or admin of "+name+".")
-	}
-	for _, a := range admins {
+	for _, uid := range admins {
 		d := make(map[string]any, len(data))
 		for k, v := range data {
 			d[k] = v
 		}
-		if err := hd.Notify(ctx, tx, wid, a.id, typ, nil, d); err != nil {
+		if err := hd.Notify(ctx, tx, wid, uid, typ, nil, d); err != nil {
 			return err
-		}
-		if mail != nil {
-			if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: a.email, Subject: mail.subject + " for " + name, HTML: html, Text: text},
-				&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
 }
 
-// ─── The recharge ──────────────────────────────────────────────────────────
+// ─── Charges on the saved payment method ───────────────────────────────────
 
-type attempt struct {
+// charge is one ai_auto_recharges row: an auto-recharge or a top-up paid in the app.
+type charge struct {
 	ID              uuid.UUID
-	PaymentIntentID *string
+	Kind            string
+	InvoiceID       *string
 	CustomerID      string
 	PaymentMethodID string
-	Packs, Credits  int
+	USD             plan.Micro
 	Amount          int64
 	Currency        string
+	Tries           int
 }
 
-func pendingAttempt(ctx context.Context, q db.Querier, wid uuid.UUID) (*attempt, error) {
-	var a attempt
-	err := q.QueryRow(ctx, `SELECT id, payment_intent_id, customer_id, payment_method_id, packs, credits, amount, currency
-		FROM ai_auto_recharges WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC LIMIT 1`, wid).
-		Scan(&a.ID, &a.PaymentIntentID, &a.CustomerID, &a.PaymentMethodID, &a.Packs, &a.Credits, &a.Amount, &a.Currency)
+func newCharge(ctx context.Context, q db.Querier, wid uuid.UUID, kind, cus, pm string, usd plan.Micro, price *Price) (*charge, error) {
+	c := &charge{Kind: kind, CustomerID: cus, PaymentMethodID: pm, USD: usd, Amount: amountFor(usd, price), Currency: price.Currency}
+	err := q.QueryRow(ctx, `INSERT INTO ai_auto_recharges (workspace_id, kind, customer_id, payment_method_id, micro_usd, amount, currency)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, wid, kind, cus, pm, usd, c.Amount, c.Currency).Scan(&c.ID)
+	return c, err
+}
+
+// pendingRecharge is the auto-recharge still being paid (or waiting for its next try).
+func pendingRecharge(ctx context.Context, q db.Querier, wid uuid.UUID) (*charge, error) {
+	var c charge
+	err := q.QueryRow(ctx, `SELECT id, kind, invoice_id, customer_id, payment_method_id, micro_usd, amount, currency, tries
+		FROM ai_auto_recharges WHERE workspace_id = $1 AND kind = 'auto_recharge' AND status = 'pending' ORDER BY created_at DESC LIMIT 1`, wid).
+		Scan(&c.ID, &c.Kind, &c.InvoiceID, &c.CustomerID, &c.PaymentMethodID, &c.USD, &c.Amount, &c.Currency, &c.Tries)
 	if db.IsNotFound(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &a, nil
+	return &c, nil
 }
 
-// autoRechargeWorker buys credit packs off-session for one workspace.
+// chargeText is the charge's line on its invoice.
+func chargeText(c *charge) string {
+	if c.Kind == rechargeKind {
+		return "AI usage auto-recharge, " + usdText(c.USD)
+	}
+	return "AI usage top-up, " + usdText(c.USD)
+}
+
+// payOutcome is how one try of a charge ended.
+type payOutcome struct {
+	invoice  *stripe.Invoice
+	paid     bool
+	declined string // the failure code when the payment was refused
+	soft     bool   // the bank may accept it on a later try
+}
+
+// pay creates the charge's invoice (or picks it up again), finalizes it and pays it with
+// the saved payment method. Every Stripe request has an idempotency key derived from the
+// charge, so a retried job never creates or pays anything twice.
+func (s *svc) pay(ctx context.Context, wid uuid.UUID, c *charge, price *Price, offSession bool) (payOutcome, error) {
+	pool := s.d.DB.Pool
+	key := "od-charge-" + c.ID.String()
+	var inv *stripe.Invoice
+	var err error
+	if c.InvoiceID != nil {
+		if inv, err = s.sc.V1Invoices.Retrieve(ctx, *c.InvoiceID, nil); err != nil {
+			return payOutcome{}, err
+		}
+	} else {
+		meta := map[string]string{"workspace_id": wid.String(), "kind": c.Kind, "charge_id": c.ID.String(),
+			"micro_usd": strconv.FormatInt(int64(c.USD), 10)}
+		params := &stripe.InvoiceCreateParams{
+			Customer:                    stripe.String(c.CustomerID),
+			Currency:                    stripe.String(c.Currency),
+			CollectionMethod:            stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
+			AutoAdvance:                 stripe.Bool(false),
+			PendingInvoiceItemsBehavior: stripe.String("exclude"),
+			Description:                 stripe.String(chargeText(c)),
+			Metadata:                    meta,
+		}
+		params.IdempotencyKey = stripe.String(key + "-invoice")
+		if inv, err = s.sc.V1Invoices.Create(ctx, params); err != nil {
+			return s.refused(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE ai_auto_recharges SET invoice_id = $2, updated_at = now() WHERE id = $1`, c.ID, inv.ID); err != nil {
+			return payOutcome{}, err
+		}
+		c.InvoiceID = &inv.ID
+	}
+	switch inv.Status {
+	case stripe.InvoiceStatusPaid:
+		return payOutcome{invoice: inv, paid: true}, nil
+	case stripe.InvoiceStatusVoid, stripe.InvoiceStatusUncollectible:
+		return payOutcome{invoice: inv, declined: failPaymentFailed}, nil
+	case stripe.InvoiceStatusDraft:
+		if inv.Total == 0 {
+			item := &stripe.InvoiceItemCreateParams{Customer: stripe.String(c.CustomerID), Invoice: stripe.String(inv.ID),
+				Description: stripe.String(chargeText(c))}
+			if price != nil && price.Product != "" {
+				item.PriceData = &stripe.InvoiceItemCreatePriceDataParams{Currency: stripe.String(c.Currency), Product: stripe.String(price.Product),
+					UnitAmount: stripe.Int64(c.Amount), TaxBehavior: stripe.String("exclusive")}
+				item.Quantity = stripe.Int64(1)
+			} else {
+				item.Amount, item.Currency = stripe.Int64(c.Amount), stripe.String(c.Currency)
+			}
+			item.IdempotencyKey = stripe.String(key + "-item")
+			if _, err := s.sc.V1InvoiceItems.Create(ctx, item); err != nil {
+				return s.refused(err)
+			}
+		}
+		fin := &stripe.InvoiceFinalizeInvoiceParams{AutoAdvance: stripe.Bool(false)}
+		fin.IdempotencyKey = stripe.String(key + "-finalize")
+		if inv, err = s.sc.V1Invoices.FinalizeInvoice(ctx, inv.ID, fin); err != nil {
+			return s.refused(err)
+		}
+		if inv.Status == stripe.InvoiceStatusPaid {
+			return payOutcome{invoice: inv, paid: true}, nil
+		}
+	}
+	c.Tries++
+	if _, err := pool.Exec(ctx, `UPDATE ai_auto_recharges SET tries = $2, updated_at = now() WHERE id = $1`, c.ID, c.Tries); err != nil {
+		return payOutcome{}, err
+	}
+	params := &stripe.InvoicePayParams{OffSession: stripe.Bool(offSession), PaymentMethod: stripe.String(c.PaymentMethodID)}
+	params.IdempotencyKey = stripe.String(fmt.Sprintf("%s-pay-%d", key, c.Tries))
+	paid, err := s.sc.V1Invoices.Pay(ctx, inv.ID, params)
+	if err != nil {
+		out, err := s.refused(err)
+		out.invoice = inv
+		return out, err
+	}
+	return payOutcome{invoice: paid, paid: paid.Status == stripe.InvoiceStatusPaid}, nil
+}
+
+// softDeclines are the bank's answers that may change on a later try.
+var softDeclines = map[stripe.DeclineCode]bool{
+	stripe.DeclineCodeInsufficientFunds: true, stripe.DeclineCodeTryAgainLater: true, "issuer_not_available": true,
+	"processing_error": true, "reenter_transaction": true, "approve_with_id": true,
+}
+
+// refused turns a Stripe error into a declined outcome when the payment itself was
+// refused. Any other error is returned, so the request fails or the job retries.
+func (s *svc) refused(err error) (payOutcome, error) {
+	var se *stripe.Error
+	if !errors.As(err, &se) {
+		return payOutcome{}, err
+	}
+	switch {
+	case se.Code == stripe.ErrorCodeAuthenticationRequired || se.Code == stripe.ErrorCodeInvoicePaymentIntentRequiresAction ||
+		se.DeclineCode == stripe.DeclineCodeAuthenticationRequired:
+		return payOutcome{declined: failAuthenticationNeeded}, nil
+	case se.Type == stripe.ErrorTypeCard:
+		return payOutcome{declined: failCardDeclined, soft: softDeclines[se.DeclineCode] || se.Code == stripe.ErrorCodeProcessingError}, nil
+	case se.Type == stripe.ErrorTypeInvalidRequest && se.HTTPStatusCode < 500:
+		// The customer or payment method can no longer be charged (detached, deleted).
+		s.d.Log.Warn("stripe charge refused", "err", stripeErr(err))
+		return payOutcome{declined: failPaymentFailed}, nil
+	}
+	return payOutcome{}, err
+}
+
+// abandon voids a charge's unpaid invoice and marks it failed.
+func (s *svc) abandon(ctx context.Context, c *charge, out payOutcome, code string) {
+	s.voidInvoice(ctx, out.invoice)
+	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE ai_auto_recharges SET status = 'failed', failure_code = $2, retry_at = NULL, updated_at = now()
+		WHERE id = $1 AND status = 'pending'`, c.ID, code); err != nil {
+		s.d.Log.Warn("mark charge failed", "err", err)
+	}
+}
+
+// voidInvoice removes an unpaid invoice, so nobody pays it later. Best effort.
+func (s *svc) voidInvoice(ctx context.Context, inv *stripe.Invoice) {
+	if inv == nil {
+		return
+	}
+	var err error
+	switch inv.Status {
+	case stripe.InvoiceStatusDraft:
+		_, err = s.sc.V1Invoices.Delete(ctx, inv.ID, nil)
+	case stripe.InvoiceStatusOpen:
+		_, err = s.sc.V1Invoices.VoidInvoice(ctx, inv.ID, nil)
+	}
+	if err != nil {
+		s.d.Log.Warn("void invoice", "err", stripeErr(err))
+	}
+}
+
+// grantPaid grants a paid charge's AI usage and publishes billing.updated.
+func (s *svc) grantPaid(ctx context.Context, wid, chargeID uuid.UUID, invoiceID string, meta map[string]string) error {
+	prices := s.pricesFor(ctx)
+	var caps []capture
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		var err error
+		if caps, err = s.grantChargeTx(ctx, tx, wid, chargeID, invoiceID, meta); err != nil || len(caps) == 0 {
+			return err
+		}
+		return s.publish(ctx, tx, wid, prices)
+	})
+	if err == nil {
+		for _, c := range caps {
+			s.d.Analytics.Capture(c.wid.String(), c.wid.String(), c.event, c.props)
+		}
+	}
+	return err
+}
+
+// grantChargeTx grants a charge's AI usage once per invoice and marks the charge paid.
+// meta (the invoice metadata) stands in when the charge row is gone. It returns the
+// analytics event to send, or nothing when the invoice was already granted.
+func (s *svc) grantChargeTx(ctx context.Context, tx pgx.Tx, wid, chargeID uuid.UUID, invoiceID string, meta map[string]string) ([]capture, error) {
+	var kind string
+	var usage plan.Micro
+	err := tx.QueryRow(ctx, `UPDATE ai_auto_recharges SET status = 'succeeded', invoice_id = $3, failure_code = NULL, retry_at = NULL, updated_at = now()
+		WHERE id = $1 AND workspace_id = $2 RETURNING kind, micro_usd`, chargeID, wid, invoiceID).Scan(&kind, &usage)
+	if db.IsNotFound(err) {
+		n, _ := strconv.ParseInt(meta["micro_usd"], 10, 64)
+		kind, usage, err = meta["kind"], plan.Micro(n), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if (kind != rechargeKind && kind != topUpKind) || usage < MinTopUp || usage > MaxTopUp {
+		return nil, fmt.Errorf("invoice %s: invalid charge metadata", invoiceID)
+	}
+	source, action, event := topUpSource, "billing.ai_top_up_purchased", "ai_top_up_purchased"
+	if kind == rechargeKind {
+		source, action, event = rechargeSource, "billing.ai_recharged", "ai_recharged"
+	}
+	granted, err := plan.Grant(ctx, tx, wid, usage, source, invoiceID)
+	if err != nil || !granted {
+		return nil, err
+	}
+	if err := rearmNotices(ctx, tx, wid); err != nil {
+		return nil, err
+	}
+	data := map[string]any{"usd": usage.USD()}
+	if err := audit.Log(ctx, tx, nil, wid, action, "workspace", &wid, data); err != nil {
+		return nil, err
+	}
+	return []capture{{wid, event, data}}, nil
+}
+
+// rearmNotices lets the running-low notices fire again after AI usage was added.
+func rearmNotices(ctx context.Context, tx pgx.Tx, wid uuid.UUID) error {
+	_, err := tx.Exec(ctx, `UPDATE ai_auto_recharge SET low_notified_at = NULL, out_notified_at = NULL WHERE workspace_id = $1`, wid)
+	return err
+}
+
+// ─── The recharge ──────────────────────────────────────────────────────────
+
+// autoRechargeWorker recharges one workspace off-session.
 type autoRechargeWorker struct {
 	river.WorkerDefaults[jobs.AutoRechargeArgs]
 	s *svc
@@ -609,60 +980,95 @@ func (w *autoRechargeWorker) Work(ctx context.Context, job *river.Job[jobs.AutoR
 		return nil
 	}
 	pool := s.d.DB.Pool
-	a, err := pendingAttempt(ctx, pool, wid)
+	c, err := pendingRecharge(ctx, pool, wid)
 	if err != nil {
 		return err
-	}
-	if a != nil && a.PaymentIntentID != nil {
-		// A payment Stripe was still processing: read where it stands.
-		pi, err := s.sc.V1PaymentIntents.Retrieve(ctx, *a.PaymentIntentID, nil)
-		if err != nil {
-			return fmt.Errorf("retrieve payment intent: %s", stripeErr(err))
-		}
-		return s.settle(ctx, wid, a, pi)
 	}
 	st, err := readSettings(ctx, pool, wid, false)
 	if err != nil {
 		return err
 	}
 	if !st.Enabled {
-		if a != nil {
-			// Turned off before the charge went through; a late success still grants (webhook).
-			_, err := pool.Exec(ctx, `UPDATE ai_auto_recharges SET status = 'failed', failure_code = $2, updated_at = now()
-				WHERE id = $1 AND status = 'pending'`, a.ID, failPaymentFailed)
-			return err
+		if c != nil {
+			// Turned off before the charge went through: nothing more is charged.
+			var inv *stripe.Invoice
+			if c.InvoiceID != nil {
+				inv, _ = s.sc.V1Invoices.Retrieve(ctx, *c.InvoiceID, nil)
+			}
+			if inv != nil && inv.Status == stripe.InvoiceStatusPaid {
+				return s.grantPaid(ctx, wid, c.ID, inv.ID, nil)
+			}
+			s.abandon(ctx, c, payOutcome{invoice: inv}, failPaymentFailed)
 		}
 		return nil
 	}
-	if a == nil {
-		if a, err = s.newAttempt(ctx, wid, st); err != nil || a == nil {
+	if c == nil {
+		if c, err = s.newRecharge(ctx, wid, st); err != nil || c == nil {
 			return err
 		}
+	} else if pm, err := s.paymentMethod(ctx, c.CustomerID); err == nil && pm != "" && pm != c.PaymentMethodID {
+		// The card changed while a declined recharge waited: the next try uses the new one.
+		if _, err := pool.Exec(ctx, `UPDATE ai_auto_recharges SET payment_method_id = $2 WHERE id = $1`, c.ID, pm); err != nil {
+			return err
+		}
+		c.PaymentMethodID = pm
 	}
-	return s.charge(ctx, wid, a)
+	out, err := s.pay(ctx, wid, c, s.pricesFor(ctx).AITopUp, true)
+	if err != nil {
+		return fmt.Errorf("auto-recharge: %s", stripeErr(err))
+	}
+	switch {
+	case out.paid:
+		return s.grantPaid(ctx, wid, c.ID, out.invoice.ID, nil)
+	case out.declined != "" && out.soft && c.Tries <= len(retryAfter):
+		wait := retryAfter[c.Tries-1]
+		s.d.Log.Info("auto-recharge declined for now", "workspace_id", wid, "tries", c.Tries)
+		prices := s.pricesFor(ctx)
+		if err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharges SET retry_at = now() + $2::interval, failure_code = $3, updated_at = now()
+				WHERE id = $1`, c.ID, fmt.Sprintf("%d seconds", int(wait.Seconds())), out.declined); err != nil {
+				return err
+			}
+			return s.publish(ctx, tx, wid, prices)
+		}); err != nil {
+			return err
+		}
+		return river.JobSnooze(wait)
+	case out.declined != "":
+		s.d.Log.Info("auto-recharge declined", "workspace_id", wid, "code", out.declined)
+		s.voidInvoice(ctx, out.invoice)
+		return s.fail(ctx, wid, &c.ID, out.declined)
+	}
+	// Open but not paid yet: invoice.paid finishes it.
+	return nil
 }
 
-// newAttempt records the next recharge, or returns nil when none is due. A missing
+// newRecharge records the next recharge, or returns nil when none is due. Near the monthly
+// limit a recharge adds only what the limit has left (at least MinTopUp). A missing
 // payment method or price turns auto-recharge off.
-func (s *svc) newAttempt(ctx context.Context, wid uuid.UUID, st rechargeSettings) (*attempt, error) {
+func (s *svc) newRecharge(ctx context.Context, wid uuid.UUID, st rechargeSettings) (*charge, error) {
 	pool := s.d.DB.Pool
-	c, err := s.d.Plan.Balance(ctx, pool, wid)
+	bal, err := s.d.Plan.Balance(ctx, pool, wid)
 	if err != nil {
 		return nil, err
 	}
-	if c.Unlimited || c.Remaining >= plan.Milli(st.Threshold)*1000 {
+	if bal.Unlimited || bal.Remaining >= st.Threshold {
 		return nil, nil
 	}
-	n, err := rechargesThisMonth(ctx, pool, wid)
-	if err != nil || n >= st.Limit {
+	charged, _, err := rechargedThisMonth(ctx, pool, wid)
+	if err != nil {
 		return nil, err
 	}
-	if s.d.Cfg.StripePriceCredits == "" {
+	usd := min(st.Amount, st.Limit-charged)
+	if usd < MinTopUp {
+		return nil, nil
+	}
+	if s.d.Cfg.StripePriceTopUp == "" {
 		return nil, s.fail(ctx, wid, nil, failUnavailable)
 	}
-	pack := s.pricesFor(ctx).CreditPack
-	if pack == nil || pack.UnitAmount <= 0 {
-		return nil, errors.New("credit pack price unavailable")
+	price := s.pricesFor(ctx).AITopUp
+	if price == nil || price.UnitAmount <= 0 {
+		return nil, errors.New("ai top-up price unavailable")
 	}
 	cus, err := s.customerID(ctx, pool, wid)
 	if err != nil {
@@ -677,142 +1083,22 @@ func (s *svc) newAttempt(ctx context.Context, wid uuid.UUID, st rechargeSettings
 	if pm == "" {
 		return nil, s.fail(ctx, wid, nil, failNoPaymentMethod)
 	}
-	a := &attempt{CustomerID: cus, PaymentMethodID: pm, Packs: st.Packs, Credits: st.Packs * plan.CreditPackSize,
-		Amount: pack.UnitAmount * int64(st.Packs), Currency: pack.Currency}
-	err = pool.QueryRow(ctx, `INSERT INTO ai_auto_recharges (workspace_id, customer_id, payment_method_id, packs, credits, amount, currency)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, wid, a.CustomerID, a.PaymentMethodID, a.Packs, a.Credits, a.Amount, a.Currency).Scan(&a.ID)
-	return a, err
-}
-
-// charge creates the off-session PaymentIntent. The attempt id is the idempotency key,
-// so a retry returns the same PaymentIntent instead of charging again.
-func (s *svc) charge(ctx context.Context, wid uuid.UUID, a *attempt) error {
-	meta := map[string]string{"workspace_id": wid.String(), "kind": rechargeKind, "packs": strconv.Itoa(a.Packs), "attempt_id": a.ID.String()}
-	params := &stripe.PaymentIntentCreateParams{
-		Amount:        stripe.Int64(a.Amount),
-		Currency:      stripe.String(a.Currency),
-		Customer:      stripe.String(a.CustomerID),
-		PaymentMethod: stripe.String(a.PaymentMethodID),
-		OffSession:    stripe.Bool(true),
-		Confirm:       stripe.Bool(true),
-		Description:   stripe.String(fmt.Sprintf("opendesk AI credits auto-recharge (%d credits)", a.Credits)),
-		Metadata:      meta,
-	}
-	params.IdempotencyKey = stripe.String("od-recharge-" + a.ID.String())
-	pi, err := s.sc.V1PaymentIntents.Create(ctx, params)
-	if err != nil {
-		var se *stripe.Error
-		if errors.As(err, &se) && (se.Type == stripe.ErrorTypeCard || se.Code == stripe.ErrorCodeAuthenticationRequired) {
-			code := failCardDeclined
-			if se.Code == stripe.ErrorCodeAuthenticationRequired {
-				code = failAuthenticationNeeded
-			}
-			if se.PaymentIntent != nil && se.PaymentIntent.ID != "" {
-				if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE ai_auto_recharges SET payment_intent_id = $2 WHERE id = $1 AND payment_intent_id IS NULL`,
-					a.ID, se.PaymentIntent.ID); err != nil {
-					return err
-				}
-			}
-			s.d.Log.Info("auto-recharge declined", "workspace_id", wid, "code", code)
-			return s.fail(ctx, wid, &a.ID, code)
-		}
-		return fmt.Errorf("create payment intent: %s", stripeErr(err))
-	}
-	return s.settle(ctx, wid, a, pi)
-}
-
-// settle applies a PaymentIntent's outcome to its attempt.
-func (s *svc) settle(ctx context.Context, wid uuid.UUID, a *attempt, pi *stripe.PaymentIntent) error {
-	switch pi.Status {
-	case stripe.PaymentIntentStatusSucceeded:
-		return s.grantRecharge(ctx, wid, a.ID, pi.ID)
-	case stripe.PaymentIntentStatusProcessing:
-		// The webhook (payment_intent.succeeded or payment_failed) finishes it.
-		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE ai_auto_recharges SET payment_intent_id = $2, updated_at = now() WHERE id = $1`, a.ID, pi.ID)
-		return err
-	default:
-		code := failPaymentFailed
-		if pi.Status == stripe.PaymentIntentStatusRequiresAction {
-			code = failAuthenticationNeeded
-		}
-		if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE ai_auto_recharges SET payment_intent_id = $2 WHERE id = $1 AND payment_intent_id IS NULL`,
-			a.ID, pi.ID); err != nil {
-			return err
-		}
-		if pi.Status != stripe.PaymentIntentStatusCanceled {
-			if _, err := s.sc.V1PaymentIntents.Cancel(ctx, pi.ID, nil); err != nil {
-				s.d.Log.Warn("cancel payment intent", "err", stripeErr(err))
-			}
-		}
-		return s.fail(ctx, wid, &a.ID, code)
-	}
-}
-
-func (s *svc) grantRecharge(ctx context.Context, wid, attemptID uuid.UUID, piID string) error {
-	prices := s.pricesFor(ctx)
-	var granted bool
-	var credits int
-	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var err error
-		granted, credits, err = s.grantRechargeTx(ctx, tx, wid, attemptID, piID, 0)
-		if err != nil || !granted {
-			return err
-		}
-		return s.publish(ctx, tx, wid, prices)
-	})
-	if err == nil && granted {
-		s.d.Analytics.Capture(wid.String(), wid.String(), "credits_recharged", map[string]any{"credits": credits})
-	}
-	return err
-}
-
-// grantRechargeTx grants a recharge's credits once per PaymentIntent and marks its
-// attempt succeeded. packs (from the PaymentIntent metadata) is used when the attempt
-// row is gone; 0 reads it from the attempt.
-func (s *svc) grantRechargeTx(ctx context.Context, tx pgx.Tx, wid, attemptID uuid.UUID, piID string, packs int) (bool, int, error) {
-	var rowPacks int
-	err := tx.QueryRow(ctx, `UPDATE ai_auto_recharges SET status = 'succeeded', payment_intent_id = $3, failure_code = NULL, updated_at = now()
-		WHERE id = $1 AND workspace_id = $2 RETURNING packs`, attemptID, wid, piID).Scan(&rowPacks)
-	if err != nil && !db.IsNotFound(err) {
-		return false, 0, err
-	}
-	if rowPacks > 0 {
-		packs = rowPacks
-	}
-	if packs < 1 || packs > MaxRechargePacks {
-		return false, 0, fmt.Errorf("payment intent %s: invalid packs", piID)
-	}
-	credits := packs * plan.CreditPackSize
-	granted, err := plan.Grant(ctx, tx, wid, credits, rechargeSource, piID)
-	if err != nil || !granted {
-		return false, credits, err
-	}
-	if err := rearmNotices(ctx, tx, wid); err != nil {
-		return false, credits, err
-	}
-	return true, credits, audit.Log(ctx, tx, nil, wid, "billing.credits_recharged", "workspace", &wid,
-		map[string]any{"packs": packs, "credits": credits})
-}
-
-// rearmNotices lets the running-low notices fire again after credits were added.
-func rearmNotices(ctx context.Context, tx pgx.Tx, wid uuid.UUID) error {
-	_, err := tx.Exec(ctx, `UPDATE ai_auto_recharge SET low_notified_at = NULL, out_notified_at = NULL WHERE workspace_id = $1`, wid)
-	return err
+	return newCharge(ctx, pool, wid, rechargeKind, cus, pm, usd, price)
 }
 
 // fail turns auto-recharge off after a recharge could not be paid, tells owners and
 // admins, and records why.
-func (s *svc) fail(ctx context.Context, wid uuid.UUID, attemptID *uuid.UUID, code string) error {
+func (s *svc) fail(ctx context.Context, wid uuid.UUID, chargeID *uuid.UUID, code string) error {
 	prices := s.pricesFor(ctx)
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		return s.failTx(ctx, tx, wid, attemptID, code, prices)
+		return s.failTx(ctx, tx, wid, chargeID, code, prices)
 	})
 }
 
-func (s *svc) failTx(ctx context.Context, tx pgx.Tx, wid uuid.UUID, attemptID *uuid.UUID, code string, prices Prices) error {
-	if attemptID != nil {
-		if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharges SET status = 'failed', failure_code = $2, updated_at = now()
-			WHERE id = $1 AND status = 'pending'`, *attemptID, code); err != nil {
+func (s *svc) failTx(ctx context.Context, tx pgx.Tx, wid uuid.UUID, chargeID *uuid.UUID, code string, prices Prices) error {
+	if chargeID != nil {
+		if _, err := tx.Exec(ctx, `UPDATE ai_auto_recharges SET status = 'failed', failure_code = $2, retry_at = NULL, updated_at = now()
+			WHERE id = $1 AND status = 'pending'`, *chargeID, code); err != nil {
 			return err
 		}
 	}
@@ -828,60 +1114,8 @@ func (s *svc) failTx(ctx context.Context, tx pgx.Tx, wid uuid.UUID, attemptID *u
 	if err := audit.Log(ctx, tx, nil, wid, "billing.auto_recharge_failed", "workspace", &wid, map[string]any{"reason": code}); err != nil {
 		return err
 	}
-	reason := map[string]string{
-		failCardDeclined:         "The card on file was declined.",
-		failAuthenticationNeeded: "The bank asked to confirm the payment, which cannot happen while nobody is at the checkout.",
-		failNoPaymentMethod:      "There is no saved payment method.",
-		failUnavailable:          "Credit packs are not available right now.",
-	}[code]
-	if reason == "" {
-		reason = "The payment did not go through."
-	}
-	mail := &adminMail{subject: "Auto-recharge failed", title: "We could not recharge your AI credits",
-		body: []string{reason + " Auto-recharge is now off, so nothing else will be charged.",
-			"Update the payment method or buy credits, then turn auto-recharge back on."},
-		cta: "Open billing"}
-	if err := s.notifyAdmins(ctx, tx, wid, NotifyAutoRechargeFailed, map[string]any{"reason": code}, mail); err != nil {
+	if err := s.notifyAdmins(ctx, tx, wid, NotifyAutoRechargeFailed, map[string]any{"reason": code}); err != nil {
 		return err
 	}
 	return s.publish(ctx, tx, wid, prices)
-}
-
-// ─── Webhook ───────────────────────────────────────────────────────────────
-
-// applyRechargeIntent handles payment_intent.succeeded and payment_intent.payment_failed
-// for auto-recharge PaymentIntents (metadata.kind = auto_recharge). Others are ignored:
-// credit packs bought in Checkout are granted on checkout.session.completed.
-func (s *svc) applyRechargeIntent(ctx context.Context, tx pgx.Tx, typ string, wid uuid.UUID, pi *stripe.PaymentIntent, prices Prices) (bool, []capture, error) {
-	if pi == nil || pi.Metadata["kind"] != rechargeKind {
-		return false, nil, nil
-	}
-	attemptID, _ := uuid.Parse(pi.Metadata["attempt_id"])
-	switch typ {
-	case "payment_intent.succeeded":
-		packs, _ := strconv.Atoi(pi.Metadata["packs"])
-		granted, credits, err := s.grantRechargeTx(ctx, tx, wid, attemptID, pi.ID, packs)
-		if err != nil || !granted {
-			return false, nil, err
-		}
-		return true, []capture{{wid, "credits_recharged", map[string]any{"credits": credits}}}, nil
-	case "payment_intent.payment_failed":
-		var pending bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_auto_recharges WHERE id = $1 AND workspace_id = $2 AND status = 'pending')`,
-			attemptID, wid).Scan(&pending); err != nil || !pending {
-			return false, nil, err
-		}
-		code := failPaymentFailed
-		if e := pi.LastPaymentError; e != nil {
-			switch {
-			case e.Code == stripe.ErrorCodeAuthenticationRequired:
-				code = failAuthenticationNeeded
-			case e.Type == stripe.ErrorTypeCard:
-				code = failCardDeclined
-			}
-		}
-		// failTx publishes billing.updated itself.
-		return false, nil, s.failTx(ctx, tx, wid, &attemptID, code, prices)
-	}
-	return false, nil, nil
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Loader2, MessageSquareText, Paperclip, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, Paperclip, X } from "lucide-react";
 import { Morph } from "@/components/motion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
 import { create } from "zustand";
 import { DropdownMenu as M } from "radix-ui";
-import type { Attachment, Member, Message, SavedReply, Ticket, TicketStatus } from "@/lib/api/types";
+import type { Activity, Attachment, Mailbox, Member, Message, SavedReply, Ticket, TicketStatus } from "@/lib/api/types";
 import { api, type SendMessageBody } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import { q, qk } from "@/lib/queries";
@@ -15,6 +15,7 @@ import { useSession } from "@/lib/session";
 import { realtime } from "@/lib/realtime/manager";
 import { bytes } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { keyName } from "@/lib/hotkeys";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/tabs";
 import { Picker } from "@/components/ui/picker";
@@ -31,10 +32,12 @@ import { applyPatch } from "../useTicketActions";
 import { patchTicketEverywhere } from "@/lib/ticketCache";
 import { ComposerAiMenu, ComposerAiStatus, ComposerSources, useComposerAi } from "@/components/ai/ticket/ComposerAi";
 import { SuggestedReplyCard } from "./SuggestedReply";
+import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
 
 type Mode = "reply" | "note";
 type Upload = { key: string; file: File; status: "uploading" | "done" | "error"; attachment?: Attachment; preview?: string };
-type Draft = { mode: Mode; html: string; cc: string[]; bcc: string[]; showCc: boolean };
+/** mailboxId: this reply goes out from another address (it becomes the ticket's reply address). */
+type Draft = { mode: Mode; html: string; cc: string[]; bcc: string[]; showCc: boolean; mailboxId?: string };
 
 // Drafts survive switching tickets (memory only).
 const useDrafts = create<Record<string, Draft>>(() => ({}));
@@ -86,13 +89,15 @@ function EmailChips({ label, values, onChange }: { label: string; values: string
   );
 }
 
-function useSend(ticket: Ticket) {
+function useSend(ticket: Ticket, ctx: TeamsCtx) {
   const qc = useQueryClient();
   const user = useSession((s) => s.user!);
   return useMutation({
     mutationFn: (v: { body: SendMessageBody; tempId: string }) => api.tickets.send(ticket.id, v.body),
     onMutate: ({ body, tempId }) => {
       const now = new Date().toISOString();
+      const mb = body.kind === "reply" ? ctx.mailbox(body.mailbox_id ?? ticket.mailbox_id) : undefined;
+      const from = mb ? fromLine(ctx, ticket, mb, user.name) : null;
       const temp: Message = {
         id: tempId,
         ticket_id: ticket.id,
@@ -104,8 +109,9 @@ function useSend(ticket: Ticket) {
         body_text: "",
         has_quoted: false,
         subject: ticket.subject,
-        from_email: "",
-        from_name: user.name,
+        from_email: from?.email ?? "",
+        from_name: from?.name ?? user.name,
+        mailbox_id: mb?.id ?? null,
         to: body.kind === "reply" && ticket.contact?.email ? [ticket.contact.email] : [],
         cc: body.cc ?? [],
         bcc: body.bcc ?? [],
@@ -116,7 +122,8 @@ function useSend(ticket: Ticket) {
       };
       qc.setQueryData<Message[]>(qk.messages(ticket.id), (old) => [...(old ?? []), temp]);
       const prevTicket = qc.getQueryData<Ticket>(qk.ticket(ticket.id));
-      if (body.status && prevTicket) patchTicketEverywhere(qc, applyPatch(qc, prevTicket, { status: body.status }), user.id);
+      if ((body.status || body.mailbox_id) && prevTicket)
+        patchTicketEverywhere(qc, applyPatch(qc, prevTicket, { status: body.status, mailbox_id: body.mailbox_id }), user.id);
       return { prevTicket };
     },
     onSuccess: (m, { tempId }) => {
@@ -141,13 +148,22 @@ function useSend(ticket: Ticket) {
 export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: boolean }>(function Composer({ ticket, disabled }, ref) {
   const { t } = useTranslation("inbox");
   const reduced = useReducedMotion();
+  // Writing: focus went into the editor and has not left the composer since.
+  // Focus on the controls above the editor (mode, Cc, the reply address) does not
+  // open it up: growing moves those controls under the pointer mid-click.
   const [focused, setFocused] = useState(false);
+  const writingArea = useRef<HTMLDivElement>(null);
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(leaving.current), []);
   const draft = useDrafts((s) => s[ticket.id]) ?? emptyDraft;
   const setDraft = useCallback((p: Partial<Draft>) => useDrafts.setState((s) => ({ [ticket.id]: { ...(s[ticket.id] ?? emptyDraft), ...p } })), [ticket.id]);
   const { mode } = draft;
 
   const { data: members } = useQuery(q.members());
-  const { data: replies } = useQuery(q.savedReplies());
+  const { data: allReplies } = useQuery(q.savedReplies());
+  // Replies for everyone, plus the ticket team's own.
+  const replies = useMemo(() => (allReplies ?? []).filter((r) => !r.team_id || r.team_id === ticket.team_id), [allReplies, ticket.team_id]);
+  const teams = useTeamsCtx();
   const qc = useQueryClient();
   const viewers = useTicketViewers(ticket.id);
   const others = viewers.filter((v) => v.state === "replying");
@@ -157,7 +173,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const repliesRef = useRef<SavedReply[]>([]);
   const modeRef = useRef<Mode>(mode);
   membersRef.current = members ?? [];
-  repliesRef.current = replies ?? [];
+  repliesRef.current = replies;
   modeRef.current = mode;
   const extensions = useMemo(
     () => [mentionExtension(() => membersRef.current, () => modeRef.current === "note"), savedReplyExtension(() => repliesRef.current)],
@@ -167,9 +183,16 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const send = useSend(ticket);
+  const send = useSend(ticket, teams);
   const retries = useRef(new Map<string, SendMessageBody>());
   const ai = useComposerAi(editor, ticket, mode);
+  /** Ollie drafts a reply; false when it can't here (AI off, or the composer is disabled). */
+  const draftReply = () => {
+    if (!ai.available || disabled) return false;
+    if (mode !== "reply") setDraft({ mode: "reply" });
+    ai.draft();
+    return true;
+  };
 
   useImperativeHandle(ref, () => ({
     focus: (m) => {
@@ -184,11 +207,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       retries.current.set(tempId, body);
       send.mutate({ body, tempId });
     },
-    aiDraft: () => {
-      if (!ai.available || disabled) return;
-      if (mode !== "reply") setDraft({ mode: "reply" });
-      ai.draft();
-    },
+    aiDraft: () => void draftReply(),
   }));
 
   // Presence: "replying" while a draft exists, "viewing" otherwise.
@@ -242,13 +261,14 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       bcc: mode === "reply" && draft.bcc.length ? draft.bcc : undefined,
       attachment_ids: uploads.filter((u) => u.attachment).map((u) => u.attachment!.id),
       status,
+      mailbox_id: mode === "reply" && draft.mailboxId && draft.mailboxId !== ticket.mailbox_id ? draft.mailboxId : undefined,
     };
     const tempId = `tmp-${Date.now().toString(36)}`;
     retries.current.set(tempId, body);
     send.mutate({ body, tempId });
     uploads.forEach((u) => u.preview && URL.revokeObjectURL(u.preview));
     setUploads([]);
-    setDraft({ html: "", cc: [], bcc: [], showCc: false });
+    setDraft({ html: "", cc: [], bcc: [], showCc: false, mailboxId: undefined });
     editor.current?.clear();
     ai.dismissSources();
     if (status) toast.success(t(mode === "note" ? "composer.noteAndMarked" : "composer.sentAndMarked", { status: statusLabel[status].toLowerCase() }));
@@ -270,8 +290,15 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   // The editor opens up while in use or holding a draft, and rests small otherwise.
   const open = focused || !!draft.html || uploads.length > 0;
 
+  // mod+J in the reply box asks Ollie for a draft; everywhere else it opens Ollie
+  // (AssistantRoot). Handled here first, so the app-wide binding sees it as taken.
+  const onComposerKey = (e: React.KeyboardEvent) => {
+    if (e.defaultPrevented || e.nativeEvent.isComposing || keyName(e.nativeEvent) !== "mod+j") return;
+    if (draftReply()) e.preventDefault();
+  };
+
   return (
-    <div className="shrink-0 px-5 pb-4">
+    <div className="shrink-0 px-5 pb-4" onKeyDown={onComposerKey}>
       <div className="mx-auto w-full max-w-[820px]">
         {!disabled && (
           <SuggestedReplyCard
@@ -320,9 +347,16 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
             setDragging(false);
             if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
           }}
-          onFocus={() => setFocused(true)}
+          onFocus={(e) => {
+            // Focus events from this composer's popovers (portalled) arrive here too, and keep it open.
+            clearTimeout(leaving.current);
+            if (writingArea.current?.contains(e.target)) setFocused(true);
+          }}
           onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocused(false);
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            // Focus may be moving into one of its popovers: that focus event cancels this.
+            clearTimeout(leaving.current);
+            leaving.current = setTimeout(() => setFocused(false), 0);
           }}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
@@ -379,56 +413,67 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
               </motion.div>
             )}
           </AnimatePresence>
-          <RichEditor
-            ref={editor}
-            value={draft.html}
-            onChange={(html) => setDraft({ html })}
-            placeholder={note ? t("composer.notePlaceholder") : t("composer.replyPlaceholder")}
-            extensions={extensions}
-            onSubmit={() => submit()}
-            onKeyDown={onKeyDown}
-            editable={!disabled && !ai.busy}
-            contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", open ? "min-h-[96px]" : "min-h-[44px]")}
-            ariaLabel={note ? "Note" : "Reply"}
-            toolbarEnd={
-              <>
-                <ComposerAiMenu ai={ai} hasDraft={!!draft.html} disabled={disabled} />
-                <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
-                <Tooltip content={t("composer.attach")}>
-                  <button
-                    type="button"
-                    aria-label="Attach files"
-                    onClick={() => fileInput.current?.click()}
-                    className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95"
-                  >
-                    <Paperclip className="size-[15px]" />
-                  </button>
-                </Tooltip>
-                <Picker
-                  side="top"
-                  align="end"
-                  width={300}
-                  placeholder={t("composer.searchReplies")}
-                  emptyText={t("composer.noReplies")}
-                  value={null}
-                  items={(replies ?? []).map((r) => ({ value: r.id, label: r.title, hint: r.shortcut ? `/${r.shortcut.replace(/^\//, "")}` : undefined }))}
-                  onSelect={(id) => {
-                    const r = replies?.find((x) => x.id === id);
-                    if (r) editor.current?.insertHtml(r.body_html);
-                  }}
-                  trigger={
-                    <Tooltip content={t("composer.savedReplies")}>
-                      <button type="button" aria-label="Saved replies" className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95">
-                        <MessageSquareText className="size-[15px]" />
-                      </button>
-                    </Tooltip>
-                  }
-                />
-                <span className="mx-1 h-4 w-px bg-line" />
-                <SendButton note={note} disabled={!canSend} busy={busyUploads} onSend={submit} current={ticket.status} phase={phase} />
-              </>
-            }
-          />
+          {!note && (
+            <ReplyingAs
+              ticket={ticket}
+              ctx={teams}
+              mailboxId={draft.mailboxId ?? ticket.mailbox_id}
+              chosen={!!draft.mailboxId && draft.mailboxId !== ticket.mailbox_id}
+              onChange={(id) => setDraft({ mailboxId: id === ticket.mailbox_id ? undefined : id })}
+            />
+          )}
+          <div ref={writingArea}>
+            <RichEditor
+              ref={editor}
+              value={draft.html}
+              onChange={(html) => setDraft({ html })}
+              placeholder={note ? t("composer.notePlaceholder") : t("composer.replyPlaceholder")}
+              extensions={extensions}
+              onSubmit={() => submit()}
+              onKeyDown={onKeyDown}
+              editable={!disabled && !ai.busy}
+              contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", open ? "min-h-[96px]" : "min-h-[44px]")}
+              ariaLabel={note ? "Note" : "Reply"}
+              toolbarEnd={
+                <>
+                  <ComposerAiMenu ai={ai} hasDraft={!!draft.html} disabled={disabled} />
+                  <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
+                  <Tooltip content={t("composer.attach")}>
+                    <button
+                      type="button"
+                      aria-label="Attach files"
+                      onClick={() => fileInput.current?.click()}
+                      className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95"
+                    >
+                      <Paperclip className="size-[15px]" />
+                    </button>
+                  </Tooltip>
+                  <Picker
+                    side="top"
+                    align="end"
+                    width={300}
+                    placeholder={t("composer.searchReplies")}
+                    emptyText={t("composer.noReplies")}
+                    value={null}
+                    items={replies.map((r) => ({ value: r.id, label: r.title, hint: r.shortcut ? `/${r.shortcut.replace(/^\//, "")}` : undefined }))}
+                    onSelect={(id) => {
+                      const r = replies.find((x) => x.id === id);
+                      if (r) editor.current?.insertHtml(r.body_html);
+                    }}
+                    trigger={
+                      <Tooltip content={t("composer.savedReplies")}>
+                        <button type="button" aria-label="Saved replies" className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95">
+                          <MessageSquareText className="size-[15px]" />
+                        </button>
+                      </Tooltip>
+                    }
+                  />
+                  <span className="mx-1 h-4 w-px bg-line" />
+                  <SendButton note={note} disabled={!canSend} busy={busyUploads} onSend={submit} current={ticket.status} phase={phase} />
+                </>
+              }
+            />
+          </div>
           <ComposerSources ai={ai} />
           <ComposerAiStatus ai={ai} />
           {uploads.length > 0 && (
@@ -462,6 +507,127 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     </div>
   );
 });
+
+/** Plain text of a signature with its variables filled in, when it fits on one line. */
+function signatureLine(html: string, v: Record<string, string>): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/(p|div|li)>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\{\{\s*([a-z_.]+)\s*\}\}/gi, (_, k: string) => v[k] ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text && text.length <= 120 ? text : null;
+}
+
+/**
+ * Who the customer sees the reply from, and from which address: the address's From
+ * name format filled in. Click to send this reply from another of the brand's
+ * addresses (it becomes the ticket's reply address).
+ */
+function ReplyingAs({
+  ticket,
+  ctx,
+  mailboxId,
+  chosen,
+  onChange,
+}: {
+  ticket: Ticket;
+  ctx: TeamsCtx;
+  mailboxId: string | null;
+  chosen: boolean;
+  onChange: (id: string) => void;
+}) {
+  const { t } = useTranslation("inbox");
+  const user = useSession((s) => s.user!);
+  const { data: activities } = useQuery(q.activities(ticket.id));
+  const { data: messages } = useQuery(q.messages(ticket.id));
+  const mailbox = ctx.mailbox(mailboxId);
+  const options = replyAddresses(ctx, ticket);
+  if (!mailbox || (ticket.channel !== "email" && !ticket.mailbox_id)) return null;
+  const from = fromLine(ctx, ticket, mailbox, user.name);
+  const team = ctx.team(ticket.team_id);
+  const sig = signatureLine(team?.signature_html || mailbox.signature_html, {
+    "agent.name": user.name,
+    "agent.first_name": user.name.split(" ")[0] ?? user.name,
+    "team.name": team?.name ?? ctx.brand(ticket.brand_id)?.name ?? "",
+    "brand.name": ctx.brand(ticket.brand_id)?.name ?? "",
+    "mailbox.email": from.email,
+    "ticket.number": String(ticket.number),
+    "ticket.subject": ticket.subject,
+    "contact.name": ticket.contact?.name ?? "",
+  });
+  const moved = chosen ? null : movedTo(activities, messages, mailbox, ctx);
+  const canPick = options.length > 1 || (options.length === 1 && options[0].id !== mailbox.id);
+  const chip = (
+    <button
+      type="button"
+      disabled={!canPick}
+      aria-label={t("composer.changeAddress")}
+      className="group flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1.5 text-left text-[12px] outline-none transition-colors hover:bg-hover focus-visible:shadow-[0_0_0_2px_var(--focus)] disabled:pointer-events-none data-[state=open]:bg-hover"
+    >
+      <span className="truncate text-fg">{from.name}</span>
+      <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
+        &lt;{from.email}&gt;
+      </span>
+      {mailbox.private && <Lock className="size-3 shrink-0 text-fg-4" />}
+      {canPick && <ChevronDown className="size-3 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />}
+    </button>
+  );
+  return (
+    <div className="border-b border-line-soft">
+      <div className="@container flex min-h-8 items-center gap-2 px-3">
+        <span className="shrink-0 text-xs text-fg-3">{t("composer.replyingAs")}</span>
+        <div className="flex min-w-0 flex-1 items-center">
+          {canPick ? (
+            <Picker
+              width={320}
+              value={mailbox.id}
+              placeholder={t("props.searchAddresses")}
+              items={options.map((m) => ({
+                value: m.id,
+                label: addressLabel(m),
+                keywords: [m.email, ...(m.aliases ?? [])],
+                icon: <TeamDot team={ctx.team(m.team_id)} />,
+                hint: m.private ? <Lock className="size-3" /> : undefined,
+              }))}
+              onSelect={onChange}
+              trigger={chip}
+            />
+          ) : (
+            chip
+          )}
+        </div>
+        {sig && (
+          <Tooltip content={t("composer.signature")}>
+            <span className="hidden max-w-[34%] shrink truncate text-[11.5px] text-fg-4 @[600px]:block">{sig}</span>
+          </Tooltip>
+        )}
+      </div>
+      {(moved || chosen) && (
+        <p className="flex items-center gap-1.5 px-3 pb-1.5 text-[11.5px] text-fg-3 animate-fade-in motion-reduce:animate-none">
+          <ArrowRightLeft className="size-3 shrink-0 text-fg-4" />
+          {chosen ? t("composer.addressChosen") : t("composer.addressMoved", { team: moved })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The team a transfer switched the reply address for, until the next reply goes out. */
+function movedTo(activities: Activity[] | undefined, messages: Message[] | undefined, mailbox: Mailbox, ctx: TeamsCtx): string | null {
+  const a = [...(activities ?? [])]
+    .reverse()
+    .find((x) => x.type === "team_changed" && (x.data.mailbox_to === mailbox.id || x.data.mailbox_to === mailbox.email));
+  if (!a) return null;
+  const since = Date.parse(a.created_at);
+  if ((messages ?? []).some((m) => m.direction === "outbound" && m.kind === "reply" && Date.parse(m.created_at) > since)) return null;
+  const to = a.data.to;
+  return (typeof to === "string" ? (ctx.team(to)?.name ?? to) : null) ?? ctx.team(mailbox.team_id)?.name ?? null;
+}
 
 function SendButton({
   note,
@@ -505,13 +671,13 @@ function SendButton({
           <Button variant="primary" size="sm" square aria-label={t("composer.andStatus", { label })} className="rounded-l-none border-l border-white/15 dark:border-black/15" icon={<ChevronDown className="size-3.5" />} />
         </M.Trigger>
         <M.Portal>
-          <M.Content side="top" align="end" sideOffset={6} className={cn(floatingPanel, "w-[230px] p-1")}>
+          <M.Content side="top" align="end" sideOffset={6} className={cn(floatingPanel, "min-w-[230px] p-1")}>
             <div className="label-caps px-2 pb-1 pt-1.5">{t("composer.andStatus", { label })}</div>
             {options.map((s) => (
               <M.Item key={s} onSelect={() => onSend(s)} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-[12.5px] outline-none data-[highlighted]:bg-hover">
                 <StatusIcon status={s} />
-                <span className="flex-1">{t("composer.andMark", { label, status: statusLabel[s].toLowerCase() })}</span>
-                {s === "solved" && <Kbd>mod shift enter</Kbd>}
+                <span className="flex-1 whitespace-nowrap">{t("composer.andMark", { label, status: statusLabel[s].toLowerCase() })}</span>
+                {s === "solved" && <Kbd className="ml-3 shrink-0">mod shift enter</Kbd>}
               </M.Item>
             ))}
           </M.Content>

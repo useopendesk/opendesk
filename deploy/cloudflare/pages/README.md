@@ -50,9 +50,15 @@ node deploy/cloudflare/pages/app/write-config.mjs web/dist
 wrangler pages deploy web/dist --project-name opendesk-app --branch main
 ```
 
-Runtime config: the self-hosted binary answers `/config.js` itself. On Pages,
-`write-config.mjs` writes the same file (`window.__OPENDESK__ = {apiUrl, gatewayUrl,
-posthogKey?, posthogHost?, turnstileSiteKey?, selfHosted: false}`) from these env vars:
+Runtime config: the self-hosted binary answers `/config.js` and `/config.json`
+itself. On Pages, `write-config.mjs` writes the same files: `config.js`
+(`window.__OPENDESK__ = {apiUrl, gatewayUrl, posthogKey?, posthogHost?,
+turnstileSiteKey?, selfHosted: false, mailboxOAuth?}`) for the web app, and `config.json`, the
+same object as JSON, which the desktop and iPhone apps read to find the API
+(`contracts/native.md`). With `APPLE_APP_IDS` set it also writes
+`.well-known/apple-app-site-association`: `webcredentials` (passkeys on
+app.opendesk.sh) and `applinks` (ticket links `/inbox/*/<id>`, `/views/*/<id>`
+and `/tickets/<id>` open in the iPhone app) for those app ids. Env vars:
 
 | Env | Default |
 | --- | --- |
@@ -61,6 +67,8 @@ posthogKey?, posthogHost?, turnstileSiteKey?, selfHosted: false}`) from these en
 | `WEB_POSTHOG_KEY` | unset (no analytics) |
 | `WEB_POSTHOG_HOST` | unset |
 | `TURNSTILE_SITE_KEY` | unset |
+| `APPLE_APP_IDS` | unset (no apple-app-site-association). Comma-separated `TEAMID.bundle` |
+| `MAILBOX_OAUTH` | unset (the wizard follows the API). `google`, `microsoft`, `google,microsoft` or `none`: the providers whose mailbox sign-in the wizard offers. deploy.yml sets it from the repository variable, default `microsoft`. Keep it in step with the API's `GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` |
 
 Test it with `node --test deploy/cloudflare/pages/app/write-config.test.mjs`.
 
@@ -70,7 +78,9 @@ Headers (`app/_headers`) match what the Go binary sends for the same files:
   `frame-ancestors 'none'`), `X-Frame-Options: DENY`, nosniff, HSTS, referrer policy
 - `/assets/*`: `public, max-age=31536000, immutable` (content-hashed)
 - `/widget/*`: `Access-Control-Allow-Origin: *`, `max-age=300`, no `X-Frame-Options`
-- `/config.js`: `no-store`
+- `/config.js`, `/config.json`: `no-store`
+- `/.well-known/apple-app-site-association`: `Content-Type: application/json`
+  (the file has no extension), `max-age=3600`
 - HTML: Pages' default `max-age=0, must-revalidate`
 
 SPA fallback needs no rule: an output with no top-level `404.html` makes Pages serve

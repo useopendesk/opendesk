@@ -2,12 +2,12 @@
 // generated ticket subjects and knowledge base articles.
 
 export const TEAM = [
-  { key: "maya", name: "Maya Chen", email: "maya@fieldnote.app", role: "owner" },
-  { key: "jonas", name: "Jonas Weber", email: "jonas@fieldnote.app", role: "admin" },
-  { key: "priya", name: "Priya Raman", email: "priya@fieldnote.app", role: "agent" },
-  { key: "sam", name: "Sam Okafor", email: "sam@fieldnote.app", role: "agent" },
-  { key: "lea", name: "Lea Martin", email: "lea@fieldnote.app", role: "agent" },
-  { key: "theo", name: "Theo Brandt", email: "theo@fieldnote.app", role: "viewer" },
+  { key: "maya", name: "Maya Chen", email: "maya@margin.app", role: "owner" },
+  { key: "jonas", name: "Jonas Weber", email: "jonas@margin.app", role: "admin" },
+  { key: "priya", name: "Priya Raman", email: "priya@margin.app", role: "agent" },
+  { key: "sam", name: "Sam Okafor", email: "sam@margin.app", role: "agent" },
+  { key: "lea", name: "Lea Martin", email: "lea@margin.app", role: "agent" },
+  { key: "theo", name: "Theo Brandt", email: "theo@margin.app", role: "viewer" },
 ] as const;
 
 export type TeamKey = (typeof TEAM)[number]["key"];
@@ -89,7 +89,7 @@ export const STORIES: Story[] = [
         from: "c",
         min: 95,
         attach: ["screenshot"],
-        html: `<p>Hi Fieldnote team,</p><p>Since this morning nobody at Oakridge can sign in through Okta. After entering credentials we land on the Fieldnote sign-in page again, and it loops. Clearing cookies doesn't help.</p><ul><li>Started around 07:40 CET</li><li>Affects all 180 users on the Okta tile</li><li>Password login for our admin account still works</li></ul><p>Screenshot of the network tab attached. This is blocking our clinical documentation team, so any help is appreciated.</p><p>Dana Whitfield<br>IT Operations, Oakridge Health</p>`,
+        html: `<p>Hi Margin team,</p><p>Since this morning nobody at Oakridge can sign in through Okta. After entering credentials we land on the Margin sign-in page again, and it loops. Clearing cookies doesn't help.</p><ul><li>Started around 07:40 CET</li><li>Affects all 180 users on the Okta tile</li><li>Password login for our admin account still works</li></ul><p>Screenshot of the network tab attached. This is blocking our clinical documentation team, so any help is appreciated.</p><p>Dana Whitfield<br>IT Operations, Oakridge Health</p>`,
       },
       {
         from: "maya",
@@ -328,7 +328,7 @@ RateLimit-Reset: 3600</code></pre><p>Has something changed?</p>`,
       {
         from: "c",
         min: 60 * 70,
-        html: `<p>Hello,</p><p>Before we roll Fieldnote out firm-wide our compliance team needs a signed data processing agreement, and confirmation that our data stays in the EU region.</p><p>Hugo Moreau, Vantage Legal</p>`,
+        html: `<p>Hello,</p><p>Before we roll Margin out firm-wide our compliance team needs a signed data processing agreement, and confirmation that our data stays in the EU region.</p><p>Hugo Moreau, Vantage Legal</p>`,
       },
       {
         from: "maya",
@@ -353,7 +353,7 @@ RateLimit-Reset: 3600</code></pre><p>Has something changed?</p>`,
       {
         from: "c",
         min: 60 * 9,
-        html: `<p>We scan a lot of handwritten notes into Fieldnote. Is there a way to search the text inside those images? Right now search only finds the captions.</p>`,
+        html: `<p>We scan a lot of handwritten notes into Margin. Is there a way to search the text inside those images? Right now search only finds the captions.</p>`,
       },
     ],
   },
@@ -395,7 +395,7 @@ export const GENERATED: { subject: string; body: string; tags: string[] }[] = [
   { subject: "Student discount eligibility", body: "I'm a PhD student. Does the education discount apply to individual plans?", tags: ["billing"] },
   { subject: "Pasting from Google Docs adds extra spacing", body: "Every paragraph pasted from Docs gets a blank line after it. Very annoying for long documents.", tags: ["bug"] },
   { subject: "Can guests comment without an account?", body: "We want clients to leave comments on a shared notebook without signing up. Is that supported?", tags: ["feature-request"] },
-  { subject: "Okta app missing from integration catalog", body: "Searching for Fieldnote in the Okta integration network finds nothing. How do we set up SSO?", tags: ["sso", "onboarding"] },
+  { subject: "Okta app missing from integration catalog", body: "Searching for Margin in the Okta integration network finds nothing. How do we set up SSO?", tags: ["sso", "onboarding"] },
   { subject: "Export all data before cancelling", body: "We're consolidating tools. What's the best way to export everything, including attachments?", tags: ["export"] },
   { subject: "Webhook retries flooding our endpoint", body: "Our endpoint was down for an hour and now we're receiving hundreds of retried deliveries at once.", tags: ["api"] },
   { subject: "Handwriting recognition on iPad", body: "Apple Pencil notes are not converted to text even though the setting is on.", tags: ["mobile"] },
@@ -409,7 +409,7 @@ export const GENERATED: { subject: string; body: string; tags: string[] }[] = [
   { subject: "Markdown export drops images", body: "Exporting to Markdown gives me the text but every image link points to a temporary URL.", tags: ["export", "bug"] },
   { subject: "Zapier trigger for new notes", body: "The Zapier 'New note' trigger only fires for notes in the default notebook.", tags: ["api"] },
   { subject: "Account locked after password reset", body: "I reset my password and now it says my account is locked for 30 minutes.", tags: [] },
-  { subject: "Volume pricing for 500 seats", body: "We're evaluating Fieldnote for the whole company. Do you offer volume pricing over 500 seats?", tags: ["billing"] },
+  { subject: "Volume pricing for 500 seats", body: "We're evaluating Margin for the whole company. Do you offer volume pricing over 500 seats?", tags: ["billing"] },
   { subject: "Widget for embedding notes in our intranet", body: "Is there an embed code to show a published note inside our SharePoint intranet?", tags: ["feature-request"] },
   { subject: "Checklist items reorder themselves", body: "When I tick a checklist item it jumps to the bottom. Can that be turned off?", tags: [] },
   { subject: "Duplicate notes after sync conflict", body: "I edited a note on my laptop and phone and now I have three copies of it.", tags: ["bug", "mobile"] },
@@ -440,7 +440,7 @@ export const SPAM = [
   { subject: "Boost your SEO ranking today 🚀", from: "growth@rank-boost-pro.biz", name: "Rank Boost", body: "We guarantee first page on Google in 7 days. Reply YES for a free audit!!!" },
   { subject: "You have won a $500 gift card", from: "rewards@prize-center.top", name: "Prize Center", body: "Congratulations! Click the link to claim your $500 gift card before it expires." },
   { subject: "Partnership opportunity: guest posts", from: "outreach@linkfarm.net", name: "Kelly from LinkFarm", body: "We'd love to publish a sponsored article on your blog. Our rates start at $50." },
-  { subject: "URGENT: verify your account", from: "security@fieldn0te-support.com", name: "Fieldnote Security", body: "Your account will be suspended in 24 hours. Verify your password here immediately." },
+  { subject: "URGENT: verify your account", from: "security@rnargin-support.com", name: "Margin Security", body: "Your account will be suspended in 24 hours. Verify your password here immediately." },
 ];
 
 export const FOLLOW_UPS = [
@@ -479,7 +479,7 @@ export const SAVED_REPLIES = [
   {
     title: "SSO setup guide",
     shortcut: "sso",
-    body: '<p>Here is our step-by-step guide for setting up SAML single sign-on: <a href="https://help.fieldnote.app/sso">help.fieldnote.app/sso</a>. Your ACS URL is shown in Settings, then Security.</p>',
+    body: '<p>Here is our step-by-step guide for setting up SAML single sign-on: <a href="https://help.margin.app/sso">help.margin.app/sso</a>. Your ACS URL is shown in Settings, then Security.</p>',
   },
   {
     title: "Feature request logged",
@@ -493,13 +493,15 @@ export const SAVED_REPLIES = [
   },
 ];
 
-export type ArticleSeed = { collection: number; title: string; status: "published" | "draft"; excerpt: string; body: string; views: number };
+/** `brand`: the slug of the one brand it belongs to; without it, every brand shows it. */
+export type ArticleSeed = { collection: number; title: string; status: "published" | "draft"; excerpt: string; body: string; views: number; brand?: string };
 
-export const COLLECTIONS = [
+export const COLLECTIONS: { name: string; slug: string; description: string; brand?: string }[] = [
   { name: "Getting started", slug: "getting-started", description: "Set up your workspace and learn the basics." },
   { name: "Account & billing", slug: "account-billing", description: "Plans, invoices, seats and payment methods." },
-  { name: "Integrations", slug: "integrations", description: "Connect Fieldnote with the tools you already use." },
+  { name: "Integrations", slug: "integrations", description: "Connect Margin with the tools you already use." },
   { name: "Troubleshooting", slug: "troubleshooting", description: "Fixes for common problems with sync, export and sign-in." },
+  { name: "Publishing", slug: "publishing", description: "Send issues, grow your list and run your publication on Pressroom.", brand: "pressroom" },
 ];
 
 export const ARTICLES: ArticleSeed[] = [
@@ -509,7 +511,7 @@ export const ARTICLES: ArticleSeed[] = [
     status: "published",
     views: 4210,
     excerpt: "Notebooks hold your notes. Here's how to create one and invite others.",
-    body: `<p>Notebooks are the top-level containers in Fieldnote. Every note lives in exactly one notebook, and every notebook has its own sharing settings.</p><h2>Create a notebook</h2><ol><li>Click <strong>New</strong> at the top of the sidebar.</li><li>Choose <strong>Notebook</strong> and give it a name.</li><li>Pick an icon, or leave the default.</li></ol><p>The notebook appears in your sidebar right away. Drag it to reorder.</p><h2>Share it</h2><p>Open the notebook and press <strong>Share</strong>. You can invite teammates by email or create a link anyone in your workspace can open.</p><blockquote>Tip: press <code>N</code> anywhere to create a new note in the current notebook.</blockquote>`,
+    body: `<p>Notebooks are the top-level containers in Margin. Every note lives in exactly one notebook, and every notebook has its own sharing settings.</p><h2>Create a notebook</h2><ol><li>Click <strong>New</strong> at the top of the sidebar.</li><li>Choose <strong>Notebook</strong> and give it a name.</li><li>Pick an icon, or leave the default.</li></ol><p>The notebook appears in your sidebar right away. Drag it to reorder.</p><h2>Share it</h2><p>Open the notebook and press <strong>Share</strong>. You can invite teammates by email or create a link anyone in your workspace can open.</p><blockquote>Tip: press <code>N</code> anywhere to create a new note in the current notebook.</blockquote>`,
   },
   {
     collection: 0,
@@ -533,7 +535,7 @@ export const ARTICLES: ArticleSeed[] = [
     status: "published",
     views: 2544,
     excerpt: "Bring your existing notes with formatting, tags and attachments.",
-    body: `<p>Fieldnote imports <code>.enex</code> files from Evernote and the Markdown and CSV export from Notion.</p><h2>From Evernote</h2><ol><li>In Evernote, export a notebook as <code>.enex</code>.</li><li>In Fieldnote, open <strong>Settings → Import</strong>.</li><li>Drop the file and choose a destination notebook.</li></ol><p>Tags become Fieldnote tags. Checklists and tables keep their formatting.</p><h2>From Notion</h2><p>Export your workspace as <strong>Markdown &amp; CSV</strong>, then upload the zip. Databases are imported as tables.</p>`,
+    body: `<p>Margin imports <code>.enex</code> files from Evernote and the Markdown and CSV export from Notion.</p><h2>From Evernote</h2><ol><li>In Evernote, export a notebook as <code>.enex</code>.</li><li>In Margin, open <strong>Settings → Import</strong>.</li><li>Drop the file and choose a destination notebook.</li></ol><p>Tags become Margin tags. Checklists and tables keep their formatting.</p><h2>From Notion</h2><p>Export your workspace as <strong>Markdown &amp; CSV</strong>, then upload the zip. Databases are imported as tables.</p>`,
   },
   {
     collection: 1,
@@ -573,15 +575,15 @@ export const ARTICLES: ArticleSeed[] = [
     status: "published",
     views: 2980,
     excerpt: "Connect Okta, Microsoft Entra ID or Google Workspace.",
-    body: `<p>Business and Enterprise plans can require sign-in through your identity provider.</p><h2>What you need</h2><ul><li>Admin access to your identity provider</li><li>The ACS URL and Entity ID from <strong>Settings → Security</strong></li></ul><h2>Steps</h2><ol><li>Create a SAML app in your identity provider.</li><li>Paste the ACS URL and Entity ID.</li><li>Upload the IdP metadata XML to Fieldnote.</li><li>Test with one account before enforcing SSO.</li></ol><h2>Certificate rotation</h2><p>When your identity provider rotates its signing certificate, add the new certificate in Fieldnote <em>before</em> switching. Both stay valid during the overlap.</p>`,
+    body: `<p>Business and Enterprise plans can require sign-in through your identity provider.</p><h2>What you need</h2><ul><li>Admin access to your identity provider</li><li>The ACS URL and Entity ID from <strong>Settings → Security</strong></li></ul><h2>Steps</h2><ol><li>Create a SAML app in your identity provider.</li><li>Paste the ACS URL and Entity ID.</li><li>Upload the IdP metadata XML to Margin.</li><li>Test with one account before enforcing SSO.</li></ol><h2>Certificate rotation</h2><p>When your identity provider rotates its signing certificate, add the new certificate in Margin <em>before</em> switching. Both stay valid during the overlap.</p>`,
   },
   {
     collection: 2,
-    title: "Using the Fieldnote API",
+    title: "Using the Margin API",
     status: "published",
     views: 1760,
     excerpt: "Authentication, pagination and rate limits.",
-    body: `<p>Create a token in <strong>Settings → API</strong>. Send it as a bearer token:</p><pre><code>curl https://api.fieldnote.app/v1/notes \\
+    body: `<p>Create a token in <strong>Settings → API</strong>. Send it as a bearer token:</p><pre><code>curl https://api.margin.app/v1/notes \\
   -H "Authorization: Bearer fn_live_..."</code></pre><h2>Pagination</h2><p>Lists return a <code>next_cursor</code>. Pass it as <code>?cursor=</code> to get the next page.</p><h2>Rate limits</h2><p>10,000 requests per hour, with a burst limit of 1,200 per 10 minutes per endpoint. Check the <code>RateLimit-Remaining</code> header.</p>`,
   },
   {
@@ -615,5 +617,38 @@ export const ARTICLES: ArticleSeed[] = [
     views: 2210,
     excerpt: "Get the desktop and mobile apps syncing again.",
     body: `<p>The apps pause sync when they can't reach our servers or when you're over your storage limit.</p><ol><li>Check your connection and any VPN or proxy.</li><li>Sign out and back in.</li><li>On desktop, choose <strong>Help → Reset local cache</strong>. Your notes are safe on the server.</li></ol><p>If you see duplicate notes after a conflict, the newest copy is the one with your latest edits.</p>`,
+  },
+  {
+    collection: 4,
+    title: "Schedule an issue",
+    status: "published",
+    views: 640,
+    excerpt: "Pick when an issue goes out, in your publication's time zone.",
+    body: `<p>Open the issue and click <strong>Schedule</strong>. Choose a day and time; issues go out in the time zone set under <strong>Publication → Settings</strong>.</p><p>Scheduled issues can be edited until they start sending. To send one right away, open it and click <strong>Send now</strong>.</p>`,
+  },
+  {
+    collection: 4,
+    title: "Connect a custom domain",
+    status: "published",
+    views: 410,
+    excerpt: "Serve your publication from your own domain.",
+    body: `<p>Add a CNAME record that points your domain at <strong>domains.pressroom.app</strong>, then enter the domain under <strong>Publication → Domain</strong>.</p><p>DNS changes can take up to 48 hours. The domain switches to active on its own once the record is found.</p>`,
+  },
+  {
+    collection: 4,
+    title: "Import subscribers from a CSV",
+    status: "draft",
+    views: 0,
+    excerpt: "Bring your list over from Substack, Mailchimp or a spreadsheet.",
+    body: `<p>Export your list as a CSV with an <strong>email</strong> column, then choose <strong>Subscribers → Import</strong>.</p>`,
+  },
+  {
+    collection: 1,
+    title: "Paid subscriptions and payouts",
+    status: "published",
+    views: 290,
+    brand: "pressroom",
+    excerpt: "Charge readers for issues and get paid every month.",
+    body: `<p>Connect a Stripe account under <strong>Publication → Payments</strong> to offer paid subscriptions. Payouts arrive on the first working day of each month.</p>`,
   },
 ];

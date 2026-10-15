@@ -1,6 +1,6 @@
 # opendesk production: api.opendesk.sh and gateway.opendesk.sh on ECS Fargate
-# behind one ALB proxied by Cloudflare; Neon Postgres; a three-node NATS
-# cluster; S3 attachments; SES platform mail; Cloudflare Pages for the site,
+# behind one ALB proxied by Cloudflare; PlanetScale Postgres over AWS
+# PrivateLink; NATS on ECS; S3 attachments; SES platform mail; Cloudflare Pages for the site,
 # docs and app; Cloudflare Email Routing for forwarding addresses.
 #
 # See deploy/README.md for the architecture and the first-time runbook.
@@ -191,24 +191,31 @@ resource "aws_ecr_lifecycle_policy" "this" {
 
 # ── Data ──────────────────────────────────────────────────────────────────
 
-module "neon" {
-  source = "../../modules/neon"
+module "planetscale" {
+  source = "../../modules/planetscale"
 
-  name   = var.name
-  org_id = var.neon_org_id
-  region = var.neon_region
-  min_cu = var.neon_min_cu
-  max_cu = var.neon_max_cu
+  name         = var.name
+  organization = var.planetscale.organization
+  database     = var.planetscale.database
+  branch       = var.planetscale.branch
+  vpc_id       = module.network.vpc_id
+  subnet_ids   = module.network.public_subnet_ids
+  # The migration task runs in the worker security group.
+  client_security_group_ids = {
+    api    = aws_security_group.api.id
+    worker = aws_security_group.worker.id
+  }
 }
 
 module "secrets" {
   source = "../../modules/secrets"
 
-  name                = var.name
-  environment         = local.env
-  kms_key_arn         = aws_kms_key.this.arn
-  database_url        = module.neon.database_url
-  database_url_direct = module.neon.database_url_direct
+  name                 = var.name
+  environment          = local.env
+  kms_key_arn          = aws_kms_key.this.arn
+  database_url         = module.planetscale.database_url
+  database_url_direct  = module.planetscale.database_url_direct
+  database_url_migrate = module.planetscale.database_url_migrate
 }
 
 module "s3" {
@@ -288,6 +295,7 @@ module "nats" {
 
   name             = var.name
   mode             = var.nats_mode
+  node_count       = var.nats_nodes
   external_url     = var.external_nats_url
   image            = var.nats_image
   cluster_arn      = aws_ecs_cluster.this.arn
@@ -329,15 +337,27 @@ locals {
     S3_BUCKET           = module.s3.bucket
     S3_REGION           = var.aws_region
     MAIL_DRIVER         = "ses"
-    MAIL_FROM           = "opendesk <notifications@${var.domain}>"
+    MAIL_FROM           = "opendesk <noreply@${var.domain}>"
     SES_REGION          = var.aws_region
     INBOUND_DOMAIN      = local.host.inbound
+    INBOUND_AUTHSERV_ID = "mx.cloudflare.net" # Email Routing's sender checks (deploy/cloudflare/email-worker)
     GOOGLE_CLIENT_ID    = var.google_client_id
     MICROSOFT_CLIENT_ID = var.microsoft_client_id
     MICROSOFT_TENANT    = var.microsoft_tenant
     GITHUB_CLIENT_ID    = var.github_client_id
     TURNSTILE_SITE_KEY  = var.turnstile_site_key
     POSTHOG_HOST        = var.posthog_host
+    APP_ATTEST_APP_IDS  = var.app_attest_app_ids
+
+    # Mailbox sign-in per provider (variables.tf).
+    GOOGLE_MAILBOX_OAUTH    = tostring(var.google_mailbox_oauth)
+    MICROSOFT_MAILBOX_OAUTH = tostring(var.microsoft_mailbox_oauth)
+
+    # The company in the footer of every platform email (variables.tf).
+    EMAIL_LEGAL_ENTITY                = var.email_legal.entity
+    EMAIL_LEGAL_COMPANY_NUMBER        = var.email_legal.company_number
+    EMAIL_LEGAL_PLACE_OF_REGISTRATION = var.email_legal.place_of_registration
+    EMAIL_LEGAL_ADDRESS               = var.email_legal.address
     }, contains(var.optional_secrets, "ANTHROPIC_API_KEY") ? {
     AI_PROVIDER   = "anthropic"
     AI_MODEL      = var.ai_model
@@ -345,8 +365,11 @@ locals {
     } : {}, contains(var.optional_secrets, "VOYAGE_API_KEY") ? {
     EMBEDDINGS_DRIVER = "voyage"
     EMBEDDINGS_MODEL  = var.embeddings_model
-    } : {}, contains(var.optional_secrets, "STRIPE_SECRET_KEY") ? {
-    STRIPE_TAX = tostring(var.stripe_tax)
+    } : {}, contains(var.optional_secrets, "APNS_KEY") ? {
+    APNS_KEY_ID      = var.apns_key_id
+    APNS_TEAM_ID     = var.apns_team_id
+    APNS_TOPIC       = var.apns_topic
+    PUSH_RELAY_SERVE = tostring(var.push_relay_serve)
   } : {})
 
   optional_secrets = { for k in var.optional_secrets : k => module.secrets.arns[k] }
@@ -394,28 +417,28 @@ data "aws_iam_policy_document" "app" {
 module "api" {
   source = "../../modules/ecs-service"
 
-  name                  = "${var.name}-api"
-  container_name        = "api"
-  image                 = local.opendesk_image
-  cluster_arn           = aws_ecs_cluster.this.arn
-  cluster_name          = aws_ecs_cluster.this.name
-  cpu                   = var.api.cpu
-  memory                = var.api.memory
-  cpu_architecture      = var.cpu_architecture
-  environment           = merge(local.app_env, { OPENDESK_ROLE = "api" })
-  secrets               = local.app_secrets
-  port_mappings         = [{ container_port = 8080, name = "http" }]
-  health_check          = local.opendesk_health
-  writable_paths        = ["/tmp"]
-  task_role_policy_json = data.aws_iam_policy_document.app.json
-  ecr_repository_arns   = [aws_ecr_repository.this["opendesk"].arn]
-  kms_key_arn           = aws_kms_key.this.arn
-  log_retention_days    = var.log_retention_days
-  subnet_ids            = module.network.public_subnet_ids
-  security_group_ids    = [aws_security_group.api.id]
-  target_group_arn      = module.alb.api_target_group_arn
-  desired_count         = var.api.min
-  autoscaling           = { min = var.api.min, max = var.api.max }
+  name                = "${var.name}-api"
+  container_name      = "api"
+  image               = local.opendesk_image
+  cluster_arn         = aws_ecs_cluster.this.arn
+  cluster_name        = aws_ecs_cluster.this.name
+  cpu                 = var.api.cpu
+  memory              = var.api.memory
+  cpu_architecture    = var.cpu_architecture
+  environment         = merge(local.app_env, { OPENDESK_ROLE = "api" })
+  secrets             = local.app_secrets
+  port_mappings       = [{ container_port = 8080, name = "http" }]
+  health_check        = local.opendesk_health
+  writable_paths      = ["/tmp"]
+  task_role_policies  = { app = data.aws_iam_policy_document.app.json }
+  ecr_repository_arns = [aws_ecr_repository.this["opendesk"].arn]
+  kms_key_arn         = aws_kms_key.this.arn
+  log_retention_days  = var.log_retention_days
+  subnet_ids          = module.network.public_subnet_ids
+  security_group_ids  = [aws_security_group.api.id]
+  target_group_arn    = module.alb.api_target_group_arn
+  desired_count       = var.api.min
+  autoscaling         = { min = var.api.min, max = var.api.max }
 
   enable_execute_command = var.enable_execute_command
 }
@@ -434,17 +457,18 @@ module "worker" {
   environment      = merge(local.app_env, { OPENDESK_ROLE = "worker" })
   secrets          = local.app_secrets
   # The worker role answers /healthz and /readyz only.
-  health_check          = local.opendesk_health
-  writable_paths        = ["/tmp"]
-  task_role_policy_json = data.aws_iam_policy_document.app.json
-  ecr_repository_arns   = [aws_ecr_repository.this["opendesk"].arn]
-  kms_key_arn           = aws_kms_key.this.arn
-  log_retention_days    = var.log_retention_days
-  subnet_ids            = module.network.public_subnet_ids
-  security_group_ids    = [aws_security_group.worker.id]
-  desired_count         = var.worker.min
-  autoscaling           = { min = var.worker.min, max = var.worker.max }
-  stop_timeout          = 120 # let River finish running jobs
+  health_check        = local.opendesk_health
+  writable_paths      = ["/tmp"]
+  task_role_policies  = { app = data.aws_iam_policy_document.app.json }
+  ecr_repository_arns = [aws_ecr_repository.this["opendesk"].arn]
+  kms_key_arn         = aws_kms_key.this.arn
+  log_retention_days  = var.log_retention_days
+  subnet_ids          = module.network.public_subnet_ids
+  security_group_ids  = [aws_security_group.worker.id]
+  desired_count       = var.worker.min
+  autoscaling         = { min = var.worker.min, max = var.worker.max }
+  spot                = var.worker.spot
+  stop_timeout        = 120 # let River finish running jobs
 
   enable_execute_command = var.enable_execute_command
 }
@@ -467,9 +491,10 @@ module "migrate" {
     DATA_DIR     = "/tmp/opendesk"
   }
   secrets = {
-    # Both point at the direct host: migrations take session-level locks.
-    DATABASE_URL        = module.secrets.arns["DATABASE_URL_DIRECT"]
-    DATABASE_URL_DIRECT = module.secrets.arns["DATABASE_URL_DIRECT"]
+    # The migrate role (DDL), direct: migrations take session-level locks.
+    # The services connect as the app role, which cannot change the schema.
+    DATABASE_URL        = module.secrets.arns["DATABASE_URL_MIGRATE"]
+    DATABASE_URL_DIRECT = module.secrets.arns["DATABASE_URL_MIGRATE"]
     # config.Load refuses to boot in production without these.
     AUTH_SECRET     = module.secrets.arns["AUTH_SECRET"]
     CREDENTIALS_KEY = module.secrets.arns["CREDENTIALS_KEY"]

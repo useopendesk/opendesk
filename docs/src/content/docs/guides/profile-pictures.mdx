@@ -1,0 +1,117 @@
+---
+title: Profile pictures and logos
+description: Where pictures of agents, customers and companies come from, how to upload your own, and how they are kept safe.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+opendesk shows a picture next to every agent, contact and company. When there is none, it shows initials. Pictures come from an upload or from an automatic source, and **an upload always wins**.
+
+| Who | Sources, highest first |
+| --- | --- |
+| Agents | Your upload, then the picture from Google or GitHub when you sign in with them |
+| Contacts | An agent's upload, then the picture your site passes to a verified chat widget session, then Gravatar (when turned on) |
+| Companies | An agent's upload, then the company website's icon (when turned on) or the logo provider your instance configures |
+| Workspace and brands | The logos an admin uploads |
+
+Microsoft and single sign-on accounts carry no picture, so those agents upload one.
+
+## Upload your photo
+
+<Steps>
+<Step title="Open your profile">
+
+Click your name at the bottom of the sidebar and choose **Profile**, or go to **Settings, Profile**.
+
+</Step>
+<Step title="Change the photo">
+
+Next to **Photo**, click **Change photo** and pick an image. Crop it to the square you want, and it saves. **Remove** brings back the picture from your sign-in, or your initials.
+
+<Screenshot src="/guides/pictures/profile" alt="Settings, Profile: the Photo row with Change photo and Remove ringed as 1" />
+
+</Step>
+</Steps>
+
+## Contacts and companies
+
+Any agent can change the picture of a contact or company. Open one from **Contacts**, then click its picture.
+
+<Screenshot src="/guides/pictures/contact" alt="A contact's drawer with the picture ringed as 1 and its menu, Change photo, Refresh and Remove, ringed as 2" />
+
+<Legend>
+
+1. **The picture**: click it for the menu, or drop an image file on it.
+2. **Change photo** uploads one. **Refresh** looks for an automatic picture again. **Remove** deletes the upload, and the automatic picture comes back if there is one.
+
+</Legend>
+
+The menu also says where an automatic picture came from, such as **From Gravatar** or **From the company's website**.
+
+<Screenshot src="/guides/pictures/company" alt="A company's drawer with its logo ringed as 1, and the note From the company's website ringed as 2" />
+
+## Workspace logos and automatic pictures
+
+Admins set the workspace's pictures in **Settings, General**.
+
+<Screenshot src="/guides/pictures/workspace" alt="The Logo row in the workspace settings ringed as 1" />
+
+The workspace **Logo** shows in the workspace switcher, in emails and on the help center. The help center header uses the wide **Help center logo** if set, else the workspace logo and name, and the **Favicon** is the icon in the browser tab. Each [brand](/guides/brands-and-widgets/) can set its own in its **Help center** tab.
+
+<Screenshot src="/guides/pictures/help-center" alt="The Help center logo row ringed as 1 and the Favicon row ringed as 2" />
+
+Under **Contact and company pictures**, choose which automatic sources to use.
+
+<Screenshot src="/guides/pictures/sources" alt="Contact and company pictures: Gravatar pictures ringed as 1, off, and Company logos ringed as 2, on" />
+
+<Legend>
+
+1. **Gravatar pictures** is off by default. When on, opendesk sends a hash of each contact's email to Gravatar and uses the picture if one exists. Turning it off removes Gravatar pictures.
+2. **Company logos** is on by default. opendesk reads the company domain's home page for its app icon or favicon, and uses the first usable square image of at least 32 px.
+
+</Legend>
+
+<Callout>
+
+Images are PNG, JPEG, GIF or WebP, at most 5 MB. When your site [verifies a chat visitor](/guides/live-chat/identity-verification/), it can pass `avatar_url` with the session, and opendesk copies that picture to the contact. Unverified sessions never set a picture.
+
+</Callout>
+
+<Fold>
+
+## How pictures are handled
+
+- Every picture is downloaded by the server, never loaded from the original site by your browser or your customers'.
+- Only PNG, JPEG, GIF and WebP content is accepted, checked from the bytes themselves. SVG and anything else is refused.
+- Size is capped before decoding (5 MB, 4096 px a side). Pictures are cropped to a square, resized to 256 and 64 px and saved as PNG without any metadata, so location and camera data never survive.
+- Downloads use https only, refuse private and internal network addresses on every redirect, and time out after 10 seconds.
+- Pictures are served with long-lived caching and strict headers that stop them from running as anything other than an image.
+- Uploads and removals are recorded in the audit log.
+
+</Fold>
+
+<Fold>
+
+## Refreshing
+
+Automatic pictures are checked again every 30 days. When a lookup finds nothing, opendesk waits 1, 2, 4, 8 and 16 days before trying again, then every 30 days. **Refresh** on a contact or company looks now, as do `POST /v1/contacts/{id}/avatar/refresh` and `POST /v1/companies/{id}/avatar/refresh`.
+
+</Fold>
+
+<Fold>
+
+## Self-hosting
+
+Company logos from websites work with no setup. To use [logo.dev](https://logo.dev) instead, set `LOGO_DEV_TOKEN` (see the [configuration reference](/self-hosting/configuration/#profile-pictures)).
+
+</Fold>
+
+## Related
+
+- [Pictures API](/api/resources/pictures-assignment/)
+- [Brands and widgets](/guides/brands-and-widgets/)

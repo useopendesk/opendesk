@@ -19,8 +19,9 @@ import { patchTicketEverywhere } from "@/lib/ticketCache";
 import { useSession } from "@/lib/session";
 import { useConfirm } from "@/components/ui/confirm";
 import { shell } from "@/app/shellStore";
-import { ChannelIcon, PriorityIcon, priorityLabel, priorityOrder } from "./bits";
-import { ChevronDown } from "lucide-react";
+import { PriorityIcon, priorityLabel, priorityOrder } from "./bits";
+import { ChevronDown, Lock, Users } from "lucide-react";
+import { addressLabel, sortTeams, TeamDot, useTeamsCtx } from "./teams";
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -32,6 +33,7 @@ export default function NewTicketDialog() {
   const me = useSession((s) => s.user!.id);
   const { data: mailboxes } = useQuery(q.mailboxes());
   const { data: members } = useQuery(q.members());
+  const teams = useTeamsCtx();
 
   const [to, setTo] = useState<{ contact?: Contact; email?: string } | null>(null);
   const [toQuery, setToQuery] = useState("");
@@ -41,12 +43,25 @@ export default function NewTicketDialog() {
   const [mailbox, setMailbox] = useState<string | undefined>();
   const [priority, setPriority] = useState<Priority>("normal");
   const [assignee, setAssignee] = useState<string | null>(me);
+  const [brandId, setBrandId] = useState<string | undefined>();
+  const [team, setTeam] = useState<string | null | undefined>();
   const [error, setError] = useState<string | null>(null);
   const editor = useRef<RichEditorHandle>(null);
 
+  // The brand's addresses the caller may send from; the default brand first.
+  const defaultBrand = teams.brands.find((b) => b.is_default)?.id;
+  const brand = brandId ?? defaultBrand;
+  const sendable = (mailboxes ?? []).filter((m) => m.status !== "disabled" && teams.canSendFrom(m));
+  const brandRow = teams.brand(brand);
+  const fromChoices = teams.multiBrand && brand ? sendable.filter((m) => m.brand_id === brand) : sendable;
   useEffect(() => {
-    if (!mailbox && mailboxes?.length) setMailbox(mailboxes.find((m) => m.status === "active")?.id ?? mailboxes[0].id);
-  }, [mailboxes, mailbox]);
+    if (mailbox && fromChoices.some((m) => m.id === mailbox)) return;
+    const next = fromChoices.find((m) => m.status === "active") ?? fromChoices[0];
+    if (next?.id !== mailbox) setMailbox(next?.id);
+  }, [fromChoices.map((m) => m.id).join(), mailbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The team follows the address's default team until someone picks one.
+  const teamId = team !== undefined ? team : (teams.mailbox(mailbox)?.team_id ?? null);
+  const teamRow = teams.team(teamId);
 
   const contacts = useQuery({
     queryKey: ["contacts", "pick", toQuery],
@@ -74,6 +89,7 @@ export default function NewTicketDialog() {
         kind,
         priority,
         assignee_id: assignee ?? undefined,
+        team_id: teams.hasTeams && teamId ? teamId : undefined,
         status: kind === "reply" ? "pending" : "open",
       }),
     onSuccess: (t) => {
@@ -145,7 +161,7 @@ export default function NewTicketDialog() {
             { value: "note", label: tr("newTicket.internal") },
           ]}
         />
-        <div className="grid grid-cols-[1fr_200px] gap-3">
+        <div className="grid grid-cols-[1fr_240px] gap-3">
           <Field label={tr("newTicket.to")}>
             {({ id }) =>
               to ? (
@@ -186,9 +202,9 @@ export default function NewTicketDialog() {
                 id={id}
                 value={mailbox}
                 onChange={setMailbox}
-                disabled={kind === "note" || !mailboxes?.length}
+                disabled={kind === "note" || !fromChoices.length}
                 placeholder={tr("newTicket.noMailbox")}
-                options={(mailboxes ?? []).map((m) => ({ value: m.id, label: m.email, icon: <ChannelIcon channel="email" /> }))}
+                options={fromChoices.map((m) => ({ value: m.id, label: addressLabel(m), icon: <TeamDot team={teams.team(m.team_id)} /> }))}
               />
             )}
           </Field>
@@ -211,6 +227,48 @@ export default function NewTicketDialog() {
               </Button>
             }
           />
+          {teams.multiBrand && (
+            <Picker
+              items={teams.brands.map((b) => ({
+                value: b.id,
+                label: b.name,
+                icon: <span className="size-2 rounded-[2px] bg-fg-4" style={b.color ? { backgroundColor: b.color } : undefined} />,
+              }))}
+              value={brand ?? null}
+              onSelect={setBrandId}
+              placeholder={tr("props.chooseBrand")}
+              trigger={
+                <Button
+                  size="sm"
+                  icon={<span className="size-2 rounded-[2px] bg-fg-4" style={brandRow?.color ? { backgroundColor: brandRow.color } : undefined} />}
+                  iconRight={<ChevronDown className="size-3 text-fg-4" />}
+                >
+                  {brandRow?.name ?? tr("props.chooseBrand")}
+                </Button>
+              }
+            />
+          )}
+          {teams.hasTeams && (
+            <Picker
+              items={[
+                ...sortTeams(teams.teams, teams.myTeams).map((x) => ({
+                  value: x.id,
+                  label: x.name,
+                  icon: <TeamDot team={x} />,
+                  hint: x.private ? <Lock className="size-3" /> : undefined,
+                })),
+                { value: "__none", label: tr("props.noTeam"), icon: <span className="size-2 rounded-full border border-dashed border-line-strong" /> },
+              ]}
+              value={teamId ?? "__none"}
+              onSelect={(v) => setTeam(v === "__none" ? null : v)}
+              placeholder={tr("props.chooseTeam")}
+              trigger={
+                <Button size="sm" icon={teamRow ? <TeamDot team={teamRow} /> : <Users className="text-fg-3" />} iconRight={<ChevronDown className="size-3 text-fg-4" />}>
+                  {teamRow?.name ?? tr("props.noTeam")}
+                </Button>
+              }
+            />
+          )}
           <Picker
             items={[
               { value: "__none", label: tr("props.unassigned"), icon: <span className="size-4 rounded-xs border border-dashed border-line-strong" /> },

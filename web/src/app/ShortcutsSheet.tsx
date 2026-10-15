@@ -3,6 +3,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { shortcutGroups } from "@/lib/hotkeys";
 import { shell, useShell } from "./shellStore";
+import { quickSwitchKeys } from "./useAccounts";
 
 export function ShortcutsSheet() {
   const open = useShell((s) => s.shortcutsOpen);
@@ -13,6 +14,7 @@ export function ShortcutsSheet() {
       { keys: "b", label: t("shortcuts.toggleSidebar") },
       { keys: "g m", label: t("shortcuts.goMine") },
       { keys: "g r", label: t("shortcuts.goReports") },
+      { keys: quickSwitchKeys("1-9"), label: t("shortcuts.switchWorkspace") },
     ],
   };
   const groups = shortcutGroups.map((g) => {

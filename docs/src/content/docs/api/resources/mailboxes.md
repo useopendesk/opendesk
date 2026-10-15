@@ -45,10 +45,24 @@ type Mailbox = {
   last_error: string;
   last_synced_at: string | null;
   created_at: string;
+  trusted_form_senders: string[];
 };
 ```
 
 Passwords and tokens are write-only: they are accepted on create and update, encrypted, and never returned.
+
+## Contact forms
+
+Website contact forms usually send `From` an address of the site with the visitor in `Reply-To`. List those addresses in `trusted_form_senders` (an exact address, or `@domain` for every address at that domain, at most 50) and a form message that passed DMARC is from the visitor: the visitor becomes the contact and replies go to them. Mail from a listed address that did not pass DMARC is handled like any other mail.
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/mailboxes/0192f0c4-... \
+  -H "Authorization: Bearer od_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "trusted_form_senders": ["website@example.com"] }'
+```
+
+The list replaces the stored one. A domain of a public email provider (such as `@gmail.com`) is refused; list the form's exact address instead.
 
 ## Create an IMAP and SMTP mailbox
 

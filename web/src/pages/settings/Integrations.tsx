@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { continueInBrowser } from "@/components/desktop/InBrowser";
+import { isDesktop } from "@/lib/desktop";
 import { ChevronDown, MoreHorizontal, Plus, RefreshCw, Trash2, LogIn } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -66,8 +68,9 @@ function ConnectedRow({ x, admin }: { x: Integration; admin: boolean }) {
     onError: (e) => toast.error(e, t("integrations.syncError")),
   });
   const signIn = useMutation({
-    mutationFn: () => api.integrations.authorize(x.id),
-    onSuccess: (r) => window.location.assign(r.authorize_url),
+    mutationFn: async () => (isDesktop ? null : api.integrations.authorize(x.id)),
+    // The desktop app signs in to the service from the browser (contracts/native.md).
+    onSuccess: (r) => (r ? window.location.assign(r.authorize_url) : continueInBrowser("/settings/integrations")),
     onError: (e) => toast.error(e),
   });
   const remove = useMutation({

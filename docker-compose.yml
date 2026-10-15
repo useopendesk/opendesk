@@ -92,6 +92,9 @@ services:
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-common}
+      GOOGLE_MAILBOX_OAUTH: ${GOOGLE_MAILBOX_OAUTH:-}
+      MICROSOFT_MAILBOX_OAUTH: ${MICROSOFT_MAILBOX_OAUTH:-}
+      MAILHOST_ISPDB: ${MAILHOST_ISPDB:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
@@ -122,6 +125,14 @@ services:
       POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
       WEB_POSTHOG_KEY: ${WEB_POSTHOG_KEY:-}
       WEB_POSTHOG_HOST: ${WEB_POSTHOG_HOST:-}
+      # iPhone push (contracts/native.md): an APNs key sends directly,
+      # PUSH_RELAY_URL opts in to the opendesk relay, neither leaves push off.
+      PUSH_RELAY_URL: ${PUSH_RELAY_URL:-}
+      APNS_KEY: ${APNS_KEY:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_TOPIC: ${APNS_TOPIC:-sh.opendesk.app}
+      APP_ATTEST_APP_IDS: ${APP_ATTEST_APP_IDS:-}
     volumes:
       - ${OPENDESK_DATA:-opendesk-data}:/data
     read_only: true

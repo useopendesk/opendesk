@@ -20,6 +20,24 @@ export function folderById(id: string): Folder | undefined {
   return folders.find((f) => f.id === id);
 }
 
+/** A team inbox's tabs (/teams/$teamId, where teamId may be "mine" for every team of the caller's). */
+export type TeamTab = "unassigned" | "open" | "pending" | "all";
+export const teamTabs: TeamTab[] = ["unassigned", "open", "pending", "all"];
+
+export function teamQuery(teamId: string, tab: TeamTab | undefined): TicketListQuery {
+  const team_id = teamId;
+  switch (tab ?? "unassigned") {
+    case "open":
+      return { team_id, status: ["open"] };
+    case "pending":
+      return { team_id, status: ["pending", "on_hold"] };
+    case "all":
+      return { team_id };
+    default:
+      return { team_id, status: ["open", "pending"], assignee: "none" };
+  }
+}
+
 export type InboxSearch = {
   sort?: TicketListQuery["sort"];
   order?: TicketListQuery["order"];
@@ -28,6 +46,11 @@ export type InboxSearch = {
   channel?: string;
   tag?: string;
   mailbox?: string;
+  /** Team filter: ids, "mine" and "none", joined by ",". */
+  team?: string;
+  brand?: string;
+  /** The tab of a team inbox. */
+  tab?: TeamTab;
   q?: string;
   /** Custom field filters, "key:op:value" joined by "|" (contracts/api.md field.<key>[op]=v). */
   fields?: string;
@@ -55,6 +78,9 @@ export function listQuery(base: TicketListQuery, s: InboxSearch): TicketListQuer
   if (s.channel) q.channel = s.channel as TicketListQuery["channel"];
   if (s.tag) q.tag = s.tag;
   if (s.mailbox) q.mailbox_id = s.mailbox;
+  // A team inbox is already one team (or the caller's teams).
+  if (s.team && !base.team_id) q.team_id = s.team;
+  if (s.brand) q.brand_id = s.brand;
   if (s.q) q.q = s.q;
   const ff = parseFieldFilters(s.fields);
   if (ff.length) q.fields = ff;
@@ -73,6 +99,9 @@ export function parseInboxSearch(raw: Record<string, unknown>): InboxSearch {
     channel: str(raw.channel),
     tag: str(raw.tag),
     mailbox: str(raw.mailbox),
+    team: str(raw.team),
+    brand: str(raw.brand),
+    tab: teamTabs.includes(raw.tab as TeamTab) ? (raw.tab as TeamTab) : undefined,
     q: str(raw.q),
     fields: str(raw.fields),
   };

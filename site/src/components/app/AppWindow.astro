@@ -1,0 +1,171 @@
+---
+/**
+ * The opendesk desktop app's window (desktop/, macOS), drawn 1:1 for the site:
+ * the translucent frame with the traffic lights, AppHeader (workspace switcher,
+ * crumbs, connection, notifications, Ollie, search, New ticket) and Sidebar
+ * (waiting chats, folders, views, workspace, setup, account). The page goes in
+ * the slot, inside the opaque work panel inset right of the sidebar
+ * (`.dm-main`: a flex row, 1032 x 748 with its 1px hairline).
+ *
+ * The window is authored at 1280 x 804 and scaled as one picture into its box:
+ * it fills its nearest positioned parent (`.dm-box` is absolute, inset 0), and
+ * `width` is that box's width (default 860, so an 860 x 540 box). Give the
+ * parent that size, usually inside a Stage, which scales the whole scene again
+ * to the page. Everything follows the web app in its desktop layout
+ * (web/src/app/AppHeader.tsx, Sidebar.tsx, web/src/styles/app.css); the styles
+ * live in app.css and the glyphs in icons.ts, shared with the screens.
+ */
+import Ollie from '../home/Ollie.astro';
+import { clock, ic } from './icons';
+import './app.css';
+
+type Folder = 'unassigned' | 'mine' | 'open' | 'pending' | 'solved' | 'spam';
+type View = 'urgent' | 'billing' | 'engineering';
+type Page = 'contacts' | 'knowledge' | 'reports' | 'settings';
+/** A count, or the pair it changes between on step 1 of the scene's timeline. */
+type Count = string | [string, string];
+
+interface Props {
+  /** The highlighted sidebar row. Settings pages (automations, SLA, API keys) are `settings`. */
+  active?: Folder | View | Page;
+  /** The header crumbs after the workspace, as the app names them: ['Inbox', 'Unassigned'], ['Settings', 'API keys']. */
+  crumbs: string[];
+  /** Sidebar counts, over the defaults. */
+  counts?: Partial<Record<Folder | View, Count>>;
+  /** A visitor waiting in live chat for this many seconds: the red row on top and the badge on Unassigned. */
+  waiting?: number;
+  /** The width of the box the window is scaled into. */
+  width?: number;
+  class?: string;
+}
+const { active, crumbs, counts = {}, waiting, width = 860, class: className = '' } = Astro.props;
+
+const folders: { id: Folder; icon: string; label: string; count?: Count }[] = [
+  { id: 'unassigned', icon: 'circleDashed', label: 'Unassigned', count: '17' },
+  { id: 'mine', icon: 'user', label: 'Mine', count: '10' },
+  { id: 'open', icon: 'inbox', label: 'All open', count: '36' },
+  { id: 'pending', icon: 'clock', label: 'Pending', count: '15' },
+  { id: 'solved', icon: 'circleCheck', label: 'Solved' },
+  { id: 'spam', icon: 'shieldAlert', label: 'Spam' },
+];
+const views: { id: View; label: string; count: Count }[] = [
+  { id: 'urgent', label: 'Urgent', count: '16' },
+  { id: 'billing', label: 'Billing queue', count: '8' },
+  { id: 'engineering', label: 'Waiting on engineering', count: '2' },
+];
+const pages: { id: Page; icon: string; label: string }[] = [
+  { id: 'contacts', icon: 'users', label: 'Contacts' },
+  { id: 'knowledge', icon: 'bookOpen', label: 'Knowledge base' },
+  { id: 'reports', icon: 'chartColumn', label: 'Reports' },
+];
+const countOf = (id: Folder | View, fallback?: Count) => counts[id] ?? fallback;
+const maya =
+  "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' fill='%23d6cfd8'/%3E%3Cpath d='M76 92c0-38 22-58 52-58s52 20 52 58v74h-104z' fill='%23d8b47a'/%3E%3Cpath d='M40 256c6-52 44-80 88-80s82 28 88 80z' fill='%23f4f4f4'/%3E%3Crect x='114' y='138' width='28' height='40' rx='12' fill='%23f1d3bd'/%3E%3Cellipse cx='128' cy='104' rx='40' ry='46' fill='%23f1d3bd'/%3E%3Cpath d='M86 96c0-30 18-48 42-48s42 18 42 48c-10-16-26-24-42-24s-32 8-42 24z' fill='%23d8b47a'/%3E%3C/svg%3E";
+---
+<div class={`dm-box ${className}`} aria-hidden="true">
+  <div class="dm" style={width === 860 ? undefined : `--dm-k:${width / 1280}`}>
+    <!-- The traffic lights: 18px in, centred in the 48px header (desktop/src/main/window.ts). -->
+    <span class="dm-lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+
+    <!-- AppHeader: the title bar, clear of the traffic lights over the sidebar column -->
+    <header class="dm-head">
+      <span class="dm-head-gap"></span>
+      <div class="dm-crumbs">
+        <span class="dm-switcher">
+          <img class="dm-logo" src="/demo/margin.svg" alt="" width="24" height="24" />
+          <span class="dm-switcher-name">Margin</span>
+          <Fragment set:html={ic('chevronsUpDown', 14, 'dm-fg4')} />
+        </span>
+        {crumbs.map((c, i) => (
+          <>
+            <Fragment set:html={ic('chevronRight', 14, 'dm-fg4')} />
+            <span class={`dm-crumb ${i === crumbs.length - 1 ? 'dm-crumb-last' : ''}`}>{c}</span>
+          </>
+        ))}
+      </div>
+      <div class="dm-tools">
+        <span class="dm-conn"><i></i></span>
+        <span class="dm-bell"><Fragment set:html={ic('bell', 15)} /><i></i></span>
+        <span class="dm-ollie-btn"><Ollie size={20} />Ollie</span>
+        <span class="dm-search"><Fragment set:html={ic('search', 14)} />Search<span class="dm-kbds"><kbd>⌘</kbd><kbd>K</kbd></span></span>
+        <span class="dm-new"><Fragment set:html={ic('squarePen', 14)} />New ticket</span>
+      </div>
+    </header>
+
+    <div class="dm-body">
+      <!-- Sidebar -->
+      <nav class="dm-side">
+        <div class="dm-side-scroll">
+          <div class="dm-sec-label">Inbox</div>
+          <div class="dm-rows">
+            {waiting !== undefined && (
+              <span class="dm-nav dm-nav-wait dm-wash">
+                <span class="dm-nav-dot"><span class="dm-ping"><i></i><i></i></span></span>
+                <span class="dm-nav-label">1 waiting in chat</span>
+                <span class="dm-mono dm-nav-time" data-clock={waiting}>{clock(waiting)}</span>
+              </span>
+            )}
+            {folders.map((n) => {
+              const count = countOf(n.id, n.count);
+              return (
+                <span class={`dm-nav ${active === n.id ? 'dm-nav-on' : ''}`}>
+                  <Fragment set:html={ic(n.icon, 15)} />
+                  <span class="dm-nav-label">{n.label}</span>
+                  {n.id === 'unassigned' && waiting !== undefined && <span class="dm-nav-waiting"><span class="dm-ping dm-ping-white"><i></i><i></i></span>1</span>}
+                  {count && (Array.isArray(count) ? (
+                    <span class="dm-mono dm-nav-count"><span data-step="0" data-until="1" data-wait="0">{count[0]}</span><span class="s-swap" data-step="1" data-wait="1400">{count[1]}</span></span>
+                  ) : (
+                    <span class="dm-mono dm-nav-count">{count}</span>
+                  ))}
+                </span>
+              );
+            })}
+          </div>
+          <div class="dm-sec-label dm-sec-next">Views</div>
+          <div class="dm-rows">
+            {views.map((v) => {
+              const count = countOf(v.id, v.count);
+              return (
+                <span class={`dm-nav ${active === v.id ? 'dm-nav-on' : ''}`}>
+                  <Fragment set:html={ic('layers', 15)} />
+                  <span class="dm-nav-label">{v.label}</span>
+                  {Array.isArray(count) ? (
+                    <span class="dm-mono dm-nav-count"><span data-step="0" data-until="1" data-wait="0">{count[0]}</span><span class="s-swap" data-step="1" data-wait="1400">{count[1]}</span></span>
+                  ) : (
+                    <span class="dm-mono dm-nav-count">{count}</span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+          <div class="dm-sec-label dm-sec-next">Workspace</div>
+          <div class="dm-rows">
+            {pages.map((v) => (
+              <span class={`dm-nav ${active === v.id ? 'dm-nav-on' : ''}`}><Fragment set:html={ic(v.icon, 15)} /><span class="dm-nav-label">{v.label}</span></span>
+            ))}
+          </div>
+        </div>
+        <div class="dm-side-foot">
+          <span class="dm-nav dm-setup">
+            <svg class="dm-ic dm-setup-ring" width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--dm-line-strong)" stroke-width="2" /><circle cx="8" cy="8" r="6" stroke="var(--dm-green)" stroke-width="2" /></svg>
+            <span class="dm-nav-label">Get set up</span>
+            <span class="dm-mono dm-setup-n">9/9</span>
+          </span>
+          <span class={`dm-nav ${active === 'settings' ? 'dm-nav-on' : ''}`}><Fragment set:html={ic('settings', 15)} /><span class="dm-nav-label">Settings</span></span>
+          <span class="dm-nav"><Fragment set:html={ic('panelLeftClose', 15)} /><span class="dm-nav-label">Collapse</span></span>
+        </div>
+        <div class="dm-account">
+          <span class="dm-account-btn">
+            <span class="dm-avatar"><img src={maya} alt="" width="32" height="32" /><i></i></span>
+            <span class="dm-account-text"><span class="dm-account-name">Maya Chen</span><span class="dm-account-mail">maya@margin.app</span></span>
+          </span>
+        </div>
+      </nav>
+
+      <!-- The work panel, inset in the window frame -->
+      <main class="dm-main">
+        <slot />
+      </main>
+    </div>
+  </div>
+</div>

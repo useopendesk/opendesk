@@ -1,7 +1,7 @@
-// The one HTTP client for the public API. The access token lives in memory
-// only; the refresh token is an HttpOnly cookie the browser sends to
-// /v1/auth/refresh. A 401 triggers one shared refresh, then the request is
-// retried once with the new token.
+// The one HTTP client for the public API. Access tokens live in memory only,
+// one per signed-in account; each account's refresh token is an HttpOnly cookie
+// the browser sends to /v1/auth/refresh (contracts/tokens.md). A 401 triggers
+// one shared refresh of that account, then the request is retried once.
 
 import type { TokenResponse } from "./types";
 
@@ -58,7 +58,7 @@ function codeForStatus(status: number): string {
   }
 }
 
-// Plan limits: any 402 plan_limit / no_credits is announced so one shared
+// Plan limits: any 402 plan_limit / ai_balance_empty is announced so one shared
 // upgrade dialog can explain it, wherever the request came from.
 type LimitListener = (e: ApiError) => void;
 const limitListeners = new Set<LimitListener>();
@@ -67,7 +67,7 @@ export function onPlanLimit(l: LimitListener) {
   return () => limitListeners.delete(l);
 }
 export function isPlanLimit(e: unknown): e is ApiError {
-  return e instanceof ApiError && e.status === 402 && (e.code === "plan_limit" || e.code === "no_credits");
+  return e instanceof ApiError && e.status === 402 && (e.code === "plan_limit" || e.code === "ai_balance_empty");
 }
 function announce(e: ApiError) {
   if (isPlanLimit(e)) limitListeners.forEach((l) => l(e));
@@ -99,19 +99,34 @@ export function setTransport(t: Transport) {
 
 type ClientState = {
   baseUrl: string;
+  /** The active account's access token. */
   accessToken: string | null;
   expiresAt: number;
   workspaceId: string | null;
+  /** The active account (user id), once known. */
+  userId: string | null;
 };
 
-const state: ClientState = { baseUrl: "", accessToken: null, expiresAt: 0, workspaceId: null };
+const state: ClientState = { baseUrl: "", accessToken: null, expiresAt: 0, workspaceId: null, userId: null };
+
+type Token = { token: string; expiresAt: number };
+/** Access tokens of the signed-in accounts that are not active, by user id. */
+const parked = new Map<string, Token>();
 
 type SessionListener = (r: TokenResponse | null) => void;
 const sessionListeners = new Set<SessionListener>();
-/** Called with the new session after every refresh, and with null when it ends. */
+/** Called with the active account's session after every refresh, and with null when it ends. */
 export function onSession(l: SessionListener) {
   sessionListeners.add(l);
   return () => sessionListeners.delete(l);
+}
+
+type AccountListener = (userId: string | null, r: TokenResponse | null) => void;
+const accountListeners = new Set<AccountListener>();
+/** Called for every account's refresh: its new session, or null when it ended. */
+export function onAccountSession(l: AccountListener) {
+  accountListeners.add(l);
+  return () => accountListeners.delete(l);
 }
 
 export function configureClient(opts: { baseUrl: string }) {
@@ -124,6 +139,50 @@ export function setAccessToken(token: string | null, expiresIn = 900) {
 export function getAccessToken() {
   return state.accessToken;
 }
+
+/**
+ * Make another signed-in account the one requests go out as. Its access token,
+ * when the client holds one, comes back from memory; the previous account's is
+ * kept for switching back.
+ */
+export function setActiveAccount(userId: string | null) {
+  if (userId === state.userId) return;
+  if (state.userId && state.accessToken) parked.set(state.userId, { token: state.accessToken, expiresAt: state.expiresAt });
+  state.userId = userId;
+  const t = userId ? parked.get(userId) : undefined;
+  if (userId) parked.delete(userId);
+  state.accessToken = t?.token ?? null;
+  state.expiresAt = t?.expiresAt ?? 0;
+}
+export function getActiveAccount() {
+  return state.userId;
+}
+/** Forget an account's access token (it signed out). */
+export function forgetAccount(userId: string) {
+  parked.delete(userId);
+  if (state.userId === userId) setAccessToken(null);
+}
+/** Forget every account's access token. */
+export function forgetAllAccounts() {
+  parked.clear();
+  state.userId = null;
+  setAccessToken(null);
+}
+
+function tokenFor(userId: string | null): Token | null {
+  if (userId === state.userId) return state.accessToken ? { token: state.accessToken, expiresAt: state.expiresAt } : null;
+  return userId ? (parked.get(userId) ?? null) : null;
+}
+
+function storeToken(userId: string | null, token: string | null, expiresIn = 900) {
+  if (userId === state.userId || state.userId === null) {
+    if (state.userId === null && userId) state.userId = userId;
+    setAccessToken(token, expiresIn);
+  } else if (userId) {
+    if (token) parked.set(userId, { token, expiresAt: Date.now() + expiresIn * 1000 });
+    else parked.delete(userId);
+  }
+}
 export function setWorkspaceId(id: string | null) {
   state.workspaceId = id;
 }
@@ -135,39 +194,49 @@ export function apiUrl(path: string) {
   return `${state.baseUrl}${path}`;
 }
 
-let refreshing: Promise<TokenResponse | null> | null = null;
+const refreshing = new Map<string, Promise<TokenResponse | null>>();
 
 /**
- * Exchanges the refresh cookie for a new access token. Concurrent callers share
- * one request, because the server rotates the refresh token on use and a second
- * parallel refresh would present an already-rotated token.
+ * Exchanges an account's refresh cookie for a new access token: the active
+ * account by default, or, before any account is known, the one this browser
+ * used most recently. Concurrent callers for one account share one request,
+ * because the server rotates the refresh token on use and a second parallel
+ * refresh would present an already-rotated token.
  */
-export function refreshSession(): Promise<TokenResponse | null> {
-  if (refreshing) return refreshing;
-  refreshing = (async () => {
+export function refreshSession(userId: string | null = state.userId): Promise<TokenResponse | null> {
+  const key = userId ?? "";
+  const running = refreshing.get(key);
+  if (running) return running;
+  const p = (async () => {
     try {
       const res = await transport(apiUrl("/v1/auth/refresh"), {
         method: "POST",
         credentials: "include",
-        headers: { Accept: "application/json" },
+        headers: userId ? { Accept: "application/json", "Content-Type": "application/json" } : { Accept: "application/json" },
+        body: userId ? JSON.stringify({ user_id: userId }) : undefined,
       });
       if (!res.ok) {
-        setAccessToken(null);
-        sessionListeners.forEach((l) => l(null));
+        const active = userId === state.userId;
+        storeToken(userId, null);
+        accountListeners.forEach((l) => l(userId, null));
+        if (active) sessionListeners.forEach((l) => l(null));
         return null;
       }
       const body = (await res.json()) as TokenResponse;
-      setAccessToken(body.access_token, body.expires_in);
-      sessionListeners.forEach((l) => l(body));
+      const uid = body.user?.id ?? userId;
+      storeToken(uid, body.access_token, body.expires_in);
+      accountListeners.forEach((l) => l(uid, body));
+      if (uid === state.userId) sessionListeners.forEach((l) => l(body));
       return body;
     } catch {
       // Network failure: keep whatever token we had; the caller surfaces the error.
       return null;
     } finally {
-      refreshing = null;
+      refreshing.delete(key);
     }
   })();
-  return refreshing;
+  refreshing.set(key, p);
+  return p;
 }
 
 export type RequestOptions = {
@@ -180,6 +249,8 @@ export type RequestOptions = {
   auth?: boolean;
   /** Attach an Idempotency-Key (POST creates). Reused on the retry after refresh. */
   idempotent?: boolean;
+  /** Send as this signed-in account (user id) rather than the active one. */
+  as?: string;
   signal?: AbortSignal;
 };
 
@@ -188,6 +259,7 @@ const NO_REFRESH = new Set([
   "/v1/auth/register",
   "/v1/auth/mfa",
   "/v1/auth/refresh",
+  "/v1/auth/accounts",
   "/v1/auth/oauth/exchange",
   "/v1/auth/oauth/link",
   "/v1/auth/password/forgot",
@@ -235,10 +307,16 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
 async function raw(method: string, path: string, opts: RequestOptions = {}): Promise<Response> {
   const useAuth = opts.auth !== false;
   const idemKey = opts.idempotent ? newIdempotencyKey() : undefined;
+  // A request belongs to the account (and workspace) it started under, even if
+  // the person switches while it is in flight.
+  let account = opts.as ?? state.userId;
+  const workspaceId = opts.as && opts.as !== state.userId ? null : state.workspaceId;
 
   // Refresh ahead of expiry rather than eating a 401 on every 15-minute boundary.
-  if (useAuth && state.accessToken && state.expiresAt - Date.now() < 20_000) {
-    await refreshSession();
+  const tok = tokenFor(account);
+  if (useAuth && tok && tok.expiresAt - Date.now() < 20_000) {
+    const r = await refreshSession(account);
+    account ??= r?.user?.id ?? state.userId;
   }
 
   const send = async () => {
@@ -249,8 +327,9 @@ async function raw(method: string, path: string, opts: RequestOptions = {}): Pro
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(opts.body);
     }
-    if (useAuth && state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
-    if (opts.workspace !== false && state.workspaceId) headers["OD-Workspace"] = state.workspaceId;
+    const bearer = useAuth ? tokenFor(account)?.token : undefined;
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
+    if (opts.workspace !== false && workspaceId) headers["OD-Workspace"] = workspaceId;
     if (idemKey) headers["Idempotency-Key"] = idemKey;
     try {
       return await transport(apiUrl(path) + buildQuery(opts.query), {
@@ -272,8 +351,9 @@ async function raw(method: string, path: string, opts: RequestOptions = {}): Pro
     // code (401 invalid_credentials / invalid_code) is the answer itself.
     const err = await parseError(res);
     if (err.code !== "unauthenticated" && err.code !== "unauthorized") throw announce(err);
-    const refreshed = await refreshSession();
+    const refreshed = await refreshSession(account);
     if (!refreshed) throw announce(err);
+    account ??= refreshed.user?.id ?? state.userId;
     res = await send();
   }
   if (!res.ok) throw announce(await parseError(res));
@@ -392,9 +472,12 @@ export function __resetClientForTests() {
   state.accessToken = null;
   state.expiresAt = 0;
   state.workspaceId = null;
+  state.userId = null;
   state.baseUrl = "";
-  refreshing = null;
+  parked.clear();
+  refreshing.clear();
   sessionListeners.clear();
+  accountListeners.clear();
   limitListeners.clear();
   transport = (input, init) => fetch(input, init);
 }

@@ -93,18 +93,18 @@ type AISettingsView struct {
 	Assistant bool
 }
 
-// AssistantTurn runs one billed model turn with tools: it reserves the assistant
-// feature's credits, streams text through onDelta, and spends only when the turn
+// AssistantTurn runs one billed model turn with tools: it checks the AI balance covers
+// the turn's estimate, streams text through onDelta, and charges only when the turn
 // succeeded. Usage rows hold counts only. On the workspace's own key nothing is charged.
 func (s *Service) AssistantTurn(ctx context.Context, wid uuid.UUID, userID *uuid.UUID, req ChatRequest, onDelta func(string)) (ChatResponse, error) {
 	if !s.Enabled() {
 		return ChatResponse{}, errDisabled
 	}
 	c := s.newCall(wid, userID, nil, "assistant")
-	if err := c.reserve(ctx); err != nil {
+	req.Model = c.resolveModel(ctx, req.Model)
+	if err := c.reserve(ctx, req.Model, chatTokens(req), req.MaxTokens); err != nil {
 		return ChatResponse{}, err
 	}
-	req.Model = c.resolveModel(ctx, req.Model)
 	resp, err := c.chat(ctx, req, onDelta)
 	if err != nil {
 		return ChatResponse{}, err
@@ -113,10 +113,13 @@ func (s *Service) AssistantTurn(ctx context.Context, wid uuid.UUID, userID *uuid
 	return resp, nil
 }
 
-// Reserve checks before a run that the workspace can pay for a feature: its credits, or
-// nothing when it uses its own key.
+// Reserve checks before a run that the workspace can pay for a typical call of a
+// feature on its model: its AI balance, or nothing when it uses its own key.
 func (s *Service) Reserve(ctx context.Context, wid uuid.UUID, feature string) error {
-	return s.newCall(wid, nil, nil, feature).reserve(ctx)
+	c := s.newCall(wid, nil, nil, feature)
+	model := c.resolveModel(ctx, "")
+	t := typicalTokens[feature]
+	return c.reserve(ctx, model, t.in, t.out)
 }
 
 // toolsFor reports whether the workspace's provider can call tools (ErrNoTools if not).

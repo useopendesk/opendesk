@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
 import { ListSkeleton, RolePill, roleTone, StatePill, SummaryStrip } from "@/components/settings2/bits";
+import { MemberTeams } from "@/components/settings2/memberTeams";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { EmptyState } from "@/components/ui/empty";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
@@ -204,6 +205,7 @@ function MembersList({ onInvite }: { onInvite?: () => void }) {
                         )}
                       </div>
                       <div className="mono truncate text-xs text-fg-3">{m.user.email}</div>
+                      <MemberTeams m={m} canEdit={atLeast(role, "admin")} />
                     </div>
                     <span className="hidden w-32 whitespace-nowrap text-xs tabular-nums text-fg-3 sm:block">{shortDate(m.created_at)}</span>
                     <div className="w-[120px]">

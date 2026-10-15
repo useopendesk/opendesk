@@ -1,0 +1,272 @@
+---
+title: Configuration reference
+description: Every environment variable opendesk and the realtime gateway read, with defaults and meaning.
+---
+
+import Callout from '../../../components/Callout.astro';
+
+opendesk reads its configuration from environment variables. The self-host bundle keeps them in `/opt/opendesk/.env`; for local development, copy `.env.example` in the repository to `.env`.
+
+Empty values use the default. Booleans accept `true`/`false`, `1`/`0`.
+
+<Callout title="Changing a setting">
+
+Edit `/opt/opendesk/.env`, then run `/opt/opendesk/opendesk-ctl start` (it runs `docker compose up -d`): the containers whose settings changed are recreated with the new values. A plain restart keeps the old ones. Settings for the bundle itself, such as the domain and the compose profiles, are in [Docker Compose](/self-hosting/docker-compose/#the-env-file).
+
+</Callout>
+
+## Refuses to boot
+
+opendesk checks its secrets at start and refuses to run when they are unsafe:
+
+- `AUTH_SECRET` shorter than 32 bytes. Outside production a development secret is used when it is empty.
+- `CREDENTIALS_KEY` missing in production, or not 32 bytes.
+- In production, embedded NATS listening beyond `127.0.0.1` without `NATS_TOKEN`.
+- `OPENDESK_ROLE` other than `all`, `api` or `worker`.
+- `STRIPE_SECRET_KEY` set without `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_PRO`.
+- Only some of `APNS_KEY`, `APNS_KEY_ID` and `APNS_TEAM_ID` set, `PUSH_RELAY_SERVE=true` without an APNs key, or a `PUSH_RELAY_URL` that is not an `https` origin.
+
+The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
+
+## Core
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENDESK_ENV` | `development` | `development` or `production`. Production enforces the checks above. |
+| `OPENDESK_ROLE` | `all` | `all` (API and workers), `api` or `worker`. See [Scaling](/self-hosting/scaling/). |
+| `HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
+| `DATA_DIR` | `./data` | Local data: attachments with the `local` driver, and embedded NATS storage. |
+| `SERVE_WEB` | `false` | Serve the embedded web app, `/config.js` and `/config.json` (for the desktop and iPhone apps) from this binary. `true` in the self-host bundle. |
+| `SIGNUP_ENABLED` | `true` | Allow anyone to register. When `false`, only invited people can create an account. |
+| `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy for the client IP. Enable only behind a proxy you control. |
+| `EVENT_RETENTION` | `168h` | How long events are kept for replay (a Go duration). |
+
+## URLs
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `API_URL` | `http://localhost:8080` | Public URL of the API. OAuth redirect URIs are built from it. |
+| `APP_URL` | `http://localhost:5173` | Public URL of the web app. Links in email point here. |
+| `GATEWAY_URL` | `ws://localhost:4000/socket` | Public WebSocket URL of the realtime gateway, given to clients. |
+| `SITE_URL` | `https://opendesk.sh` | Marketing site URL used in links. |
+| `CORS_ORIGINS` | `APP_URL` | Comma-separated origins allowed to call the API from a browser. |
+| `COOKIE_DOMAIN` | empty (host only) | Domain for the refresh cookie. Set it when the API and app are on different subdomains of one domain. |
+| `COOKIE_SECURE` | `true` when `API_URL` is `https` | Mark cookies `Secure`. |
+
+On a self-hosted single domain, `API_URL` and `APP_URL` are both `https://desk.example.com` and `GATEWAY_URL` is `wss://desk.example.com/socket`.
+
+## Database
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgres://opendesk:opendesk@localhost:5432/opendesk?sslmode=disable` | Pooled connection used by request handlers. On Neon, the `-pooler` host. |
+| `DATABASE_URL_DIRECT` | `DATABASE_URL` | Direct connection for migrations, background jobs and the event relay, which need session features such as `LISTEN`/`NOTIFY`. |
+
+See [Postgres and Neon](/self-hosting/postgres/).
+
+## Secrets
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUTH_SECRET` | none in production | At least 32 bytes. Signs every JWT. **Must be identical** in opendesk and the realtime gateway. |
+| `CREDENTIALS_KEY` | none in production | 32 bytes, hex or base64. Encrypts mailbox credentials, OAuth tokens, webhook secrets and TOTP secrets with AES-256-GCM. **Never change it**: existing credentials become unreadable. |
+
+<Callout type="warning" title="Back up CREDENTIALS_KEY">
+
+Generate each with `openssl rand -hex 32`. `.env` holds the only copy of `CREDENTIALS_KEY`: back it up with the database, since a backup without it cannot decrypt stored credentials.
+
+</Callout>
+
+## NATS
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NATS_URL` | empty | Empty runs NATS **embedded** in this process. Set it to use an external NATS cluster. |
+| `NATS_TOKEN` | empty | Token for the embedded server, or for the external cluster. Required in production when embedded NATS listens beyond localhost. |
+| `NATS_LISTEN` | `127.0.0.1:4222` | Where embedded NATS listens, so the realtime gateway can connect. |
+| `NATS_STORE_DIR` | `DATA_DIR/nats` | Embedded NATS storage directory. |
+
+## Storage
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `STORAGE_DRIVER` | `local` | `local` (under `DATA_DIR`) or `s3` (any S3-compatible store). |
+| `S3_BUCKET` | | Bucket name. |
+| `S3_REGION` | `auto` | Region. `auto` suits Cloudflare R2. |
+| `S3_ENDPOINT` | | Custom endpoint for R2, MinIO and others. Empty uses AWS. |
+| `S3_ACCESS_KEY_ID` | | Access key. |
+| `S3_SECRET_ACCESS_KEY` | | Secret key. |
+| `S3_FORCE_PATH_STYLE` | `false` | Use path-style URLs. Usually needed for MinIO. |
+
+See [Storage](/self-hosting/storage/).
+
+## Platform email
+
+Verification, password reset and invitation emails. Replies to customers go through each mailbox, not this.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MAIL_DRIVER` | `log` | `log` (print to the log), `smtp` or `ses`. |
+| `MAIL_FROM` | `opendesk <notifications@localhost>` | From address. |
+| `SMTP_HOST` | | SMTP server. |
+| `SMTP_PORT` | `587` | SMTP port. |
+| `SMTP_USERNAME` | | SMTP username. |
+| `SMTP_PASSWORD` | | SMTP password. |
+| `SMTP_TLS` | `starttls` | `starttls`, `tls` or `none`. |
+| `SES_REGION` | `us-east-1` | Amazon SES region, with `MAIL_DRIVER=ses`. Credentials come from the standard AWS environment. |
+| `EMAIL_LEGAL_ENTITY` | | Company name for a line under every email's footer, where the law asks for one. Unset shows no company line. |
+| `EMAIL_LEGAL_COMPANY_NUMBER` | | Company number in that line. |
+| `EMAIL_LEGAL_PLACE_OF_REGISTRATION` | | Where the company is registered, for example `England and Wales`. |
+| `EMAIL_LEGAL_ADDRESS` | | Registered office address. |
+
+### Notification emails
+
+How often notification emails may go to one person (see [How emails are paced](/guides/notifications/#how-emails-are-paced)). Durations are Go durations: `90s`, `5m`, `1h`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTIFY_EMAIL_PACING` | `relaxed` (`strict` with billing on) | The set of defaults the variables below change. |
+| `NOTIFY_EMAIL_DELAY` | `5m` | Wait after a notification before its email, so reading it in the app first skips the email. |
+| `NOTIFY_EMAIL_COOLDOWNS` | `5m,15m,30m,1h` (`15m,30m,1h`) | Gaps between emails while more keeps coming; the last one repeats. |
+| `NOTIFY_EMAIL_QUIET_RESET` | `2h` | Quiet time after which the gaps start over. |
+| `NOTIFY_EMAIL_URGENT_GAP` | `5m` (`10m`) | Shortest gap an urgent notification can cut a wait down to. |
+| `NOTIFY_EMAIL_URGENT_PER_DAY` | `12` (`6`) | How many times a day urgent ones may cut a wait short. |
+| `NOTIFY_EMAIL_PER_HOUR` | `12` (`4`) | Most emails per person in an hour, digests included. |
+| `NOTIFY_EMAIL_PER_DAY` | `100` (`24`) | Most emails per person in a day. |
+| `NOTIFY_EMAIL_INSTANCE_PER_MINUTE` | `60` (`120`) | Most notification emails the whole server sends in a minute; the rest wait. |
+| `NOTIFY_EMAIL_ACTIVE_WINDOW` | `5m` | Nothing is emailed while someone was active in the workspace this recently. |
+
+## Inbound email
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `INBOUND_DOMAIN` | `in.localhost` | Forwarding addresses are `<token>@INBOUND_DOMAIN`. |
+| `INBOUND_SECRET` | | Shared secret for `POST /v1/inbound/email` (the `OD-Inbound-Secret` header). Empty turns the endpoint off. |
+| `INBOUND_SMTP_ADDR` | empty (off) | Address for the built-in SMTP receiver, such as `:2525` or `:25`. |
+| `INBOUND_AUTHSERV_ID` | empty | Comma-separated authserv-ids of the receiving servers whose `Authentication-Results` are believed, such as `mx.cloudflare.net` for the Cloudflare Email Worker. Only the first such header from the top counts. Gmail and Microsoft 365 mailboxes always trust their own provider. Leave empty with the built-in SMTP receiver: it does not check senders, so their DMARC result is unknown. |
+
+See [Email setup](/self-hosting/email/).
+
+## Sign-in providers and mailbox OAuth
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Google sign-in and Gmail mailbox connections. |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | | Microsoft sign-in and Outlook mailbox connections. |
+| `MICROSOFT_TENANT` | `common` | `common`, `organizations`, `consumers` or your tenant id. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | | GitHub sign-in. |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | | Any OpenID Connect provider for single sign-on. |
+| `OIDC_NAME` | `SSO` | Button label for the OIDC provider. |
+
+See [Google and Microsoft OAuth](/self-hosting/oauth-apps/). A sign-in provider is offered only when it is configured (for OIDC, the issuer and client id).
+
+### Mailbox sign-in
+
+Connecting a mailbox with Google or Microsoft sign-in has its own switch per provider. It is on when that provider's client is configured, and it does not change how people sign in to opendesk.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GOOGLE_MAILBOX_OAUTH` | `true` when `GOOGLE_CLIENT_ID` is set | `false` stops offering Google sign-in for new mailboxes. Mailboxes already connected with it keep syncing and can reconnect. |
+| `MICROSOFT_MAILBOX_OAUTH` | `true` when `MICROSOFT_CLIENT_ID` is set | The same for Microsoft. |
+| `MAILHOST_ISPDB` | `false` (`true` with billing configured) | When detecting a mailbox's servers, also look up unknown domains in Thunderbird's public ISPDB (`autoconfig.thunderbird.net`). The domain's own autoconfig, MX and SRV records are always used. |
+
+With a provider's mailbox sign-in off, or its client not configured, the mailbox wizard offers the other ways in: Gmail and Google Workspace connect with an app password over IMAP and SMTP, any provider can forward its mail into opendesk, and other providers connect over IMAP and SMTP with the settings the wizard detects. A Microsoft mailbox without sign-in uses forwarding, and replies go out through opendesk or the mailbox's SMTP server when the tenant allows SMTP AUTH.
+
+A value that is not `true` or `false` (or `1` and `0`) turns the switch off. The API answers a new connection with `403 mailbox_oauth_disabled`, and the web app reads the same list from its runtime config (`mailboxOAuth`).
+
+## Profile pictures
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LOGO_DEV_TOKEN` | | A [logo.dev](https://logo.dev) publishable token. When set, company logos come from logo.dev instead of the company's website. |
+
+Agent pictures from Google and GitHub, Gravatar and website icons need no configuration. See [Profile pictures and logos](/guides/profile-pictures/).
+
+## Bot protection and analytics
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | | Cloudflare Turnstile on login, registration and password reset. |
+| `POSTHOG_KEY` | | Product analytics. Empty sends nothing. |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog host. |
+
+## AI
+
+AI features are on when a provider is configured. See [AI features](/guides/ai/).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AI_PROVIDER` | detected | `anthropic`, `openai` (any OpenAI-compatible endpoint) or `none`. When empty: `anthropic` if `ANTHROPIC_API_KEY` is set, else `openai` if `OPENAI_API_KEY` is set, else `none`. |
+| `ANTHROPIC_API_KEY` | | Anthropic API key. |
+| `OPENAI_API_KEY` | | Key for OpenAI or a compatible endpoint. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint: Azure, Ollama, vLLM, LM Studio. Point it at a local model to keep everything on your server. |
+| `AI_MODEL` | `claude-sonnet-5-5` with Anthropic | Model for drafting, summaries and answers. Required for `openai`. |
+| `AI_FAST_MODEL` | `claude-haiku-4-5-20251001` with Anthropic, else `AI_MODEL` | Model for triage, classification and short rewrites. |
+| `EMBEDDINGS_DRIVER` | detected | `voyage`, `openai` or `none`. When empty: `voyage` if `VOYAGE_API_KEY` is set, else `openai` with the `openai` provider, else `none` (search falls back to Postgres full-text search). |
+| `VOYAGE_API_KEY` | | Voyage AI key for embeddings. |
+| `EMBEDDINGS_MODEL` | | Embeddings model. |
+| `DECISIONS_PROVIDER` | detected | Engine for typed decisions (triage, the chat answer bot's relevance check, `ai_decide` automation conditions): `typesafe` (Jev by TypeSafe), `llm` (the AI provider's fast model) or `none`. When empty: `typesafe` if `TYPESAFE_API_KEY` is set, else `llm` if an AI provider is configured, else `none`. |
+| `TYPESAFE_API_KEY` | | TypeSafe API key for Jev. Without it, decisions use the LLM path and every feature keeps working. |
+| `TYPESAFE_API_URL` | `https://api.typesafe.ai` | TypeSafe API base URL. For the Vercel AI Gateway use `https://ai-gateway.vercel.sh/typesafe` with `TYPESAFE_MODEL=typesafe-ai/jev`. |
+| `TYPESAFE_MODEL` | `jev-latest` | Jev model or alias. Pin a version such as `jev-1.13.0` to keep answers stable across releases. |
+
+Semantic search needs the Postgres `vector` extension (pgvector). Without it, opendesk uses full-text search.
+
+## Integrations
+
+Connected products for Ollie (MCP servers). Most sign in without any setup; see [Integrations](/guides/integrations/).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MCP_<KEY>_CLIENT_ID` | | An OAuth client registered in advance with a product that does not accept self-registration, for example `MCP_SLACK_CLIENT_ID`. Redirect URL: `<API_URL>/v1/integrations/oauth/callback`. |
+| `MCP_<KEY>_CLIENT_SECRET` | | That client's secret, when the product issued one. |
+
+## Native apps
+
+Settings for the [desktop](/guides/desktop-app/) and [iPhone](/guides/iphone-app/) apps. The desktop app needs none of them. See [Push notifications](/self-hosting/push-notifications/) for choosing a push mode.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PUSH_RELAY_URL` | empty (off) | Send iPhone pushes through this relay when there is no APNs key: an `https` origin, such as `https://api.opendesk.sh`. The relay sees this instance's address, the notification type and the ticket number, never ticket text, names or email addresses. |
+| `APNS_KEY` | empty | APNs auth key: the `.p8` file as PEM text or base64. With a key, the instance sends pushes itself (direct mode). |
+| `APNS_KEY_ID` | | The key's id. Required with `APNS_KEY`. |
+| `APNS_TEAM_ID` | | The Apple developer team that owns the key and signs the app. Required with `APNS_KEY`. |
+| `APNS_TOPIC` | `sh.opendesk.app` | The bundle id of the app that receives pushes. |
+| `APP_ATTEST_APP_IDS` | empty (off) | Comma-separated app ids (`TEAMID.bundle`) whose App Attest proofs are accepted in place of Turnstile on login, registration and password reset. Needed for the iPhone app only when Turnstile is on. |
+| `APP_ATTEST_DEVELOPMENT` | `false` | Also accept App Attest keys from development builds (run from Xcode). Leave off in production. |
+| `PUSH_RELAY_SERVE` | `false` | Cloud only: serve the push relay (`/v1/push/relay/*`) for other instances. Needs an APNs key. |
+
+Push mode follows from these: an APNs key means direct, else `PUSH_RELAY_URL` means relay, else off. `GET /v1/auth/config` reports it under `native.push`.
+
+Every instance answers `GET /v1/push/instance-key` with the public half of a key derived from `AUTH_SECRET`, which the relay uses to check that pushes come from this instance. Changing `AUTH_SECRET` changes it.
+
+## Billing (Cloud only)
+
+Leave these empty on a self-hosted instance. Without `STRIPE_SECRET_KEY`, every workspace is on the `self_hosted` plan with no limits and unlimited AI.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | | Turns billing on. |
+| `STRIPE_WEBHOOK_SECRET` | | Verifies Stripe webhooks. Required with billing. |
+| `STRIPE_PRICE_PRO` | | Monthly per-seat price. Required with billing. |
+| `STRIPE_PRICE_PRO_YEARLY` | | Optional yearly per-seat price. |
+| `STRIPE_PRICE_AI_TOPUP` | | One-time $10 price that sets the rate for AI usage: top-ups of $5 to $5,000 are charged on its product at its rate, dollar for dollar at $10. `STRIPE_PRICE_CREDITS` is still read when this is unset. |
+| `AI_USAGE_MARKUP` | `1.5` | What each AI call is charged, as a multiple of its provider cost (1 to 100). Read only when billing is on. `AI_CREDIT_MARKUP` is still read when this is unset. |
+| `STRIPE_API_URL` | | Development only: a local Stripe fake or stripe-mock. Refused when `OPENDESK_ENV=production`. |
+
+## Realtime gateway
+
+The `realtime` container reads its own variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `4000` | Listen port. |
+| `AUTH_SECRET` | | **The same value** as opendesk. Verifies socket tokens. |
+| `NATS_URL` | | NATS to subscribe to: opendesk's embedded server (`NATS_LISTEN`) or your cluster. |
+| `NATS_TOKEN` | | NATS token. |
+| `CHECK_ORIGINS` | | Comma-separated browser origins allowed to open agent sockets, such as `https://desk.example.com`. The chat widget endpoint (`/socket/widget`) accepts any origin, since it takes only widget tokens. |
+| `SECRET_KEY_BASE` | | Phoenix secret. Generate with `openssl rand -hex 48`. |
+| `CLUSTER_DNS` | empty | A DNS name that resolves to every gateway node, so Presence spans nodes. A single node needs nothing. |
+| `POSTHOG_KEY`, `POSTHOG_HOST` | | Optional connection metrics and errors. |
+
+The gateway's health check is `GET /health`.

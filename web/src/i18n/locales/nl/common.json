@@ -9,6 +9,5 @@
     "back": "Terug",
     "continue": "Doorgaan"
   },
-  "credits_one": "{{count}} credit",
-  "credits_other": "{{count}} credits"
+  "aboutCost": "ongeveer {{cost}}"
 }

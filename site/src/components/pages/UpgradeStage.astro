@@ -1,0 +1,38 @@
+---
+/**
+ * A self-hosted instance upgrading to the newest release with opendesk-ctl,
+ * the steps the docs describe, in a terminal window.
+ */
+import Stage from '../Stage.astro';
+
+interface Props {
+  version: string;
+}
+const { version } = Astro.props;
+
+const lines: [string, string, number][] = [
+  ['·', 'Taking a backup first', 500],
+  ['✓', 'Backup written to backups/20261012T091500Z', 900],
+  ['✓', `Installer for v${version} verified against its SHA-256`, 700],
+  ['✓', 'Reran in place, kept every secret and setting', 500],
+  ['·', 'Pulling the new images', 500],
+  ['✓', 'Restarted, migrations applied at boot', 1300],
+];
+---
+<Stage w={760} h={380} tone="none" mobileW={560} mobileX={0} label={`A terminal upgrading a self-hosted opendesk to v${version} with opendesk-ctl.`}>
+  <div class="absolute inset-0 overflow-hidden rounded-[14px] bg-[#0a0a0a] dark:bg-[#161616] text-left font-mono text-[13.5px] leading-[2] ring-1 ring-white/10" data-seq data-hold="4600">
+    <div class="flex h-10 items-center gap-1.5 border-b border-white/10 px-4">
+      <i class="size-3 rounded-full bg-[#ff5f57]"></i><i class="size-3 rounded-full bg-[#febc2e]"></i><i class="size-3 rounded-full bg-[#28c840]"></i>
+      <span class="ml-3 text-[11.5px] text-white/40">desk.example.com: ~</span>
+    </div>
+    <div class="px-6 py-5">
+      <div class="flex gap-2.5"><span class="text-white/40">$</span><span class="s-fade text-white" data-step="1" data-wait="600" data-stream="70">/opt/opendesk/opendesk-ctl upgrade</span></div>
+      <div class="mt-2 text-white/60">
+        {lines.map(([m, t, wait], i) => (
+          <div class="s-fade" data-step={i + 2} data-wait={wait}><span class={m === '✓' ? 'text-[#22c55e]' : 'text-white/35'}>{m}</span> {t}</div>
+        ))}
+        <div class="s-fade mt-3 text-white" data-step={lines.length + 2} data-wait="500">  opendesk v{version} is up<span class="od-caret !bg-white"></span></div>
+      </div>
+    </div>
+  </div>
+</Stage>

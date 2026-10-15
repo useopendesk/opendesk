@@ -5,12 +5,13 @@
 import type { AIAnswer, AIDraft, AISummary, Contact, KBSource, Message, Priority, RewriteMode, Sentiment, Ticket, Triage } from "@/lib/api/types";
 import { contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
-import { reserve, spend } from "../credits";
+import { reserve, spend } from "../aiBalance";
 import { chunk, HttpError, invalid, notFound, post, sse, type Ctx } from "../router";
-import { addMessage, applyPatch, computeSla, findTicket, newTicket, publishTicketUpdated } from "../tickets";
+import { addMessage, applyPatch, computeSla, ensureTags, findTicket, newTicket, publishTicketUpdated } from "../tickets";
 import { ago, escapeHtml, MIN, nowIso, uuid } from "../util";
 import { applyDecisions, severityFor } from "../decisions";
 import { decisionEngine } from "./ai";
+import { botForTicket } from "../bots";
 
 // ─── Text helpers ───────────────────────────────────────────────────────────
 
@@ -680,16 +681,25 @@ function seedAiTicketData() {
   });
 
   const katrin = contact(ws, "Katrin Vogel", "k.vogel@vogel-architekten.de", "de", "");
-  foreignTicket(ws, {
+  const sync = foreignTicket(ws, {
     contact: katrin,
     subject: "Synchronisierung zwischen iPad und Mac hängt",
     language: "de",
     minutesAgo: 48,
     mine: false,
-    html: "<p>Hallo Fieldnote-Team,</p><p>seit dem letzten Update werden meine Notizen nicht mehr zwischen iPad und Mac synchronisiert. Auf dem iPad steht seit gestern „Synchronisierung angehalten“. Neue Notizen vom Mac erscheinen dort einfach nicht.</p><p>Ich habe die App bereits neu gestartet und das iPad neu gebootet. Können Sie sich das bitte ansehen?</p><p>Viele Grüße<br>Katrin Vogel</p>",
+    html: "<p>Hallo Margin-Team,</p><p>seit dem letzten Update werden meine Notizen nicht mehr zwischen iPad und Mac synchronisiert. Auf dem iPad steht seit gestern „Synchronisierung angehalten“. Neue Notizen vom Mac erscheinen dort einfach nicht.</p><p>Ich habe die App bereits neu gestartet und das iPad neu gebootet. Können Sie sich das bitte ansehen?</p><p>Viele Grüße<br>Katrin Vogel</p>",
     english:
-      "<p>Hello Fieldnote team,</p><p>Since the last update, my notes no longer sync between my iPad and Mac. Since yesterday the iPad has shown \"Sync paused\". New notes from the Mac just don't appear there.</p><p>I've already restarted the app and rebooted the iPad. Could you please take a look?</p><p>Best regards<br>Katrin Vogel</p>",
+      "<p>Hello Margin team,</p><p>Since the last update, my notes no longer sync between my iPad and Mac. Since yesterday the iPad has shown \"Sync paused\". New notes from the Mac just don't appear there.</p><p>I've already restarted the app and rebooted the iPad. Could you please take a look?</p><p>Best regards<br>Katrin Vogel</p>",
   });
+
+  // Ollie triaged it but was not sure enough to apply anything: priority, severity and
+  // labels wait in the Ollie panel for an agent to accept or dismiss.
+  applyDecisions(
+    ws,
+    sync,
+    { priority: "high", severity: "sev3", tags: ["Sync", "Mobile"], team_id: null, sentiment: "negative", category: "problem", language: "de" },
+    { via: "auto_triage", at: new Date(Date.parse(sync.created_at) + 40_000).toISOString(), confidence: { priority: 0.64, severity: 0.58, label: 0.62 } },
+  );
 
   // A stored summary on the SSO story.
   const sso = ws.tickets.find((t) => t.number === 1072);
@@ -712,7 +722,7 @@ function seedAiTicketData() {
 
   // A widget agent answer on a chat ticket, rated up by the visitor.
   const chat = ws.tickets.find((t) => t.channel === "chat" && !t.spam && t.status === "open");
-  const bot = botName(ws);
+  const bot = botName(ws, chat);
   if (chat) {
     const firstIn = ws.messages.find((m) => m.ticket_id === chat.id && m.direction === "inbound");
     const article = ws.articles.find((a) => a.status === "published");
@@ -736,11 +746,13 @@ function seedAiTicketData() {
   }
 
   seedAgentChat(ws, bot);
+  seedDocsBotChat(ws);
   seedWaitingChats(ws, bot);
 }
 
-export function botName(ws: WsData): string {
-  return ws.widget.bot_name || "Ollie";
+/** The name the AI agent answers under on a ticket: its widget's or mailbox's bot (contracts/bots.md). */
+export function botName(ws: WsData, t?: Ticket): string {
+  return botForTicket(ws, t).name;
 }
 
 /**
@@ -794,8 +806,56 @@ function seedAgentChat(ws: WsData, bot: string) {
   t.first_responded_at = null;
   t.status = "open";
   t.sla = computeSla(ws, t, false);
-  t.custom = { ...t.custom, ai_handoff: true, ai_handoff_at: at(start - 3.4), language: "en" };
-  ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: {}, created_at: at(start - 3.4) });
+  const handedBy = botForTicket(ws, t);
+  t.custom = { ...t.custom, ai_handoff: true, ai_handoff_at: at(start - 3.4), ai_handoff_bot: handedBy.name, language: "en" };
+  ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: { bot: handedBy.name, bot_id: handedBy.id }, created_at: at(start - 3.4) });
+  c.ticket_count++;
+}
+
+/**
+ * A chat on the docs widget, answered as its own bot (Pip, contracts/bots.md): a playful
+ * answer with a cited page, then its handoff line when the visitor needs a person.
+ */
+function seedDocsBotChat(ws: WsData) {
+  const w = ws.widgets.find((x) => x.name === "Docs");
+  const pip = w?.bot_id ? ws.bots?.find((b) => b.id === w.bot_id) : undefined;
+  const c = ws.contacts.find((x) => x.name === "Kofi Lindqvist") ?? ws.contacts[1];
+  if (!w || !pip || !c) return;
+  const start = 52;
+  const t = newTicket(ws, {
+    subject: "SAML with Okta on the Team plan",
+    contact: contactRef(c),
+    channel: "chat",
+    priority: "normal",
+    team_id: ws.teams.find((x) => x.name === "Support")?.id ?? null,
+    created_at: ago(start * MIN),
+  });
+  t.number = Math.max(...ws.tickets.map((x) => x.number)) + 1;
+  t.widget_id = w.id;
+  t.brand_id = w.brand_id;
+  t.page_url = "https://docs.margin.app/guides/sso";
+  const at = (min: number) => ago(min * MIN);
+  const first = escapeHtml(c.name.split(" ")[0]);
+  const by = { bot: pip.name, bot_id: pip.id };
+  const thread: Parameters<typeof addMessage>[2][] = [
+    { kind: "reply", direction: "inbound", html: "<p>How do I connect Okta for SAML sign-in?</p>", at: at(start) },
+    {
+      kind: "reply",
+      direction: "outbound",
+      html: `<p>Hey ${first}! 👋 Okta takes about five minutes: add Margin from the Okta app catalog, paste the metadata URL into <strong>Settings, Security, Single sign-on</strong>, then test with one account first ✨</p><p>The full walkthrough is in <a href="https://docs.margin.app/guides/sso">Set up SSO with Okta</a> 🙌</p>`,
+      at: at(start - 0.3),
+      ...by,
+      ai_rating: "up",
+    },
+    { kind: "reply", direction: "inbound", html: "<p>The SSO page says it needs Business. We're on Team, can we get a trial of it?</p>", at: at(start - 4) },
+    { kind: "reply", direction: "outbound", html: `<p>${escapeHtml(pip.personality.handoff_message)}</p>`, at: at(start - 4.3), ...by },
+  ];
+  for (const m of thread) addMessage(ws, t, m, { publish: false });
+  t.first_responded_at = null;
+  t.status = "open";
+  t.sla = computeSla(ws, t, false);
+  t.custom = { ...t.custom, ai_handoff: true, ai_handoff_at: at(start - 4.3), ai_handoff_bot: pip.name, language: "en" };
+  ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: { bot: pip.name, bot_id: pip.id }, created_at: at(start - 4.3) });
   c.ticket_count++;
 }
 
@@ -808,17 +868,21 @@ function seedWaitingChats(ws: WsData, bot: string) {
   const people = ["Hugo Moreau", "Aisha Bello", "Julia Novak"].map((n) => ws.contacts.find((c) => c.name === n));
   const pick = (i: number) => people[i] ?? ws.contacts[(i * 7 + 3) % ws.contacts.length];
   const team = ws.teams.find((x) => x.name === "Support")?.id ?? null;
-  const chats: { subject: string; thread: { who: "visitor" | "bot"; text: string; sec: number }[]; handoffSec?: number }[] = [
+  const chats: { subject: string; labels: string[]; thread: { who: "visitor" | "bot"; text: string; sec: number }[]; handoffSec?: number }[] = [
     {
       subject: "Charged twice for my upgrade",
+      labels: ["Billing", "Refund"],
       thread: [
         { who: "visitor", text: "Hi, I upgraded to Business this morning and my card was charged twice.", sec: 260 },
         { who: "bot", text: "Sorry about that. Refunds need a person on the billing team, so I've asked them to look at your account. They'll reply here.", sec: 250 },
+        { who: "visitor", text: "Ok, the second charge is 49 EUR on the 12th.", sec: 200 },
+        { who: "visitor", text: "Is anyone there?", sec: 60 },
       ],
       handoffSec: 250,
     },
     {
       subject: "Can't get into my workspace",
+      labels: ["SSO"],
       thread: [
         { who: "visitor", text: "My login link keeps expiring before I can click it", sec: 140 },
         { who: "bot", text: "Login links last 15 minutes. If they expire sooner, your email may be opening them first. Try copying the code instead of clicking the link.", sec: 130 },
@@ -828,6 +892,7 @@ function seedWaitingChats(ws: WsData, bot: string) {
     },
     {
       subject: "Do you have an education discount?",
+      labels: ["Question"],
       thread: [{ who: "visitor", text: "Hello! I teach at a university. Do you have an education discount for my class?", sec: 12 }],
     },
   ];
@@ -853,11 +918,13 @@ function seedWaitingChats(ws: WsData, bot: string) {
       );
     }
     t.status = "open";
+    t.tags = ensureTags(ws, c.labels, false);
     t.sla = computeSla(ws, t, false);
     if (c.handoffSec !== undefined) {
       const at = ago(c.handoffSec * 1000);
-      t.custom = { ...t.custom, ai_handoff: true, ai_handoff_at: at, language: "en" };
-      ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: {}, created_at: at });
+      const handedBy = botForTicket(ws, t);
+      t.custom = { ...t.custom, ai_handoff: true, ai_handoff_at: at, ai_handoff_bot: handedBy.name, language: "en" };
+      ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: { bot: handedBy.name, bot_id: handedBy.id }, created_at: at });
     }
     contact.ticket_count++;
   });

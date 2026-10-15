@@ -30,10 +30,10 @@ import { ollie } from "@/components/assistant/store";
 import { PriorityPill, SeverityChip, severityLabel } from "@/components/tickets/bits";
 import { useDisplay } from "@/components/tickets/fields";
 import { useDismissSuggestion, useUpdateTicket } from "@/components/tickets/useTicketActions";
-import { AiTooltip, useCreditLabel } from "../bits";
+import { AiTooltip, useCostLabel } from "../bits";
 import { StreamingHtml } from "../ui/StreamingText";
 import { formatElapsed, useElapsed } from "../ui/Thinking";
-import { creditsSpent, isAbort, reportAiError } from "./errors";
+import { balanceSpent, isAbort, reportAiError } from "./errors";
 import { streamTextToHtml } from "./text";
 
 const OPEN_KEY = "od-ollie-panel";
@@ -167,7 +167,7 @@ function useSummary(ticket: Ticket, run: Run) {
       const res = await run(t("summary.working"), () => api.ai.summary(ticket.id));
       const cur = qc.getQueryData<Ticket>(["tickets", "detail", ticket.id]) ?? ticket;
       patchCachedTicket(qc, { ...cur, custom: { ...cur.custom, ai_summary: { text: res.summary, key_points: res.key_points, sentiment: res.sentiment, updated_at: res.updated_at }, ai_sentiment: res.sentiment } }, me);
-      creditsSpent(qc);
+      balanceSpent(qc);
     } catch (e) {
       reportAiError(e, t("summary.failed"));
     } finally {
@@ -376,7 +376,7 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
     setBusy(true);
     try {
       const r = await run(t("suggest.working"), () => api.ai.triage(ticket.id, false));
-      creditsSpent(qc);
+      balanceSpent(qc);
       setHandled(new Set());
       if (proposes(r, ticket)) setResult(r);
       else say(t("suggest.nothing", { name }));
@@ -395,7 +395,7 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
       if (whole)
         await run(t("ollie.applying"), async () => {
           await api.ai.triage(ticket.id, true);
-          creditsSpent(qc);
+          balanceSpent(qc);
           patchCachedTicket(qc, await api.tickets.get(ticket.id), me);
         });
       const patch: TicketPatch = {};
@@ -549,7 +549,7 @@ function Ask({ t: ticket, run }: { t: Ticket; run: Run }) {
   const qc = useQueryClient();
   const name = useAssistantName();
   const reduce = useReducedMotion();
-  const credits = useCreditLabel()("copilot");
+  const cost = useCostLabel()("copilot");
   const [question, setQuestion] = useState("");
   const [focused, setFocused] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -580,7 +580,7 @@ function Ask({ t: ticket, run }: { t: Ticket; run: Run }) {
       );
       const took = (Date.now() - id) / 1000;
       setTurns((x) => x.map((y) => (y.id === id ? { ...y, answer, took } : y)));
-      creditsSpent(qc);
+      balanceSpent(qc);
     } catch (e) {
       setTurns((x) => (isAbort(e) ? x.filter((y) => y.id !== id) : x.map((y) => (y.id === id ? { ...y, error: true } : y))));
       reportAiError(e, t("ask.failed"));
@@ -639,7 +639,7 @@ function Ask({ t: ticket, run }: { t: Ticket; run: Run }) {
               className="flex"
             >
               <AiTooltip feature="copilot" label={t("ask.send")}>
-                <Button type="submit" size="xs" variant="primary" aria-label={`${t("ask.send")}${credits ? `, ${credits}` : ""}`}>
+                <Button type="submit" size="xs" variant="primary" aria-label={`${t("ask.send")}${cost ? `, ${cost}` : ""}`}>
                   {t("ask.send")}
                 </Button>
               </AiTooltip>
@@ -721,7 +721,7 @@ function Ollie({ t: ticket, aiOn, agent }: { t: Ticket; aiOn: boolean; agent: bo
   const { t } = useTranslation("aiTicket");
   const name = useAssistantName();
   const reduce = useReducedMotion();
-  const credits = useCreditLabel();
+  const cost = useCostLabel();
   const voice = useVoice(ticket.id);
   const summary = useSummary(ticket, voice.run);
   const sugg = useSuggestions(ticket, voice.run, voice.say);
@@ -809,14 +809,14 @@ function Ollie({ t: ticket, aiOn, agent }: { t: Ticket; aiOn: boolean; agent: bo
                     <div className="flex flex-wrap gap-1.5">
                       {canSummarize && (
                         <AiTooltip feature="summarize" label={t("summary.hint", { name })}>
-                          <Button size="xs" variant="secondary" onClick={() => void summary.summarize()} aria-label={[t("summary.generate"), credits("summarize")].filter(Boolean).join(", ")}>
+                          <Button size="xs" variant="secondary" onClick={() => void summary.summarize()} aria-label={[t("summary.generate"), cost("summarize")].filter(Boolean).join(", ")}>
                             {t("summary.generate")}
                           </Button>
                         </AiTooltip>
                       )}
                       {canSuggest && (
                         <AiTooltip feature="triage" label={t("suggest.hint", { name })}>
-                          <Button size="xs" variant="secondary" onClick={() => void sugg.suggest()} aria-label={[t("suggest.run"), credits("triage")].filter(Boolean).join(", ")}>
+                          <Button size="xs" variant="secondary" onClick={() => void sugg.suggest()} aria-label={[t("suggest.run"), cost("triage")].filter(Boolean).join(", ")}>
                             {t("suggest.run")}
                           </Button>
                         </AiTooltip>

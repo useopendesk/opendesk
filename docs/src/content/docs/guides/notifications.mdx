@@ -1,0 +1,217 @@
+---
+title: Notifications
+description: Get told when a ticket is assigned to you, you are mentioned, a customer replies, an SLA is breached or a chat asks for a person, in the app, by email, on your phone and on your desktop.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+opendesk tells you about the things that need you: a ticket assigned to you, a mention in a note, a customer's reply, a missed SLA target. Notifications arrive live, so the bell updates without refreshing. They can also reach you by email, on your phone through the [iPhone app](/guides/iphone-app/) and on your computer through the [desktop app](/guides/desktop-app/). You choose which, per type, in your [notification settings](#choose-what-reaches-you).
+
+<Screenshot src="/guides/notifications/bell" alt="The notifications panel open from the bell: the bell with its unread dot ringed as 1, the All and Unread tabs ringed as 2, Mark all read ringed as 3, an unread marker ringed as 4, and an SLA breached notification ringed as 5" />
+
+<Legend>
+
+1. **The bell**, at the top of the app. A dot means you have unread notifications. Click it to open the list.
+2. **All** and **Unread**: show everything, or only what you have not read yet.
+3. **Mark all read**: clear the unread markers at once.
+4. **Unread**: a dot on each notification you have not opened.
+5. **A notification**: what happened, the ticket's number and subject, and when. Click it to open the ticket and mark it read.
+
+</Legend>
+
+## Read your notifications
+
+<Steps>
+<Step title="Click the bell">
+
+The panel lists your latest notifications, newest first.
+
+</Step>
+<Step title="Open one">
+
+Clicking a notification opens its ticket, or the settings page it is about, and marks it read.
+
+</Step>
+<Step title="Clear the rest">
+
+Switch to **Unread** to see what is left, or click **Mark all read**.
+
+</Step>
+</Steps>
+
+Opening a ticket also marks its notifications read, wherever you opened it from. The settings icon beside **Mark all read** opens your notification settings.
+
+## What you are notified about
+
+| Notification | When |
+| --- | --- |
+| Assigned | A teammate, Ollie or the API assigns a ticket to you. |
+| Mentioned | A teammate mentions you with <kbd>@</kbd> in a note. |
+| Customer replied | A customer replies on a ticket assigned to you. |
+| SLA breached | A ticket assigned to you misses a first response or resolution target. See [SLA policies](/guides/sla-policies/). |
+| Asked for a person | A customer in a chat asked for a person instead of Ollie. It goes to the ticket's assignee, else the leads and members of its team, else everyone in the workspace except viewers. |
+| Joined your team | An admin joined a team you lead, to see its private tickets. See [Teams and roles](/guides/teams-and-roles/#private-teams). |
+
+<Callout type="note" title="Only what you can see">
+
+A mention of someone who cannot see the ticket, because it belongs to a private team they are not on, notifies nobody. When a ticket later moves out of your sight, its older notifications keep only who acted, without the ticket.
+
+</Callout>
+
+<Fold>
+
+## Workspace notices for owners and admins
+
+| Notification | When |
+| --- | --- |
+| AI balance low | The AI balance is running low. Cloud only. |
+| AI balance used up | The AI balance is used up, so Ollie is paused until AI usage is added. Cloud only. |
+| Auto-recharge failed | An auto-recharge payment failed for good, and auto-recharge turned itself off. Cloud only. |
+| AI agent cap reached | The AI agent reached this month's spending cap and left conversations to the team. |
+| AI key failed | The workspace's own AI provider key was rejected or ran out of funds. At most once an hour. |
+
+These link to the settings page they are about. See [Billing](/guides/billing/) and [AI features](/guides/ai/).
+
+</Fold>
+
+## Choose what reaches you
+
+The bell always shows everything. Everything else is up to you: go to **Settings**, **Notifications**, under **Account**.
+
+<Screenshot src="/guides/notifications/settings" alt="The top of the Notifications settings page: the email schedule cards ringed as 1, the address emails go to with Send me a test email ringed as 2, and the Pause button ringed as 3" />
+
+<Legend>
+
+1. **Email schedule**: when notification emails are sent. See [Email schedule](#email-schedule).
+2. **Where emails go**: your sign-in address. **Send me a test email** sends a sample now, so you can check it arrives and is not filtered as spam.
+3. **Pause**: stop email, phone and desktop notifications for a while. See [Pause notifications](#pause-notifications).
+
+</Legend>
+
+### Email schedule
+
+| Schedule | What you get |
+| --- | --- |
+| Right away | One email a few minutes after a notification, unless you have read it in the app by then. Several notifications in those minutes come together in one email. While more keeps coming, the emails space out (see [How emails are paced](#how-emails-are-paced)). This is the default. |
+| Hourly digest | One email at the top of the hour with everything you have not read yet. |
+| Daily digest | One email a day at the hour you choose, in your time zone, with everything you have not read yet. |
+| Off | No notification emails. |
+
+The schedule and the pause are yours, across every workspace you are in. Each workspace sends its own emails.
+
+### How emails are paced
+
+A busy afternoon should not mean an email for every reply. With **Right away**, opendesk waits a few minutes after the first notification, then sends one email. If more arrives, it waits longer before the next one and gathers everything new into it:
+
+| On opendesk Cloud | |
+| --- | --- |
+| First email | About 5 minutes after something happens |
+| While more keeps coming | The next email waits 15 minutes, then 30, then an hour between emails |
+| After a quiet spell | Two quiet hours and the next email goes out after 5 minutes again |
+| Urgent ones | A mention, a missed SLA target, a handoff to a person and the AI and billing alerts can cut the wait short, at most every 10 minutes and 6 times a day |
+| Limits | At most 4 emails an hour and 24 a day, digests included |
+| While you are in the app | Nothing is emailed while you are using opendesk in that workspace; it waits until you have been away for 5 minutes, and what you read meanwhile is left out |
+
+So instead of twelve emails in an hour you get a few, each saying what piled up: "Maya Chen mentioned you #1095 and 4 more".
+
+On a self-hosted server the defaults are looser, and the admin can change every number. See [Notification emails](/self-hosting/configuration/#notification-emails) in the configuration reference.
+
+Notification emails go only to a confirmed address. If yours is not confirmed yet, the page says so and links to **Settings**, **Profile**, where you can send the confirmation link again.
+
+### Per type and channel
+
+<Screenshot src="/guides/notifications/types" alt="The table of notification types with a column per channel: In the app ringed as 1, and the Email, Phone and Desktop app columns ringed as 2" />
+
+<Legend>
+
+1. **In the app**: always on. Every notification lands under the bell.
+2. **Email**, **Phone** and **Desktop app**: a switch per type. Turn a type off on one channel and it still shows everywhere else you left on.
+
+</Legend>
+
+These choices are per workspace: a busy workspace can email you everything while a quiet one only reaches your phone. Types you never changed follow the defaults.
+
+| Notification | Email | Phone | Desktop app |
+| --- | --- | --- | --- |
+| Assigned to you, mentions, customer replies, SLA breaches, handoffs to a person | On | On | On |
+| Team changes | Off | Off | On |
+| AI and billing notices (owners and admins) | On | Off | On |
+
+- **Phone** is the opendesk iPhone app. Each phone can also mute types of its own, in the app's settings, so a work phone and a personal phone can differ.
+- **Desktop app** applies only in the opendesk desktop app, while its window is in the background. When the window is in front, notifications show in the app as usual.
+- With the email schedule **Off**, the email switches are greyed out but keep their place, so choosing a schedule again brings back the same choices.
+
+### Pause notifications
+
+Click **Pause** and choose **For 1 hour**, **Until tomorrow morning** (9:00 in your time zone) or **For 1 week**. While paused:
+
+- No email, phone or desktop notification reaches you, from any workspace.
+- The bell still updates, so you can catch up whenever you like.
+- Nothing is sent later: what arrived during the pause stays in the app.
+
+The page shows when the pause ends. Click **Resume** to end it early, or **Change** to pick another length.
+
+## Notification emails
+
+Notification emails are short: who did what, the ticket's number and subject, and a short excerpt of a mention or a customer's reply. They never include whole messages or attachments. The links open the ticket in the right workspace, even if you were looking at another one.
+
+- **One or several.** A single notification gets its own email. When several are waiting, they come together in one email: a line saying what happened since when ("Since 14:52: 4 assigned, 2 replies"), then **Needs you now** for mentions, missed targets and handoffs, then **Tickets**, then **Workspace**.
+- **Folded together.** Several replies on one ticket are one line ("Dana Lee replied twice"), with the newest excerpt. When someone assigns you three tickets or more at once, that is one line too ("Maya Chen assigned you 4 tickets").
+- **Grouped per ticket.** Emails about the same ticket thread together in your mail app.
+- **Only what you have not read.** Right before an email goes out, each notification is checked again. One you have read in the app, or whose ticket you have opened, is left out. So is anything from while you were paused or after you turned that email off.
+- **Only what you can still see.** A notification about a ticket that was deleted, or that moved to a private team you are not on, is left out. Leaving a workspace stops its emails.
+
+### Unsubscribe from an email
+
+Every notification email has an **Unsubscribe** link at the bottom.
+
+<Steps>
+<Step title="Click Unsubscribe in the email">
+
+A page opens and asks first. Nothing changes until you confirm, so a mail filter that opens links on its own does not unsubscribe you.
+
+<Screenshot src="/guides/notifications/unsubscribe" alt="The Stop notification emails page with the Unsubscribe button ringed as 1" />
+
+</Step>
+<Step title="Confirm">
+
+Click **Unsubscribe**. Every notification email from that workspace stops. Your notifications still show in the app, and on your phone and desktop if you have those on.
+
+</Step>
+<Step title="Change your mind any time">
+
+Open **Settings**, **Notifications** and click **Turn email back on**. The email choices you had before unsubscribing come back as they were. Turning any single email switch on also ends the unsubscribe.
+
+</Step>
+</Steps>
+
+Mail apps that show their own unsubscribe button, like Gmail and Apple Mail, do the same in one click.
+
+### Why am I not getting emails?
+
+When something stops your notifications, the top of **Settings**, **Notifications** says what it is, with a button to undo it:
+
+- **Notification emails from this workspace are off**: you used an unsubscribe link. **Turn email back on** restores your earlier choices.
+- **Notifications are paused**: **Resume now** ends the pause.
+- **Notification emails are off**: your email schedule is **Off**. **Turn email back on** switches it to **Right away**.
+
+The same reason shows as a line at the top of the bell's list, linking to the settings page.
+
+In the desktop app, the page also tells you when your computer blocks opendesk's notifications, or offers **Allow notifications** if it has not asked yet.
+
+## On your computer and phone
+
+- The [desktop app](/guides/desktop-app/) shows system notifications when its window is not in front, for the types with **Desktop app** on, and an unread badge on the dock or taskbar.
+- The [iPhone app](/guides/iphone-app/) receives push notifications for the types with **Phone** on, with an unread badge on its icon. On a self-hosted server, push depends on its [setup](/self-hosting/push-notifications/).
+
+Reading a notification in the app clears it on your phones too, and their badges update.
+
+## Related
+
+- [Inbox and tickets](/guides/inbox-and-tickets/)
+- [Notifications API](/api/resources/workspace/#notifications)

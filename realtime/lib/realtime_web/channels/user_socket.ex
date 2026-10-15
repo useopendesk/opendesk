@@ -13,6 +13,7 @@ defmodule RealtimeWeb.UserSocket do
   use Phoenix.Socket, log: false
 
   channel "workspace:*", RealtimeWeb.WorkspaceChannel
+  channel "team:*", RealtimeWeb.TeamChannel
   channel "user:*", RealtimeWeb.UserChannel
   channel "ticket:*", RealtimeWeb.TicketChannel
 

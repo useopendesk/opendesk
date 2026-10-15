@@ -1,0 +1,155 @@
+---
+title: Brands and widgets
+description: Support several products from one workspace. Each brand has its own addresses, chat widgets and help center, and each website gets its own widget with its own key, topics and team.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+A **brand** is what customers see: a name, colour, logo and language, the email addresses that belong to it, its chat widgets and its help center. Most workspaces have one brand. Add another when you support a second product or company from the same team, and each one keeps its own face toward customers while your team works one inbox.
+
+<Screenshot src="/guides/brands/overview" alt="The Brands page: New brand ringed as 1, the Margin brand with its Default pill and /help/margin path ringed as 2, its address count and help center status ringed as 3, and Brands and widgets in the settings menu ringed as 4" />
+
+<Legend>
+
+1. **New brand**: add a brand. Admins manage brands.
+2. **A brand**: its name and logo, **Default** on the default brand, and the path of its help center.
+3. **What it has**: its addresses, chat widgets, and whether its help center is published.
+4. **Brands and widgets**: where brands live in settings. Each brand is listed under it for quick access.
+
+</Legend>
+
+## The default brand
+
+Every workspace has exactly one default brand, made with the workspace. New addresses and tickets without a brand belong to it, and its help center path starts as the workspace's own, so existing help center links keep working. The default brand can't be deleted.
+
+Brand pickers and chips appear across opendesk once there is a second brand, on tickets, mailboxes and routing rules among others. With one brand they stay out of the way.
+
+## Add a brand
+
+<Steps>
+<Step title="Click New brand">
+
+Open **Settings**, then **Brands and widgets**, and click **New brand**.
+
+</Step>
+<Step title="Name it and choose its help center path">
+
+Give the brand a name (up to 60 characters). The **Help center path** is where its help center lives: `/help/<path>` on your opendesk address. It takes 3 to 40 lowercase letters, numbers and dashes, and must be unique. Pick a **Colour**: its widgets, help center and emails use it unless they set their own.
+
+<Screenshot src="/guides/brands/new-brand" alt="The New brand dialog: the Name field ringed as 1, the Help center path ringed as 2, and the colour choices ringed as 3" />
+
+</Step>
+<Step title="Set it up from its tabs">
+
+Every brand has four tabs: **Overview** for its logo, colour and language, **Addresses**, **Chat widgets** and **Help center**.
+
+<Screenshot src="/guides/brands/tabs" alt="The Pressroom brand page with its Overview, Addresses, Chat widgets and Help center tabs ringed" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+A workspace can have up to 50 brands, each with up to 50 chat widgets. Brands and widgets are the same on every plan.
+
+</Callout>
+
+## Addresses of a brand
+
+A brand's addresses are the mailboxes that belong to it. Email to them opens tickets under the brand, and replies to its tickets go out from them. Each address can still send its email to a team.
+
+<Screenshot src="/guides/brands/addresses" alt="The Addresses tab of Margin: Add an address ringed as 1, the Default reply address label ringed as 2, and the team chips on the support and security addresses ringed as 3" />
+
+<Legend>
+
+1. **Add an address**: connect a new mailbox for this brand. See [Connect a mailbox](/guides/mailboxes/).
+2. **Default reply address**: the brand's oldest active address. Chats and API tickets reply from it when the brand has no address for the ticket's team.
+3. **Team**: where each address sends its email. See [Teams and roles](/guides/teams-and-roles/).
+
+</Legend>
+
+To move an existing address to another brand, open it in **Settings**, **Mailboxes**, and change its **Brand**. A chat or API ticket replies from the brand's address for the ticket's team when there is one, else from the default reply address.
+
+## Help center
+
+Each brand has its own help center at `/help/<path>`, with the brand's articles and the ones shared by every brand. On the **Help center** tab, turn on **Published** to make it public, set its title, and give it its own logo and favicon.
+
+<Screenshot src="/guides/brands/help-center" alt="The Help center tab of Margin: the Published switch ringed as 1, the public link https://app.opendesk.sh/help/margin ringed as 2, and the path after /help/ ringed as 3" />
+
+Changing the path moves the help center: links to the old path stop working. Write articles in the [knowledge base](/guides/knowledge-base/).
+
+## Chat widgets
+
+Each website gets its own widget, with its own look, team, topics and key. A visitor's conversation list holds the chats of that widget's brand only, so the brands stay apart even for the same visitor.
+
+<Screenshot src="/guides/brands/widgets" alt="The Chat widgets tab of Margin: the tab ringed as 1, Add a widget ringed as 2, and the Marketing site widget ringed as 3, with its site, topic count, team and Live pill" />
+
+<Steps>
+<Step title="Add a widget for each website">
+
+On the brand's **Chat widgets** tab, click **Add a widget**. Name it after the site, like Marketing site, and choose the **Team** its new conversations go to.
+
+<Screenshot src="/guides/brands/new-widget" alt="The Add a widget dialog: the Name field ringed as 1, and the Team picker ringed as 2" />
+
+</Step>
+<Step title="Copy its secret, if it is shown">
+
+When you create a widget after recently confirming your sign-in (with two-factor authentication when you have it), opendesk shows the widget's secret once. It signs your signed-in users for [identity verification](/guides/live-chat/identity-verification/). Copy it into your server's secrets.
+
+<Screenshot src="/guides/brands/widget-secret" alt="The dialog shown after creating a widget, with its secret ringed and the note that it is shown once" />
+
+If it is not shown, nothing is lost: the widget works, and you can **Rotate secret** on its page to get one when you need it.
+
+</Step>
+<Step title="Set it up and install it">
+
+Click the widget to open its page. Every change shows in the live preview as you make it. The **Install** section has the snippet for your site. See [Live chat widget](/guides/live-chat/).
+
+<Screenshot src="/guides/brands/widget-overview" alt="The Marketing site widget page: its name and team ringed as 1, the live preview ringed as 2, and the Live pill ringed as 3" />
+
+</Step>
+</Steps>
+
+### Topics
+
+Topics let visitors say what they need before the first message, and each pick sends the conversation to its team. A widget can have up to 8 topics, each 2 to 40 characters. A topic without a team uses the widget's team. When a widget has topics, it asks "What can we help with?" before the visitor writes.
+
+<Screenshot src="/guides/brands/widget-topics" alt="The Topics section of the Marketing site widget: the topic labels ringed as 1, the team each topic goes to ringed as 2, and Add a topic ringed as 3" />
+
+### When you're closed
+
+The **Offline message** (up to 300 characters) is shown while the conversation's team is closed, by its own hours, or else while the workspace is closed. Leave it empty for a translated default. See [business hours](/guides/teams-and-roles/#business-hours).
+
+**Reply by email when they leave** is on by default: when a visitor who left an email address is no longer on your site, your replies reach them by email, from the brand's address for the team. Their email answer comes back into the same chat.
+
+<Screenshot src="/guides/brands/widget-offline" alt="The When you're closed section of the widget: the offline message ringed as 1, and the Reply by email when they leave switch ringed as 2" />
+
+<Fold>
+
+## Make another brand the default
+
+Open the brand's **Overview** tab and click **Make default**. New addresses, and tickets without a brand, then belong to it.
+
+<Screenshot src="/guides/brands/default" alt="The Default brand section of Pressroom: Make default ringed as 1, and Delete brand ringed as 2, unavailable while the brand has an address" />
+
+</Fold>
+
+<Fold>
+
+## Delete a brand
+
+A brand can be deleted once it has no addresses: move them to another brand, or remove them, first. Deleting it deletes its chat widgets, which stop loading on your sites, and its help center collections and articles. Its tickets move to the default brand. The default brand can't be deleted.
+
+</Fold>
+
+## Related
+
+- [Live chat widget](/guides/live-chat/)
+- [Routing](/guides/routing/)
+- [Teams and roles](/guides/teams-and-roles/)
+- [Knowledge base and help center](/guides/knowledge-base/)

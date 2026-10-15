@@ -10,17 +10,32 @@ defmodule Realtime.Fanout do
   Fan-out of an envelope on `od.events.<wid>`:
 
     * `workspace:<wid>` always (agents see both visibilities);
-    * every `user:<uid>` listed in `topics`;
+    * every `team:<wid>:<tid>` listed in `topics`, for the envelope's own
+      workspace: the event is about a private team's ticket
+      (`contracts/teams.md`, "Visibility");
+    * every `user:<uid>` listed in `topics` (the user's own notifications and
+      assignments, which go only to users who can see the ticket);
     * every `contact:<wid>:<cid>` listed in `topics`, only when visibility is
-      `public`, and only for the envelope's own workspace.
+      `public`, and only for the envelope's own workspace. A listed
+      `contact:<wid>:<cid>:<bid>` names the chat's brand: the payload pushed to
+      `contact:<wid>:<cid>` then carries `brand_id`, and
+      `RealtimeWeb.ContactChannel` pushes it only to sockets of that brand.
 
-  The pushed payload is the envelope minus `topics`. Repeats of an envelope
-  (the relay delivers at least once) are dropped by `Realtime.Fanout.Dedupe`.
+  The pushed payload is the envelope minus `topics`. When `topics` names any
+  `team:` topic, `workspace:<wid>` gets only the stand-in
+  `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {},
+  occurred_at}`, which keeps `seq` contiguous for every agent without
+  revealing the event; a malformed `team:` topic still hides the event from the
+  workspace. Repeats of an envelope (the relay delivers at least once) are
+  dropped by `Realtime.Fanout.Dedupe`.
 
   Live previews on `od.live.<wid>` (`contracts/realtime.md`, "Live events") are
   pushed as `"live"` `{type, data}` to `contact:<wid>:<contact_id>` and
-  `ticket:<wid>:<ticket_id>`. They carry no `seq` and are never deduplicated
-  or replayed.
+  `ticket:<wid>:<ticket_id>`. A preview of a private team's ticket names the
+  team (`team_id`); the ticket topic's copy keeps it so
+  `RealtimeWeb.TicketChannel` pushes it only to sockets with that team. Its
+  `brand_id` stays on the contact topic's copy for `RealtimeWeb.ContactChannel`. They
+  carry no `seq` and are never deduplicated or replayed.
   """
 
   require Logger
@@ -60,12 +75,11 @@ defmodule Realtime.Fanout do
   def handle(@events_prefix <> wid, body, broadcast) do
     with true <- Ids.uuid?(wid),
          {:ok, envelope} <- decode(body),
-         {:ok, topics} <- topics(Ids.normalize(wid), envelope),
+         {:ok, routes} <- routes(Ids.normalize(wid), envelope),
          :ok <- Dedupe.check(Ids.normalize(wid), envelope["seq"]) do
-      payload = Map.delete(envelope, "topics")
-      Enum.each(topics, &broadcast.(&1, "event", payload))
+      Enum.each(routes, fn {topic, payload} -> broadcast.(topic, "event", payload) end)
       Metrics.incr(:events)
-      {:ok, topics}
+      {:ok, Enum.map(routes, &elem(&1, 0))}
     else
       :duplicate ->
         Metrics.incr(:duplicates)
@@ -82,10 +96,10 @@ defmodule Realtime.Fanout do
   def handle(@live_prefix <> wid, body, broadcast) do
     with true <- Ids.uuid?(wid),
          {:ok, event} <- decode(body),
-         {:ok, topics, payload} <- live(Ids.normalize(wid), event) do
-      Enum.each(topics, &broadcast.(&1, "live", payload))
+         {:ok, routes} <- live(Ids.normalize(wid), event) do
+      Enum.each(routes, fn {topic, payload} -> broadcast.(topic, "live", payload) end)
       Metrics.incr(:live)
-      {:ok, topics}
+      {:ok, Enum.map(routes, &elem(&1, 0))}
     else
       {:error, reason} -> reject(reason)
       _ -> reject(:invalid_subject)
@@ -94,8 +108,11 @@ defmodule Realtime.Fanout do
 
   def handle(_subject, _body, _broadcast), do: reject(:unknown_subject)
 
-  @doc "The topics and payload of a live preview from workspace `wid`."
-  @spec live(String.t(), map()) :: {:ok, [String.t()], map()} | {:error, atom()}
+  @doc """
+  The `{topic, payload}` pairs of a live preview from workspace `wid`. The
+  ticket topic's payload carries the preview's `team_id` when it has one.
+  """
+  @spec live(String.t(), map()) :: {:ok, [{String.t(), map()}]} | {:error, atom()}
   def live(
         wid,
         %{
@@ -104,14 +121,23 @@ defmodule Realtime.Fanout do
           "contact_id" => cid,
           "type" => type,
           "data" => data
-        }
+        } = event
       )
       when is_binary(event_wid) and is_binary(tid) and is_binary(cid) and type in @live_types and
              is_map(data) do
     with :ok <- same_workspace(event_wid, wid),
-         :ok <- live_ids(tid, cid) do
-      topics = ["ticket:#{wid}:#{Ids.normalize(tid)}", "contact:#{wid}:#{Ids.normalize(cid)}"]
-      {:ok, topics, %{"type" => type, "data" => data}}
+         :ok <- live_ids(tid, cid),
+         {:ok, team} <- live_team(Map.get(event, "team_id")),
+         {:ok, brand} <- live_team(Map.get(event, "brand_id")) do
+      payload = %{"type" => type, "data" => data}
+      ticket_payload = if team, do: Map.put(payload, "team_id", team), else: payload
+      contact_payload = if brand, do: Map.put(payload, "brand_id", brand), else: payload
+
+      {:ok,
+       [
+         {"ticket:#{wid}:#{Ids.normalize(tid)}", ticket_payload},
+         {"contact:#{wid}:#{Ids.normalize(cid)}", contact_payload}
+       ]}
     end
   end
 
@@ -123,13 +149,29 @@ defmodule Realtime.Fanout do
       else: {:error, :workspace_mismatch}
   end
 
+  defp live_team(nil), do: {:ok, nil}
+
+  defp live_team(team) do
+    if Ids.uuid?(team), do: {:ok, Ids.normalize(team)}, else: {:error, :invalid_live}
+  end
+
   defp live_ids(tid, cid) do
     if Ids.uuid?(tid) and Ids.uuid?(cid), do: :ok, else: {:error, :invalid_live}
   end
 
   @doc "The channel topics an envelope from workspace `wid` fans out to."
   @spec topics(String.t(), map()) :: {:ok, [String.t()]} | {:error, atom()}
-  def topics(wid, %{"workspace_id" => envelope_wid, "visibility" => visibility} = envelope)
+  def topics(wid, envelope) do
+    with {:ok, routes} <- routes(wid, envelope), do: {:ok, Enum.map(routes, &elem(&1, 0))}
+  end
+
+  @doc """
+  The `{topic, payload}` pairs an envelope from workspace `wid` fans out to:
+  the full envelope minus `topics` everywhere, except `workspace:<wid>`, which
+  gets the `event.hidden` stand-in when the envelope names a `team:` topic.
+  """
+  @spec routes(String.t(), map()) :: {:ok, [{String.t(), map()}]} | {:error, atom()}
+  def routes(wid, %{"workspace_id" => envelope_wid, "visibility" => visibility} = envelope)
       when is_binary(envelope_wid) and visibility in ["agents", "public"] do
     listed = Map.get(envelope, "topics", [])
 
@@ -141,21 +183,54 @@ defmodule Realtime.Fanout do
         {:error, :invalid_envelope}
 
       true ->
-        extra = listed |> Enum.flat_map(&route(&1, wid, visibility))
-        {:ok, Enum.uniq(["workspace:" <> wid | extra])}
+        payload = Map.delete(envelope, "topics")
+        workspace = if team_scoped?(listed), do: hidden(envelope), else: payload
+
+        extra =
+          listed
+          |> Enum.flat_map(&route(&1, wid, visibility))
+          |> Enum.uniq()
+          |> Enum.map(fn {topic, fields} -> {topic, Map.merge(payload, fields)} end)
+
+        {:ok, [{"workspace:" <> wid, workspace} | extra]}
     end
   end
 
-  def topics(_wid, _envelope), do: {:error, :invalid_envelope}
+  def routes(_wid, _envelope), do: {:error, :invalid_envelope}
+
+  @doc "The stand-in `workspace:<wid>` receives for an event of a private team."
+  @spec hidden(map()) :: map()
+  def hidden(envelope) do
+    envelope
+    |> Map.take(["id", "seq", "workspace_id", "occurred_at"])
+    |> Map.merge(%{"type" => "event.hidden", "visibility" => "agents", "data" => %{}})
+  end
+
+  defp team_scoped?(listed), do: Enum.any?(listed, &match?("team:" <> _, &1))
+
+  defp route("team:" <> rest, wid, _visibility) do
+    case String.split(rest, ":") do
+      [^wid, tid] -> if Ids.uuid?(tid), do: [{"team:#{wid}:#{Ids.normalize(tid)}", %{}}], else: []
+      _ -> []
+    end
+  end
 
   defp route("user:" <> uid, _wid, _visibility) do
-    if Ids.uuid?(uid), do: ["user:" <> Ids.normalize(uid)], else: []
+    if Ids.uuid?(uid), do: [{"user:" <> Ids.normalize(uid), %{}}], else: []
   end
 
   defp route("contact:" <> rest, wid, "public") do
     case String.split(rest, ":") do
-      [^wid, cid] -> if Ids.uuid?(cid), do: ["contact:#{wid}:#{Ids.normalize(cid)}"], else: []
-      _ -> []
+      [^wid, cid] ->
+        if Ids.uuid?(cid), do: [{"contact:#{wid}:#{Ids.normalize(cid)}", %{}}], else: []
+
+      [^wid, cid, bid] ->
+        if Ids.uuid?(cid) and Ids.uuid?(bid),
+          do: [{"contact:#{wid}:#{Ids.normalize(cid)}", %{"brand_id" => Ids.normalize(bid)}}],
+          else: []
+
+      _ ->
+        []
     end
   end
 

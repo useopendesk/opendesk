@@ -1,54 +1,121 @@
 ---
 title: Live chat widget
-description: Embed the opendesk chat widget on your site and talk to customers in real time.
+description: Add a chat widget to each of your websites and talk to customers in real time. Each widget has its own key, look, topics and team.
 ---
 
-import { Steps, Aside } from '@astrojs/starlight/components';
+import Screenshot from '../../../../components/Screenshot.astro';
+import Steps from '../../../../components/Steps.astro';
+import Step from '../../../../components/Step.astro';
+import Callout from '../../../../components/Callout.astro';
+import Legend from '../../../../components/Legend.astro';
+import Fold from '../../../../components/Fold.astro';
 
 The chat widget is a small script you add to your website. Visitors start a conversation, and it arrives in your inbox as a ticket on the `chat` channel. Replies are delivered live, with typing indicators on both sides.
 
-## Embed
+Widgets belong to a [brand](/guides/brands-and-widgets/). Add one widget for each website: each has its own key, look, team and topics, so a chat from your docs site and one from your marketing site can go to different teams.
+
+<Screenshot src="/guides/brands/widget-overview" alt="The Marketing site widget page: its name and team ringed as 1, the live preview ringed as 2, and the Live pill ringed as 3" />
+
+<Legend>
+
+1. **Widget**: its name, usually the website, and the **Team** its new conversations go to.
+2. **Preview**: the real widget with your unsaved changes. Switch between the launcher, the home screen and a chat, and try it.
+3. **Live**: the widget is on your site and shown, or **Hidden** when **Show the widget** is off. It reads **Not installed** until the first visitor loads it.
+
+</Legend>
+
+## Add the widget to your site
 
 <Steps>
+<Step title="Open the brand's widgets">
 
-1. Open **Settings → Chat widget** and turn the widget on.
-2. Copy the embed snippet. It loads the widget script from `https://app.opendesk.sh/widget/v1.js` (or `https://<your-domain>/widget/v1.js` when self-hosted) with your workspace's **widget key**.
-3. Paste the snippet before the closing `</body>` tag on every page where the widget should appear.
-4. Under **Allowed origins**, list the sites that may load the widget, such as `https://www.example.com`.
+Open **Settings**, then **Brands and widgets**, and click the brand. On its **Chat widgets** tab, click the widget, or **Add a widget** for a new website. See [Chat widgets](/guides/brands-and-widgets/#chat-widgets).
 
+<Screenshot src="/guides/chat/open-widget" alt="The app with Settings in the sidebar ringed as 1, Brands and widgets in the settings menu ringed as 2, and the Margin brand ringed as 3" />
+
+</Step>
+<Step title="Copy the install snippet">
+
+Under **Install**, copy the snippet. It loads the widget script from `https://app.opendesk.sh/widget/v1.js`, or from your own domain when self-hosted, with this widget's **key**.
+
+<Screenshot src="/guides/chat/install" alt="The Install section: the script snippet ringed as 1, and the widget key wk_margin_c6ab0ff6 ringed as 2" />
+
+</Step>
+<Step title="Paste it on every page">
+
+Paste the snippet before the closing `</body>` tag on every page of the site where the widget should appear.
+
+</Step>
+<Step title="Limit where it loads">
+
+Under **Behaviour**, list the sites that may load this widget in **Allowed sites**, such as `https://www.example.com`. Left empty, it loads on any site.
+
+<Screenshot src="/guides/chat/behaviour" alt="The Behaviour section: Show the widget ringed as 1, Ask for an email first ringed as 2, and Allowed sites with https://margin.app and https://www.margin.app ringed as 3" />
+
+**Show the widget** turns the launcher off everywhere without removing the script. **Ask for an email first** has visitors leave an address before they chat, so you can follow up by email.
+
+</Step>
 </Steps>
 
-The widget key is public and safe to put in your page. It only identifies your workspace.
+<Callout type="note">
 
-<Aside type="note">
-Set allowed origins before going live. The widget's live connection uses its own gateway endpoint, which accepts only widget tokens scoped to one visitor.
-</Aside>
+The widget key is public and safe to put in your page: it only says which widget to load. Set **Allowed sites** before going live. The widget's live connection accepts only tokens scoped to one visitor of that widget's brand.
 
-## Settings
+</Callout>
 
-| Setting | Effect |
-| --- | --- |
-| Enabled | Turns the widget on or off for your site. |
-| Greeting | The first message a visitor sees. |
-| Require email | Asks for an email address before a visitor can start a chat, so you can follow up by email. |
-| Allowed origins | Sites allowed to embed the widget. |
-| Brand color | Set in workspace settings; used for the launcher and visitor messages. |
+## Send chats to the right team
 
-If your [help center](/guides/knowledge-base/) is enabled, the widget links to it so visitors can find answers on their own.
+A new chat goes to the team of the topic the visitor picked, else to the widget's team. [Routing rules](/guides/routing/) can still move it, for example by the page the visitor started on.
+
+Add **Topics** to let visitors say what they need: the widget then asks "What can we help with?" before the first message, and each topic sends the conversation to its team. A widget can have up to 8 topics.
+
+<Screenshot src="/guides/brands/widget-topics" alt="The Topics section: the topic labels ringed as 1, the team each topic goes to ringed as 2, and Add a topic ringed as 3" />
+
+Once a conversation has a team, the widget's header shows the team's name.
+
+## When you're closed
+
+Outside business hours, the widget shows your **Offline message**: by the hours of the team the chat goes to, else the workspace's. Visitors can still write, and your team answers when it is back.
+
+With **Reply by email when they leave**, on by default, a visitor who left an email address and is no longer on your site gets your replies by email, from the brand's address for the team. Their answer by email comes back into the same chat.
+
+<Screenshot src="/guides/brands/widget-offline" alt="The When you're closed section: the offline message ringed as 1, and the Reply by email when they leave switch ringed as 2" />
+
+## Identify signed-in users
+
+If your visitors are signed in to your product, pass their user id, email and name to the widget so conversations attach to the right contact and follow them across devices. To stop anyone posing as another user, sign the user id with this widget's secret. See [Identity verification](/guides/live-chat/identity-verification/).
+
+<Screenshot src="/guides/chat/identify" alt="The Identify signed-in users section: the identify snippet ringed as 1, and the Widget secret with Rotate secret ringed as 2" />
+
+<Fold>
+
+## Look and home screen
+
+- **Appearance**: the accent colour (the brand's colour unless you pick one), light, dark or automatic theme, which corner the launcher sits in and how far from the edge, the corners, and the launcher's icon or label.
+- **Header**: the title (the brand name when empty), the subtitle, an avatar, and **Show team faces**: up to three teammates of the widget's team, first names only, available people first. A private team's members are never shown.
+- **Home screen**: the greeting and up to four suggested questions. A tap starts a conversation with that question.
+- **Sound for new replies**: a soft chime while the visitor's tab is in the background.
+
+</Fold>
+
+<Fold>
 
 ## How a conversation works
 
-1. When the widget opens, it creates a **visitor session** and receives a visitor token, stored in the browser so returning visitors see their history.
+1. When the widget opens, it creates a **visitor session** and receives a visitor token, stored in the browser so returning visitors see their history. A visitor's conversation list holds the chats of that brand only.
 2. The visitor's first message creates a ticket and a [contact](/guides/inbox-and-tickets/#contacts-and-companies).
 3. Agent replies appear in the widget in real time. Internal notes are never sent to the widget.
 4. Agents see when the visitor is typing, and the visitor sees when an agent is typing.
 5. Visitors can attach files.
 
-## Identify logged-in users
+If the brand's [help center](/guides/knowledge-base/) is published, the widget links to it so visitors can find answers on their own. Deleting a widget ends its visitor sessions; past conversations stay in the inbox.
 
-If your visitors are signed in to your product, pass their user id, email and name to the widget so conversations attach to the right contact. To stop anyone impersonating another user, sign the user id with your widget secret. See [Identity verification](/guides/live-chat/identity-verification/).
+</Fold>
 
 ## Related
 
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Identity verification](/guides/live-chat/identity-verification/)
+- [Routing](/guides/routing/)
 - [Widget API](/api/resources/widget/)
 - [Realtime](/api/realtime/)

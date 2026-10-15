@@ -1,5 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __resetClientForTests, ApiError, configureClient, http, onPlanLimit, onSession, parseFrame, setAccessToken, setTransport, setWorkspaceId, stream } from "./client";
+import {
+  __resetClientForTests,
+  ApiError,
+  configureClient,
+  http,
+  onAccountSession,
+  onPlanLimit,
+  onSession,
+  parseFrame,
+  refreshSession,
+  setAccessToken,
+  setActiveAccount,
+  setTransport,
+  setWorkspaceId,
+  stream,
+} from "./client";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -101,6 +116,60 @@ describe("api client", () => {
   });
 });
 
+describe("several accounts", () => {
+  const bearer = (init: RequestInit) => (init.headers as Record<string, string>).Authorization;
+
+  it("keeps each account's access token and refreshes only the one named", async () => {
+    const refreshBodies: (string | undefined)[] = [];
+    const sent: string[] = [];
+    setTransport(async (url, init) => {
+      if (url.endsWith("/v1/auth/refresh")) {
+        refreshBodies.push(init.body as string | undefined);
+        return json(200, { access_token: "tok_u2", expires_in: 900, user: { id: "u2" } });
+      }
+      sent.push(bearer(init));
+      return json(200, {});
+    });
+    setActiveAccount("u1");
+    setAccessToken("tok_u1");
+    const active: (string | null)[] = [];
+    onSession((r) => active.push(r?.access_token ?? null));
+    await refreshSession("u2");
+    expect(refreshBodies).toEqual([JSON.stringify({ user_id: "u2" })]);
+    expect(active).toEqual([]);
+    await http.get("/v1/me");
+    await http.get("/v1/me", { as: "u2" });
+    setActiveAccount("u2");
+    await http.get("/v1/me");
+    setActiveAccount("u1");
+    await http.get("/v1/me");
+    expect(sent).toEqual(["Bearer tok_u1", "Bearer tok_u2", "Bearer tok_u2", "Bearer tok_u1"]);
+  });
+
+  it("does not send the active workspace with another account's request", async () => {
+    const calls: RequestInit[] = [];
+    setTransport(async (_u, init) => (calls.push(init), json(200, {})));
+    setActiveAccount("u1");
+    setAccessToken("tok_u1");
+    setWorkspaceId("w1");
+    await http.get("/v1/me", { as: "u2" });
+    expect((calls[0].headers as Record<string, string>)["OD-Workspace"]).toBeUndefined();
+  });
+
+  it("reports an account whose refresh failed without ending the active one", async () => {
+    setTransport(async () => json(401, { code: "unauthenticated" }));
+    setActiveAccount("u1");
+    setAccessToken("tok_u1");
+    const ended: (string | null)[] = [];
+    const active = vi.fn();
+    onAccountSession((uid, r) => !r && ended.push(uid));
+    onSession(active);
+    await refreshSession("u2");
+    expect(ended).toEqual(["u2"]);
+    expect(active).not.toHaveBeenCalled();
+  });
+});
+
 describe("stream", () => {
   function sseResponse(frames: string[]) {
     const enc = new TextEncoder();
@@ -137,12 +206,12 @@ describe("stream", () => {
   });
 
   it("announces 402 plan errors", async () => {
-    setTransport(async () => json(402, { code: "no_credits", detail: "Out of credits" }));
+    setTransport(async () => json(402, { code: "ai_balance_empty", detail: "Your workspace's AI balance is too low for this. Add AI usage or upgrade." }));
     const heard: string[] = [];
     onPlanLimit((e) => heard.push(e.code));
     await expect(stream("/v1/ai/rewrite", {})).rejects.toBeInstanceOf(ApiError);
     await http.post("/v1/mailboxes").catch(() => {});
-    expect(heard).toEqual(["no_credits", "no_credits"]);
+    expect(heard).toEqual(["ai_balance_empty", "ai_balance_empty"]);
   });
 });
 

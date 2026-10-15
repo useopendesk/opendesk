@@ -393,6 +393,9 @@ func Collect(ctx context.Context, d *deps.Deps) error {
 			WHEN 'user' THEN EXISTS (SELECT 1 FROM users u WHERE u.id = i2.owner_id AND u.avatar_url = 'img:' || i2.id)
 			WHEN 'contact' THEN EXISTS (SELECT 1 FROM contacts c WHERE c.id = i2.owner_id AND c.avatar_url = 'img:' || i2.id)
 			WHEN 'company' THEN EXISTS (SELECT 1 FROM companies c WHERE c.id = i2.owner_id AND c.avatar_url = 'img:' || i2.id)
+			WHEN 'brand' THEN EXISTS (SELECT 1 FROM brands b WHERE b.id = i2.owner_id AND b.images ->> i2.slot = 'img:' || i2.id)
+			WHEN 'widget' THEN EXISTS (SELECT 1 FROM widgets g WHERE g.id = i2.owner_id AND g.images ->> i2.slot = 'img:' || i2.id)
+			WHEN 'bot' THEN EXISTS (SELECT 1 FROM bots b WHERE b.id = i2.owner_id AND b.avatar = 'img:' || i2.id)
 			ELSE EXISTS (SELECT 1 FROM workspaces w WHERE w.id = i2.owner_id AND (w.avatar_url = 'img:' || i2.id
 				OR w.brand_images ->> i2.slot = 'img:' || i2.id))
 		END ORDER BY i2.created_at LIMIT 500) RETURNING storage_key`)

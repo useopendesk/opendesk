@@ -67,15 +67,15 @@ func getTicket(t *testing.T, e *hdtest.Env, ws hdtest.WS, id uuid.UUID) domain.T
 func addMailbox(t *testing.T, e *hdtest.Env, ws hdtest.WS) uuid.UUID {
 	t.Helper()
 	id := ids.New()
-	e.Exec(`INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token, outbound_kind)
-		VALUES ($1, $2, 'Support', $3, 'Acme Support', 'forwarding', $4, 'system')`, id, ws.ID, "support-"+id.String()[:8]+"@acme.test", "fw-"+id.String())
+	e.Exec(`INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token, outbound_kind, brand_id)
+		VALUES ($1, $2, 'Support', $3, 'Acme Support', 'forwarding', $4, 'system', $5)`, id, ws.ID, "support-"+id.String()[24:]+"@acme.test", "fw-"+id.String(), ws.BrandID)
 	return id
 }
 
 func addTeam(t *testing.T, e *hdtest.Env, ws hdtest.WS, members ...uuid.UUID) uuid.UUID {
 	t.Helper()
 	id := ids.New()
-	e.Exec(`INSERT INTO teams (id, workspace_id, name) VALUES ($1, $2, $3)`, id, ws.ID, "Team "+id.String()[:8])
+	e.Exec(`INSERT INTO teams (id, workspace_id, name) VALUES ($1, $2, $3)`, id, ws.ID, "Team "+id.String()[24:])
 	for _, m := range members {
 		e.Exec(`INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)`, id, m)
 	}

@@ -1,0 +1,300 @@
+---
+/**
+ * The product in seven live tiles: 7+5, then three, then 5+7, so the big
+ * tiles cross over. Each scene is a short loop that plays while on screen.
+ */
+import Stage from '../Stage.astro';
+import Icon from '../Icon.astro';
+import Tile from './Tile.astro';
+import Ollie from './Ollie.astro';
+import LiveWidget from './LiveWidget.astro';
+
+const ollieFeed = [
+  ['chat', 'Answered 3 chats from your articles', '2m'],
+  ['languages', 'Translated Katrin’s message from German', '6m'],
+  ['tag', 'Tagged Billing and set priority to high', '9m'],
+  ['wrench', 'Cancelled order #4821 in Shop after Freya confirmed', '14m'],
+  ['squarePen', 'Drafted a reply for Hugo, ready for review', '21m'],
+  ['hand', 'Handed Freya’s delivery question to Maya', '26m'],
+  ['book', 'Suggested an article for “export to PDF”', '31m'],
+] as const;
+
+// Mail and chats from every channel, landing in one queue.
+const queue = [
+  { icon: 'mail', via: 'Google', who: 'Aisha Bello', initials: 'AB', tone: '#dbe7fb', ink: '#1e4a8a', subject: 'Can’t get into my workspace' },
+  { icon: 'chat', via: 'Live chat', who: 'Noah Fischer', initials: 'NF', tone: '#d9f2e6', ink: '#1d6b47', subject: 'Shared notebook won’t open' },
+  { icon: 'mail', via: 'Microsoft 365', who: 'Elena Rossi', initials: 'ER', tone: '#f6e3d3', ink: '#8a4a1e', subject: 'Export to PDF stops halfway' },
+  { icon: 'server', via: 'IMAP', who: 'Tom Becker', initials: 'TB', tone: '#e7e2f8', ink: '#4a3a8a', subject: 'Invoice needs our VAT number' },
+  { icon: 'at', via: 'Forwarding', who: 'Katrin Vogel', initials: 'KV', tone: '#f8dfe6', ink: '#8a1e45', subject: 'Synchronisierung zwischen iPad und Mac' },
+  { icon: 'mail', via: 'Google', who: 'Sara Lindqvist', initials: 'SL', tone: '#e0eef2', ink: '#1e5a6b', subject: 'Refund for a duplicate charge' },
+] as const;
+
+// What customers type into the help center, and the article that answers it.
+const searches = [
+  { q: 'my notes vanish without wifi', title: 'Working offline', body: 'Everything you have opened stays on your device and syncs when you are back.' },
+  { q: 'change my billing email', title: 'Update your billing details', body: 'Owners can change the invoice email and address under Settings, Billing.' },
+  { q: 'export a notebook to pdf', title: 'Export as PDF', body: 'Open the notebook, choose Export, then PDF. Images and tables come along.' },
+];
+
+// Who is replying on the shared ticket, in turn.
+const team = [
+  { initials: 'LH', name: 'Lena', bg: '#1e3a5f', fg: '#fff' },
+  { initials: 'MC', name: 'Maya', bg: '#e9d5c4', fg: '#6b4a2f' },
+  { initials: 'TB', name: 'Tom', bg: '#d7e6d2', fg: '#2f5a28' },
+];
+
+const sla = [
+  { who: 'Hugo Moreau', subject: 'Charged twice for my upgrade', label: 'Due in 11m', tone: 't-amber' },
+  { who: 'Paula Martins', subject: 'Keyboard shortcuts on Windows', label: 'Met in 6m', tone: 't-green' },
+  { who: 'Aisha Bello', subject: 'Can’t get into my workspace', label: 'Breached', tone: 't-red' },
+];
+const RING = 2 * Math.PI * 78;
+---
+<div class="mt-12 grid gap-3 md:mt-16 md:grid-cols-2 lg:grid-cols-12">
+  <!-- A: live chat -->
+  <Tile class="md:col-span-2 lg:col-span-7" icon="chat" title="Live chat that knows when to step aside" body="A light widget for your site in 13 languages. Ollie answers from your articles, and the moment someone asks for a person, your team is there. This one is live: try it." photo="meadow">
+    <div class="relative mx-auto h-[620px] w-full max-w-[460px]">
+      <LiveWidget scene="chat" autoplay />
+    </div>
+  </Tile>
+
+  <!-- B: Ollie -->
+  <Tile class="lg:col-span-5" icon="sparkles" title="Ollie, the teammate who never sleeps" body="One AI that answers, drafts, translates, triages and works in your tools. Anything it does is marked as Ollie, and nothing risky runs without a yes." skin="violet" href="#ollie">
+    <Stage w={540} h={440} tone="none" label="Ollie's recent activity: answered chats, translated a message, tagged a ticket, cancelled an order after the customer confirmed, drafted a reply.">
+      <div class="absolute left-1/2 top-[34px] -translate-x-1/2"><span class="ollie-halo"></span><Ollie size={84} thinking /></div>
+      <!-- Ollie's activity, rolling by: the list twice over, so the loop has no seam. -->
+      <div class="ollie-feed absolute inset-x-[34px] bottom-0 top-[150px] overflow-hidden">
+        <div class="ollie-feed-track">
+          {[...ollieFeed, ...ollieFeed].map(([icon, text, ago], i) => (
+            <div class="mb-2 flex h-[44px] items-center gap-3 rounded-[11px] bg-bg/90 px-3.5 text-[12.5px] text-fg shadow-[0_8px_20px_-14px_rgb(60_30_160/0.5)] ring-1 ring-[color-mix(in_oklab,var(--c-violet)_16%,var(--line))] backdrop-blur" aria-hidden={i >= ollieFeed.length ? 'true' : undefined}>
+              <span class="t-violet tint-bg flex size-6 shrink-0 items-center justify-center rounded-[7px]"><Icon name={icon} size={13} /></span>
+              <span class="truncate">{text}</span>
+              <span class="ml-auto shrink-0 font-mono text-[10.5px] text-muted">{ago}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+
+  <!-- C: presence -->
+  <Tile class="lg:col-span-4" icon="radio" title="Live for the whole team" body="See who is looking and who is replying. Every change lands on every screen at once, so nobody answers twice." photo="linen-clay" href="/features/#inbox">
+    <Stage w={440} h={340} tone="none" label="A shared ticket: three teammates are viewing it, and whoever starts replying is shown to the others.">
+      <div class="bx-card absolute left-[30px] top-[56px] w-[380px] text-left">
+        <div class="flex items-center gap-3 px-5 pb-4 pt-5">
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-[15px] font-semibold tracking-[-0.01em] text-fg">Charged twice for my upgrade</div>
+            <div class="mt-0.5 text-[12px] text-muted">#1081 · Hugo Moreau</div>
+          </div>
+          <div class="flex gap-1.5">
+            {team.map((m, i) => (
+              <span class="pr-av relative flex size-8 items-center justify-center rounded-full text-[10.5px] font-semibold " style={`background:${m.bg};color:${m.fg};--i:${i}`}>{m.initials}</span>
+            ))}
+          </div>
+        </div>
+        <div class="px-5">
+          <div class="rounded-[12px] bg-surface px-4 py-3 text-[13px] leading-relaxed text-body">I was charged twice when I upgraded this morning. Can you refund one?</div>
+        </div>
+        <div class="relative mx-5 mb-5 mt-4 h-12 rounded-[12px] ring-1 ring-line">
+          {team.map((m, i) => (
+            <div class="pr-who absolute inset-0 flex items-center gap-2.5 px-3.5" style={`--i:${i}`}>
+              <span class="flex size-6 items-center justify-center rounded-full text-[9px] font-semibold" style={`background:${m.bg};color:${m.fg}`}>{m.initials}</span>
+              <span class="text-[13px] text-fg"><b class="font-medium">{m.name}</b> is replying</span>
+              <span class="ml-0.5 flex gap-[3px] text-muted"><i class="od-dot"></i><i class="od-dot"></i><i class="od-dot"></i></span>
+              <span class="ml-auto rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted">Live</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+
+  <!-- D: channels -->
+  <Tile class="lg:col-span-4" icon="inbox" title="Every mailbox, one queue" body="Google, Microsoft 365, IMAP or plain forwarding, and live chat. Replies leave from your own address." photo="brush-cyan" href="/features/#inbox">
+    <Stage w={440} h={340} tone="none" label="Mail from Google, Microsoft 365, IMAP and forwarding, and live chats, arriving in one queue.">
+      <div class="bx-card absolute left-[30px] top-[30px] h-[280px] w-[380px] overflow-hidden text-left">
+        <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
+          <svg viewBox="0 0 64 64" class="size-[18px] text-fg" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /><path class="mark-turn" d="M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /></svg>
+          <span class="text-[13.5px] font-semibold text-fg">All open</span>
+          <span class="ml-auto font-mono text-[11.5px] tabular-nums text-muted"><span class="text-fg" data-count="1284">1,284</span> tickets</span>
+        </div>
+        <div class="bx-feed absolute inset-x-0 bottom-0 top-[46px] overflow-hidden">
+          <div class="bx-feed-track">
+            {[...queue, ...queue].map((t, i) => (
+              <div class="flex h-[58px] items-center gap-3 border-b border-line-soft px-4" aria-hidden={i >= queue.length ? 'true' : undefined}>
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold" style={`background:${t.tone};color:${t.ink}`}>{t.initials}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[12.5px] font-medium text-fg">{t.who}</div>
+                  <div class="truncate text-[12px] text-muted">{t.subject}</div>
+                </div>
+                <span class="flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-2 py-1 text-[10.5px] text-body ring-1 ring-line"><Icon name={t.icon} size={11} class="text-muted" />{t.via}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+
+  <!-- E: help center -->
+  <Tile class="md:col-span-2 lg:col-span-4" icon="book" title="A help center that answers first" body="Publish articles once. Customers search them by meaning, and Ollie answers from them." photo="still-lake" href="/features/#knowledge-base">
+    <Stage w={440} h={340} tone="none" label="The help center: customers search in their own words and find the right article.">
+      <div class="bx-card absolute left-[30px] top-[34px] w-[380px] text-left">
+        <div class="px-5 pb-5 pt-5">
+          <div class="text-[17px] font-semibold tracking-[-0.02em] text-fg">How can we help?</div>
+          <div class="relative mt-4 h-11 rounded-[11px] ring-1 ring-line-strong">
+            <Icon name="search" size={15} class="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+            {searches.map((x, i) => <span class="hc-q absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[13.5px] text-fg" style={`--i:${i}`}>{x.q}</span>)}
+          </div>
+        </div>
+        <div class="relative h-[150px] border-t border-line">
+          {searches.map((x, i) => (
+            <div class="hc-r absolute inset-0 px-5 py-4" style={`--i:${i}`}>
+              <div class="flex items-center gap-2">
+                <Icon name="fileText" size={15} class="text-muted" />
+                <span class="text-[14px] font-semibold text-fg">{x.title}</span>
+                <span class="pill t-green ml-auto">Best match</span>
+              </div>
+              <p class="mt-1.5 text-[12.5px] leading-relaxed text-muted">{x.body}</p>
+              <div class="mt-3 flex items-center gap-2 text-[12px] text-[var(--c-violet)]"><Ollie size={16} />Ollie answers from this article</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+
+  <!-- F: SLAs -->
+  <Tile class="lg:col-span-5" icon="timer" title="Targets that warn before they break" body="First reply and resolution targets per priority, counting down on every ticket, with business hours." photo="window-light" href="/features/#automations">
+    <Stage w={540} h={340} tone="none" label="A first reply target counting down on a ring, beside tickets that are due soon, met and breached.">
+      <div class="bx-card absolute left-[30px] top-[30px] flex h-[280px] w-[480px] items-center gap-6 px-6 text-left">
+        <div class="relative size-[180px] shrink-0 t-amber" data-sla>
+          <svg viewBox="0 0 180 180" class="size-full -rotate-90" aria-hidden="true">
+            <circle cx="90" cy="90" r="78" fill="none" stroke="color-mix(in oklab, var(--t) 14%, transparent)" stroke-width="10" />
+            <circle cx="90" cy="90" r="78" fill="none" stroke="var(--t)" stroke-width="10" stroke-linecap="round" stroke-dasharray={RING} stroke-dashoffset={RING * (1 - 702 / 900)} data-countdown-ring class="transition-[stroke-dashoffset] duration-1000 ease-linear" />
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="text-[11px] text-muted">First reply in</span>
+            <span class="mt-0.5 text-[34px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-fg" data-countdown="702" data-from="900">11:42</span>
+            <span class="mt-1.5 text-[11px] text-muted">Hugo Moreau</span>
+          </div>
+        </div>
+        <div class="min-w-0 flex-1 space-y-2.5">
+          {sla.map((t) => (
+            <div class={`rounded-[12px] px-3.5 py-2.5 ring-1 ring-line ${t.tone}`}>
+              <div class="truncate text-[12.5px] font-medium text-fg">{t.subject}</div>
+              <div class="mt-1 flex items-center gap-2 text-[11px]"><span class="text-muted">{t.who}</span><span class="tint ml-auto font-medium">{t.label}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+
+  <!-- G: automations -->
+  <Tile class="md:col-span-2 lg:col-span-7" icon="zap" title="Rules that run the moment mail lands" body="Route, tag and prioritise on arrival, so the right person sees the right ticket first." photo="mist-forest" href="/features/#automations">
+    <Stage w={760} h={340} tone="none" mobileW={500} mobileX={262} label="An automation: when a ticket arrives that mentions a refund, tag it, assign the billing team and raise the priority.">
+      <div class="absolute left-[30px] top-[44px] flex items-stretch">
+        <div class="bx-card au-node au-n1 w-[200px] p-4 text-left">
+          <div class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">When</div>
+          <div class="mt-2 flex items-center gap-2 text-[14px] font-medium text-fg"><Icon name="inboxIn" size={15} />A ticket arrives</div>
+          <div class="mt-3 rounded-[9px] bg-surface px-2.5 py-2 text-[11.5px] text-body">Refund for a duplicate charge</div>
+        </div>
+        <div class="au-link relative w-[50px] self-center"><i class="au-dot au-d1"></i></div>
+        <div class="bx-card au-node au-n2 w-[200px] p-4 text-left">
+          <div class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">If</div>
+          <div class="mt-2 text-[14px] font-medium text-fg">The message mentions</div>
+          <div class="mt-3 inline-flex rounded-[7px] bg-surface px-2 py-1 font-mono text-[12px] text-fg">refund</div>
+        </div>
+        <div class="au-link relative w-[50px] self-center"><i class="au-dot au-d2"></i></div>
+        <div class="bx-card au-node au-n3 w-[220px] p-4 text-left">
+          <div class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Then</div>
+          <div class="mt-2 space-y-2 text-[13px] text-fg">
+            {[['tag', 'Tag Refund'], ['users', 'Assign Billing team'], ['alarm', 'Set priority high']].map(([i, t], k) => (
+              <div class="flex items-center gap-2"><Icon name={i as 'tag'} size={14} class="text-muted" />{t}<span class="au-check ml-auto flex size-[18px] items-center justify-center rounded-full bg-ok text-white" style={`--k:${k}`}><Icon name="check" size={11} stroke={3} /></span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div class="bx-card absolute left-[30px] top-[220px] flex h-[64px] w-[700px] items-center gap-3 px-5 text-left">
+        <span class="flex size-8 items-center justify-center rounded-full bg-[#e0eef2] text-[10.5px] font-semibold text-[#1e5a6b]">SL</span>
+        <div class="min-w-0">
+          <div class="text-[13px] font-medium text-fg">Refund for a duplicate charge</div>
+          <div class="text-[11.5px] text-muted">Sara Lindqvist · just now</div>
+        </div>
+        <div class="ml-auto flex items-center gap-1.5">
+          <span class="au-pill pill t-violet" style="--k:0">Refund</span>
+          <span class="au-pill pill t-blue" style="--k:1">Billing team</span>
+          <span class="au-pill pill t-red" style="--k:2">High</span>
+        </div>
+      </div>
+    </Stage>
+  </Tile>
+</div>
+
+<style is:global>
+  /* One glass card per scene, standing on the painting. */
+  .bx-card {
+    background: color-mix(in oklab, var(--raised) 94%, transparent);
+    border-radius: 16px;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.05), 0 30px 60px -30px rgb(10 30 80 / 0.5);
+    backdrop-filter: blur(18px);
+  }
+  .dark .bx-card { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 30px 60px -30px rgb(0 0 0 / 0.7); }
+
+  .ollie-halo {
+    position: absolute;
+    inset: -26px;
+    border-radius: 99px;
+    background: radial-gradient(closest-side, color-mix(in oklab, var(--c-violet) 26%, transparent), transparent);
+    animation: halo 4.8s ease-in-out infinite;
+  }
+  @keyframes halo { 50% { transform: scale(1.12); opacity: 0.7; } }
+  .tile .mark-turn { transform-box: fill-box; transform-origin: center; animation: mark-turn 5.6s cubic-bezier(0.34, 1.4, 0.64, 1) infinite; }
+  @keyframes mark-turn { 0%, 70% { transform: rotate(0); } 85%, 100% { transform: rotate(90deg); } }
+
+  /* Rolling lists: the list twice over, so the loop has no seam. */
+  .ollie-feed, .bx-feed { mask-image: linear-gradient(180deg, transparent, #000 14%, #000 80%, transparent); }
+  .bx-feed { mask-image: linear-gradient(180deg, #000 70%, transparent); }
+  .ollie-feed-track { animation: ollie-feed 28s linear infinite; }
+  .bx-feed-track { animation: bx-feed 22s linear infinite; }
+  .ollie-feed:hover .ollie-feed-track, .bx-feed:hover .bx-feed-track { animation-play-state: paused; }
+  @keyframes ollie-feed { to { transform: translateY(-50%); } }
+  @keyframes bx-feed { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+
+  /* Presence: whoever is replying, in turn. */
+  .pr-who { opacity: 0; animation: pr-who 9s ease-in-out infinite; animation-delay: calc(var(--i) * 3s); }
+  @keyframes pr-who { 0% { opacity: 0; transform: translateY(6px); } 4%, 30% { opacity: 1; transform: none; } 34%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .pr-av { animation: pr-av 9s ease-in-out infinite; animation-delay: calc(var(--i) * 3s); }
+  @keyframes pr-av { 0%, 34%, 100% { box-shadow: 0 0 0 0 transparent; } 4%, 30% { box-shadow: 0 0 0 2px var(--raised), 0 0 0 3.5px #22c55e; } }
+
+  /* Help center: a question types itself, then its answer settles in. */
+  .hc-q { clip-path: inset(0 100% 0 0); opacity: 0; animation: hc-q 15s linear infinite; animation-delay: calc(var(--i) * 5s); }
+  @keyframes hc-q { 0% { opacity: 1; clip-path: inset(0 100% 0 0); } 9% { clip-path: inset(0 0 0 0); } 31% { opacity: 1; clip-path: inset(0 0 0 0); } 33.3%, 100% { opacity: 0; clip-path: inset(0 0 0 0); } }
+  .hc-r { opacity: 0; animation: hc-r 15s cubic-bezier(0.22, 1, 0.36, 1) infinite; animation-delay: calc(var(--i) * 5s); }
+  @keyframes hc-r { 0%, 8% { opacity: 0; transform: translateY(8px); } 11%, 32% { opacity: 1; transform: none; } 34.3%, 100% { opacity: 0; transform: none; } }
+
+  /* Automations: a pulse runs through the rule, then each action is ticked. */
+  .au-link::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px dashed rgb(24 70 72 / 0.45); }
+  .au-dot { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px; border-radius: 99px; background: #1d5254; box-shadow: 0 0 0 4px rgb(29 82 84 / 0.18); opacity: 0; }
+  .au-d1 { animation: au-d1 7s ease-in-out infinite; }
+  .au-d2 { animation: au-d2 7s ease-in-out infinite; }
+  @keyframes au-d1 { 0%, 8% { left: 0; opacity: 0; } 12% { opacity: 1; } 26% { left: calc(100% - 10px); opacity: 1; } 30%, 100% { left: calc(100% - 10px); opacity: 0; } }
+  @keyframes au-d2 { 0%, 34% { left: 0; opacity: 0; } 38% { opacity: 1; } 52% { left: calc(100% - 10px); opacity: 1; } 56%, 100% { left: calc(100% - 10px); opacity: 0; } }
+  .au-node { transition: none; }
+  .au-n1 { animation: au-n1 7s ease-in-out infinite; }
+  .au-n2 { animation: au-n2 7s ease-in-out infinite; }
+  .au-n3 { animation: au-n3 7s ease-in-out infinite; }
+  @keyframes au-n1 { 0%, 14%, 100% { transform: none; } 4%, 10% { transform: translateY(-3px); } }
+  @keyframes au-n2 { 0%, 28%, 42%, 100% { transform: none; } 32%, 38% { transform: translateY(-3px); } }
+  @keyframes au-n3 { 0%, 54%, 90%, 100% { transform: none; } 58%, 86% { transform: translateY(-3px); } }
+  .au-check, .au-pill { opacity: 0; transform: scale(0.4); animation: au-check 7s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; animation-delay: calc(var(--k) * 0.35s); }
+  @keyframes au-check { 0%, 58% { opacity: 0; transform: scale(0.4); } 63%, 90% { opacity: 1; transform: none; } 95%, 100% { opacity: 0; transform: scale(0.8); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ollie-halo, .tile .mark-turn, .ollie-feed-track, .bx-feed-track, .pr-av, .au-dot, .au-node { animation: none; }
+    .pr-who, .hc-q, .hc-r { animation: none; opacity: 0; clip-path: none; }
+    .pr-who:first-child, .hc-q:nth-of-type(1), .hc-r:first-child { opacity: 1; }
+    .au-check, .au-pill { animation: none; opacity: 1; transform: none; }
+  }
+</style>

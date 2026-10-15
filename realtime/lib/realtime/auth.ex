@@ -11,7 +11,10 @@ defmodule Realtime.Auth do
   alias Realtime.Ids
 
   @min_secret_bytes 32
-  @max_token_bytes 4096
+  # Room for a `teams` claim of several dozen private teams, within the
+  # request line Bandit accepts (the token travels in the query string).
+  @max_token_bytes 8192
+  @max_teams 200
   @roles ~w(owner admin agent viewer)
   @kinds %{"user" => :user, "api_key" => :api_key}
 
@@ -21,7 +24,9 @@ defmodule Realtime.Auth do
           wid: String.t(),
           role: String.t() | nil,
           name: String.t() | nil,
-          avatar: String.t() | nil
+          avatar: String.t() | nil,
+          teams: [String.t()],
+          brand: String.t() | nil
         }
 
   @doc "The smallest `AUTH_SECRET` the gateway boots with."
@@ -96,7 +101,8 @@ defmodule Realtime.Auth do
     with {:ok, sub} <- uuid(c["sub"]),
          {:ok, wid} <- uuid(c["wid"]),
          {:ok, kind} <- Map.fetch(@kinds, c["kind"]),
-         role when role in @roles <- c["role"] do
+         role when role in @roles <- c["role"],
+         {:ok, teams} <- teams(c["teams"]) do
       {:ok,
        %{
          kind: kind,
@@ -104,23 +110,51 @@ defmodule Realtime.Auth do
          wid: wid,
          role: role,
          name: string(c["name"], 200),
-         avatar: string(c["avatar"], 2048)
+         avatar: string(c["avatar"], 2048),
+         teams: teams,
+         brand: nil
        }}
     else
       _ -> {:error, :invalid_claims}
     end
   end
 
+  # `bid` binds a widget socket to the brand of the widget its token was issued for: it
+  # receives only that brand's chats (`RealtimeWeb.ContactChannel`).
   defp identity(%{"purpose" => "widget_ws"} = c) do
     with {:ok, sub} <- uuid(c["sub"]),
-         {:ok, wid} <- uuid(c["wid"]) do
-      {:ok, %{kind: :contact, sub: sub, wid: wid, role: nil, name: nil, avatar: nil}}
+         {:ok, wid} <- uuid(c["wid"]),
+         {:ok, brand} <- optional_uuid(c["bid"]) do
+      {:ok,
+       %{
+         kind: :contact,
+         sub: sub,
+         wid: wid,
+         role: nil,
+         name: nil,
+         avatar: nil,
+         teams: [],
+         brand: brand
+       }}
     else
       _ -> {:error, :invalid_claims}
     end
   end
 
   defp identity(_claims), do: {:error, :wrong_purpose}
+
+  defp teams(nil), do: {:ok, []}
+
+  defp teams(list) when is_list(list) and length(list) <= @max_teams do
+    if Enum.all?(list, &Ids.uuid?/1),
+      do: {:ok, list |> Enum.map(&Ids.normalize/1) |> Enum.uniq()},
+      else: :error
+  end
+
+  defp teams(_), do: :error
+
+  defp optional_uuid(nil), do: {:ok, nil}
+  defp optional_uuid(value), do: uuid(value)
 
   defp uuid(value) do
     if Ids.uuid?(value), do: {:ok, Ids.normalize(value)}, else: :error

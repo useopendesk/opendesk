@@ -6,9 +6,16 @@ defmodule RealtimeWeb.ContactChannel do
 
   Client push `"typing"` `{ticket_id}` sends `"customer_typing"`
   `{ticket_id, contact_id}` to `ticket:<wid>:<ticket_id>`.
+
+  `"event"` and `"live"` pushes that name a chat's brand (`brand_id`) reach
+  only sockets whose token is for that brand (its `bid`); `brand_id` is
+  stripped from what is pushed. A visitor's chats of another brand never
+  reach this widget.
   """
 
   use Phoenix.Channel, log_join: false, log_handle_in: false
+
+  intercept ["event", "live"]
 
   alias Realtime.Ids
   alias RealtimeWeb.Channels.Guard
@@ -32,6 +39,23 @@ defmodule RealtimeWeb.ContactChannel do
   end
 
   def join(_topic, _payload, _socket), do: Guard.forbidden(:contact)
+
+  @impl true
+  def handle_out(event, %{"brand_id" => brand} = payload, socket) do
+    case Map.get(socket.assigns, :brand) do
+      mine when mine in [nil, brand] ->
+        push(socket, event, Map.delete(payload, "brand_id"))
+        {:noreply, socket}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_out(event, payload, socket) do
+    push(socket, event, payload)
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_in(event, payload, socket) do

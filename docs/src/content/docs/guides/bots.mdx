@@ -1,0 +1,161 @@
+---
+title: Bots
+description: Build the bots your customers talk to in chat and email, with their own name, face and personality, test them, and pick which widget or address each one answers on.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+A **bot** is who your customers meet when the [AI agent](/guides/ai/#the-ai-agent-for-chat-and-email) answers them: its name, its face and the way it talks. Ollie is the bot every workspace starts with. Build your own as well, such as a playful helper for your docs and a formal one for another brand, and pick which widget or email address each one answers on.
+
+<Screenshot src="/guides/bots/overview" alt="Settings, AI agent, Bots: New bot ringed as 1, the Default pill on Ollie ringed as 2, where Pip answers ringed as 3, and the actions menu of Margin Concierge ringed as 4" />
+
+<Legend>
+
+1. **New bot**: adds a bot with a fresh name and a random face, and opens it. The shortcut is <kbd>N</kbd>.
+2. **Default**: the bot that answers everywhere you have not picked another one.
+3. **Where it answers**: the widgets and email addresses that use this bot.
+4. **Actions**: make it the default, duplicate it or delete it.
+
+</Legend>
+
+Inside the app, nothing changes for your team: drafts, triage, the assistant and every AI action are still Ollie's. Bots are what customers see.
+
+## Build a bot
+
+<Steps>
+<Step title="Open Settings, then Bots">
+
+Bots are under **AI agent** in the settings menu. Admins create and change bots; everyone else can see them.
+
+<Screenshot src="/guides/bots/open-settings" alt="The app with Settings in the sidebar ringed as 1 and Bots in the settings menu ringed as 2" />
+
+</Step>
+<Step title="Give it a face">
+
+Click a bot, or **New bot**. On the **Look** tab, pick a style and build the face from parts. Every tile is a preview of the whole face with that one part changed, and the big face on the right updates as you go.
+
+<Screenshot src="/guides/bots/look" alt="The Look tab of Pip: the Built, Emoji and Picture styles ringed as 1, the eye choices ringed as 2, the colours ringed as 3, Shuffle ringed as 4 and the Idle, Thinking and Happy previews ringed as 5" />
+
+<Legend>
+
+1. **Style**: **Built** from parts, an **Emoji** on a shape, or your own **Picture**.
+2. **Parts**: shape, eyes, mouth, an accessory such as headphones or a sprout, blush, and a background.
+3. **Colour**: a solid colour or a gradient from the palette, or any colour by its hex code.
+4. **Shuffle**: a random face. Undo brings back the one before.
+5. **Preview**: how the face looks while idle, while it is writing an answer, and when an answer lands.
+
+</Legend>
+
+</Step>
+<Step title="Shuffle for ideas">
+
+**Shuffle**, or <kbd>R</kbd> on the Look tab, draws a new random face and keeps your background. <kbd>Z</kbd> undoes it. **Ollie** starts again from Ollie's face.
+
+<Screenshot src="/guides/bots/shuffle" alt="The preview card after a few shuffles: Shuffle ringed as 1 and Undo ringed as 2" />
+
+</Step>
+<Step title="Or use an emoji or a picture">
+
+With **Emoji**, pick one from the list or type your own, then choose its shape and colour. With **Picture**, upload a square PNG, JPEG or WebP. It is shown round, and you can remove it again later.
+
+<Screenshot src="/guides/bots/emoji" alt="The Emoji style: the emoji choices ringed as 1 and Or type your own ringed as 2, with an owl on a teal squircle in the preview" />
+
+</Step>
+<Step title="Save">
+
+Changes stay a draft until you click **Save changes**. Leaving the page with unsaved changes asks first.
+
+</Step>
+</Steps>
+
+<Callout type="note">
+
+Faces move a little: they blink, bob while writing and hop when an answer lands. When someone's device asks for reduced motion, they stay still.
+
+</Callout>
+
+## Personality
+
+The **Personality** tab sets how the bot talks. It changes the voice only: what the agent may do, its guardrails and its limits stay the same for every bot.
+
+<Screenshot src="/guides/bots/personality" alt="The Personality tab of Margin Concierge: the tone cards ringed as 1, Reply length and Emoji ringed as 2, the greeting ringed as 3 and the email sign-off ringed as 4" />
+
+<Legend>
+
+1. **Tone**: friendly, professional, playful, concise, warm, or **Custom**, described in your own words. Each card shows a sample line.
+2. **Reply length** and **Emoji**: short, medium or detailed answers, and no, some or lots of emoji.
+3. **Greeting**: the first message visitors see when they open the widget. **Handoff message** below it is what the bot says when it passes the chat to your team.
+4. **Email sign-off**: how it signs emails. Empty signs with its name.
+
+</Legend>
+
+**Language** is **Auto** by default: the bot answers in the customer's language. Pick one to have it always answer in that language.
+
+### What it knows
+
+**Instructions** are notes for this bot: who it helps, what to link, what to ask for. Your help center and the sources in [Knowledge](/guides/ai/#set-up-the-agent) are always part of what it knows. **Topics it declines** are added to the topics every bot declines, set in **AI agent, Behaviour**.
+
+<Screenshot src="/guides/bots/instructions" alt="Pip's instructions ringed as 1, and unreleased features as a topic it declines ringed as 2" />
+
+## Test it
+
+The **Test** tab shows your widget with this bot in it, next to a chat where you can ask it anything. Both use your unsaved changes, so you can try a tone before you save it. Test chats are never sent to a customer or saved as tickets, and cost what their answers cost.
+
+<Screenshot src="/guides/bots/test" alt="The Test tab of Pip: the widget preview with Pip in its header ringed as 1, and the test chat's message box ringed as 2, with Pip's playful answer above it" />
+
+## Choose where a bot answers
+
+<Steps>
+<Step title="On a widget">
+
+Open the widget in **Settings, Brands and widgets** and choose its **Bot**. The default bot is the one marked **Default**. The preview beside it shows the widget with that bot.
+
+<Screenshot src="/guides/bots/widget-picker" alt="The Marketing site widget with its Bot picker ringed as 1 and open, listing Ollie as default, Pip and Margin Concierge" />
+
+</Step>
+<Step title="On an email address">
+
+Open the mailbox in **Settings, Mailboxes**. Once the agent answers emails to it, choose the **Bot** that writes and signs those emails.
+
+<Screenshot src="/guides/bots/mailbox-picker" alt="The Pressroom mailbox: answering emails turned on ringed as 1, and Margin Concierge picked as its bot ringed as 2" />
+
+</Step>
+</Steps>
+
+Where no bot is picked, the default bot answers. Making another bot the default moves all of those at once.
+
+## What customers and your team see
+
+Visitors see the bot's name, face and role in the widget header, on each of its answers and while it writes. Email recipients see its name as the sender and its sign-off. In the inbox, its messages carry its name and face with the **AI** label, so your team always knows which answers came from a bot.
+
+<Screenshot src="/guides/bots/thread" alt="A chat on the Docs widget: Pip's answer with the AI label ringed as 1, and its handoff message ringed as 2" />
+
+A sent message keeps the bot it was sent as, even if you rename or change the bot later.
+
+## Duplicate, reorder and delete
+
+- **Duplicate** copies a bot's look and personality, without where it answers. A good start for a second brand.
+- **Drag** bots to reorder the list, or use <kbd>Alt</kbd> with the arrow keys on the handle. The order is also the order in pickers.
+- **Delete** removes a bot and its picture. The default bot can't be deleted: make another bot the default first. A bot that still answers on a widget or address can't be deleted either: pick another bot there first. Past messages keep its name.
+
+A workspace can have up to 50 bots. Creating, changing, deleting and reordering bots is recorded in the audit log.
+
+<Fold>
+
+## Bots in the API
+
+Bots are a resource of the [public API](/api/): `GET /v1/bots` lists them, and admins and API keys with settings access create and change them. A widget's and a mailbox's `bot_id` picks its bot; `null` means the default. Every bot's face is also a public image at `/v1/public/bots/{id}/avatar.svg` (and `.png`), so you can show it anywhere. Changes arrive live as `bot.created`, `bot.updated` and `bot.deleted` events.
+
+</Fold>
+
+## Related
+
+- [AI features](/guides/ai/)
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Mailboxes](/guides/mailboxes/)
+- [Ollie, the assistant](/guides/ollie/)

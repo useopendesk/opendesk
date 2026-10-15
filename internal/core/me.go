@@ -177,7 +177,7 @@ func (s *svc) registerMe(api huma.API) {
 				Code     string `json:"code,omitempty" maxLength:"64"`
 			} `required:"false"`
 		}) (*struct {
-			SetCookie string `header:"Set-Cookie"`
+			SetCookie []string `header:"Set-Cookie"`
 		}, error) {
 			p, err := auth.RequireUser(ctx)
 			if err != nil {
@@ -197,6 +197,20 @@ func (s *svc) registerMe(api huma.API) {
 				}
 			} else if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			// This account's cookies in this browser go with it; other accounts stay signed in.
+			ri := requestInfo(ctx)
+			var clear []string
+			if !ri.Native {
+				held, err := s.heldSessions(ctx, s.d.DB.Pool, ri)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				for _, h := range held {
+					if h.UserID == p.UserID || (h.Valid && h.Account == p.UserID) {
+						clear = append(clear, s.clearCookie(h.Name))
+					}
+				}
 			}
 			var keys []string
 			var disconnect []uuid.UUID
@@ -242,9 +256,11 @@ func (s *svc) registerMe(api huma.API) {
 						keys = append(keys, k...)
 						continue
 					}
-					if err := s.removeMember(ctx, tx, p, m.wid, p.UserID, m.role, "member.account_deleted"); err != nil {
+					lapsed, err := s.removeMember(ctx, tx, p, m.wid, p.UserID, m.role, "member.account_deleted")
+					if err != nil {
 						return err
 					}
+					disconnect = append(disconnect, lapsed...)
 				}
 				disconnect = append(disconnect, p.UserID)
 				_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, p.UserID)
@@ -259,8 +275,8 @@ func (s *svc) registerMe(api huma.API) {
 				s.disconnect(uid, uuid.Nil)
 			}
 			return &struct {
-				SetCookie string `header:"Set-Cookie"`
-			}{s.refreshCookie("", -1)}, nil
+				SetCookie []string `header:"Set-Cookie"`
+			}{clear}, nil
 		})
 
 	s.registerSessions(api)

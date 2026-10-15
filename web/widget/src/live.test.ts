@@ -18,13 +18,24 @@ function run(events: LiveEvent[], posted: (id: string) => boolean = none, st = e
 describe("live replies", () => {
   it("goes typing, streaming, done", () => {
     let st = run([started]);
-    expect(st.replies[R]).toMatchObject({ phase: "typing", bot: "Ollie", partial: false, text: "" });
+    expect(st.replies[R]).toMatchObject({ phase: "typing", bot: { name: "Ollie", look: null }, partial: false, text: "" });
     st = run([delta("Hello "), delta("there [1].")], none, st);
     expect(st.replies[R]).toMatchObject({ phase: "streaming", text: "Hello there [1]." });
     st = run([ended("m1")], none, st);
     expect(st.replies[R]).toMatchObject({ phase: "done", message_id: "m1" });
     expect(repliesFor(st, T)).toHaveLength(1);
     expect(repliesFor(st, "other")).toHaveLength(0);
+  });
+
+  it("keeps the bot a reply is written as, with its look read leniently", () => {
+    const ev: LiveEvent = {
+      type: "ai.reply.started",
+      data: { reply_id: R, ticket_id: T, bot: { id: "b1", name: "Pip", avatar_url: "https://cdn.test/pip.png", look: { kind: "built", shape: "cloud", eyes: "<x>" } as never } },
+    };
+    const r = run([ev]).replies[R];
+    expect(r.bot).toMatchObject({ id: "b1", name: "Pip", avatar_url: "https://cdn.test/pip.png", look: { kind: "built", shape: "cloud", eyes: "pills" } });
+    // A later started without a bot keeps it.
+    expect(run([{ type: "ai.reply.started", data: { reply_id: R, ticket_id: T } }], none, run([ev])).replies[R].bot?.name).toBe("Pip");
   });
 
   it("tracks tool calls and settles running ones on end", () => {

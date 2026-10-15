@@ -3,7 +3,7 @@ defmodule RealtimeWeb.FanoutTest do
 
   alias Phoenix.Socket.Message
   alias Realtime.Fanout
-  alias RealtimeWeb.{ContactChannel, UserChannel, WorkspaceChannel}
+  alias RealtimeWeb.{ContactChannel, TeamChannel, UserChannel, WorkspaceChannel}
 
   setup do
     agent = Tokens.ws_claims()
@@ -122,6 +122,74 @@ defmodule RealtimeWeb.FanoutTest do
 
     assert seqs == [env["seq"], env["seq"] + 1]
     refute_receive %Message{}, 50
+  end
+
+  describe "events of a private team" do
+    setup c do
+      team = Tokens.uuid()
+      member = Tokens.ws_claims(%{"wid" => c.wid, "teams" => [team]})
+      {:ok, m} = connect_claims(member)
+      {:ok, _, _} = subscribe_and_join(m, TeamChannel, "team:#{c.wid}:#{team}")
+      %{team: team}
+    end
+
+    test "go in full to the team, as a stand-in to the workspace", c do
+      ws = "workspace:#{c.wid}"
+      team = "team:#{c.wid}:#{c.team}"
+      env = envelope(c, "agents", [team])
+
+      assert {:ok, topics} = publish(c, env)
+      assert Enum.sort(topics) == Enum.sort([ws, team])
+
+      full = Map.delete(env, "topics")
+      assert_receive %Message{topic: ^team, event: "event", payload: ^full}
+
+      stand_in = %{
+        "id" => env["id"],
+        "seq" => env["seq"],
+        "workspace_id" => c.wid,
+        "type" => "event.hidden",
+        "visibility" => "agents",
+        "data" => %{},
+        "occurred_at" => env["occurred_at"]
+      }
+
+      assert_receive %Message{topic: ^ws, event: "event", payload: ^stand_in}
+      refute_receive %Message{}, 50
+    end
+
+    test "still reach the listed user and, when public, the contact in full", c do
+      ws = "workspace:#{c.wid}"
+      user = "user:#{c.uid}"
+      contact = "contact:#{c.wid}:#{c.cid}"
+      env = envelope(c, "public", ["team:#{c.wid}:#{c.team}", user, contact])
+
+      assert {:ok, _} = publish(c, env)
+      full = Map.delete(env, "topics")
+      assert_receive %Message{topic: ^user, payload: ^full}
+      assert_receive %Message{topic: ^contact, payload: ^full}
+      assert_receive %Message{topic: ^ws, payload: %{"type" => "event.hidden", "data" => %{}}}
+    end
+
+    test "a team topic of another workspace or a malformed one reaches no team but still hides the event",
+         c do
+      ws = "workspace:#{c.wid}"
+
+      for listed <- ["team:#{Tokens.uuid()}:#{c.team}", "team:#{c.wid}:nope", "team:#{c.wid}"] do
+        env = envelope(c, "agents", [listed])
+        assert publish(c, env) == {:ok, [ws]}, listed
+        assert_receive %Message{topic: ^ws, payload: %{"type" => "event.hidden"} = payload}
+        refute Map.has_key?(payload, "topics")
+        refute_receive %Message{topic: "team:" <> _}, 20
+      end
+    end
+
+    test "an uppercase team id is normalized", c do
+      team = "team:#{c.wid}:#{c.team}"
+      env = envelope(c, "agents", ["team:#{c.wid}:#{String.upcase(c.team)}"])
+      assert {:ok, _} = publish(c, env)
+      assert_receive %Message{topic: ^team, payload: %{"type" => "message.created"}}
+    end
   end
 
   test "the broadcast function is injectable", c do

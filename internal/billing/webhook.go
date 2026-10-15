@@ -18,9 +18,9 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/jobs"
-	"github.com/useopendesk/opendesk/internal/mailer"
 	"github.com/useopendesk/opendesk/internal/plan"
 )
 
@@ -122,8 +122,9 @@ type eventInput struct {
 	sub        *stripe.Subscription // fresh from Stripe
 	session    *stripe.CheckoutSession
 	invoice    *stripe.Invoice
-	intent     *stripe.PaymentIntent // auto-recharge PaymentIntents only
-	setupPM    string                // the payment method a setup Checkout saved
+	charge     *stripe.Invoice // an invoice for a charge on the saved payment method (metadata.charge_id)
+	setupPM    string          // the payment method a setup Checkout saved
+	syncPM     bool            // the customer's payment methods may have changed
 }
 
 func (s *svc) prepare(ctx context.Context, ev *stripe.Event) (*eventInput, error) {
@@ -142,6 +143,7 @@ func (s *svc) prepare(ctx context.Context, ev *stripe.Event) (*eventInput, error
 		if cs.Customer != nil {
 			in.customerID = cs.Customer.ID
 		}
+		in.syncPM = true
 		if cs.Mode == stripe.CheckoutSessionModeSubscription && cs.Subscription != nil && cs.Subscription.ID != "" {
 			sub, err := s.fetchSubscription(ctx, cs.Subscription.ID, nil)
 			if err != nil {
@@ -158,20 +160,27 @@ func (s *svc) prepare(ctx context.Context, ev *stripe.Event) (*eventInput, error
 				in.setupPM = si.PaymentMethod.ID
 			}
 		}
-	case "payment_intent.succeeded", "payment_intent.payment_failed":
-		var pi stripe.PaymentIntent
-		if err := json.Unmarshal(ev.Data.Raw, &pi); err != nil {
-			return nil, fmt.Errorf("decode payment intent: %w", err)
+	case "customer.updated":
+		var c stripe.Customer
+		if err := json.Unmarshal(ev.Data.Raw, &c); err != nil {
+			return nil, fmt.Errorf("decode customer: %w", err)
 		}
-		if pi.Metadata["kind"] != rechargeKind {
-			// Checkout payments are applied on checkout.session.completed.
+		in.customerID, in.metaWID, in.syncPM = c.ID, c.Metadata["workspace_id"], true
+	case "payment_method.attached", "payment_method.detached", "payment_method.updated", "payment_method.automatically_updated":
+		var pm stripe.PaymentMethod
+		if err := json.Unmarshal(ev.Data.Raw, &pm); err != nil {
+			return nil, fmt.Errorf("decode payment method: %w", err)
+		}
+		if pm.Customer != nil {
+			in.customerID = pm.Customer.ID
+		} else if prev, ok := ev.Data.PreviousAttributes["customer"].(string); ok {
+			// Detached: the customer it belonged to.
+			in.customerID = prev
+		}
+		if in.customerID == "" {
 			return nil, nil
 		}
-		in.intent = &pi
-		in.metaWID = pi.Metadata["workspace_id"]
-		if pi.Customer != nil {
-			in.customerID = pi.Customer.ID
-		}
+		in.syncPM = true
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var sub stripe.Subscription
 		if err := json.Unmarshal(ev.Data.Raw, &sub); err != nil {
@@ -190,6 +199,11 @@ func (s *svc) prepare(ctx context.Context, ev *stripe.Event) (*eventInput, error
 		in.invoice = &inv
 		if inv.Customer != nil {
 			in.customerID = inv.Customer.ID
+		}
+		if inv.Metadata["charge_id"] != "" {
+			// A top-up or auto-recharge charged by billing.
+			in.charge, in.metaWID = &inv, inv.Metadata["workspace_id"]
+			break
 		}
 		subID, meta := invoiceSubscription(&inv, ev.Data.Raw)
 		in.metaWID = meta["workspace_id"]
@@ -302,14 +316,13 @@ func (s *svc) apply(ctx context.Context, tx pgx.Tx, ev *stripe.Event, in *eventI
 		changed = c.changed
 		out = append(out, c.captures...)
 	}
-	if cs := in.session; cs != nil && cs.Mode == stripe.CheckoutSessionModePayment && cs.Metadata["kind"] == "credits" &&
+	if cs := in.session; cs != nil && cs.Mode == stripe.CheckoutSessionModePayment && cs.Metadata["kind"] == topUpKind &&
 		cs.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
-		packs, err := strconv.Atoi(cs.Metadata["packs"])
-		if err != nil || packs < 1 || packs > 20 {
-			return nil, fmt.Errorf("checkout session %s: invalid packs metadata", cs.ID)
+		usage, err := checkoutUSD(cs.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("checkout session %s: %w", cs.ID, err)
 		}
-		credits := packs * plan.CreditPackSize
-		granted, err := plan.Grant(ctx, tx, wid, credits, "stripe_checkout", cs.ID)
+		granted, err := plan.Grant(ctx, tx, wid, usage, "stripe_checkout", cs.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -318,22 +331,29 @@ func (s *svc) apply(ctx context.Context, tx pgx.Tx, ev *stripe.Event, in *eventI
 			if err := rearmNotices(ctx, tx, wid); err != nil {
 				return nil, err
 			}
-			if err := audit.Log(ctx, tx, nil, wid, "billing.credits_purchased", "workspace", &wid,
-				map[string]any{"packs": packs, "credits": credits}); err != nil {
+			data := map[string]any{"usd": usage.USD()}
+			if err := audit.Log(ctx, tx, nil, wid, "billing.ai_top_up_purchased", "workspace", &wid, data); err != nil {
 				return nil, err
 			}
-			out = append(out, capture{wid, "credits_purchased", map[string]any{"packs": packs, "credits": credits}})
+			out = append(out, capture{wid, "ai_top_up_purchased", data})
 		}
 	}
-	if in.intent != nil {
-		c, caps, err := s.applyRechargeIntent(ctx, tx, string(ev.Type), wid, in.intent, prices)
+	if inv := in.charge; inv != nil && ev.Type == "invoice.paid" {
+		// A failed charge is handled by whoever tried it (the request or the recharge job).
+		chargeID, _ := uuid.Parse(inv.Metadata["charge_id"])
+		caps, err := s.grantChargeTx(ctx, tx, wid, chargeID, inv.ID, inv.Metadata)
 		if err != nil {
 			return nil, err
 		}
-		changed = changed || c
+		changed = changed || len(caps) > 0
 		out = append(out, caps...)
 	}
-	if ev.Type == "invoice.payment_failed" {
+	if in.syncPM {
+		if err := enqueuePaymentMethodSync(ctx, s.d, tx, wid); err != nil {
+			return nil, err
+		}
+	}
+	if ev.Type == "invoice.payment_failed" && in.charge == nil && in.sub != nil {
 		if err := s.notifyPaymentFailed(ctx, tx, wid); err != nil {
 			return nil, err
 		}
@@ -442,18 +462,13 @@ func (s *svc) notifyPaymentFailed(ctx context.Context, tx pgx.Tx, wid uuid.UUID)
 	if err != nil {
 		return err
 	}
-	emails, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	to, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		return err
 	}
-	subject := "Payment failed for " + name
-	html, text := mailer.Layout("We could not collect your payment",
-		[]string{"The latest payment for the opendesk Pro subscription of " + name + " failed.",
-			"Stripe will retry over the next few days, and the workspace stays on Pro meanwhile. Update the payment method to avoid losing Pro."},
-		"Update payment method", s.d.Cfg.AppURL+"/settings/billing",
-		"You get this email because you are an owner or admin of this workspace.")
-	for _, to := range emails {
-		if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: to, Subject: subject, HTML: html, Text: text},
+	m := emails.PaymentFailed(emails.SiteFrom(s.d.Cfg), name, wid.String())
+	for _, addr := range to {
+		if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: addr, Subject: m.Subject, HTML: m.HTML, Text: m.Text},
 			&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
 			return err
 		}
@@ -462,3 +477,20 @@ func (s *svc) notifyPaymentFailed(ctx context.Context, tx pgx.Tx, wid uuid.UUID)
 }
 
 var errNoItem = errors.New("subscription has no items")
+
+// checkoutUSD is the AI usage a top-up Checkout bought: metadata.micro_usd, or ten dollars
+// per metadata.top_ups on sessions started before amounts were free.
+func checkoutUSD(meta map[string]string) (plan.Micro, error) {
+	if v := meta["micro_usd"]; v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || plan.Micro(n) < MinTopUp || plan.Micro(n) > MaxTopUp {
+			return 0, errors.New("invalid micro_usd metadata")
+		}
+		return plan.Micro(n), nil
+	}
+	n, err := strconv.Atoi(meta["top_ups"])
+	if err != nil || n < 1 || n > 20 {
+		return 0, errors.New("invalid top_ups metadata")
+	}
+	return plan.TopUpUSD * plan.Micro(n), nil
+}

@@ -121,7 +121,7 @@ func TestMailboxCRUD(t *testing.T) {
 	}
 
 	// Delete keeps tickets.
-	mustExec(t, w.d, `INSERT INTO tickets (workspace_id, number, subject, channel, mailbox_id) VALUES ($1, 99, 's', 'email', $2)`, w.wid, fwd.ID)
+	mustExec(t, w.d, `INSERT INTO tickets (workspace_id, number, subject, channel, mailbox_id, brand_id) VALUES ($1, 99, 's', 'email', $2, $3)`, w.wid, fwd.ID, w.brand)
 	if code := doJSON(t, http.MethodDelete, srv.URL+"/v1/mailboxes/"+fwd.ID.String(), nil, nil); code != http.StatusNoContent {
 		t.Fatalf("delete: %d", code)
 	}

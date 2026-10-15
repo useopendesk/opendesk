@@ -4,6 +4,7 @@
 // Events are never replayed and may be missed (a reconnect, a late join), so
 // every step here tolerates gaps and arrival in any order.
 
+import { readBotRef, type BotSeen } from "./config";
 import type { LiveEvent, Message } from "./types";
 
 export type LiveTool = { name: string; status: "running" | "done" | "error" };
@@ -11,7 +12,8 @@ export type LiveTool = { name: string; status: "running" | "done" | "error" };
 export type LiveReply = {
   id: string;
   ticket_id: string;
-  bot: string | null;
+  /** The bot writing it (from `started`); null shows the widget's. */
+  bot: BotSeen | null;
   /** Raw markdown so far (markers included; the view hides them). */
   text: string;
   tools: LiveTool[];
@@ -74,7 +76,7 @@ export function reduceLive(st: LiveState, ev: LiveEvent, now: number, posted: (m
 
   switch (ev.type) {
     case "ai.reply.started": {
-      const bot = typeof ev.data.bot?.name === "string" ? ev.data.bot.name : null;
+      const bot = readBotRef(ev.data.bot);
       if (cur) return put({ ...cur, bot: bot ?? cur.bot, partial: cur.text === "" ? false : cur.partial, at: now });
       return put({ ...fresh(), bot, partial: false });
     }

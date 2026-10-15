@@ -63,5 +63,10 @@
   "rateUp": "도움이 됐어요",
   "rateDown": "도움이 안 됐어요",
   "ratedThanks": "의견 감사해요",
-  "jumpLatest": "최신 메시지로 이동"
+  "jumpLatest": "최신 메시지로 이동",
+  "topicsTitle": "무엇을 도와드릴까요?",
+  "topicsHint": "알맞은 담당자에게 메시지가 전달되도록 주제를 선택하세요.",
+  "placeholderTopic": "주제를 선택해 시작하세요",
+  "changeTopic": "주제 변경",
+  "offlineDefault": "지금은 자리에 없습니다. 메시지를 남겨 주시면 돌아오는 대로 답변드리겠습니다."
 }

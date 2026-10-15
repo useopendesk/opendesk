@@ -91,7 +91,7 @@ func testDeps(t testing.TB) *deps.Deps {
 		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test",
 			AuthSecret: testSecret, InboundDomain: "in.test", InboundSecret: "test", MailFrom: "opendesk <notifications@opendesk.test>",
 			MailDriver: "log", GoogleClientID: "gid", GoogleClientSecret: "gsecret", MicrosoftClientID: "mid",
-			MicrosoftClientSecret: "msecret", MicrosoftTenant: "common"}
+			MicrosoftClientSecret: "msecret", MicrosoftTenant: "common", GoogleMailboxOAuth: true, MicrosoftMailboxOAuth: true, InboundAuthservIDs: []string{"mx.in.test", "mx.test"}}
 		log := slog.New(slog.NewTextHandler(io.Discard, nil))
 		if os.Getenv("EMAILTEST_LOG") != "" {
 			log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -114,6 +114,7 @@ type world struct {
 	s     *service
 	wid   uuid.UUID
 	uid   uuid.UUID
+	brand uuid.UUID // the default brand
 	admin *auth.Principal
 }
 
@@ -124,6 +125,8 @@ func newWorld(t *testing.T) *world {
 	w := &world{t: t, ctx: ctx, d: d, s: newService(d), wid: ids.New(), uid: ids.New()}
 	slug := "acme-" + crypto.RandomString(6)
 	mustExec(t, d, `INSERT INTO workspaces (id, name, slug, widget_key) VALUES ($1, 'Acme', $2, $3)`, w.wid, slug, "wk_"+crypto.RandomString(12))
+	w.brand = ids.New()
+	mustExec(t, d, `INSERT INTO brands (id, workspace_id, name, slug, is_default) VALUES ($1, $2, 'Acme', $3, true)`, w.brand, w.wid, slug)
 	mustExec(t, d, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'Anna Agent')`, w.uid, "anna-"+crypto.RandomString(6)+"@acme.test")
 	mustExec(t, d, `INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'admin')`, w.wid, w.uid)
 	w.admin = &auth.Principal{Kind: auth.KindUser, UserID: w.uid, SessionID: ids.New(), WorkspaceID: w.wid, Role: auth.RoleAdmin, IP: "127.0.0.1"}
@@ -175,7 +178,7 @@ func (w *world) receive(m *mailboxRow, raw string) uuid.UUID {
 	w.t.Helper()
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.ReplaceAll(raw, "\n", "\r\n")
-	id, dup, err := w.s.ingest(w.ctx, m, []byte(raw), w.forwardAddr(m, ""))
+	id, dup, err := w.s.ingest(w.ctx, m, []byte(raw), w.forwardAddr(m, ""), nil)
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -304,6 +307,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	api := humachi.New(r, cfg)
 	s := w.s
 	s.registerMailboxRoutes(api)
+	s.registerConnectRoutes(api)
 	s.registerOAuthRoutes(api, r)
 	r.Post("/v1/inbound/email", s.inboundHTTP)
 	srv := httptest.NewServer(r)

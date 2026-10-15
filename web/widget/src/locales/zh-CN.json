@@ -63,5 +63,10 @@
   "rateUp": "有帮助",
   "rateDown": "没帮助",
   "ratedThanks": "感谢你的反馈",
-  "jumpLatest": "跳到最新"
+  "jumpLatest": "跳到最新",
+  "topicsTitle": "我们能帮您什么？",
+  "topicsHint": "选择一个主题，让您的消息送达合适的人。",
+  "placeholderTopic": "选择一个主题开始",
+  "changeTopic": "更改主题",
+  "offlineDefault": "我们现在不在线。请留言，我们回来后会尽快回复您。"
 }

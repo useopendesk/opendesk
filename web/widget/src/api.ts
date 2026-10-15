@@ -79,11 +79,11 @@ export class WidgetApi {
   }
 
   /** "conversation + first message": accept `{conversation, message}` or a bare conversation. */
-  async start(body: string, attachment_ids?: string[], page_url?: string) {
+  async start(body: string, attachment_ids?: string[], page_url?: string, topic_id?: string) {
     const r = await this.req<{ conversation?: Conversation; message?: Message } & Partial<Conversation>>(
       "POST",
       "/v1/widget/conversations",
-      { body, attachment_ids, page_url },
+      { body, attachment_ids, page_url, topic_id },
     );
     const conversation = (r.conversation ?? r) as Conversation;
     return { conversation, message: r.message ?? null };
@@ -95,6 +95,11 @@ export class WidgetApi {
 
   send(id: string, body: string, attachment_ids?: string[], page_url?: string) {
     return this.req<Message>("POST", `/v1/widget/conversations/${enc(id)}/messages`, { body, attachment_ids, page_url });
+  }
+
+  /** The visitor has the conversation on screen: an agent's reply is not also emailed. */
+  seen(id: string) {
+    return this.req<unknown>("POST", `/v1/widget/conversations/${enc(id)}/seen`, {});
   }
 
   /** The visitor wants a person instead of the AI agent. */

@@ -1,0 +1,150 @@
+---
+title: Gmail and Google Workspace
+description: Connect a Gmail or Google Workspace mailbox to opendesk with an app password in three steps, or with Google sign-in when your instance offers it.
+---
+
+import Screenshot from '../../../../components/Screenshot.astro';
+import Steps from '../../../../components/Steps.astro';
+import Step from '../../../../components/Step.astro';
+import Callout from '../../../../components/Callout.astro';
+import Legend from '../../../../components/Legend.astro';
+import Fold from '../../../../components/Fold.astro';
+
+A Gmail or Google Workspace mailbox connects with an **app password**: a 16-letter password Google makes for one app. opendesk uses it to read new mail over IMAP and to send replies through Gmail's SMTP server, so replies come from your address and land in your Sent folder. It takes about two minutes.
+
+When your instance offers it, you can connect with **Google sign-in** instead (see [Google sign-in](#google-sign-in-when-your-instance-offers-it)). [Forwarding](/guides/mailboxes/forwarding/) works too, and needs no password at all.
+
+<Screenshot src="/guides/mailboxes/gmail-connect" alt="The last step of the Gmail app password walkthrough: the App password field ringed as 1, the IMAP and SMTP servers set for you ringed as 2, and the Connect button ringed as 3" />
+
+<Legend>
+
+1. **App password**: paste the 16 letters Google shows. Spaces are fine, opendesk removes them.
+2. **Server settings, set for you**: `imap.gmail.com` on port 993 and `smtp.gmail.com` on port 465, both over TLS.
+3. **Connect** checks the sign-in with Google, then saves the mailbox.
+
+</Legend>
+
+## Connect with an app password
+
+You need the address to be a Google account you can sign in to, with **2-Step Verification** on. Google only offers app passwords on accounts that have it on.
+
+<Steps>
+<Step title="Add the mailbox and pick App password">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. opendesk shows **Gmail** or **Google Workspace** and selects **App password**. Click **Continue**.
+
+<Screenshot src="/guides/mailboxes/pick-method" alt="The ways to connect a Google Workspace address: App password, recommended and selected, ringed as 1, Choose another way ringed as 2, and Continue ringed as 3" />
+
+</Step>
+<Step title="Turn on 2-Step Verification">
+
+Click **Open Google security settings**, or open [myaccount.google.com/security](https://myaccount.google.com/security) while signed in to this address. Find **2-Step Verification** under **How you sign in to Google** and turn it on with a phone prompt, an authenticator app or a text message. Then click **It's on, continue**.
+
+<Screenshot src="/guides/mailboxes/gmail-2sv" alt="Step 1 of 3, Turn on 2-Step Verification: the Open Google security settings button ringed as 1, and It's on, continue ringed as 2" />
+
+If it is already on, just continue.
+
+</Step>
+<Step title="Create an app password">
+
+Click **Open app passwords**, or open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Google may ask you to sign in again. Type **opendesk** as the app name and choose **Create**, then copy the 16 letters it shows. Click **I have it, continue**.
+
+<Screenshot src="/guides/mailboxes/gmail-app-password" alt="Step 2 of 3, Create an app password: the Open app passwords button ringed as 1, and I have it, continue ringed as 2" />
+
+No app passwords page? 2-Step Verification is still off, or your Google Workspace admin has turned app passwords off. See [Google Workspace notes](#google-workspace-notes).
+
+</Step>
+<Step title="Paste it and connect">
+
+Paste the app password and click **Connect**. opendesk signs in to Gmail's IMAP and SMTP servers before it saves anything. When both work, the last step shows **Receiving works** and **Sending works**.
+
+<Screenshot src="/guides/mailboxes/done" alt="Add a mailbox, done: Care is connected ringed as 1, with Receiving works and Sending works ringed as 2" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+- Use the address you sign in to Google with, not an alias or a group address. For a Google Group, use [forwarding](/guides/mailboxes/forwarding/).
+- The app password is encrypted at rest and never shown again. Deleting it in your Google Account disconnects the mailbox.
+- Accounts in Google's Advanced Protection Program can't have app passwords. Use forwarding for them.
+
+</Callout>
+
+<Fold>
+
+## If Google refuses the password
+
+Nothing is saved when Google refuses. The wizard shows the cause and the fix, with Google's own reply underneath.
+
+| What you see | What to do |
+| --- | --- |
+| **Google needs an app password** (Google says "Application-specific password required") | The regular account password was used. Create an app password as above and paste it. |
+| **Google did not accept the app password** | Create a new app password while signed in to this exact address, not an alias or a group, and use it. A deleted app password stops working at once. |
+| **IMAP is turned off in Google** | On Google Workspace, an admin allows IMAP access (see [Google Workspace notes](#google-workspace-notes)). |
+| **Google wants a browser sign-in first** | Google blocked the sign-in as unusual. Sign in to the mailbox once at [mail.google.com](https://mail.google.com), confirm any security prompt, then try again. |
+
+A note under the field also warns when what you pasted doesn't look like a 16-letter app password.
+
+</Fold>
+
+## Google sign-in, when your instance offers it
+
+When your instance offers Google sign-in for mailboxes, **Sign in with Google** is the recommended way for Gmail and Google Workspace. You approve access in Google once, and no password is stored. On opendesk Cloud, Gmail and Google Workspace connect with an app password.
+
+<Steps>
+<Step title="Pick Sign in with Google">
+
+Add the mailbox, type the address, keep **Sign in with Google** selected and click **Continue**.
+
+<Screenshot src="/guides/mailboxes/google-signin" alt="The ways to connect a Google Workspace address with Sign in with Google recommended and selected, ringed as 1, and Continue ringed as 2" />
+
+</Step>
+<Step title="Approve access in Google">
+
+Click **Continue with Google** and sign in with the Google account for the address. Review the permissions and approve. Google sends you back to opendesk with the mailbox connected.
+
+</Step>
+</Steps>
+
+### What opendesk asks for
+
+| Scope | Why |
+| --- | --- |
+| `openid`, `email` | Identify which Google account was connected. |
+| `https://mail.google.com/` | Read incoming mail over IMAP and send replies through Gmail. |
+
+opendesk requests offline access, so it keeps working after you close the browser. The refresh token is encrypted at rest with AES-GCM.
+
+### How opendesk uses Gmail data
+
+opendesk's use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Mail is read only to turn it into tickets in your workspace and to send the replies your team writes. It is not used for advertising, not sold, and not read by people except as needed for security, to comply with the law, or with your permission for support.
+
+### Self-hosting
+
+On your own instance, Google sign-in for mailboxes needs your own Google OAuth client (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`), and `GOOGLE_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
+
+## Google Workspace notes
+
+On Google Workspace, an admin controls whether people can connect a mailbox. In the [Google Admin console](https://admin.google.com):
+
+- **2-Step Verification**: under **Security**, **Authentication**, **2-step verification**, allow users to turn it on. An organization that requires security keys only, or enrols people in Advanced Protection, has no app passwords: connect those mailboxes by forwarding.
+- **App passwords**: if the app passwords page is missing for a user with 2-Step Verification on, app passwords are turned off for your organization. Ask your admin to allow them for the support account.
+- **IMAP**: under **Apps**, **Google Workspace**, **Gmail**, **End User Access**, turn on **POP and IMAP access** for the organizational unit of the support account.
+- **Google sign-in**: if your organization restricts third-party apps, an admin trusts opendesk under **Security**, **Access and data control**, **API controls**, **Manage third-party app access**.
+- **Shared addresses**: a Google Group or a routing address can't sign in. Forward its mail with a routing rule instead, as in [Forwarding](/guides/mailboxes/forwarding/#google-workspace).
+
+## Disconnect
+
+Remove the mailbox in opendesk, under **Mailboxes**. Then, in your Google Account:
+
+- **App password**: delete it at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). opendesk can no longer sign in.
+- **Google sign-in**: remove opendesk under **Security**, **Your connections to third-party apps and services**.
+
+If you delete the app password or remove access in Google first, the mailbox shows **Needs attention** until you connect it again.
+
+## Related
+
+- [Connect a mailbox](/guides/mailboxes/)
+- [Forwarding](/guides/mailboxes/forwarding/)
+- [Other providers](/guides/mailboxes/imap-smtp/)

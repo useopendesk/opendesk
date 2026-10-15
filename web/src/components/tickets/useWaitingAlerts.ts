@@ -5,13 +5,14 @@ import { useUrgentChats } from "./useUrgentChats";
 
 // App-wide alerts for live chat visitors waiting with nobody on it, on every page: a
 // chime when one starts waiting, a softer reminder every minute while any still waits,
-// and a blinking tab title while the tab is in the background.
+// and a blinking tab title while the tab is in the background. A chat someone picked up
+// (open, viewing, replying or assigned) stops alerting.
 
 const REMINDER_MS = 60_000;
 
 export function useWaitingAlerts(enabled: boolean) {
   const { t } = useTranslation("inbox");
-  const { urgent, now, ready } = useUrgentChats(enabled);
+  const { urgent, now, ready } = useUrgentChats(enabled, true);
   const key = urgent
     .map((x) => x.ticket.id)
     .sort()

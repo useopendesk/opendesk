@@ -5,16 +5,18 @@ description: Conversations with Ollie, streamed runs, approvals and tips.
 
 Ollie's routes are for signed-in people only: an API key gets `403`. They need AI on the instance and in the workspace, and `settings.ai.assistant` on (`403 assistant_off`). The assistant's display name comes from `assistant_name` in [`GET /v1/ai/config`](/api/resources/ai/).
 
-| Method | Path | Min role | Credits | Description |
+| Method | Path | Min role | Typical cost | Description |
 | --- | --- | --- | --- | --- |
-| `GET` | `/v1/assistant/sessions` | viewer | 0 | Your conversations, newest first |
-| `POST` | `/v1/assistant/sessions` | viewer | 0 | Start a conversation |
-| `GET` | `/v1/assistant/sessions/{id}` | viewer | 0 | Transcript and any pending approval |
-| `PATCH` | `/v1/assistant/sessions/{id}` | viewer | 0 | Rename |
-| `DELETE` | `/v1/assistant/sessions/{id}` | viewer | 0 | Delete |
-| `POST` | `/v1/assistant/sessions/{id}/messages` | viewer | 2 per model turn | Send a message and run Ollie |
-| `POST` | `/v1/assistant/actions/{id}/decision` | viewer | 2 per model turn | Approve or deny a proposed change |
-| `GET` | `/v1/assistant/tips` | viewer | 0 | Short tips from queue counts |
+| `GET` | `/v1/assistant/sessions` | viewer | $0 | Your conversations, newest first |
+| `POST` | `/v1/assistant/sessions` | viewer | $0 | Start a conversation |
+| `GET` | `/v1/assistant/sessions/{id}` | viewer | $0 | Transcript and any pending approval |
+| `PATCH` | `/v1/assistant/sessions/{id}` | viewer | $0 | Rename |
+| `DELETE` | `/v1/assistant/sessions/{id}` | viewer | $0 | Delete |
+| `POST` | `/v1/assistant/sessions/{id}/messages` | viewer | $0.02 per model turn | Send a message and run Ollie |
+| `POST` | `/v1/assistant/actions/{id}/decision` | viewer | $0.02 per model turn | Approve or deny a proposed change |
+| `GET` | `/v1/assistant/tips` | viewer | $0 | Short tips from queue counts |
+
+On opendesk Cloud each model turn is charged to the AI balance on its real cost, on the workspace's model. The typical cost column is what a turn is charged when that cost is unknown; `costs.assistant` in [`GET /v1/ai/config`](/api/resources/ai/#config) is a typical turn on the workspace's model. On the workspace's own provider key it is $0.
 
 Conversations are private to their user: another user's id answers `404`.
 
@@ -44,7 +46,7 @@ Without it, the same run comes back as one JSON object: `{ session, text, steps,
 
 A step's `status` is `running`, `done`, `error`, `awaiting_approval`, `approved`, `denied` or `expired`. `refs` link tickets (`kind: "ticket"`, with `number`), contacts, articles, views and automations.
 
-Errors: `402 no_credits` before anything is stored, `409 assistant_busy` while the conversation is already running, `429` past 30 messages a minute, `501 ai_unsupported` when the provider has no tool use.
+Errors: `402 ai_balance_empty` before anything is stored, `409 assistant_busy` while the conversation is already running, `429` past 30 messages a minute, `501 ai_unsupported` when the provider has no tool use.
 
 ## Approvals
 

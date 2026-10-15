@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Check, Download, FileText, Lock, MoreHorizontal, RotateCw } from "lucide-react";
+import { AlertCircle, Check, Download, FileText, Globe, Lock, MoreHorizontal, Reply, RotateCw, ShieldAlert } from "lucide-react";
 import { memo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
 import type { Attachment, Message } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
+import { q } from "@/lib/queries";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { bytes, clock, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -17,6 +18,7 @@ import { OllieAvatar, useAssistantName } from "../ollie";
 import { AiActionCard, AiRating } from "./AgentReply";
 import { ImproveAnswerButton } from "@/components/agent/quality";
 import { AiAuthorLabel, TranslateButton, TranslatedNote, useMessageTranslation } from "@/components/ai/ticket/MessageAi";
+import { BotRefFace } from "@/components/bots/BotFace";
 
 function authorName(m: Message): string {
   if (m.author.user) return m.author.user.name;
@@ -142,17 +144,61 @@ function Delivery({ m, onRetry }: { m: Message; onRetry?: () => void }) {
   );
 }
 
-export const MessageItem = memo(function MessageItem({ m, onRetry, highlight }: { m: Message; onRetry?: (m: Message) => void; highlight?: boolean }) {
+/** An inbound email whose From failed its domain's authentication check. */
+function UnverifiedSender() {
+  const { t } = useTranslation("inbox");
+  return (
+    <Tooltip content={<span className="block max-w-[260px] font-normal leading-snug">{t("message.unverifiedHint")}</span>}>
+      <span
+        tabIndex={0}
+        className={`inline-flex h-[18px] shrink-0 items-center gap-1 self-center rounded-sm px-1.5 text-[11px] font-medium outline-none focus-visible:shadow-[0_0_0_2px_var(--focus)] ${tone.amber.chip}`}
+      >
+        <ShieldAlert className="size-3" />
+        {t("message.unverified")}
+      </span>
+    </Tooltip>
+  );
+}
+
+/** Which of our addresses a message went through, when the workspace has more than one. */
+function useMessageAddress(m: Message, receivedAt?: string | null) {
+  const { data: mailboxes } = useQuery(q.mailboxes());
+  const multi = (mailboxes ?? []).reduce((n, x) => n + 1 + (x.aliases?.length ?? 0), 0) > 1;
+  if (!multi || receivedAt === null) return null;
+  const mb = m.mailbox_id ? mailboxes?.find((x) => x.id === m.mailbox_id) : undefined;
+  if (m.direction === "inbound") {
+    const ours = (a: string) => !!mb && (a.toLowerCase() === mb.email.toLowerCase() || (mb.aliases ?? []).some((x) => x.toLowerCase() === a.toLowerCase()));
+    return m.to.find(ours) ?? mb?.email ?? (receivedAt || null);
+  }
+  return m.from_email || mb?.email || null;
+}
+
+export const MessageItem = memo(function MessageItem({
+  m,
+  onRetry,
+  highlight,
+  receivedAt,
+}: {
+  m: Message;
+  onRetry?: (m: Message) => void;
+  highlight?: boolean;
+  /** The ticket's first address, for inbound messages that don't record one; null when the ticket isn't email. */
+  receivedAt?: string | null;
+}) {
   const [showOriginal, setShowOriginal] = useState(false);
   const ollie = useAssistantName();
-  // The widget answer bot speaks as the workspace's AI teammate.
-  const name = m.ai ? ollie : authorName(m);
+  // An AI reply shows the bot it was sent as (contracts/bots.md), else Ollie.
+  const bot = m.ai ? (m.author.bot ?? null) : null;
+  const name = m.ai ? (bot?.name ?? ollie) : authorName(m);
   const note = m.kind === "note";
   const outbound = m.direction === "outbound" && !note;
   const failed = m.delivery_status === "failed" || m.delivery_status === "bounced";
   const avatar = m.author.user?.avatar_url ?? m.author.contact?.avatar_url;
   const tr = useMessageTranslation(m);
   const { t } = useTranslation("inbox");
+  const address = useMessageAddress(m, receivedAt);
+  const inbound = m.direction === "inbound" && !note;
+  const replyTo = inbound && m.reply_to && m.reply_to.toLowerCase() !== m.from_email.toLowerCase() ? m.reply_to : null;
 
   return (
     <article
@@ -169,24 +215,32 @@ export const MessageItem = memo(function MessageItem({ m, onRetry, highlight }: 
       )}
     >
       <header className="flex items-center gap-2.5 px-4 pt-3">
-        {m.ai ? <OllieAvatar size={24} /> : <Avatar name={name} src={avatar} size="md" />}
+        {bot ? <BotRefFace bot={bot} size={24} /> : m.ai ? <OllieAvatar size={24} /> : <Avatar name={name} src={avatar} size="md" />}
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="truncate text-[13px] font-medium" data-ph-mask={m.author.contact ? true : undefined}>
+          <span className="max-w-[50%] shrink-0 truncate text-[13px] font-medium" data-ph-mask={m.author.contact ? true : undefined}>
             {name}
           </span>
           <AiAuthorLabel m={m} />
+          {inbound && m.auth_failed && <UnverifiedSender />}
           {note ? (
             <span className="flex shrink-0 items-center gap-1 text-[11.5px] text-fg-3">
               <Lock className="size-3" /> {t("message.internalNote")}
             </span>
           ) : outbound ? (
             <span className="min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
+              {address && (
+                <span className="text-fg-2">
+                  {t("message.fromAddress", { name: m.from_name || name, address })}
+                  <span className="text-fg-4"> · </span>
+                </span>
+              )}
               {t("message.to", { to: m.to.join(", ") || t("composer.theCustomer") })}
               {m.cc.length > 0 && `, cc ${m.cc.join(", ")}`}
             </span>
           ) : (
             <span className="min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
               {m.from_email}
+              {address && <span className="text-fg-4"> {t("message.toAddress", { address })}</span>}
             </span>
           )}
         </div>
@@ -201,6 +255,28 @@ export const MessageItem = memo(function MessageItem({ m, onRetry, highlight }: 
         </Tooltip>
       </header>
       <div className="px-4 pb-3.5 pl-[50px] pt-1">
+        {(replyTo || (inbound && m.form_sender)) && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-fg-3" data-ph-mask>
+            {inbound && m.form_sender && (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Globe className="size-3 shrink-0 text-fg-4" />
+                <span className="min-w-0 truncate">
+                  <Trans t={t} i18nKey="message.viaForm" values={{ address: m.form_sender }} components={{ m: <span className="mono text-fg-2" /> }} />
+                </span>
+              </span>
+            )}
+            {replyTo && (
+              <Tooltip content={t("message.replyToHint")}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Reply className="size-3 shrink-0 text-fg-4" />
+                  <span className="min-w-0 truncate">
+                    <Trans t={t} i18nKey="message.replyTo" values={{ address: replyTo }} components={{ m: <span className="mono text-fg-2" /> }} />
+                  </span>
+                </span>
+              </Tooltip>
+            )}
+          </div>
+        )}
         <TranslatedNote tr={tr} />
         <Body html={tr.showing && tr.html ? tr.html : m.body_html || `<p>${m.body_text}</p>`} />
         {m.has_quoted && (

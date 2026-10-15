@@ -4,7 +4,7 @@
 
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, rows, type TicketListQuery } from "./api/endpoints";
-import type { Page, ReportsRange } from "./api/types";
+import type { Page, ReportsQuery, ReportsRange } from "./api/types";
 
 export const qk = {
   authConfig: ["auth-config"] as const,
@@ -37,6 +37,10 @@ export const qk = {
   members: ["members"] as const,
   invitations: ["invitations"] as const,
   teams: ["teams"] as const,
+  brands: ["brands"] as const,
+  widgets: ["widgets"] as const,
+  bots: ["bots"] as const,
+  routingRules: ["routing-rules"] as const,
   apiKeys: ["api-keys"] as const,
   webhooks: ["webhooks"] as const,
   webhookDeliveries: (id: string) => ["webhooks", "deliveries", id] as const,
@@ -45,12 +49,14 @@ export const qk = {
   ticketLinks: (id: string) => ["tickets", "links", id] as const,
   auditLogs: ["audit-logs"] as const,
   notifications: ["notifications"] as const,
+  /** The caller's notification preferences in the current workspace (the cache is cleared on a workspace switch). */
+  notificationPreferences: ["me", "notification-preferences"] as const,
   kbCollections: ["kb", "collections"] as const,
   kbArticleLists: ["kb", "articles"] as const,
-  kbArticles: (q: { collection_id?: string; status?: string; q?: string }) => ["kb", "articles", q] as const,
+  kbArticles: (q: { collection_id?: string; status?: string; q?: string; for_brand_id?: string }) => ["kb", "articles", q] as const,
   kbArticle: (id: string) => ["kb", "article", id] as const,
   search: (q: string) => ["search", q] as const,
-  reports: (r: ReportsRange) => ["reports", r] as const,
+  reports: (r: ReportsQuery) => ["reports", r] as const,
   widgetSettings: ["widget-settings"] as const,
   publicHelp: (slug: string) => ["public", "help", slug] as const,
   publicCollection: (slug: string, c: string) => ["public", "help", slug, "c", c] as const,
@@ -60,6 +66,7 @@ export const qk = {
   invitationLookup: (token: string) => ["invitation-lookup", token] as const,
   billing: ["billing"] as const,
   billingUsage: (r: { from: string; to: string }) => ["billing", "usage", r] as const,
+  billingInvoices: ["billing", "invoices"] as const,
   aiConfig: ["ai", "config"] as const,
   aiSearch: (q: string) => ["ai", "search", q] as const,
   aiModels: ["ai", "models"] as const,
@@ -131,6 +138,10 @@ export const q = {
   members: () => list(qk.members, () => api.members.list()),
   invitations: () => list(qk.invitations, () => api.invitations.list()),
   teams: () => list(qk.teams, () => api.teams.list({ limit: 100 })),
+  brands: () => list(qk.brands, () => api.brands.list({ limit: 100 })),
+  widgets: () => list(qk.widgets, () => api.widgets.list({ limit: 100 })),
+  bots: () => list(qk.bots, () => api.bots.list()),
+  routingRules: () => list(qk.routingRules, () => api.routingRules.list({ limit: 200 })),
   apiKeys: () => list(qk.apiKeys, () => api.apiKeys.list({ limit: 100 })),
   webhooks: () => list(qk.webhooks, () => api.webhooks.list({ limit: 100 })),
   webhookDeliveries: (id: string) => list(qk.webhookDeliveries(id), () => api.webhooks.deliveries(id, { limit: 50 })),
@@ -145,15 +156,17 @@ export const q = {
       getNextPageParam: (last) => last.next_cursor,
     }),
   notifications: () => list(qk.notifications, () => api.notifications.list({ limit: 50 })),
+  notificationPreferences: () => queryOptions({ queryKey: qk.notificationPreferences, queryFn: api.notifications.preferences }),
   kbCollections: () => list(qk.kbCollections, () => api.kb.collections.list({ limit: 100 })),
-  kbArticles: (query: { collection_id?: string; status?: "draft" | "published"; q?: string }) =>
+  kbArticles: (query: { collection_id?: string; status?: "draft" | "published"; q?: string; for_brand_id?: string }) =>
     list(qk.kbArticles(query), () => api.kb.articles.search({ ...query, limit: 100 })),
   kbArticle: (id: string) => queryOptions({ queryKey: qk.kbArticle(id), queryFn: () => api.kb.articles.get(id) }),
   search: (term: string) =>
     queryOptions({ queryKey: qk.search(term), queryFn: () => api.search(term), enabled: term.trim().length > 1, staleTime: 10_000 }),
-  reports: (r: ReportsRange) => queryOptions({ queryKey: qk.reports(r), queryFn: () => api.reports.overview(r) }),
+  reports: (r: ReportsQuery) => queryOptions({ queryKey: qk.reports(r), queryFn: () => api.reports.overview(r) }),
   billing: () => queryOptions({ queryKey: qk.billing, queryFn: api.billing.get, staleTime: 60_000 }),
   billingUsage: (r: { from: string; to: string }) => queryOptions({ queryKey: qk.billingUsage(r), queryFn: () => api.billing.usage(r) }),
+  billingInvoices: () => queryOptions({ queryKey: qk.billingInvoices, queryFn: async () => (await api.billing.invoices()).data, staleTime: 30_000 }),
   /** AI availability. A failure (older server, ai_disabled) reads as "off". */
   aiConfig: () =>
     queryOptions({

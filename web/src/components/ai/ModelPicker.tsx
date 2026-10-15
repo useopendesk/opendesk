@@ -1,6 +1,7 @@
 // The model choice for AI settings and the widget agent: a popover listbox of
 // the models the instance offers (GET /v1/ai/models), each with its vendor,
-// context length and credits per million tokens, plus "Default", which follows
+// context length, price per million tokens in US dollars and what a typical
+// draft reply costs on it, plus "Default", which follows
 // the instance (or another setting) and names the model that means today.
 // Keyboard: arrows move, Enter picks, Escape and click-away close.
 
@@ -10,10 +11,11 @@ import { Check, ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { AIModel } from "@/lib/api/types";
-import { compact, number } from "@/lib/format";
+import { compact, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { tone, type Tone } from "@/lib/tones";
 import { floatingPanel } from "@/components/ui/popover";
+import { pickerSearch } from "@/components/ui/picker";
 
 const VENDOR_TONE: Record<string, Tone> = { anthropic: "orange", openai: "green", google: "blue", deepseek: "indigo", meta: "blue", mistral: "amber" };
 
@@ -38,11 +40,17 @@ export function modelName(id: string, models: AIModel[] | undefined): string {
   return models?.find((m) => m.id === id)?.name || id;
 }
 
-/** "450 credits / 1M in · 2,250 out", or null when the price is unknown. */
+/** "$3 / $15 per 1M" (input / output tokens), or null when the price is unknown (or on the workspace's own key). */
 export function useModelPrice() {
   const { t } = useTranslation("agent");
   return (m: AIModel | undefined) =>
-    m?.credits_per_mtok ? t("model.price", { input: number(m.credits_per_mtok.input), output: number(m.credits_per_mtok.output) }) : null;
+    m?.usd_per_mtok ? t("model.price", { input: formatUsd(m.usd_per_mtok.input, { trim: true }), output: formatUsd(m.usd_per_mtok.output, { trim: true }) }) : null;
+}
+
+/** "Draft reply about $0.0195", or null when the price is unknown. */
+export function useTypicalReply() {
+  const { t } = useTranslation("agent");
+  return (m: AIModel | undefined) => (m?.typical_reply_usd != null ? t("model.typicalReply", { cost: formatUsd(m.typical_reply_usd, { precise: true }) }) : null);
 }
 
 export function ModelPicker({
@@ -72,6 +80,7 @@ export function ModelPicker({
   const { t } = useTranslation("agent");
   const [open, setOpen] = useState(false);
   const price = useModelPrice();
+  const typical = useTypicalReply();
   const list = models ?? [];
   const current = value ? list.find((m) => m.id === value) : undefined;
   const fallback = list.find((m) => m.id === defaultId);
@@ -106,7 +115,11 @@ export function ModelPicker({
               <span className="font-medium text-fg">{current?.name || value}</span>
             )}
           </span>
-          {shown && price(shown) && <span className="mono hidden shrink-0 text-[10.5px] text-fg-4 @sm:inline">{price(shown)}</span>}
+          {shown && price(shown) && (
+            <span className="mono hidden shrink-0 text-[10.5px] text-fg-4 @sm:inline" title={t("model.priceHint")}>
+              {price(shown)}
+            </span>
+          )}
           <ChevronDown className="size-3.5 shrink-0 text-fg-3 transition-transform duration-150 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
         </button>
       </P.Trigger>
@@ -121,11 +134,9 @@ export function ModelPicker({
           <Command loop value={value || "__default"} label={ariaLabel ?? t("model.choose")} className="flex flex-col">
             {list.length > 12 && (
               // A provider key can list hundreds of models: search by id, name or vendor.
-              <Command.Input
-                autoFocus
-                placeholder={t("model.search")}
-                className="h-9 w-full border-b border-line-soft bg-transparent px-3 text-[12.5px] text-fg outline-none placeholder:text-fg-4"
-              />
+              <div className={pickerSearch.row}>
+                <Command.Input autoFocus placeholder={t("model.search")} className={pickerSearch.input} />
+              </div>
             )}
             <Command.List className="max-h-[340px] overflow-y-auto p-1">
               <Command.Empty className="px-2 py-5 text-center text-xs text-fg-3">{t("model.none")}</Command.Empty>
@@ -137,6 +148,7 @@ export function ModelPicker({
                 title={label}
                 meta={<span className="truncate">{modelName(defaultId, list)}</span>}
                 price={price(fallback)}
+                typical={typical(fallback)}
               />
               {list.length > 0 && <div className="mx-1 my-1 h-px bg-line-soft" />}
               {list.map((m) => (
@@ -155,6 +167,7 @@ export function ModelPicker({
                     </>
                   }
                   price={price(m)}
+                  typical={typical(m)}
                   badge={m.id === defaultId ? t("model.defaultBadge") : undefined}
                 />
               ))}
@@ -177,6 +190,7 @@ function Row({
   title,
   meta,
   price,
+  typical,
   badge,
   keywords,
 }: {
@@ -188,8 +202,10 @@ function Row({
   title: ReactNode;
   meta: ReactNode;
   price: string | null;
+  typical?: string | null;
   badge?: string;
 }) {
+  const { t } = useTranslation("agent");
   return (
     <Command.Item
       value={value}
@@ -205,7 +221,12 @@ function Row({
         </span>
         <span className="mt-px flex min-w-0 items-center gap-1.5 text-[11px] text-fg-3 [&>span+span]:before:mr-1.5 [&>span+span]:before:content-['·']">{meta}</span>
       </span>
-      {price && <span className="mono shrink-0 text-right text-[10.5px] leading-4 text-fg-3">{price}</span>}
+      {(price || typical) && (
+        <span className="flex shrink-0 flex-col items-end text-right text-[10.5px] leading-4" title={price ? t("model.priceHint") : undefined}>
+          {price && <span className="mono text-fg-3">{price}</span>}
+          {typical && <span className="text-fg-4">{typical}</span>}
+        </span>
+      )}
       <Check className={cn("size-3.5 shrink-0", selected ? "text-fg" : "invisible")} />
     </Command.Item>
   );

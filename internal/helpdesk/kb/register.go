@@ -1,5 +1,6 @@
 // Package kb is the knowledge base: collections and articles for agents, and the public
-// help center (published articles only, when settings.help_center_enabled is true).
+// help center of each brand (published articles of that brand or of every brand, when the
+// brand's help center is on).
 package kb
 
 import (

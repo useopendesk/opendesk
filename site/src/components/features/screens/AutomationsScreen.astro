@@ -1,0 +1,251 @@
+---
+/**
+ * Automations, 1:1: AppWindow on Settings with SettingsLayout's sub-navigation
+ * and AutomationEdit (web/src/pages/settings/AutomationEdit.tsx) open on a
+ * rule: the name and its On switch, then the When / If / Then steps with the
+ * builder's real rows and pickers (ValueButton, Select, TagPick).
+ *
+ * On the timeline (`data-step`) the rule runs on a new ticket: the trigger,
+ * the condition and each action light in turn, and the run count ticks. Without
+ * JS or under reduced motion it rests on the rule with the count updated.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic, prioIcon } from '../../app/icons';
+
+// lucide glyphs the shared set does not carry yet, drawn the same way as `ic`.
+const L: Record<string, string> = {
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  building2: '<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>',
+  usersRound: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
+  creditCard: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/><path d="M6 14h2"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  sliders: '<path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/>',
+  shuffle: '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  workflow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  squarePlus: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/><path d="M12 8v8"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+};
+const lc = (name: string, size: number, cls = '', sw = 2) =>
+  `<svg class="dm-ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${L[name]}</svg>`;
+const glyph = (n: string, size: number, cls = '') => (n in L ? lc(n, size, cls) : ic(n, size, cls));
+
+// SettingsLayout's groups, as an admin on an instance with AI sees them.
+const nav: { title: string; items: [string, string][] }[] = [
+  { title: 'Account', items: [['user', 'Profile'], ['shield', 'Security']] },
+  {
+    title: 'Workspace',
+    items: [['building2', 'General'], ['users', 'Members'], ['usersRound', 'Teams'], ['inbox', 'Mailboxes'], ['creditCard', 'Plan and billing'], ['bot', 'AI'], ['plug', 'Integrations']],
+  },
+  {
+    title: 'Inbox',
+    items: [
+      ['tag', 'Labels'], ['sliders', 'Custom fields'], ['shuffle', 'Assignment'], ['sparkles', 'Triage'], ['clock', 'Business hours'],
+      ['savedReplies', 'Saved replies'], ['layers', 'Views'], ['gauge', 'SLA policies'], ['workflow', 'Automations'],
+    ],
+  },
+  { title: 'Channels', items: [['messageCircle', 'Chat widget']] },
+  { title: 'AI agent', items: [['dashboard', 'Overview'], ['sliders', 'Behaviour'], ['bookOpen', 'Knowledge']] },
+];
+
+const chevron = ic('chevronDown', 12, 'dm-au-chev');
+const remove = `<span class="dm-au-x">${ic('x', 14)}</span>`;
+---
+<AppWindow active="settings" crumbs={['Settings', 'Automation']} width={1280}>
+  <nav class="dm-au-nav">
+    {nav.map((g, gi) => (
+      <div class={gi ? 'dm-au-group' : ''}>
+        <div class="dm-caps dm-au-caps">{g.title}</div>
+        <div class="dm-au-items">
+          {g.items.map(([icon, label]) => (
+            <span class={`dm-au-item ${label === 'Automations' ? 'dm-au-item-on' : ''}`}><Fragment set:html={glyph(icon, 14)} />{label}</span>
+          ))}
+        </div>
+      </div>
+    ))}
+  </nav>
+
+  <div class="dm-au" data-seq data-hold="3800">
+    <!-- SettingsPage: the title block -->
+    <div class="dm-au-top">
+      <div class="dm-au-titles">
+        <span class="dm-au-back"><Fragment set:html={lc('chevronLeft', 14)} />Automations</span>
+        <h1 class="dm-au-h1">Refund requests to Billing</h1>
+        <p class="dm-au-desc">
+          <span data-step="0" data-until="6" data-wait="0">Ran 412 times</span>
+          <span class="s-swap" data-step="6" data-wait="700">Ran 413 times</span>
+        </p>
+      </div>
+      <div class="dm-au-acts">
+        <span class="dm-btn dm-au-ghost"><Fragment set:html={lc('trash', 14)} />Delete</span>
+        <span class="dm-btn dm-btn-ink dm-au-off">Save</span>
+      </div>
+    </div>
+
+    <div class="dm-au-body">
+      <div class="dm-au-name">
+        <div class="dm-au-field">
+          <span class="dm-au-label">Name</span>
+          <span class="dm-au-input">Refund requests to Billing</span>
+        </div>
+        <span class="dm-au-on dm-t-green"><i></i>On<span class="dm-au-switch"><i></i></span></span>
+      </div>
+
+      <div class="dm-au-steps">
+        <div class="dm-au-step">
+          <span class="dm-au-rail"></span>
+          <span class="dm-mono dm-au-n dm-t-blue" data-step="1" data-wait="1400">1</span>
+          <div class="dm-au-sh"><h2>When</h2></div>
+          <div class="dm-au-card">
+            <div class="dm-au-trigger">
+              <i class="dm-au-run dm-t-blue" data-step="1" data-wait="1400"></i>
+              <span class="dm-au-tone dm-t-blue"><Fragment set:html={lc('squarePlus', 14)} /></span>
+              <span class="dm-au-select dm-au-w240">A ticket is created<Fragment set:html={ic('chevronDown', 14)} /></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dm-au-step">
+          <span class="dm-au-rail"></span>
+          <span class="dm-mono dm-au-n dm-t-amber" data-step="2" data-wait="800">2</span>
+          <div class="dm-au-sh"><h2>If all of these match</h2></div>
+          <div class="dm-au-card">
+            <div class="dm-au-row">
+              <i class="dm-au-run dm-t-amber" data-step="2" data-wait="800"></i>
+              <span class="dm-au-word">If</span>
+              <span class="dm-au-pick dm-au-w160"><span class="dm-truncate">Message text</span><Fragment set:html={chevron} /></span>
+              <span class="dm-au-select dm-au-w150">contains<Fragment set:html={ic('chevronDown', 14)} /></span>
+              <span class="dm-au-input dm-au-sm dm-grow">refund</span>
+              <Fragment set:html={remove} />
+            </div>
+            <div class="dm-au-add"><span><Fragment set:html={lc('plus', 12)} />Add condition</span></div>
+          </div>
+        </div>
+
+        <div class="dm-au-step">
+          <span class="dm-mono dm-au-n dm-t-green" data-step="3" data-wait="700">3</span>
+          <div class="dm-au-sh"><h2>Then</h2></div>
+          <div class="dm-au-card">
+            <div class="dm-au-row">
+              <i class="dm-au-run dm-t-green" data-step="3" data-wait="700"></i>
+              <span class="dm-au-word">Do</span>
+              <span class="dm-au-pick dm-au-w190"><span class="dm-truncate">Add tag</span><Fragment set:html={chevron} /></span>
+              <span class="dm-au-pick dm-grow"><span class="dm-label dm-chip dm-t-rose"><i></i>refund</span><Fragment set:html={chevron} /></span>
+              <Fragment set:html={remove} />
+            </div>
+            <div class="dm-au-row">
+              <i class="dm-au-run dm-t-green" data-step="4" data-wait="500"></i>
+              <span class="dm-au-word">Do</span>
+              <span class="dm-au-pick dm-au-w190"><span class="dm-truncate">Assign to team</span><Fragment set:html={chevron} /></span>
+              <span class="dm-au-pick dm-grow"><Fragment set:html={ic('users', 14)} /><span class="dm-truncate">Billing</span><Fragment set:html={chevron} /></span>
+              <Fragment set:html={remove} />
+            </div>
+            <div class="dm-au-row">
+              <i class="dm-au-run dm-t-green" data-step="5" data-wait="500"></i>
+              <span class="dm-au-word">Do</span>
+              <span class="dm-au-pick dm-au-w190"><span class="dm-truncate">Set priority to</span><Fragment set:html={chevron} /></span>
+              <span class="dm-au-pick dm-grow"><Fragment set:html={prioIcon('high', 14)} /><span class="dm-truncate">High</span><Fragment set:html={chevron} /></span>
+              <Fragment set:html={remove} />
+            </div>
+            <div class="dm-au-add"><span><Fragment set:html={lc('plus', 12)} />Add action</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</AppWindow>
+
+<style is:global>
+  /* SettingsLayout and AutomationEdit; the window and shared pieces are in app/app.css. */
+
+  /* Settings sub-navigation */
+  .dm-au-nav { width: 232px; flex-shrink: 0; overflow: hidden; border-right: 1px solid var(--dm-line); padding: 16px 10px 24px; }
+  .dm-au-group { margin-top: 16px; }
+  .dm-au-caps { height: 18px; align-items: flex-start; padding: 0 8px 4px; }
+  .dm-au-items { display: flex; flex-direction: column; gap: 1px; }
+  .dm-au-item { display: flex; height: 28px; align-items: center; gap: 10px; border-radius: 5px; padding: 0 8px; font-size: 12.5px; color: var(--dm-fg-2); white-space: nowrap; }
+  .dm-au-item > .dm-ic { color: var(--dm-fg-4); }
+  .dm-au-item-on { background: var(--dm-active); font-weight: 500; color: var(--dm-fg); }
+  .dm-au-item-on > .dm-ic { color: var(--dm-fg-2); }
+
+  /* SettingsPage */
+  .dm-au { min-width: 0; flex: 1; overflow: hidden; }
+  .dm-au-top { display: flex; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--dm-line); padding: 28px 32px 20px; }
+  .dm-au-titles { min-width: 0; flex: 1; }
+  .dm-au-back { margin: 0 0 8px -4px; display: inline-flex; height: 24px; align-items: center; gap: 2px; padding: 0 6px 0 2px; font-size: 12.5px; color: var(--dm-fg-3); }
+  .dm-au-h1 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.025em; color: var(--dm-fg); }
+  .dm-au-desc { margin-top: 4px !important; font-size: 12.5px; line-height: 19px; color: var(--dm-fg-3); }
+  .dm-au-acts { display: flex; flex-shrink: 0; align-items: center; gap: 6px; }
+  .dm-au-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--dm-fg-2); }
+  .dm-au-off { opacity: 0.4; }
+  .dm-au-body { display: flex; flex-direction: column; gap: 36px; padding: 28px 32px 0; }
+
+  /* Name and the On switch */
+  .dm-au-name { display: flex; align-items: flex-end; gap: 16px; }
+  .dm-au-field { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 6px; }
+  .dm-au-label { font-size: 12.5px; line-height: 20px; font-weight: 500; }
+  .dm-au-input {
+    display: flex; height: 32px; min-width: 0; align-items: center; border: 1px solid var(--dm-line); border-radius: 5px;
+    background: var(--dm-surface); padding: 0 10px; font-size: 13px; color: var(--dm-fg);
+  }
+  .dm-au-input.dm-au-sm { height: 28px; min-width: 180px; padding: 0 8px; font-size: 12.5px; }
+  .dm-au-on {
+    display: flex; height: 32px; align-items: center; gap: 10px; border-radius: 5px; padding: 0 10px; font-size: 12.5px; font-weight: 500;
+    background: color-mix(in oklab, var(--t) 10%, transparent); color: color-mix(in oklab, var(--t) 82%, var(--dm-fg));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent);
+  }
+  .dm-au-on > i { width: 6px; height: 6px; border-radius: 9999px; background: var(--t); }
+  .dm-au-switch { display: flex; width: 30px; height: 18px; align-items: center; justify-content: flex-end; border-radius: 9999px; background: var(--dm-inverse); padding: 0 1px; }
+  .dm-au-switch i { width: 14px; height: 14px; border-radius: 9999px; background: var(--dm-inverse-fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+
+  /* Step: a card on a thin rail with its numbered dot */
+  .dm-au-step { position: relative; padding: 0 0 20px 36px; }
+  .dm-au-step:last-child { padding-bottom: 0; }
+  .dm-au-rail { position: absolute; left: 11px; top: 28px; bottom: 0; width: 1px; background: var(--dm-line); }
+  .dm-au-n {
+    position: absolute; left: 0; top: 8px; display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 5px;
+    font-size: 11px; font-weight: 600; letter-spacing: -0.01em;
+    background: color-mix(in oklab, var(--t) 10%, transparent); color: color-mix(in oklab, var(--t) 82%, var(--dm-fg));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent);
+  }
+  .dm-au-sh { margin-bottom: 8px; display: flex; height: 38px; align-items: center; }
+  .dm-au-sh h2 { margin: 0; font-size: 13.5px; line-height: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--dm-fg); }
+  .dm-au-card { overflow: hidden; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs); }
+  .dm-au-trigger { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  .dm-au-tone { display: flex; color: color-mix(in oklab, var(--t) 82%, var(--dm-fg)); }
+  .dm-au-row { position: relative; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--dm-line-soft); padding: 10px 16px; }
+  .dm-au-word { width: 36px; flex-shrink: 0; font-size: 12px; line-height: 20px; color: var(--dm-fg-4); }
+
+  /* Select (radix) and ValueButton (pickers) */
+  .dm-au-select {
+    display: flex; height: 28px; min-width: 0; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid var(--dm-line); border-radius: 5px; background: var(--dm-surface); box-shadow: 0 1px 1px rgb(0 0 0 / 0.02);
+    padding: 0 10px; font-size: 12.5px; color: var(--dm-fg);
+  }
+  .dm-au-select .dm-ic { color: var(--dm-fg-3); }
+  .dm-au-pick {
+    display: flex; height: 28px; min-width: 0; flex-shrink: 0; align-items: center; gap: 6px;
+    border: 1px solid var(--dm-line); border-radius: 5px; background: var(--dm-surface); padding: 0 8px; font-size: 12.5px; color: var(--dm-fg);
+  }
+  .dm-au-pick.dm-grow { min-width: 180px; flex: 1 1 0; }
+  .dm-au-chev { margin-left: auto; color: var(--dm-fg-4); }
+  .dm-au-w150 { width: 150px; }
+  .dm-au-w160 { width: 160px; }
+  .dm-au-w190 { width: 190px; }
+  .dm-au-w240 { width: 240px; }
+  .dm-au-x { display: flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 5px; color: var(--dm-fg-4); }
+  .dm-au-add { padding: 8px 12px; }
+  .dm-au-add span { display: inline-flex; height: 24px; align-items: center; gap: 4px; border-radius: 5px; padding: 0 8px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--dm-fg-2); }
+
+  /* The rule runs: each part lights in its step's hue as it is reached. */
+  .dm-au-run { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: color-mix(in oklab, var(--t) 9%, transparent); }
+  @keyframes dm-au-run { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes dm-au-ring { 0% { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent), 0 0 0 0 color-mix(in oklab, var(--t) 35%, transparent); } 100% { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent), 0 0 0 6px color-mix(in oklab, var(--t) 0%, transparent); } }
+  .seq-js .dm-au-run.on { animation: dm-au-run 1.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .seq-js .dm-au-n.on { animation: dm-au-ring 1s cubic-bezier(0.16, 1, 0.3, 1); }
+</style>

@@ -63,5 +63,10 @@
   "rateUp": "Nuttig",
   "rateDown": "Niet nuttig",
   "ratedThanks": "Bedankt voor je feedback",
-  "jumpLatest": "Naar nieuwste"
+  "jumpLatest": "Naar nieuwste",
+  "topicsTitle": "Waarmee kunnen we helpen?",
+  "topicsHint": "Kies een onderwerp, zodat je bericht bij de juiste mensen komt.",
+  "placeholderTopic": "Kies een onderwerp om te beginnen",
+  "changeTopic": "Onderwerp wijzigen",
+  "offlineDefault": "We zijn er nu even niet. Laat een bericht achter, dan reageren we zodra we terug zijn."
 }

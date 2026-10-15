@@ -63,5 +63,10 @@
   "rateUp": "Faydalı",
   "rateDown": "Faydalı değil",
   "ratedThanks": "Geri bildiriminiz için teşekkürler",
-  "jumpLatest": "En yeniye git"
+  "jumpLatest": "En yeniye git",
+  "topicsTitle": "Size nasıl yardımcı olabiliriz?",
+  "topicsHint": "Mesajınızın doğru kişilere ulaşması için bir konu seçin.",
+  "placeholderTopic": "Başlamak için bir konu seçin",
+  "changeTopic": "Konuyu değiştir",
+  "offlineDefault": "Şu anda buralarda değiliz. Bir mesaj bırakın, döner dönmez yanıt verelim."
 }

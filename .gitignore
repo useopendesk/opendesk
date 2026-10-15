@@ -12,3 +12,7 @@ dist/
 web/docs/screenshots/
 site/docs/screenshots/
 /data/
+
+# Local Cloudflare and Wrangler caches
+.cloudflare/
+.wrangler/

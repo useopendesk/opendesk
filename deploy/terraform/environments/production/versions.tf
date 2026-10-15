@@ -10,9 +10,9 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.27"
     }
-    neon = {
-      source  = "kislerdm/neon"
-      version = "~> 0.18.0"
+    planetscale = {
+      source  = "planetscale/planetscale"
+      version = "~> 1.3"
     }
     random = {
       source  = "hashicorp/random"

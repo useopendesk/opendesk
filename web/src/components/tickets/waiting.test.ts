@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ticket } from "@/lib/test/fixtures";
-import { chatWait, formatWait } from "./waiting";
+import { chatWait, formatWait, handlerOf } from "./waiting";
 
 const now = Date.parse("2026-10-12T10:00:00Z");
 const ago = (s: number) => new Date(now - s * 1000).toISOString();
@@ -28,6 +28,36 @@ describe("chatWait", () => {
     expect(chatWait(ticket({ channel: "email", waiting_since: ago(30) }), false, now)).toBeNull();
     expect(chatWait(ticket({ channel: "chat", spam: true, waiting_since: ago(30) }), false, now)).toBeNull();
     expect(chatWait(ticket({ channel: "chat", status: "solved", waiting_since: ago(30) }), false, now)).toBeNull();
+  });
+});
+
+describe("handled chats", () => {
+  const t = ticket({ channel: "chat", waiting_since: ago(120) });
+  const presence = (state: "viewing" | "replying" | "idle", user_id = "u2") => ({ [user_id]: { metas: [{ user_id, name: "Anna", state }] } });
+
+  it("is handled while you have it open", () => {
+    expect(chatWait(t, false, now, handlerOf(t, undefined, "u1", t.id))).toMatchObject({ state: "handled", handler: { me: true, how: "open" } });
+  });
+
+  it("is handled while a teammate views or replies, not while they idle", () => {
+    expect(handlerOf(t, presence("replying"), "u1", null)).toEqual({ me: false, name: "Anna", how: "replying" });
+    expect(handlerOf(t, presence("viewing"), "u1", null)?.how).toBe("viewing");
+    expect(handlerOf(t, presence("idle"), "u1", null)).toBeNull();
+    expect(chatWait(t, false, now, handlerOf(t, presence("idle"), "u1", null))?.state).toBe("urgent");
+  });
+
+  it("never counts yourself from presence, only from the open ticket", () => {
+    expect(handlerOf(t, presence("replying", "u1"), "u1", null)).toBeNull();
+  });
+
+  it("is handled once assigned", () => {
+    const mine = ticket({ ...t, assignee: { id: "u1", name: "Maya", email: "m@x.io", avatar_url: null } });
+    expect(handlerOf(mine, undefined, "u1", null)).toEqual({ me: true, name: "Maya", how: "assigned" });
+  });
+
+  it("stays with Ollie while Ollie is answering", () => {
+    const fresh = ticket({ channel: "chat", waiting_since: ago(10) });
+    expect(chatWait(fresh, true, now, handlerOf(fresh, presence("viewing"), "u1", null))?.state).toBe("ollie");
   });
 });
 

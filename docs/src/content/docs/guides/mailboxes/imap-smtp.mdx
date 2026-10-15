@@ -1,0 +1,196 @@
+---
+title: Other providers (IMAP and SMTP)
+description: Connect Yahoo, AOL, iCloud, Fastmail, Zoho, Yandex, a hosting provider or your own mail server over IMAP and SMTP, with the server settings detected for you.
+---
+
+import Screenshot from '../../../../components/Screenshot.astro';
+import Steps from '../../../../components/Steps.astro';
+import Step from '../../../../components/Step.astro';
+import Callout from '../../../../components/Callout.astro';
+import Legend from '../../../../components/Legend.astro';
+import Fold from '../../../../components/Fold.astro';
+
+Most mailboxes outside Google and Microsoft connect over **IMAP and SMTP**: opendesk reads new mail from the IMAP server and sends replies through the SMTP server, so they come from your address and land in your Sent folder. You type the address, opendesk finds the servers, and you paste a password.
+
+- **App password**, for providers that only accept one from mail apps: Yahoo, AOL, iCloud, Fastmail and Yandex. The wizard shows where to make it.
+- **Email password**, for hosts that accept the mailbox's own password, such as a hosting provider or your company's mail server.
+- **Other IMAP and SMTP**, to type or change the server settings yourself.
+
+<Screenshot src="/guides/mailboxes/yahoo-app-password" alt="The connect step for sales@yahoo.com: the three steps to create a Yahoo app password ringed as 1, the App password field ringed as 2, and the Yahoo servers set for you ringed as 3" />
+
+<Legend>
+
+1. **Create an app password**: three short steps for your provider, and a button that opens the right page.
+2. **App password**: paste it here.
+3. **Server settings, set for you**: the provider's IMAP and SMTP servers, ports and security. **Edit** switches to Other IMAP and SMTP with them filled in.
+
+</Legend>
+
+## Connect with an app password or a password
+
+<Steps>
+<Step title="Add the mailbox and type the address">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. opendesk shows the provider and selects **App password** or **Email password**, whichever it takes. Click **Continue**.
+
+</Step>
+<Step title="Create the app password">
+
+For an app password, follow the three steps in the wizard, or see [App passwords by provider](#app-passwords-by-provider) below. Name it **opendesk** so you can find it later.
+
+</Step>
+<Step title="Paste it and connect">
+
+Paste the app password, or the mailbox's password, and click **Connect**. opendesk signs in to both servers before it saves anything, and the last step shows **Receiving works** and **Sending works**. If a server refuses, the wizard says why and how to fix it.
+
+</Step>
+</Steps>
+
+## Providers
+
+| Provider | Way in | Where to make an app password | IMAP | SMTP |
+| --- | --- | --- | --- | --- |
+| Yahoo Mail | App password | [login.yahoo.com/account/security](https://login.yahoo.com/account/security) | `imap.mail.yahoo.com:993` TLS | `smtp.mail.yahoo.com:465` TLS |
+| AOL Mail | App password | [login.aol.com/account/security](https://login.aol.com/account/security) | `imap.aol.com:993` TLS | `smtp.aol.com:465` TLS |
+| iCloud Mail | App-specific password, with two-factor authentication on | [account.apple.com](https://account.apple.com/account/manage) | `imap.mail.me.com:993` TLS | `smtp.mail.me.com:587` STARTTLS |
+| Fastmail | App password | [app.fastmail.com](https://app.fastmail.com/settings/security/apppasswords) | `imap.fastmail.com:993` TLS | `smtp.fastmail.com:465` TLS |
+| Zoho Mail | Email password, or an app password with two-factor authentication on | [accounts.zoho.com](https://accounts.zoho.com/home#security/app_password) | `imap.zoho.com:993` TLS | `smtp.zoho.com:465` TLS |
+| Yandex Mail | App password | [id.yandex.com/security/app-passwords](https://id.yandex.com/security/app-passwords) | `imap.yandex.com:993` TLS | `smtp.yandex.com:465` TLS |
+| GoDaddy, Namecheap, IONOS, Hostinger, OVHcloud, Migadu, Purelymail, Rackspace, GMX | Email password | | Detected | Detected |
+| Proton Mail | Forwarding only (see [Proton Mail](#proton-mail)) | | | |
+| Any other host | Email password, with detected or typed settings | | Detected when the domain publishes it | Detected when the domain publishes it |
+
+Zoho uses regional servers for accounts outside the US, such as `imap.zoho.eu` and `smtp.zoho.eu`. opendesk picks the right ones from the address and its MX records. For Gmail and Google Workspace, see [Gmail and Google Workspace](/guides/mailboxes/google/); for Outlook.com and Microsoft 365, see [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
+
+<Fold>
+
+## App passwords by provider
+
+**Yahoo Mail**
+
+1. Sign in to Yahoo and open **Account security**.
+2. Choose **Generate app password**, name it **opendesk** and choose **Generate password**.
+3. Copy the password and paste it in opendesk.
+
+**AOL Mail**
+
+1. Sign in to AOL and open **Account security**.
+2. Choose **Generate app password**, name it **opendesk** and choose **Generate password**.
+3. Copy the password and paste it in opendesk.
+
+**iCloud Mail**
+
+1. Sign in at [account.apple.com](https://account.apple.com) and open **Sign-In and Security**. Two-factor authentication must be on.
+2. Choose **App-Specific Passwords** and add one named **opendesk**.
+3. Copy the password and paste it in opendesk. Use your iCloud address, not an alias.
+
+**Fastmail**
+
+1. In Fastmail, open **Settings**, **Privacy and Security**, then **Manage app passwords**.
+2. Create one named **opendesk** with access to IMAP and SMTP.
+3. Copy the password and paste it in opendesk.
+
+**Zoho Mail**, when two-factor authentication is on
+
+1. In Zoho Accounts, open **Security**, then **App Passwords**.
+2. Generate one named **opendesk**.
+3. Copy it and paste it in opendesk. Also check that IMAP access is on in Zoho Mail settings, under **Mail Accounts**.
+
+**Yandex Mail**
+
+1. Open Yandex ID, then **Security** and **App passwords**.
+2. Create a password for **Mail** named **opendesk**.
+3. Copy it and paste it in opendesk. Also allow IMAP in Yandex Mail settings, under **Email clients**.
+
+</Fold>
+
+## Settings found for you
+
+For an address opendesk doesn't know by name, it looks the servers up from the domain, in this order:
+
+1. The **MX records**, which name hosts like Google Workspace, Microsoft 365 or Zoho.
+2. The domain's own **autoconfig file**, at `autoconfig.<domain>` or `<domain>/.well-known/autoconfig`.
+3. **Thunderbird's provider database**, when your instance has it on (it is on for opendesk Cloud).
+4. The domain's **DNS service records** (SRV) for IMAP and mail submission.
+
+Only servers that offer TLS or STARTTLS are used. When the servers are found, the wizard suggests the password the host takes, usually **Email password**, and fills in the settings.
+
+<Screenshot src="/guides/mailboxes/autoconfig-detect" alt="Add a mailbox for help@acme.example: the servers found from the domain's autoconfig file ringed as 1, and Email password, recommended, ringed as 2" />
+
+When nothing is found, the wizard says so: type the settings under **Other IMAP and SMTP**, from your host's help pages, or [forward the mail](/guides/mailboxes/forwarding/).
+
+## Other IMAP and SMTP
+
+**Other IMAP and SMTP** shows every setting, filled in from what was found. Use it for your own mail server, or to change a detected setting.
+
+<Screenshot src="/guides/mailboxes/imap-prefilled" alt="Other IMAP and SMTP for help@acme.example: the incoming mail server ringed as 1, the outgoing mail server ringed as 2, and the Connect and test button ringed as 3" />
+
+<Legend>
+
+1. **Incoming mail (IMAP)**: the server, port, security, and the username (usually the full address) and password.
+2. **Outgoing mail (SMTP)**: the server, port and security. It uses the same username and password as IMAP unless you untick that and enter others.
+3. **Connect and test** signs in to both servers, then saves the mailbox.
+
+</Legend>
+
+## Ports and security
+
+| Server | Port | Security |
+| --- | --- | --- |
+| IMAP | 993 | TLS |
+| IMAP | 143 | STARTTLS |
+| SMTP | 465 | TLS |
+| SMTP | 587 | STARTTLS |
+
+Choosing a security setting fills in its usual port. If your host documents another port, type it in.
+
+<Callout type="warning">
+Security **None** sends your password unencrypted. Use it only on a private network, never over the internet.
+</Callout>
+
+### When port 465 does not answer
+
+Some networks block port 465. When SMTP on 465 does not answer and the same server works on port 587 with STARTTLS, opendesk uses 587 and keeps it for the mailbox. This happens when you connect and whenever you test the connection, so you don't need to change it yourself.
+
+<Fold>
+
+## If the server refuses
+
+Nothing is saved when a server refuses. The wizard shows the cause and the fix, with the server's own reply underneath.
+
+| What you see | What to do |
+| --- | --- |
+| **Yahoo needs an app password**, and the same for AOL, iCloud, Fastmail and Yandex | Create an app password as above and use it instead of the account password. |
+| **Zoho refused the password** | With two-factor authentication on, use an app password. Check that IMAP access is on in Zoho Mail. |
+| **The server refused the sign-in** | Check the username, usually the full address, and the password. Some hosts need an app password, or a username other than the address. |
+| **IMAP is turned off for this mailbox** | Turn IMAP on in the provider's mail settings, or ask your email admin. |
+| **The server name does not exist** | Check the spelling of the IMAP and SMTP server. |
+| **The server could not be reached** | Check the server and port, and that the server accepts connections from the internet. |
+| **The mail port did not answer** | Use port 587 with STARTTLS instead of 465 or 25. |
+| **The secure connection failed** | Match the security to the port: 465 and 993 use TLS, 587 and 143 use STARTTLS. Check that the server name matches its certificate. |
+| **Encryption is required** | Use TLS on 465 or 993, or STARTTLS on 587 or 143. |
+| **The server does not take a password here** | Use the provider's submission server, usually on port 587 or 465, not the MX server or port 25. |
+| **The server must be a public address** | opendesk connects only to mail servers on the public internet. Use the provider's public server name. |
+| **Too many sign-in attempts** | Wait 15 to 60 minutes before you try again. |
+
+</Fold>
+
+## Proton Mail
+
+Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Connect a Proton address by [forwarding](/guides/mailboxes/forwarding/) its mail instead. Forwarding is available on Proton's paid plans.
+
+## Forwarding with SMTP
+
+You can also bring mail in by [forwarding](/guides/mailboxes/forwarding/) and send replies through your SMTP server. Choose **Forward mail to opendesk**, then **Through your SMTP server**. opendesk then sends from your address without reading the mailbox.
+
+## Security
+
+- Passwords and app passwords are encrypted at rest with AES-GCM and are never shown again after you save them.
+- opendesk connects only to mail servers on the public internet.
+- To revoke access, delete the app password at your provider, or change the mailbox's password.
+
+## Related
+
+- [Connect a mailbox](/guides/mailboxes/)
+- [Gmail and Google Workspace](/guides/mailboxes/google/)
+- [Forwarding](/guides/mailboxes/forwarding/)

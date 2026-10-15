@@ -36,14 +36,17 @@ import { KbDraftDialog } from "@/components/ai/KbDraftDialog";
 import { takeKbDraftRequest } from "@/components/ai/kbDraftIntent";
 import { useAI } from "@/lib/ai";
 import type { KBArticleDraft } from "@/lib/api/types";
+import { articleBrandId, KbBrandPick } from "@/components/kb/brand";
+import { useBrands } from "@/components/settings2/teams";
+import { BrandChip } from "@/components/tickets/teams";
 import { useTranslation } from "react-i18next";
 
 const route = getRouteApi("/app/kb/articles/$articleId");
 
-type Draft = { title: string; excerpt: string; slug: string; collection_id: string | null; body_html: string };
+type Draft = { title: string; excerpt: string; slug: string; collection_id: string | null; body_html: string; brand_id: string | null };
 
 const same = (a: Draft, b: Draft) =>
-  a.title === b.title && a.excerpt === b.excerpt && a.slug === b.slug && a.collection_id === b.collection_id && a.body_html === b.body_html;
+  a.title === b.title && a.excerpt === b.excerpt && a.slug === b.slug && a.collection_id === b.collection_id && a.body_html === b.body_html && a.brand_id === b.brand_id;
 
 const WIDE = "(min-width: 1280px)";
 function useWide() {
@@ -101,6 +104,7 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
       slug: article?.slug ?? "",
       collection_id: article ? article.collection_id : (search.collection ?? null),
       body_html: article?.body_html ?? "",
+      brand_id: article?.brand_id ?? null,
     }),
     // The baseline is the article as loaded; later saves move it explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,6 +133,7 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
         collection_id: current ? (draft.collection_id ?? "") : draft.collection_id,
         body_html: draft.body_html,
         status: nextStatus,
+        ...(showBrand ? { brand_id: draft.brand_id } : {}),
       };
       return current ? api.kb.articles.update(current.id, body) : api.kb.articles.create(body);
     },
@@ -137,7 +142,7 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
       qc.setQueryData(qk.kbArticle(a.id), a);
       void qc.invalidateQueries({ queryKey: qk.kbArticleLists });
       void qc.invalidateQueries({ queryKey: qk.kbCollections });
-      const next: Draft = { title: a.title, excerpt: a.excerpt, slug: a.slug, collection_id: a.collection_id, body_html: draft.body_html };
+      const next: Draft = { title: a.title, excerpt: a.excerpt, slug: a.slug, collection_id: a.collection_id, body_html: draft.body_html, brand_id: a.brand_id ?? null };
       setSaved(next);
       setDraft((d) => ({ ...d, title: a.title, slug: a.slug, excerpt: a.excerpt }));
       setCurrent(a);
@@ -224,8 +229,28 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
     confirm.show(tai("kb_draft.replace_body"), fill, { title: tai("kb_draft.replace_title"), confirmLabel: tai("kb_draft.replace_confirm") });
   };
 
-  const collectionName = collections.data?.find((c) => c.id === draft.collection_id)?.name;
-  const publicUrl = current && status === "published" && ws ? `/help/${ws.slug}/a/${current.slug}` : null;
+  const collection = collections.data?.find((c) => c.id === draft.collection_id);
+  const collectionName = collection?.name;
+  // Brand: its collection's when that has one, else its own; null is every brand.
+  const { brands, multi: multiBrand, defaultBrand } = useBrands();
+  const showBrand = multiBrand || !!draft.brand_id;
+  const effectiveBrand = brands.find((b) => b.id === articleBrandId(draft, collections.data));
+  const collectionBrand = collection?.brand_id ? brands.find((b) => b.id === collection.brand_id) : undefined;
+  // The help center that shows it: its brand's, else the default brand's.
+  const helpBrand = effectiveBrand ?? defaultBrand;
+  const helpSlug = helpBrand ? (helpBrand.help_center.enabled ? helpBrand.slug : null) : ws?.slug;
+  const publicUrl = current && status === "published" && helpSlug ? `/help/${helpSlug}/a/${current.slug}` : null;
+  const brandField = (
+    <>
+      <KbBrandPick
+        value={collectionBrand ? collectionBrand.id : draft.brand_id}
+        onChange={(brand_id) => set({ brand_id })}
+        disabled={!canEdit || !!collectionBrand}
+        className="w-full"
+      />
+      <p className="mt-2 text-xs leading-[18px] text-fg-3">{collectionBrand ? t("brand.fromCollection", { name: collection!.name }) : t("brand.articleHint")}</p>
+    </>
+  );
 
   const slugField = (
     <div className="flex items-center gap-1.5 rounded-md border border-line bg-sunken py-1 pl-2.5 pr-1">
@@ -274,6 +299,7 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
           }
         />
         <ArticleStatus status={status} />
+        {multiBrand && effectiveBrand && <BrandChip brand={effectiveBrand} />}
         <span className="ml-1 hidden items-center gap-1.5 text-xs text-fg-4 lg:inline-flex" aria-live="polite">
           <Morph k={save.isPending ? "saving" : dirty ? "dirty" : current ? `saved-${current.updated_at}` : "new"} className="items-center gap-1.5">
             {save.isPending ? (
@@ -405,7 +431,17 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
                 <ChevronRight className={cn("size-3 transition-transform", advanced && "rotate-90")} />
                 {t("editor.advanced")}
               </button>
-              {advanced && <div className="mt-2 max-w-[480px]">{slugField}</div>}
+              {advanced && (
+                <div className="mt-2 flex max-w-[480px] flex-col gap-4">
+                  {slugField}
+                  {showBrand && (
+                    <div>
+                      <h2 className="label-caps mb-2">{t("brand.label")}</h2>
+                      {brandField}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -478,6 +514,12 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
             <h2 className="label-caps mb-2 mt-7">{t("details.url")}</h2>
             {slugField}
             <p className="mt-2 text-xs leading-[18px] text-fg-3">{t("details.urlHint")}</p>
+            {showBrand && (
+              <>
+                <h2 className="label-caps mb-2 mt-7">{t("brand.label")}</h2>
+                {brandField}
+              </>
+            )}
           </aside>
         )}
       </div>

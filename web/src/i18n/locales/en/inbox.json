@@ -29,7 +29,8 @@
     "notFound": "This ticket doesn't exist",
     "notFoundHint": "It may have been deleted or merged.",
     "loadError": "Couldn't load this ticket",
-    "back": "Back to the list"
+    "back": "Back to the list",
+    "movedPrivate": "This ticket moved to a private team"
   },
   "commands": {
     "reply": "Reply",
@@ -42,7 +43,8 @@
     "setSeverity": "Set severity to {{severity}}",
     "clearSeverity": "Clear severity",
     "solve": "Solve ticket",
-    "reopen": "Reopen ticket"
+    "reopen": "Reopen ticket",
+    "team": "Move to team"
   },
   "toast": {
     "solved": "Solved #{{number}}",
@@ -60,7 +62,8 @@
     "select": "Select ticket {{number}}",
     "priority": "{{priority}} priority",
     "awaiting": "Waiting for a reply",
-    "severity": "{{severity}}"
+    "severity": "{{severity}}",
+    "receivedAt": "Sent to {{address}}"
   },
   "waiting": {
     "label": "Waiting {{time}}",
@@ -70,6 +73,18 @@
     "ollieHint": "Ollie is answering this visitor. It turns urgent if there is no reply within a minute.",
     "chat": "Live chat",
     "chatHint": "From the chat widget on your website. The visitor may still be on the page.",
+    "handoff": "Wants a person",
+    "handoffHint": "Live chat. {{name}} handed this visitor to the team, who should reply here.",
+    "new": "{{count}} new",
+    "newHint_one": "{{count}} message from the customer since the last reply",
+    "newHint_other": "{{count}} messages from the customer since the last reply",
+    "botSaid": "{{name}}:",
+    "byYou": "You're on it",
+    "yours": "Assigned to you",
+    "with": "With {{name}}",
+    "replying": "{{name}} is replying",
+    "viewing": "{{name}} is looking",
+    "handledHint": "Someone has this chat, so it no longer alerts. The visitor is still waiting for a reply.",
     "banner_one": "{{count}} customer waiting in live chat",
     "banner_other": "{{count}} customers waiting in live chat",
     "reply": "Reply now",
@@ -151,7 +166,18 @@
       "setPending": "Change status",
       "snooze": "Snooze until later",
       "newTicket": "New ticket",
-      "mine": "Go to Mine"
+      "mine": "Go to Mine",
+      "switchTeam": "Switch team",
+      "moveTeam": "Move the open ticket to a team"
+    },
+    "team": {
+      "unassigned": "Nothing unassigned in {{team}}",
+      "open": "Nothing open in {{team}}",
+      "pending": "Nothing pending in {{team}}",
+      "all": "No tickets in {{team}} yet",
+      "description": "New conversations land here when an address, a widget or a routing rule sends them to this team.",
+      "seeOpen": "See open tickets",
+      "seeUnassigned": "See unassigned"
     }
   },
   "error": {
@@ -178,7 +204,12 @@
     "clear": "Clear filters",
     "remove": "Remove filter",
     "noTags": "No labels yet",
-    "noSeverity": "No severity"
+    "noSeverity": "No severity",
+    "team": "Team",
+    "brand": "Brand",
+    "address": "Address",
+    "searchAddresses": "Search addresses",
+    "noAddresses": "No addresses match"
   },
   "sort": {
     "by": "Sort by",
@@ -239,9 +270,9 @@
     "severitySet_other": "Set {{count}} tickets to {{severity}}",
     "severityCleared_one": "Cleared severity on {{count}} ticket",
     "severityCleared_other": "Cleared severity on {{count}} tickets",
-    "tag": "Tag",
-    "tagged_one": "Tagged {{count}} ticket",
-    "tagged_other": "Tagged {{count}} tickets",
+    "tag": "Label",
+    "tagged_one": "Labelled {{count}} ticket",
+    "tagged_other": "Labelled {{count}} tickets",
     "spam": "Spam",
     "notSpam": "Not spam",
     "spammed_one": "Marked {{count}} ticket as spam",
@@ -257,7 +288,12 @@
     "deleted_other": "Deleted {{count}} tickets",
     "clear": "Clear selection",
     "selectedWord_one": "selected",
-    "selectedWord_other": "selected"
+    "selectedWord_other": "selected",
+    "team": "Team",
+    "moved_one": "Moved {{count}} ticket to {{team}}",
+    "moved_other": "Moved {{count}} tickets to {{team}}",
+    "teamCleared_one": "Removed the team from {{count}} ticket",
+    "teamCleared_other": "Removed the team from {{count}} tickets"
   },
   "props": {
     "status": "Status",
@@ -285,7 +321,15 @@
     "copyLink": "Copy link",
     "channel": "Channel",
     "mailbox": "Mailbox",
-    "created": "Created"
+    "created": "Created",
+    "brand": "Brand",
+    "chooseBrand": "Choose a brand",
+    "replyFrom": "Reply from",
+    "searchAddresses": "Search addresses",
+    "noAddress": "No address",
+    "receivedAt": "Received at",
+    "aliasOf": "An alias of {{address}}",
+    "startedOn": "Started on"
   },
   "sla": {
     "title": "SLA",
@@ -304,7 +348,9 @@
     "hours": "In 4 hours",
     "tomorrow": "Tomorrow",
     "week": "Next week",
-    "set": "Set"
+    "set": "Set",
+    "pickDay": "Pick a day",
+    "time": "Time"
   },
   "activity": {
     "automationNamed": "Automation “{{name}}”",
@@ -312,6 +358,7 @@
     "customer": "The customer",
     "ai": "AI",
     "status": "<b>{{who}}</b> marked this <b>{{status}}</b>",
+    "statusKept": "Status kept at <b>{{status}}</b>: the reply failed sender verification",
     "priority": "<b>{{who}}</b> set priority to <b>{{priority}}</b>",
     "severity": "<b>{{who}}</b> set severity to <b>{{severity}}</b>",
     "severityCleared": "<b>{{who}}</b> cleared the severity",
@@ -336,6 +383,7 @@
     "customKeys": "<b>{{who}}</b> updated <m>{{keys}}</m>",
     "mergedInto": "<b>{{who}}</b> merged this into <m>#{{number}}</m>",
     "mergedFrom": "<b>{{who}}</b> merged <m>#{{number}}</m> into this ticket",
+    "mergedIntoHidden": "<b>{{who}}</b> merged this into another ticket",
     "csat": "The customer rated this <m>{{score}}/5</m>",
     "linked": "<b>{{who}}</b> linked",
     "unlinked": "<b>{{who}}</b> removed the link to",
@@ -347,7 +395,10 @@
     "aiSuggestedSent": "<b>{{who}}</b> sent {{ollie}}'s suggested reply",
     "handoffCustomer": "The customer asked for a person",
     "handoffAi": "<b>{{who}}</b> handed this to the team",
-    "other": "<b>{{who}}</b> updated this ticket <m>{{type}}</m>"
+    "other": "<b>{{who}}</b> updated this ticket <m>{{type}}</m>",
+    "teamFrom": "<b>{{who}}</b> moved this from <b>{{from}}</b> to <b>{{team}}</b>",
+    "teamRule": "Routed to <b>{{team}}</b> by rule <b>{{rule}}</b>",
+    "replyAddress": "replies now go from <m>{{address}}</m>"
   },
   "typing_one": "{{who}} is typing",
   "typing_other": "{{who}} are typing",
@@ -381,7 +432,12 @@
     "andStatus": "{{label}} and set status",
     "andMark": "{{label}} and mark {{status}}",
     "sending": "Sending",
-    "sent": "Sent"
+    "sent": "Sent",
+    "replyingAs": "Replying as",
+    "changeAddress": "Change the address this reply goes out from",
+    "signature": "Signature",
+    "addressChosen": "This reply and the next ones go from this address.",
+    "addressMoved": "Switched to this address when the ticket moved to {{team}}."
   },
   "message": {
     "from": "Message from {{name}}",
@@ -399,7 +455,14 @@
     "showOriginal": "Show original",
     "hideQuoted": "Hide quoted text",
     "preview": "Preview {{name}}",
-    "fullSize": "Open full size"
+    "fullSize": "Open full size",
+    "fromAddress": "from {{name}} <{{address}}>",
+    "toAddress": "to {{address}}",
+    "replyTo": "Reply-To <m>{{address}}</m>",
+    "replyToHint": "The sender asked for replies to go to this address",
+    "unverified": "Unverified sender",
+    "unverifiedHint": "The sender's domain failed its email authentication check, so this may not be from who it says. Treat links and requests in it with care.",
+    "viaForm": "Sent through the form at <m>{{address}}</m>"
   },
   "merge": {
     "title": "Merge #{{number}} into another ticket",
@@ -467,6 +530,8 @@
   "labels": {
     "pickOne": "{{name}}, pick one",
     "other": "Other labels",
+    "addOrCreate": "Add or create a label",
+    "add": "Add a label",
     "typeToCreate": "Type to create a label",
     "none": "No labels match"
   },
@@ -529,5 +594,70 @@
     "remove": "Remove link",
     "removeNamed": "Remove the link to {{title}}",
     "byOllie": "Created by {{name}}"
+  },
+  "teams": {
+    "team": "Team",
+    "myTeams": "My teams",
+    "private": "Private",
+    "privateTeam": "{{team}} is private: only its members see its tickets",
+    "moveTo": "Move to team",
+    "noMatch": "No teams match",
+    "notMember": "Not a member",
+    "membersOf": "{{team}} members",
+    "others": "Others",
+    "tabs": "Team inbox",
+    "tab": {
+      "unassigned": "Unassigned",
+      "open": "Open",
+      "pending": "Pending",
+      "all": "All"
+    }
+  },
+  "routed": {
+    "arrived": "Arrived at {{address}}",
+    "anAddress": "an address",
+    "rule": "Routed to {{team}} by rule {{rule}}",
+    "ruleNoTeam": "Routed by rule {{rule}}",
+    "aRule": "a routing rule",
+    "topic": "From the {{widget}} widget, topic {{topic}}",
+    "topicOnly": "From the chat widget, topic {{topic}}",
+    "widget": "From the {{widget}} widget",
+    "aWidget": "From a chat widget",
+    "triage": "Sorted into {{team}} by {{name}}",
+    "triageNoTeam": "Sorted by {{name}}",
+    "automationNamed": "Moved by the automation {{name}}",
+    "automation": "Moved by an automation",
+    "agent": "Moved by {{name}}",
+    "agentSomeone": "Moved by a teammate",
+    "api": "Set through the API"
+  },
+  "transfer": {
+    "title": "Move to {{team}}",
+    "titleMany_one": "Move {{count}} ticket to {{team}}",
+    "titleMany_other": "Move {{count}} tickets to {{team}}",
+    "titleNone": "Remove the team",
+    "titleNoneMany_one": "Remove the team from {{count}} ticket",
+    "titleNoneMany_other": "Remove the team from {{count}} tickets",
+    "of_one": "{{count}} of {{total}}: ",
+    "of_other": "{{count}} of {{total}}: ",
+    "replyFrom": "Replies go from",
+    "insteadOf": "instead of {{address}}",
+    "private_one": "{{team}} is private. Only its member sees it.",
+    "private_other": "{{team}} is private. Only its {{count}} members see it.",
+    "loseSight_one": "You are not on this team, so it leaves your inbox.",
+    "loseSight_other": "You are not on this team, so they leave your inbox.",
+    "public": "Everyone in the workspace sees it again.",
+    "offTeam": "{{name}} is not on {{team}} and keeps it as the assignee.",
+    "autoRound": "{{team}} hands it to the next member in turn.",
+    "autoLoad": "{{team}} hands it to the member with the fewest open tickets.",
+    "manual": "Stays unassigned until someone on {{team}} takes it.",
+    "keepsAssignee": "Keeps its assignee.",
+    "hoursTeam": "SLA timers follow {{team}}'s business hours.",
+    "hoursWorkspace": "SLA timers follow the workspace's business hours.",
+    "slaTo": "SLA policy changes to",
+    "slaNone": "No SLA policy applies any more.",
+    "nothingElse": "Nothing else changes.",
+    "back": "Back to teams",
+    "move": "Move"
   }
 }

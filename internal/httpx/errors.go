@@ -117,8 +117,8 @@ func Wrap(err error) error {
 	switch {
 	case errors.As(err, &le):
 		return E(402, "plan_limit", "Your plan includes "+plural(le.Limit, le.Resource)+". Upgrade to add more.")
-	case errors.Is(err, plan.ErrNoCredits):
-		return E(402, "no_credits", "Your workspace has no AI credits left this month. Buy credits or upgrade.")
+	case errors.Is(err, plan.ErrNoBalance):
+		return E(402, "ai_balance_empty", "Your workspace's AI balance is too low for this. Add AI usage or upgrade.")
 	case errors.Is(err, auth.ErrUnauthenticated):
 		return E(401, "unauthenticated", err.Error())
 	case errors.Is(err, auth.ErrForbidden):

@@ -164,11 +164,22 @@ export function percent(ratio: number, digits = 0): string {
 }
 
 /**
- * Credits with sensible decimals (they are metered to 0.001): 1,234.5, 12.35,
- * 0.42, 0.005. Large figures keep at most one decimal, small ones up to three.
+ * US dollars of AI usage (balances, allowances, per-call costs, prices). Amounts
+ * are kept to the millionth of a dollar.
+ * - default: cents, "$0.50", "$10.00", "$1,234.56";
+ * - `precise`: small amounts keep three significant digits, "$0.0195",
+ *   "$0.0042", "$0.000975", and a tiny non-zero amount reads "<$0.0001";
+ *   from $1 up it is cents again;
+ * - `tiny`: cents, but an amount under a cent keeps its digits like `precise`;
+ *   for totals and breakdowns, "$1.61", "$0.35", "$0.0042";
+ * - `trim`: whole dollars without cents, for prices and presets, "$3", "$0.30", "$1.125".
  */
-export function credits(n: number): string {
+export function formatUsd(n: number, opts: { precise?: boolean; tiny?: boolean; trim?: boolean } = {}): string {
+  const usd = (min: number, max: number) => nf({ style: "currency", currency: "USD", minimumFractionDigits: min, maximumFractionDigits: max });
   const a = Math.abs(n);
-  const max = a >= 10 ? 1 : a >= 0.01 ? 2 : 3;
-  return nf({ maximumFractionDigits: max }).format(n);
+  if (opts.trim) return usd(Number.isInteger(n) ? 0 : 2, 4).format(n);
+  const precise = opts.precise || (opts.tiny && a < 0.01);
+  if (!precise || a === 0 || a >= 1) return usd(2, 2).format(n);
+  if (a < 0.0001) return `<${usd(0, 4).format(0.0001)}`;
+  return usd(2, Math.min(6, Math.max(2, 2 - Math.floor(Math.log10(a))))).format(n);
 }

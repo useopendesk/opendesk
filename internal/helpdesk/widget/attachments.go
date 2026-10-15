@@ -64,7 +64,7 @@ func (h *handler) registerAttachments(api huma.API, r chi.Router) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			a, err := h.save(ctx, in, hd.Upload{WorkspaceID: p.WorkspaceID, UploadedBy: p.ActorUserID()})
+			a, err := h.save(ctx, in, hd.Upload{WorkspaceID: p.WorkspaceID, UploadedBy: p.ActorUserID(), UploadedByAPIKey: p.ActorAPIKeyID()})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -120,42 +120,51 @@ type storedAttachment struct {
 	MessageKind      *string
 	TicketDeleted    bool
 	TicketIsAttached bool
+	TicketTeam       *uuid.UUID
+	TicketAssignee   *uuid.UUID
 }
 
 func loadStored(ctx context.Context, q db.Querier, id uuid.UUID) (storedAttachment, error) {
 	var a storedAttachment
 	err := q.QueryRow(ctx, `SELECT a.workspace_id, a.filename, a.content_type, a.size_bytes, a.storage_key,
-		a.uploaded_by_contact_id, t.contact_id, m.kind, COALESCE(t.deleted_at IS NOT NULL, false), m.id IS NOT NULL
+		a.uploaded_by_contact_id, t.contact_id, m.kind, COALESCE(t.deleted_at IS NOT NULL, false), m.id IS NOT NULL,
+		t.team_id, t.assignee_id
 		FROM attachments a LEFT JOIN messages m ON m.id = a.message_id LEFT JOIN tickets t ON t.id = m.ticket_id
 		WHERE a.id = $1`, id).Scan(&a.WorkspaceID, &a.Filename, &a.ContentType, &a.Size, &a.Key,
-		&a.UploaderContact, &a.TicketContact, &a.MessageKind, &a.TicketDeleted, &a.TicketIsAttached)
+		&a.UploaderContact, &a.TicketContact, &a.MessageKind, &a.TicketDeleted, &a.TicketIsAttached,
+		&a.TicketTeam, &a.TicketAssignee)
 	return a, err
 }
 
-// mayRead decides access: a signed link, a member or key of the owning workspace, or the
-// visitor who uploaded the file or whose conversation carries it in a public reply.
-func mayRead(r *http.Request, id uuid.UUID, a storedAttachment) bool {
-	q := r.URL.Query()
-	if exp, sig := q.Get("exp"), q.Get("sig"); exp != "" && sig != "" && domain.VerifyAttachmentSig(id, exp, sig) {
-		return true
+// mayRead decides access: a signed link, a member or key of the owning workspace who may
+// see the ticket carrying it (contracts/teams.md "Visibility"), or the visitor who uploaded
+// the file or whose conversation carries it in a public reply.
+func mayRead(r *http.Request, q db.Querier, id uuid.UUID, a storedAttachment) (bool, error) {
+	query := r.URL.Query()
+	if exp, sig := query.Get("exp"), query.Get("sig"); exp != "" && sig != "" && domain.VerifyAttachmentSig(id, exp, sig) {
+		return true, nil
 	}
 	p := auth.FromContext(r.Context())
 	if p == nil || p.WorkspaceID != a.WorkspaceID {
-		return false
+		return false, nil
 	}
 	switch p.Kind {
-	case auth.KindUser:
-		return p.Role.Valid()
-	case auth.KindAPIKey:
-		return p.HasScope(auth.ScopeTicketsRead)
+	case auth.KindUser, auth.KindAPIKey:
+		if p.Kind == auth.KindUser && !p.Role.Valid() || p.Kind == auth.KindAPIKey && !p.HasScope(auth.ScopeTicketsRead) {
+			return false, nil
+		}
+		if !a.TicketIsAttached {
+			return true, nil
+		}
+		return domain.CanSee(r.Context(), q, p, a.TicketTeam, a.TicketAssignee)
 	case auth.KindVisitor:
 		if a.UploaderContact != nil && *a.UploaderContact == p.ContactID {
-			return true
+			return true, nil
 		}
 		return a.TicketContact != nil && *a.TicketContact == p.ContactID && !a.TicketDeleted &&
-			a.MessageKind != nil && *a.MessageKind == "reply"
+			a.MessageKind != nil && *a.MessageKind == "reply", nil
 	}
-	return false
+	return false, nil
 }
 
 func (h *handler) download(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +184,13 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, r, http.StatusNotFound, "not_found", "Attachment not found")
 		return
 	}
-	if !mayRead(r, id, a) {
+	ok, err = mayRead(r, h.d.DB.Pool, id, a)
+	if err != nil {
+		h.d.Log.Error("attachment access", "err", err, "request_id", httpx.RequestIDFrom(ctx))
+		writeProblem(w, r, http.StatusInternalServerError, "internal", "Something went wrong on our side.")
+		return
+	}
+	if !ok {
 		writeProblem(w, r, http.StatusNotFound, "not_found", "Attachment not found")
 		return
 	}

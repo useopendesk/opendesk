@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -61,6 +62,29 @@ type NewTicket struct {
 	TeamID      *uuid.UUID
 	Custom      map[string]any
 	Fields      map[string]any // custom field values, validated by the caller
+	// BrandID defaults to the brand of MailboxID, else of WidgetID, else the default brand.
+	BrandID  *uuid.UUID
+	WidgetID *uuid.UUID
+	// OriginMailboxID and ReceivedAt are where the first message arrived (email).
+	OriginMailboxID *uuid.UUID
+	ReceivedAt      string
+	PageURL         string
+	// Routed says why the ticket has its team; nil when it has none.
+	Routed *TicketRouted
+}
+
+// ResolveBrand returns the brand a new ticket belongs to (see NewTicket.BrandID).
+func ResolveBrand(ctx context.Context, q db.Querier, wid uuid.UUID, brandID, mailboxID, widgetID *uuid.UUID) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := q.QueryRow(ctx, `SELECT COALESCE(
+		(SELECT b.id FROM brands b WHERE b.workspace_id = $1 AND b.id = $2),
+		(SELECT m.brand_id FROM mailboxes m WHERE m.workspace_id = $1 AND m.id = $3),
+		(SELECT g.brand_id FROM widgets g WHERE g.workspace_id = $1 AND g.id = $4),
+		(SELECT b.id FROM brands b WHERE b.workspace_id = $1 AND b.is_default))`, wid, brandID, mailboxID, widgetID).Scan(&id)
+	if err != nil {
+		return id, fmt.Errorf("resolve brand: %w", err)
+	}
+	return id, nil
 }
 
 // CreateTicket inserts a ticket and publishes ticket.created. Add the first message with
@@ -84,10 +108,20 @@ func CreateTicket(ctx context.Context, tx pgx.Tx, nt NewTicket) (Ticket, error) 
 		nt.WorkspaceID).Scan(&number); err != nil {
 		return Ticket{}, fmt.Errorf("next ticket number: %w", err)
 	}
+	brandID, err := ResolveBrand(ctx, tx, nt.WorkspaceID, nt.BrandID, nt.MailboxID, nt.WidgetID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	if nt.TeamID == nil {
+		nt.Routed = nil
+	}
 	id := ids.New()
-	_, err := tx.Exec(ctx, `INSERT INTO tickets (id, workspace_id, number, subject, status, priority, channel,
-		mailbox_id, contact_id, assignee_id, team_id, custom, fields, severity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		id, nt.WorkspaceID, number, subject, nt.Status, nt.Priority, nt.Channel, nt.MailboxID, nt.ContactID, nt.AssigneeID, nt.TeamID, nt.Custom, nt.Fields, nt.Severity)
+	_, err = tx.Exec(ctx, `INSERT INTO tickets (id, workspace_id, number, subject, status, priority, channel,
+		mailbox_id, contact_id, assignee_id, team_id, custom, fields, severity,
+		brand_id, widget_id, origin_mailbox_id, received_at, page_url, routed)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+		id, nt.WorkspaceID, number, subject, nt.Status, nt.Priority, nt.Channel, nt.MailboxID, nt.ContactID, nt.AssigneeID, nt.TeamID, nt.Custom, nt.Fields, nt.Severity,
+		brandID, nt.WidgetID, nt.OriginMailboxID, nt.ReceivedAt, truncateRunes(nt.PageURL, 500), nt.Routed)
 	if err != nil {
 		return Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
@@ -100,7 +134,7 @@ func CreateTicket(ctx context.Context, tx pgx.Tx, nt NewTicket) (Ticket, error) 
 		topics = append(topics, events.UserTopic(t.Assignee.ID))
 	}
 	if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: nt.WorkspaceID, Type: "ticket.created", Topics: topics,
-		Data: map[string]any{"ticket": t}}); err != nil {
+		TicketID: &t.ID, Data: map[string]any{"ticket": t}}); err != nil {
 		return Ticket{}, err
 	}
 	return t, nil
@@ -125,7 +159,9 @@ type NewMessage struct {
 	InReplyTo       string
 	References      []string
 	InboundEmailID  *uuid.UUID
-	AttachmentIDs   []uuid.UUID // previously uploaded, unattached attachments to link
+	// MailboxID is the address the message is sent from (outbound) or arrived at (inbound).
+	MailboxID     *uuid.UUID
+	AttachmentIDs []uuid.UUID // previously uploaded, unattached attachments to link
 	// DeliveryStatus: "pending" queues an email send for outbound replies on email tickets.
 	DeliveryStatus string
 	// Trigger overrides the job trigger: "" derives it, "none" skips automations.
@@ -135,6 +171,19 @@ type NewMessage struct {
 	AI bool
 	// AIAction is an action card the visitor confirms (contracts/agent.md).
 	AIAction *AIAction
+	// BotID is the bot an AI reply is sent as (contracts/bots.md).
+	BotID *uuid.UUID
+	// Inbound email (contracts/api.md "Inbound email"). ReplyTo is the Reply-To it named when
+	// that differs from FromEmail; AuthFailed marks a From that failed DMARC; NoAutoReply
+	// keeps automatic answers away from it; FormSender is the trusted contact form address
+	// it came through.
+	ReplyTo     string
+	AuthFailed  bool
+	NoAutoReply bool
+	FormSender  string
+	// NoReopen keeps the ticket's status when an inbound reply would reopen it, and
+	// records that it was kept (status_changed with reason "sender_unverified").
+	NoReopen bool
 }
 
 // AddMessage inserts a message, updates the ticket's activity fields, publishes events and
@@ -143,9 +192,10 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	var channel, status string
 	var firstResponded *time.Time
 	var contactID *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT channel, status, first_responded_at, contact_id FROM tickets
+	var brandID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT channel, status, first_responded_at, contact_id, brand_id FROM tickets
 		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, nm.WorkspaceID, nm.TicketID).
-		Scan(&channel, &status, &firstResponded, &contactID); err != nil {
+		Scan(&channel, &status, &firstResponded, &contactID, &brandID); err != nil {
 		return Message{}, fmt.Errorf("lock ticket: %w", err)
 	}
 	if nm.DeliveryStatus == "" {
@@ -162,17 +212,22 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	id := ids.New()
 	_, err := tx.Exec(ctx, `INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, author_user_id,
 		author_contact_id, body_html, body_text, full_html, subject, from_email, from_name, to_emails, cc_emails, bcc_emails,
-		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action, mailbox_id,
+		reply_to, auth_failed, no_auto_reply, form_sender, bot_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
 		id, nm.WorkspaceID, nm.TicketID, nm.Kind, nm.Direction, nm.AuthorType, nm.AuthorUserID, nm.AuthorContactID,
 		nm.BodyHTML, nm.BodyText, nm.FullHTML, truncateRunes(nm.Subject, 500), nm.FromEmail, nm.FromName, nm.To, nm.Cc, nm.Bcc,
-		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction)
+		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction, nm.MailboxID,
+		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID)
 	if err != nil {
 		return Message{}, fmt.Errorf("insert message: %w", err)
 	}
 	if len(nm.AttachmentIDs) > 0 {
-		if _, err := tx.Exec(ctx, `UPDATE attachments SET message_id = $1 WHERE workspace_id = $2 AND id = ANY($3) AND message_id IS NULL`,
-			id, nm.WorkspaceID, nm.AttachmentIDs); err != nil {
+		// An agent's or visitor's upload goes only on their own message.
+		if _, err := tx.Exec(ctx, `UPDATE attachments SET message_id = $1 WHERE workspace_id = $2 AND id = ANY($3) AND message_id IS NULL
+			AND (uploaded_by IS NULL OR uploaded_by IS NOT DISTINCT FROM $4)
+			AND (uploaded_by_contact_id IS NULL OR uploaded_by_contact_id IS NOT DISTINCT FROM $5)`,
+			id, nm.WorkspaceID, nm.AttachmentIDs, nm.AuthorUserID, nm.AuthorContactID); err != nil {
 			return Message{}, fmt.Errorf("link attachments: %w", err)
 		}
 	}
@@ -183,14 +238,20 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		preview := truncateRunes(strings.Join(strings.Fields(nm.BodyText), " "), 200)
 		customer := nm.Direction == "inbound"
 		newStatus := status
+		kept := false
 		if customer && (status == StatusPending || status == StatusSolved || status == StatusOnHold) {
-			newStatus = StatusOpen
+			if nm.NoReopen {
+				kept = true
+			} else {
+				newStatus = StatusOpen
+			}
 		}
 		setFirst := !customer && nm.AuthorType == "user" && firstResponded == nil
 		_, err := tx.Exec(ctx, `UPDATE tickets SET last_message_at = $3, last_message_preview = $4,
 			message_count = message_count + 1, updated_at = now(),
 			last_customer_message_at = CASE WHEN $5 THEN $3 ELSE last_customer_message_at END,
 			waiting_since = CASE WHEN $5 THEN COALESCE(waiting_since, $3) ELSE NULL END,
+			unanswered_count = CASE WHEN $5 THEN unanswered_count + 1 ELSE 0 END,
 			status = $6, solved_at = CASE WHEN $6 = 'open' THEN NULL ELSE solved_at END,
 			snoozed_until = CASE WHEN $6 = 'on_hold' THEN snoozed_until ELSE NULL END,
 			first_responded_at = CASE WHEN $7 THEN $3 ELSE first_responded_at END
@@ -202,6 +263,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 			changes = append(changes, "status")
 			if _, err := LogActivity(ctx, tx, nm.WorkspaceID, nm.TicketID, "contact", nil, "status_changed",
 				map[string]any{"from": status, "to": newStatus}); err != nil {
+				return Message{}, err
+			}
+		}
+		if kept {
+			// The reply did not reopen the ticket: the timeline says so, and why.
+			if _, err := LogActivity(ctx, tx, nm.WorkspaceID, nm.TicketID, "system", nil, "status_changed",
+				map[string]any{"from": status, "to": status, "reason": "sender_unverified", "message_id": id.String()}); err != nil {
 				return Message{}, err
 			}
 		}
@@ -218,10 +286,11 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	if err != nil {
 		return Message{}, err
 	}
-	ev := events.Event{WorkspaceID: nm.WorkspaceID, Type: "message.created", Data: map[string]any{"ticket_id": nm.TicketID, "message": msg}}
+	ev := events.Event{WorkspaceID: nm.WorkspaceID, Type: "message.created", TicketID: &nm.TicketID,
+		Data: map[string]any{"ticket_id": nm.TicketID, "message": msg}}
 	if nm.Kind == "reply" && channel == ChannelChat && contactID != nil {
 		ev.Visibility = events.VisibilityPublic
-		ev.Topics = []string{events.ContactTopic(nm.WorkspaceID, *contactID)}
+		ev.Topics = []string{events.ContactTopic(nm.WorkspaceID, *contactID, brandID)}
 		ev.Data = map[string]any{"ticket_id": nm.TicketID, "message": PublicMessage(msg)}
 	}
 	if _, err := events.Publish(ctx, tx, ev); err != nil {
@@ -237,6 +306,11 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		if _, err := jc.InsertTx(ctx, tx, jobs.SendMessageArgs{WorkspaceID: nm.WorkspaceID, MessageID: id},
 			&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
 			return Message{}, fmt.Errorf("queue send: %w", err)
+		}
+	}
+	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelChat && nm.AuthorType == "user" && !nm.AI && contactID != nil {
+		if err := queueChatFollowUp(ctx, tx, jc, nm.WorkspaceID, nm.TicketID, id, time.Now()); err != nil {
+			return Message{}, fmt.Errorf("queue chat follow-up: %w", err)
 		}
 	}
 	trigger := nm.Trigger
@@ -270,7 +344,7 @@ func PublishTicketUpdated(ctx context.Context, tx pgx.Tx, wid, ticketID uuid.UUI
 		topics = append(topics, events.UserTopic(t.Assignee.ID))
 	}
 	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket.updated", Topics: topics,
-		Data: map[string]any{"ticket": t, "changes": changes}})
+		TicketID: &t.ID, Data: map[string]any{"ticket": t, "changes": changes}})
 	return err
 }
 
@@ -292,7 +366,7 @@ func LogActivity(ctx context.Context, tx pgx.Tx, wid, ticketID uuid.UUID, actorT
 		}
 		a.Actor.User = &u
 	}
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "activity.created",
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "activity.created", TicketID: &ticketID,
 		Data: map[string]any{"ticket_id": ticketID, "activity": a}})
 	return a, err
 }
@@ -314,14 +388,16 @@ func PublishMessageUpdated(ctx context.Context, tx pgx.Tx, wid, messageID uuid.U
 	}
 	var channel string
 	var contactID *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT channel, contact_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, msg.TicketID).
-		Scan(&channel, &contactID); err != nil {
+	var brandID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT channel, contact_id, brand_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, msg.TicketID).
+		Scan(&channel, &contactID, &brandID); err != nil {
 		return err
 	}
-	ev := events.Event{WorkspaceID: wid, Type: "message.updated", Data: map[string]any{"ticket_id": msg.TicketID, "message": msg}}
+	ev := events.Event{WorkspaceID: wid, Type: "message.updated", TicketID: &msg.TicketID,
+		Data: map[string]any{"ticket_id": msg.TicketID, "message": msg}}
 	if msg.Kind == "reply" && channel == ChannelChat && contactID != nil {
 		ev.Visibility = events.VisibilityPublic
-		ev.Topics = []string{events.ContactTopic(wid, *contactID)}
+		ev.Topics = []string{events.ContactTopic(wid, *contactID, brandID)}
 		ev.Data = map[string]any{"ticket_id": msg.TicketID, "message": PublicMessage(msg)}
 	}
 	_, err = events.Publish(ctx, tx, ev)

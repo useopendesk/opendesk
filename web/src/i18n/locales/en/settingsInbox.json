@@ -52,7 +52,7 @@
   "views": {
     "reorderAria": "Reorder {{name}}. Hold Alt and press the arrow keys to move it.",
     "title": "Views",
-    "description": "Saved filters that sit in everyone's sidebar under Views, with a live count. Order here is the order in the sidebar.",
+    "description": "Saved filters in the sidebar under Views, with a live count. A view is yours alone, a team's or everyone's. Order here is the order in the sidebar.",
     "new": "New view",
     "count_one": "{{count}} view",
     "count_other": "{{count}} views",
@@ -65,7 +65,12 @@
     "openThis": "Open this view",
     "deleteTitle": "Delete this view?",
     "deleteConfirm": "Delete view",
-    "deleteBody": "will disappear from the sidebar for everyone. Tickets are not affected.",
+    "deleteFrom": {
+      "me": "will disappear from your sidebar. Tickets are not affected.",
+      "team": "will disappear from the sidebar of everyone on {{team}}. Tickets are not affected.",
+      "anyTeam": "will disappear from the sidebar of everyone on the team. Tickets are not affected.",
+      "everyone": "will disappear from the sidebar for everyone. Tickets are not affected."
+    },
     "updateFailed": "Couldn't update the view",
     "reorderFailed": "Couldn't reorder views",
     "deleteFailed": "Couldn't delete the view",
@@ -74,7 +79,12 @@
     "namePlaceholder": "Billing queue",
     "needName": "Give the view a name.",
     "visibleTitle": "Visible to everyone",
-    "visibleHint": "Off keeps it in your sidebar only.",
+    "audience": {
+      "me": "Only you see it in your sidebar.",
+      "team": "Everyone on {{team}} sees it in their sidebar.",
+      "anyTeam": "Everyone on the team sees it in their sidebar.",
+      "everyone": "Everyone in the workspace sees it in their sidebar."
+    },
     "showWhere": "Show tickets where",
     "discardBody": "Your changes to this view will be lost.",
     "save": "Save view",
@@ -90,7 +100,7 @@
       "assignee": "Assignee",
       "team": "Team",
       "mailbox": "Mailbox",
-      "tag": "Tag",
+      "tag": "Label",
       "channel": "Channel",
       "keyword": "Keyword"
     },
@@ -101,7 +111,7 @@
       "assignee": "Anyone",
       "team": "Any team",
       "mailbox": "Any mailbox",
-      "tag": "Any tag",
+      "tag": "Any label",
       "channel": "Any channel"
     },
     "keywordPlaceholder": "Subject, contact or text",
@@ -124,7 +134,7 @@
   "sla": {
     "reorderAria": "Reorder {{name}}. Hold Alt and press the arrow keys to move it.",
     "title": "SLA policies",
-    "description": "Response and resolution targets. Policies are checked from top to bottom, and the first enabled one that matches a ticket's priority applies.",
+    "description": "Response and resolution targets. Policies are checked from top to bottom, and the first enabled one that matches a ticket's priority and team applies.",
     "new": "New policy",
     "emptyTitle": "No SLA policies",
     "emptyHint": "Without a policy, tickets have no due times.",
@@ -166,6 +176,7 @@
     "currently": "Currently {{time}}",
     "needName": "Give the policy a name.",
     "resolutionTooSoon": "Resolution can't be sooner than the first response.",
+    "badDuration": "Enter each time as a number, from 1 minute to 365 days.",
     "units": {
       "m": "Minutes",
       "h": "Hours",
@@ -187,7 +198,7 @@
     "description": "Rules that run on their own when something happens to a ticket. They run in order, top to bottom.",
     "new": "New automation",
     "emptyTitle": "No automations yet",
-    "emptyHint": "Route billing mail to the billing team, tag urgent words, or close spam without lifting a finger.",
+    "emptyHint": "Route billing mail to the billing team, label urgent words, or close spam without lifting a finger.",
     "conditions_one": "{{count}} condition",
     "conditions_other": "{{count}} conditions",
     "actions_one": "{{count}} action",
@@ -252,7 +263,7 @@
     "choosePriority": "Choose a priority",
     "chooseChannel": "Choose a channel",
     "chooseMailbox": "Choose a mailbox",
-    "chooseTag": "Choose a tag",
+    "chooseTag": "Choose a label",
     "chooseTeammate": "Choose a teammate",
     "chooseTeam": "Choose a team",
     "markSpamHint": "Moves the ticket to Spam. No reply is sent.",
@@ -290,7 +301,11 @@
     "priority": "Priority",
     "severity": "Severity",
     "status": "Status",
-    "tag": "Tag"
+    "tag": "Label",
+    "received_at": "Address written to",
+    "team_id": "Team",
+    "brand_id": "Brand",
+    "widget_id": "Chat widget"
   },
   "ops": {
     "contains": "contains",
@@ -307,12 +322,13 @@
     "set_severity": "Set severity to",
     "assign_user": "Assign to",
     "assign_team": "Assign to team",
-    "add_tag": "Add tag",
-    "remove_tag": "Remove tag",
+    "add_tag": "Add label",
+    "remove_tag": "Remove label",
     "send_reply": "Send a reply",
     "add_note": "Add an internal note",
     "mark_spam": "Mark as spam",
-    "set_field": "Set field"
+    "set_field": "Set field",
+    "set_reply_address": "Set reply address"
   },
   "unsaved": {
     "title": "Leave without saving?",
@@ -527,12 +543,12 @@
     "engine": {
       "section": "Decision engine",
       "label": "Engine",
-      "jev": "Jev by TypeSafe",
-      "jevHint": "Fast, typed decisions with calibrated confidence. {{name}} applies a decision only when Jev is sure enough.",
+      "jev": "Decision model",
+      "jevHint": "Fast, typed decisions with calibrated confidence. {{name}} applies a decision only when it is sure enough.",
       "connected": "Connected",
       "unreachable": "Not reachable",
       "llm": "LLM fallback",
-      "llmHint": "Your AI model answers the same questions. Set TYPESAFE_API_KEY to use Jev for calibrated confidence.",
+      "llmHint": "Your AI model answers the same questions, with no calibrated confidence. Set TYPESAFE_API_KEY to use the decision model instead.",
       "none": "Not set up",
       "noneHint": "Set TYPESAFE_API_KEY or an AI provider key to let {{name}} triage.",
       "model": "Model"

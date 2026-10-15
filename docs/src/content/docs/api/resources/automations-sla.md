@@ -34,7 +34,7 @@ type Automation = {
 };
 // severity: equals / not_equals with sev1..sev4 or "none". set_severity: sev1..sev4, or "" to clear.
 // ai_decide: gt / lt with value a probability 0.01..0.99; at most 3 per automation; all of one
-// trigger run are asked in one call (1 credit). It does not hold when no decision engine answers.
+// trigger run are asked in one call (charged once to the AI balance). It does not hold when no decision engine answers.
 
 type SlaPolicy = {
   id: string;

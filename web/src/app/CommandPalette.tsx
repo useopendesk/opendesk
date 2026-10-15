@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
 import { Dialog as D } from "radix-ui";
@@ -14,10 +14,12 @@ import {
   Layers,
   Moon,
   Search,
+  Server,
   Settings,
   SquarePen,
   Sun,
   User,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { useDeferredValue, useEffect, useState, type ReactNode } from "react";
@@ -29,9 +31,11 @@ import { StatusIcon } from "@/components/tickets/bits";
 import { folders } from "@/lib/folders";
 import { relShort } from "@/lib/format";
 import { q } from "@/lib/queries";
-import { selectWorkspace, useSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
+import { desktop } from "@/lib/desktop";
 import { shell, usePageCommands, useShell } from "./shellStore";
+import { useAccountActions, useSwitcherEntries } from "./useAccounts";
 import { useTranslation } from "react-i18next";
 import { AiIcon } from "@/components/ai/bits";
 import { WorkingBar } from "@/components/ai/ui/Thinking";
@@ -39,6 +43,7 @@ import { cn } from "@/lib/cn";
 import { AI_TONE, tone } from "@/lib/tones";
 import { useDebounced } from "@/components/contacts/hooks";
 import { useAI } from "@/lib/ai";
+import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import type { SearchResults } from "@/lib/api/types";
 
 const itemCls =
@@ -61,15 +66,19 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query.trim());
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const { data: views } = useQuery(q.views());
+  const teams = useTeamsCtx();
+  const visibleTeams = sortTeams(teams.teams.filter(teams.canSeeTeam), teams.myTeams);
   const search = useQuery({ ...q.search(deferred), enabled: open && deferred.length > 1 });
   const pageCommands = usePageCommands((s) => s.commands);
-  const memberships = useSession((s) => s.memberships);
   const workspaceId = useSession((s) => s.workspaceId);
+  const meId = useSession((s) => s.user?.id);
+  const entries = useSwitcherEntries();
+  const { switchTo, addAccount } = useAccountActions();
   const { dark, setTheme } = useTheme();
   const ai = useAI();
   const { t } = useTranslation("ai");
+  const { t: tShell } = useTranslation("shell");
   const [aiMode, setAiMode] = useState(false);
   const aiQuery = useDebounced(query.trim(), 300);
   const aiSearch = useQuery({ ...q.aiSearch(aiQuery), enabled: open && aiMode && ai.enabled && aiQuery.length > 1 });
@@ -244,6 +253,27 @@ export function CommandPalette() {
                     {f.label}
                   </Item>
                 ))}
+                {teams.myTeams.size > 1 && (
+                  <Item
+                    value="go team my teams"
+                    icon={<Users />}
+                    hint={tShell("nav.teamHint")}
+                    onSelect={() => go(() => void navigate({ to: "/teams/$teamId/{-$ticketId}", params: { teamId: "mine", ticketId: undefined } }))}
+                  >
+                    {tShell("nav.myTeams")}
+                  </Item>
+                )}
+                {visibleTeams.map((x) => (
+                  <Item
+                    key={`team-${x.id}`}
+                    value={`go team ${x.name} ${x.id}`}
+                    icon={<span className="flex size-4 shrink-0 items-center justify-center"><TeamDot team={x} /></span>}
+                    hint={tShell("nav.teamHint")}
+                    onSelect={() => go(() => void navigate({ to: "/teams/$teamId/{-$ticketId}", params: { teamId: x.id, ticketId: undefined } }))}
+                  >
+                    {x.name}
+                  </Item>
+                ))}
                 {views?.map((v) => (
                   <Item
                     key={v.id}
@@ -271,17 +301,19 @@ export function CommandPalette() {
                   [
                     ["/settings/profile", "Profile"],
                     ["/settings/security", "Security"],
+                    ["/settings/notifications", "Notifications"],
                     ["/settings/workspace", "Workspace settings"],
                     ["/settings/members", "Members"],
                     ["/settings/teams", "Teams"],
                     ["/settings/mailboxes", "Mailboxes"],
-                    ["/settings/tags", "Tags"],
+                    ["/settings/tags", "Labels"],
                     ["/settings/saved-replies", "Saved replies"],
                     ["/settings/views", "Views"],
                     ["/settings/sla", "SLA policies"],
                     ["/settings/automations", "Automations"],
                     ["/settings/ai", "AI settings"],
                     ["/settings/ai/agent", "AI agent overview"],
+                    ["/settings/ai/bots", "AI bots"],
                     ["/settings/ai/behaviour", "AI agent behaviour"],
                     ["/settings/ai/knowledge", "AI agent knowledge"],
                     ["/settings/ai/tools", "AI agent tools"],
@@ -308,24 +340,29 @@ export function CommandPalette() {
                 <Item value="keyboard shortcuts help" icon={<Keyboard />} hint={<Kbd>?</Kbd>} onSelect={() => go(() => shell.shortcuts())}>
                   Keyboard shortcuts
                 </Item>
-                {memberships
-                  .filter((m) => m.workspace.id !== workspaceId)
-                  .map((m) => (
-                    <Item
-                      key={m.workspace.id}
-                      value={`switch workspace ${m.workspace.name}`}
-                      icon={<ArrowRight />}
-                      onSelect={() =>
-                        go(() => {
-                          selectWorkspace(m.workspace.id);
-                          qc.clear();
-                          void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
-                        })
-                      }
-                    >
-                      Switch to {m.workspace.name}
-                    </Item>
-                  ))}
+                {desktop && (
+                  <Item value="switch server instance cloud self-hosted" icon={<Server />} onSelect={() => go(() => desktop?.switchServer())}>
+                    {tShell("desktop.switchServer")}
+                  </Item>
+                )}
+                {entries
+                  .filter(({ account, membership: m }) => account.user.id !== meId || m.workspace.id !== workspaceId)
+                  .map(({ account, membership: m }) => {
+                    const other = account.user.id !== meId;
+                    return (
+                      <Item
+                        key={`${account.user.id}:${m.workspace.id}`}
+                        value={`switch workspace ${m.workspace.name}${other ? ` account ${account.user.email}` : ""}`}
+                        icon={<ArrowRight />}
+                        onSelect={() => go(() => void switchTo(account.user.id, m.workspace.id))}
+                      >
+                        {other ? tShell("accounts.paletteSwitch", { workspace: m.workspace.name, email: account.user.email }) : `Switch to ${m.workspace.name}`}
+                      </Item>
+                    );
+                  })}
+                <Item value="add account sign in another switch account" icon={<UserPlus />} onSelect={() => go(addAccount)}>
+                  {tShell("accounts.paletteAdd")}
+                </Item>
               </Command.Group>
               {ai.enabled && (
                 <Command.Group heading={t("palette.ask")} className={groupCls}>

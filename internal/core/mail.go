@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/mailer"
@@ -79,22 +79,20 @@ func (s *svc) appLink(path, key, value string) string {
 }
 
 // enqueueMail queues a system email in tx.
-func (s *svc) enqueueMail(ctx context.Context, tx pgx.Tx, to, subject, html, text string) error {
-	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: to, Subject: subject, HTML: html, Text: text},
+func (s *svc) enqueueMail(ctx context.Context, tx pgx.Tx, to string, m mailer.Mail) error {
+	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: to, Subject: m.Subject, HTML: m.HTML, Text: m.Text, Headers: m.Headers},
 		&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8})
 	return err
 }
+
+func (s *svc) site() emails.Site { return emails.SiteFrom(s.d.Cfg) }
 
 func (s *svc) sendVerifyEmail(ctx context.Context, tx pgx.Tx, uid uuid.UUID, email string) error {
 	tok, err := createOneTime(ctx, tx, ottVerifyEmail, &uid, email, nil, verifyTTL)
 	if err != nil {
 		return err
 	}
-	html, text := mailer.Layout("Confirm your email",
-		[]string{"Confirm this address to finish setting up your opendesk account."},
-		"Confirm email", s.appLink("/verify", "token", tok),
-		"The link works for 48 hours. If you did not create an account, ignore this email.")
-	return s.enqueueMail(ctx, tx, email, "Confirm your email", html, text)
+	return s.enqueueMail(ctx, tx, email, emails.VerifyEmail(s.site(), s.appLink("/verify", "token", tok)))
 }
 
 func (s *svc) sendResetEmail(ctx context.Context, tx pgx.Tx, uid uuid.UUID, email string) error {
@@ -102,30 +100,12 @@ func (s *svc) sendResetEmail(ctx context.Context, tx pgx.Tx, uid uuid.UUID, emai
 	if err != nil {
 		return err
 	}
-	html, text := mailer.Layout("Reset your password",
-		[]string{"Someone asked to reset the password for your opendesk account. Choose a new one with the button below."},
-		"Choose a new password", s.appLink("/reset", "token", tok),
-		"The link works for one hour and only once. If you did not ask for this, ignore this email; your password stays the same.")
-	return s.enqueueMail(ctx, tx, email, "Reset your opendesk password", html, text)
+	return s.enqueueMail(ctx, tx, email, emails.ResetPassword(s.site(), s.appLink("/reset", "token", tok)))
 }
 
 func (s *svc) sendInviteEmail(ctx context.Context, tx pgx.Tx, email, token, workspaceName, inviterName, role string) error {
-	inviter := inviterName
-	if inviter == "" {
-		inviter = "A teammate"
-	}
-	html, text := mailer.Layout("Join "+workspaceName+" on opendesk",
-		[]string{fmt.Sprintf("%s invited you to the %s workspace as %s.", inviter, workspaceName, roleArticle(role))},
-		"Accept invitation", s.appLink("/invite", "token", token),
-		"The invitation works for 7 days. If you were not expecting it, ignore this email.")
-	return s.enqueueMail(ctx, tx, email, "You are invited to "+workspaceName+" on opendesk", html, text)
-}
-
-func roleArticle(role string) string {
-	if role == "admin" || role == "agent" {
-		return "an " + role
-	}
-	return "a " + role
+	return s.enqueueMail(ctx, tx, email, emails.Invitation(s.site(), emails.Invite{Inviter: inviterName, Workspace: workspaceName,
+		Role: role, Link: s.appLink("/invite", "token", token)}))
 }
 
 // systemEmailWorker sends platform email through the system mailer.
@@ -136,7 +116,7 @@ type systemEmailWorker struct {
 
 func (w *systemEmailWorker) Work(ctx context.Context, job *river.Job[jobs.SystemEmailArgs]) error {
 	a := job.Args
-	return w.s.d.Mailer.Send(ctx, mailer.Mail{To: a.To, Subject: a.Subject, HTML: a.HTML, Text: a.Text})
+	return w.s.d.Mailer.Send(ctx, mailer.Mail{To: a.To, Subject: a.Subject, HTML: a.HTML, Text: a.Text, Headers: a.Headers})
 }
 
 // forgotArgs asks for a reset email. The lookup runs in the worker, so the endpoint
@@ -194,6 +174,9 @@ func (w *cleanupWorker) Work(ctx context.Context, _ *river.Job[cleanupArgs]) err
 		`DELETE FROM webhook_deliveries WHERE created_at < now() - interval '30 days'`,
 		`DELETE FROM idempotency_keys WHERE created_at < now() - interval '24 hours'`,
 		`DELETE FROM passkey_challenges WHERE expires_at < now()`,
+		// App Attest: spent-by-time challenges and keys no install has used for 180 days.
+		`DELETE FROM app_attest_challenges WHERE expires_at < now()`,
+		`DELETE FROM app_attest_keys WHERE COALESCE(last_used_at, created_at) < now() - interval '180 days'`,
 		// MCP OAuth: finished requests and codes, rotated or expired refresh tokens,
 		// grants revoked a while ago or never exchanged, clients nobody uses.
 		`DELETE FROM oauth_authorizations WHERE expires_at < now() - interval '1 day'`,

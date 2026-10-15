@@ -4,10 +4,6 @@ description: Set up opendesk, connect your mailboxes, embed live chat, build on 
 template: splash
 hero:
   title: The open-source helpdesk, documented.
-  image:
-    light: ../../assets/mark.svg
-    dark: ../../assets/mark-white.svg
-    alt: The opendesk Module mark
   tagline: Shared inboxes, live chat, a knowledge base and a public API, with everything updating live across your team. Run it on opendesk.sh or on your own server.
   actions:
     - text: Get started
@@ -21,30 +17,50 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Screenshot from '../../components/Screenshot.astro';
+import Diagram from '../../components/Diagram.astro';
+import Cards from '../../components/Cards.astro';
+import GuideCard from '../../components/GuideCard.astro';
+import StartPath from '../../components/StartPath.astro';
+
+<Screenshot src="/guides/home/hero" alt="The opendesk inbox: folders, teams and views in the sidebar, the ticket list, and an email ticket open with its timeline, the reply box, the ticket's details and Ollie's summary" />
 
 ## Start here
 
-<CardGrid>
-  <LinkCard title="What is opendesk" href="/getting-started/introduction/" description="The product, the architecture and how the pieces fit." />
-  <LinkCard title="Quickstart (Cloud)" href="/getting-started/quickstart-cloud/" description="Create a workspace, connect a mailbox and answer your first ticket." />
-  <LinkCard title="Quickstart (self-host)" href="/getting-started/quickstart-self-host/" description="One command installs opendesk, Postgres and HTTPS on your server." />
-  <LinkCard title="Connect a mailbox" href="/guides/mailboxes/" description="Forwarding, IMAP and SMTP, or a one-click Google or Microsoft connection." />
-</CardGrid>
+<Cards cols={2}>
+<StartPath kicker="Cloud" title="Use opendesk.sh" href="/getting-started/quickstart-cloud/" cta="Cloud quickstart" steps={['Create your account', 'Name your workspace', 'Connect a mailbox', 'Add the chat widget to your site', 'Invite your team']}>
+Nothing to install or run. Sign up at app.opendesk.sh and answer your first ticket in a few minutes.
+</StartPath>
+<StartPath kicker="Self-host" title="Run it on your own server" href="/getting-started/quickstart-self-host/" cta="Self-host quickstart" steps={['Get a server with Docker', 'Point a domain at it', 'Run the install script', 'Create the first account', 'Set up email']}>
+One command installs opendesk, Postgres and HTTPS. Free forever, and the same code as the cloud.
+</StartPath>
+</Cards>
+
+## Find your way around
+
+<Cards cols={4}>
+<GuideCard title="Inbox and tickets" href="/guides/inbox-and-tickets/" shot="/guides/home/inbox" description="Answer, assign, snooze and solve, with your team live on every ticket." />
+<GuideCard title="Mailboxes" href="/guides/mailboxes/" shot="/guides/home/mailboxes" description="Bring support addresses in by forwarding, IMAP, Google or Microsoft." />
+<GuideCard title="Live chat widget" href="/guides/live-chat/" shot="/guides/home/chat" description="One script tag adds chat and your help center to your site." />
+<GuideCard title="Knowledge base" href="/guides/knowledge-base/" shot="/guides/home/kb" description="Write articles once, for your help center and the widget." />
+<GuideCard title="Automations" href="/guides/automations/" shot="/guides/home/automations" description="Rules that route, tag, assign and reply when tickets change." />
+<GuideCard title="Ollie, the assistant" href="/guides/ollie/" shot="/guides/home/ollie" description="Ask about your queue, draft replies and prepare changes you approve." />
+<GuideCard title="Reports" href="/guides/reports/" shot="/guides/home/reports" description="Volume, response and resolution times, SLA breaches and CSAT." />
+<GuideCard title="API and webhooks" href="/api/" shot="/guides/home/api-keys" description="Everything you can click, you can automate with a scoped key." />
+</Cards>
+
+## How it fits together
+
+On your own server, opendesk is four containers behind one domain. The hosted service runs the same code, split into roles. See [Self-hosting](/self-hosting/) and [Cloud architecture](/cloud/architecture/).
+
+<Diagram name="self-host" />
 
 ## Build on opendesk
 
 <CardGrid>
-  <Card title="REST API" icon="seti:json">
-    The web app uses exactly the public API. Everything you can click, you can automate. [Read the overview](/api/).
-  </Card>
-  <Card title="Webhooks" icon="random">
-    Signed deliveries for every event, with retries and a delivery log. [Verify signatures](/api/webhooks/).
-  </Card>
-  <Card title="Realtime" icon="rocket">
-    Phoenix Channels for events, presence and typing, with gap-free replay. [Connect a socket](/api/realtime/).
-  </Card>
-  <Card title="Live chat widget" icon="comment">
-    One script tag, with optional HMAC identity verification. [Embed the widget](/guides/live-chat/).
-  </Card>
+  <LinkCard title="REST API" href="/api/" description="The web app uses exactly the public API, with keys scoped to what they need." />
+  <LinkCard title="Webhooks" href="/api/webhooks/" description="Signed deliveries for every event, with retries and a delivery log." />
+  <LinkCard title="Realtime" href="/api/realtime/" description="Phoenix Channels for events, presence and typing, with gap-free replay." />
+  <LinkCard title="MCP server" href="/api/mcp/" description="Connect Claude, ChatGPT, Cursor or any MCP client with a sign-in or a key." />
 </CardGrid>

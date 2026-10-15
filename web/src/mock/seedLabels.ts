@@ -1,4 +1,4 @@
-// Labels, label groups and custom fields for the Fieldnote demo workspace.
+// Labels, label groups and custom fields for the Margin demo workspace.
 // Values come from a hash of the record, not the shared random stream, so the
 // rest of the seed stays as it was.
 
@@ -40,7 +40,7 @@ function group(ws: WsData, name: string, color: LabelColor | null, exclusive: bo
   return g;
 }
 
-export function seedFieldnoteLabels(ws: WsData) {
+export function seedMarginLabels(ws: WsData) {
   seedDefaultLabels(ws);
   const at = ago(300 * DAY);
   for (const t of ws.tags) t.created_at = t.updated_at = at;
@@ -71,7 +71,7 @@ export function seedFieldnoteLabels(ws: WsData) {
   makeTag(ws, "Refund", { color: "rose", description: "Money goes back to the customer", position: 2, applies_to: ["tickets"], created_at: at, updated_at: at });
   makeTag(ws, "Escalated", { color: "red", description: "Handed to engineering or a lead", position: 3, applies_to: ["tickets"], created_at: at, updated_at: at });
   makeTag(ws, "Beta tester", { color: "purple", description: "Joined the early access program", position: 4, applies_to: ["contacts"] as LabelScope[], created_at: at, updated_at: at });
-  makeTag(ws, "Partner", { color: "indigo", description: "Resells or integrates Fieldnote", position: 5, applies_to: ["companies"] as LabelScope[], created_at: at, updated_at: at });
+  makeTag(ws, "Partner", { color: "indigo", description: "Resells or integrates Margin", position: 5, applies_to: ["companies"] as LabelScope[], created_at: at, updated_at: at });
   makeTag(ws, "Legacy plan", { color: "gray", description: "Still on the 2023 pricing", position: 6, archived: true, created_at: at, updated_at: at });
   vip.position = 0;
   feedback.position = 1;
@@ -110,7 +110,7 @@ function field(ws: WsData, entity: FieldEntity, key: string, name: string, type:
 const opts = (...xs: [string, string, LabelColor][]): FieldOption[] => xs.map(([id, label, color]) => ({ id, label, color }));
 const date = (daysFromNow: number) => iso(NOW + daysFromNow * DAY).slice(0, 10);
 
-export function seedFieldnoteFields(ws: WsData, users: { maya: string; jonas: string; lea: string; priya: string }) {
+export function seedMarginFields(ws: WsData, users: { maya: string; jonas: string; lea: string; priya: string }) {
   // Tickets.
   const product = field(ws, "ticket", "product_area", "Product area", "select", {
     description: "Where in the product the issue lives",
@@ -163,7 +163,7 @@ export function seedFieldnoteFields(ws: WsData, users: { maya: string; jonas: st
     if (isBug) {
       v.app_version = `4.${h(t.subject, 9) + 2}.${h(t.id, 5)}`;
       if (h(t.id, 2) === 0) v.regression = true;
-      if (h(t.subject, 3) === 0) v.issue_link = `https://linear.app/fieldnote/issue/FN-${1200 + h(t.id, 700)}`;
+      if (h(t.subject, 3) === 0) v.issue_link = `https://linear.app/margin/issue/FN-${1200 + h(t.id, 700)}`;
     }
     if (t.priority === "urgent" || t.priority === "high") v.affected_users = [1, 3, 12, 40, 180][h(t.id, 5)];
     if (t.status === "solved" || t.status === "closed") v.resolution = isBug ? (h(t.id, 3) === 0 ? "workaround" : "fixed") : h(t.id, 4) === 0 ? "duplicate" : "answered";

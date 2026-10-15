@@ -29,3 +29,7 @@ func RunReconcile(ctx context.Context, d *deps.Deps) error {
 func RunAutoRecharge(ctx context.Context, d *deps.Deps, wid uuid.UUID) error {
 	return (&autoRechargeWorker{s: newSvc(d)}).Work(ctx, &river.Job[jobs.AutoRechargeArgs]{Args: jobs.AutoRechargeArgs{WorkspaceID: wid}})
 }
+
+func RunSyncPaymentMethod(ctx context.Context, d *deps.Deps, wid uuid.UUID) error {
+	return (&syncPaymentMethodWorker{s: newSvc(d)}).Work(ctx, &river.Job[jobs.SyncPaymentMethodArgs]{Args: jobs.SyncPaymentMethodArgs{WorkspaceID: wid}})
+}

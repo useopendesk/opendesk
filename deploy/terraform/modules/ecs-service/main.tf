@@ -130,12 +130,14 @@ resource "aws_iam_role" "task" {
   assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 
+# Keyed by name so the plan knows how many there are before the policy
+# documents (which reference resources created in the same apply) are known.
 resource "aws_iam_role_policy" "task" {
-  count = var.task_role_policy_json == null ? 0 : 1
+  for_each = var.task_role_policies
 
-  name   = "app"
+  name   = each.key
   role   = aws_iam_role.task.id
-  policy = var.task_role_policy_json
+  policy = each.value
 }
 
 data "aws_iam_policy_document" "exec" {
@@ -193,7 +195,8 @@ resource "aws_ecs_task_definition" "this" {
 # ── Service ────────────────────────────────────────────────────────────────
 
 resource "aws_service_discovery_service" "this" {
-  count = var.create_service && var.discovery_namespace_id != null ? 1 : 0
+  # discovery_name is a plain string; the namespace id is only known after apply.
+  count = var.create_service && var.discovery_name != null ? 1 : 0
 
   name = var.discovery_name
 
@@ -214,7 +217,7 @@ resource "aws_ecs_service" "this" {
   cluster                            = var.cluster_arn
   task_definition                    = aws_ecs_task_definition.this.arn
   desired_count                      = var.desired_count
-  launch_type                        = "FARGATE"
+  launch_type                        = var.spot ? null : "FARGATE"
   platform_version                   = "LATEST"
   enable_execute_command             = var.enable_execute_command
   propagate_tags                     = "SERVICE"
@@ -222,6 +225,14 @@ resource "aws_ecs_service" "this" {
   deployment_maximum_percent         = var.deployment_maximum_percent
   health_check_grace_period_seconds  = var.target_group_arn == null ? null : var.health_check_grace_period_seconds
   wait_for_steady_state              = false
+
+  dynamic "capacity_provider_strategy" {
+    for_each = var.spot ? [1] : []
+    content {
+      capacity_provider = "FARGATE_SPOT"
+      weight            = 1
+    }
+  }
 
   network_configuration {
     subnets          = var.subnet_ids

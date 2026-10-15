@@ -1,0 +1,93 @@
+---
+title: Authentication
+description: Authenticate with user access tokens or workspace API keys, and the scopes each key can hold.
+---
+
+import Diagram from '../../../components/Diagram.astro';
+
+opendesk accepts two kinds of bearer credential.
+
+| Credential | For | Header |
+| --- | --- | --- |
+| Access token | The web app and anything acting as a signed-in user | `Authorization: Bearer <jwt>` plus `OD-Workspace` |
+| API key | Servers, scripts and integrations | `Authorization: Bearer od_live_...` |
+
+The chat widget uses a third, narrower credential, the visitor token (`Authorization: Visitor od_vis_...`). See [Widget API](/api/resources/widget/).
+
+<Diagram name="api-auth" />
+
+Whichever you use, the workspace comes from the credential: an API key's own workspace, or the `OD-Workspace` a signed-in member belongs to. A workspace id in a request body never widens what a request can reach, and a record in another workspace answers `404`, the same as one that does not exist.
+
+## API keys
+
+API keys are the right choice for integrations. Create one in **Settings → API keys** (admin only) with a name, a set of scopes and an optional expiry. The secret is shown **once**, when the key is created. opendesk stores only a hash of it.
+
+```sh
+curl https://api.opendesk.sh/v1/contacts \
+  -H "Authorization: Bearer od_live_3q2...xYz"
+```
+
+- A key is bound to one workspace. `OD-Workspace` is ignored.
+- The key list shows each key's prefix, scopes, creator, expiry and when it was last used.
+- Deleting a key revokes it immediately. Creating and deleting keys is audit-logged.
+
+### Scopes
+
+| Scope | Grants |
+| --- | --- |
+| `tickets:read` | Read tickets, their messages and activities, and related ticket data |
+| `tickets:write` | Create, update and reply to tickets |
+| `contacts:read` | Read contacts and companies |
+| `contacts:write` | Create, update and delete contacts and companies |
+| `kb:read` | Read knowledge base collections and articles, including drafts |
+| `kb:write` | Create, update and delete collections and articles |
+| `settings:read` | Read workspace settings, such as the workspace, members, teams, mailboxes and webhooks |
+| `settings:write` | Change workspace settings |
+| `realtime` | Get a [realtime](/api/realtime/) token for the workspace |
+
+Give each key only the scopes it needs. A request outside a key's scopes returns `403` with code `forbidden`.
+
+## Access tokens
+
+Access tokens are short-lived JWTs (15 minutes) issued when a user signs in.
+
+1. `POST /v1/auth/login` with `{ "email", "password" }` returns `{ access_token, expires_in, user }` and sets a refresh cookie. If the account has two-factor authentication, it returns `{ "mfa_required": true, "mfa_token" }` instead; send that with the code to `POST /v1/auth/mfa`.
+2. Send `Authorization: Bearer <access_token>` and `OD-Workspace: <id>` on each request.
+3. Before it expires, `POST /v1/auth/refresh` with the cookie returns a new access token. The refresh token rotates on every use.
+4. `POST /v1/auth/logout` revokes the session and closes its live sockets.
+
+The refresh token lives in a cookie named after the account, `od_rt_<user id>` (HttpOnly, Secure, SameSite=Lax, scoped to `/v1/auth`), so it is never readable by page scripts.
+
+### Several accounts
+
+A browser can be signed in to up to five accounts at once, each with its own refresh cookie. Signing in to another account leaves the others signed in; a sixth answers `409 too_many_accounts`.
+
+- `POST /v1/auth/refresh` with `{ "user_id" }` refreshes that account only. Without it, the account used most recently.
+- `POST /v1/auth/accounts` lists the accounts this browser is signed in to, with their workspaces, without rotating anything.
+- `POST /v1/auth/logout` signs out of the current account only; `{ "all": true }` signs out of every account in the browser.
+
+Cookies from earlier versions (`od_refresh`) keep working and move to the new name on first use.
+
+Sign-in is rate limited and protected by a challenge, so for automation use API keys rather than scripting a login.
+
+## Native apps
+
+The desktop app is a browser window onto the web app and uses cookies like any browser. Apps without a trusted cookie store, such as the iPhone app, use native sessions:
+
+- A request is native when it sends `OD-Client: ios/<version>` and **no `Origin` header**. Browsers always send `Origin` on `POST`, so page scripts can never receive a refresh token.
+- To a native request, every endpoint that starts a session (register, login, `mfa`, `oauth/exchange`, passkey login, `refresh`) returns `refresh_token` in the body and sets no cookie. `POST /v1/auth/refresh` and `/v1/auth/logout` take `{ "refresh_token" }` in the body. The token rotates on every use, as the cookie does.
+- Where the web sends a Turnstile token, a native iPhone client may send an `app_attest` proof instead (Apple App Attest, accepted for the app ids in `APP_ATTEST_APP_IDS`). Get a single-use challenge from `POST /v1/auth/app-attest/challenge` and register the attested key with `POST /v1/auth/app-attest/keys`.
+- OAuth sign-in runs in the system browser with PKCE (`client=native&code_challenge=...` on `/start`) and returns through `opendesk://auth/callback`; `oauth/exchange` then needs the `code_verifier`.
+
+The full flow, payloads and checks are in `contracts/native.md` in the repository.
+
+## Credential formats
+
+| Credential | Format | Lifetime |
+| --- | --- | --- |
+| Access token | JWT, HS256, `purpose: access` | 15 minutes |
+| Realtime token | JWT, `purpose: ws` | 5 minutes, only needs to be valid at connect |
+| API key | `od_live_` + 32 random bytes, base64url | until revoked or its expiry |
+| Visitor token | `od_vis_` + 32 random bytes, base64url | the widget session |
+
+Every JWT carries a `purpose`, and each consumer accepts exactly one, so a token issued for one use cannot be replayed for another.

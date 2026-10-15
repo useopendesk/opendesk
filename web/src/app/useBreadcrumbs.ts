@@ -21,6 +21,7 @@ export function useBreadcrumbs(): Crumb[] {
   const matches = useMatches();
   const extra = useCrumbStore((s) => s.label);
   const { data: views } = useQuery(q.views());
+  const { data: teams } = useQuery(q.teams());
   const leaf = matches[matches.length - 1];
   const path = leaf?.pathname ?? "";
   const params = (leaf?.params ?? {}) as Record<string, string | undefined>;
@@ -35,6 +36,10 @@ export function useBreadcrumbs(): Crumb[] {
     crumbs.push({ label: "Views" });
     const v = views?.find((x) => x.id === params.viewId);
     crumbs.push({ label: v?.name ?? "View", to: "/views/$viewId/{-$ticketId}", params: { viewId: params.viewId, ticketId: undefined } });
+  } else if (path.startsWith("/teams/")) {
+    crumbs.push({ label: "Teams" });
+    const name = params.teamId === "mine" ? "My teams" : (teams?.find((x) => x.id === params.teamId)?.name ?? "Team");
+    crumbs.push({ label: name, to: "/teams/$teamId/{-$ticketId}", params: { teamId: params.teamId, ticketId: undefined } });
   } else if (path.startsWith("/contacts")) {
     crumbs.push({ label: "Contacts", to: "/contacts/{-$contactId}", params: { contactId: undefined } });
   } else if (path.startsWith("/companies")) {

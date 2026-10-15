@@ -1,0 +1,28 @@
+---
+/**
+ * The hero: the app window standing in the painted landscape, and the desktop
+ * notification for the chat that lands in its queue, on the app's timeline.
+ */
+import Stage from '../Stage.astro';
+import AppMock from './AppMock.astro';
+---
+<Stage w={1280} h={880} tone="none" mobileW={560} mobileX={230} label="The opendesk inbox with live chats pinned first, a ticket where Ollie cancels an order after the customer confirms, and a desktop notification for a new chat.">
+  <div class="absolute inset-0" data-seq data-hold="5200">
+    <!-- The app window -->
+    <div class="hero-window absolute left-0 top-[80px] h-[800px] w-[1280px] overflow-hidden rounded-[14px] ring-1 ring-black/[0.08] shadow-[0_2px_6px_rgb(0_0_0/0.06),0_60px_120px_-40px_rgb(10_30_80/0.55)] dark:ring-white/10">
+      <AppMock />
+    </div>
+
+    <!-- The desktop app tells you about the new chat. -->
+    <div data-step="1" data-wait="1600" class="s-pop float-card hero-banner left-[944px] top-[6px] w-[336px] !rounded-[16px] bg-[color-mix(in_oklab,var(--raised)_86%,transparent)] p-3 text-left backdrop-blur-xl">
+      <div class="flex items-start gap-3">
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-[#0a0a0a] text-white"><svg viewBox="0 0 64 64" class="size-[18px]" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z"/></svg></span>
+        <div class="min-w-0 flex-1 leading-snug">
+          <div class="flex items-center text-[12px]"><b class="font-semibold text-fg">New chat from Noah Fischer</b><span class="ml-auto text-[10.5px] text-muted">now</span></div>
+          <div class="mt-0.5 truncate text-[12px] text-body">Shared notebook won’t open on iPhone</div>
+          <div class="mt-0.5 text-[11px] text-muted">Margin · Unassigned</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Stage>

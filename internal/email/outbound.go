@@ -17,7 +17,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
-	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
@@ -46,9 +45,11 @@ func (w *sendTicketEmailWorker) Work(ctx context.Context, job *river.Job[jobs.Se
 }
 
 // ollieSender marks a reply written by the AI agent and the bot name it is sent under.
+// system marks a reply an automation sent.
 type ollieSender struct {
-	ai   bool
-	name string
+	ai     bool
+	name   string
+	system bool
 }
 
 // ticketInfo is what outbound mail needs from a ticket.
@@ -58,31 +59,74 @@ type ticketInfo struct {
 	subject        string
 	mailboxID      *uuid.UUID
 	contactEmail   *string
+	contactName    string
 	contactBlocked bool
+	brandID        uuid.UUID
+	teamID         *uuid.UUID
+	receivedAt     string
+	teamSignature  string
+	names          senderNames // team and brand; the caller fills agent and mailbox
 }
 
 func loadTicketInfo(ctx context.Context, q db.Querier, wid, id uuid.UUID) (*ticketInfo, error) {
 	var t ticketInfo
 	var blocked *bool
-	err := q.QueryRow(ctx, `SELECT t.id, t.number, t.subject, t.mailbox_id, c.email, c.blocked FROM tickets t
+	var contactName *string
+	err := q.QueryRow(ctx, `SELECT t.id, t.number, t.subject, t.mailbox_id, c.email, c.blocked, c.name, t.brand_id, t.team_id,
+		t.received_at, COALESCE(tm.signature_html, ''), COALESCE(tm.name, ''), COALESCE(b.name, '')
+		FROM tickets t
 		LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN teams tm ON tm.id = t.team_id AND tm.workspace_id = t.workspace_id
+		LEFT JOIN brands b ON b.id = t.brand_id AND b.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2 AND t.deleted_at IS NULL`, wid, id).
-		Scan(&t.id, &t.number, &t.subject, &t.mailboxID, &t.contactEmail, &blocked)
+		Scan(&t.id, &t.number, &t.subject, &t.mailboxID, &t.contactEmail, &blocked, &contactName, &t.brandID, &t.teamID,
+			&t.receivedAt, &t.teamSignature, &t.names.team, &t.names.brand)
 	t.contactBlocked = blocked != nil && *blocked
+	if contactName != nil {
+		t.contactName = displayname.Displayable(*contactName)
+	}
+	t.names.team, t.names.brand = displayname.Displayable(t.names.team), displayname.Displayable(t.names.brand)
 	return &t, err
 }
 
-// sendingMailbox is the ticket's mailbox, or the workspace's first active one for
-// tickets that have none (created through the API).
-func (s *service) sendingMailbox(ctx context.Context, wid uuid.UUID, t *ticketInfo) (*mailboxRow, error) {
-	if t.mailboxID != nil {
-		m, err := loadMailbox(ctx, s.d.DB.Pool, wid, *t.mailboxID)
+// sendingMailbox is the address a message goes out from: the message's own, else the
+// ticket's reply address, else the brand's address for the ticket's team, else the
+// brand's default address, else the workspace's first active mailbox. The last two are
+// never another private team's address (contracts/teams.md "Reply address").
+func (s *service) sendingMailbox(ctx context.Context, wid uuid.UUID, t *ticketInfo, preferred *uuid.UUID) (*mailboxRow, error) {
+	for _, id := range []*uuid.UUID{preferred, t.mailboxID} {
+		if id == nil {
+			continue
+		}
+		m, err := loadMailbox(ctx, s.d.DB.Pool, wid, *id)
 		if err == nil || !db.IsNotFound(err) {
 			return m, err
 		}
 	}
+	if t.brandID != uuid.Nil {
+		var id *uuid.UUID
+		var err error
+		if t.teamID != nil {
+			if id, err = domain.TeamReplyMailbox(ctx, s.d.DB.Pool, wid, t.brandID, *t.teamID); err != nil {
+				return nil, err
+			}
+		}
+		if id == nil {
+			if id, err = domain.BrandMailboxFor(ctx, s.d.DB.Pool, wid, t.brandID, t.teamID); err != nil {
+				return nil, err
+			}
+		}
+		if id != nil {
+			m, err := loadMailbox(ctx, s.d.DB.Pool, wid, *id)
+			if err == nil || !db.IsNotFound(err) {
+				return m, err
+			}
+		}
+	}
 	m, err := scanMailbox(s.d.DB.Pool.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE workspace_id = $1
-		ORDER BY (status = 'active') DESC, created_at LIMIT 1`, wid))
+		AND (team_id IS NULL OR team_id IS NOT DISTINCT FROM $2
+			OR NOT EXISTS (SELECT 1 FROM teams pt WHERE pt.workspace_id = $1 AND pt.id = mailboxes.team_id AND pt.private))
+		ORDER BY (status = 'active') DESC, created_at LIMIT 1`, wid, t.teamID))
 	if db.IsNotFound(err) {
 		return nil, permanent("No mailbox is set up to send email from.")
 	}
@@ -110,27 +154,47 @@ func threadHeaders(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, e
 	return id, refs, nil
 }
 
-// addressing picks From, Reply-To and the envelope sender for a mailbox.
-func (s *service) addressing(m *mailboxRow, agentName string, number int64) (from mail.Address, replyTo *mail.Address, envFrom string) {
-	display := strings.TrimSpace(m.DisplayName)
-	if display == "" {
-		display = m.Name
+// addressing picks From, Reply-To and the envelope sender for a mailbox. alias is the
+// mailbox alias the customer wrote to, or "": SMTP sends as the alias, the platform sender
+// answers to it, and Google and Microsoft, whose send-as addresses are not known here,
+// send as the mailbox with the alias as Reply-To.
+func (s *service) addressing(m *mailboxRow, name string, number int64, alias string) (from mail.Address, replyTo *mail.Address, envFrom string) {
+	display := m.displayName()
+	if name == "" {
+		name = display
 	}
-	name := display
-	if agentName != "" {
-		name = agentName + " at " + display
+	addr := m.Email
+	if alias != "" {
+		addr = alias
 	}
 	if m.InboundKind == InboundForwarding {
 		replyTo = &mail.Address{Name: display, Address: m.ForwardingToken + "+t" + itoa(number) + "@" + s.inboundDomain()}
 	}
-	if m.OutboundKind == OutboundSystem {
+	switch m.OutboundKind {
+	case OutboundSystem:
 		sys := s.systemFrom()
 		if replyTo == nil {
-			replyTo = &mail.Address{Name: display, Address: m.Email}
+			replyTo = &mail.Address{Name: display, Address: addr}
 		}
 		return mail.Address{Name: name, Address: sys.Address}, replyTo, sys.Address
+	case OutboundSMTP:
+		return mail.Address{Name: name, Address: addr}, replyTo, m.Email
+	}
+	if replyTo == nil && alias != "" {
+		replyTo = &mail.Address{Name: display, Address: alias}
 	}
 	return mail.Address{Name: name, Address: m.Email}, replyTo, m.Email
+}
+
+// sentAs is what a delivered message actually went out as.
+type sentAs struct {
+	mailboxID uuid.UUID
+	fromEmail string
+	fromName  string
+	// ticketMailbox is set when the ticket had no reply address and takes this one.
+	ticketMailbox bool
+	// to is who it went to.
+	to []string
 }
 
 func messageIDFor(prefix string, id uuid.UUID, number int64, m *mailboxRow) string {
@@ -224,13 +288,13 @@ func withTextSignature(text, signatureHTML string) string {
 // sendMessage delivers one outbound reply and records the result on the message.
 func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttempt bool) error {
 	var ticketID uuid.UUID
-	var kind, direction, bodyHTML, bodyText, subject, status string
+	var kind, direction, bodyHTML, bodyText, subject, status, authorType string
 	var to, cc, bcc []string
-	var authorID *uuid.UUID
+	var authorID, mailboxID *uuid.UUID
 	var bot ollieSender
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id, kind, direction, body_html, body_text, subject, to_emails, cc_emails, bcc_emails,
-		delivery_status, author_user_id, ai, from_name FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
-		Scan(&ticketID, &kind, &direction, &bodyHTML, &bodyText, &subject, &to, &cc, &bcc, &status, &authorID, &bot.ai, &bot.name)
+		delivery_status, author_user_id, ai, from_name, mailbox_id, author_type FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
+		Scan(&ticketID, &kind, &direction, &bodyHTML, &bodyText, &subject, &to, &cc, &bcc, &status, &authorID, &bot.ai, &bot.name, &mailboxID, &authorType)
 	if db.IsNotFound(err) {
 		return nil
 	}
@@ -240,9 +304,10 @@ func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttem
 	if status != "pending" || kind != "reply" || direction != "outbound" {
 		return nil
 	}
-	stamped, err := s.composeAndSend(ctx, wid, mid, ticketID, bodyHTML, bodyText, subject, to, cc, bcc, authorID, bot)
+	bot.system = authorType == "system"
+	stamped, sent, err := s.composeAndSend(ctx, wid, mid, ticketID, bodyHTML, bodyText, subject, to, cc, bcc, authorID, bot, mailboxID)
 	if err == nil {
-		return s.recordDelivery(ctx, wid, mid, ticketID, "sent", "", stamped)
+		return s.recordDelivery(ctx, wid, mid, ticketID, "sent", "", stamped, sent)
 	}
 	var se *sendError
 	isSend := errors.As(err, &se)
@@ -252,7 +317,7 @@ func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttem
 			msg = se.msg
 		}
 		s.log.Warn("outbound message failed", "workspace_id", wid, "message_id", mid, "reason", msg)
-		if rerr := s.recordDelivery(ctx, wid, mid, ticketID, "failed", msg, ""); rerr != nil {
+		if rerr := s.recordDelivery(ctx, wid, mid, ticketID, "failed", msg, "", nil); rerr != nil {
 			return rerr
 		}
 		if lastAttempt {
@@ -264,49 +329,54 @@ func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttem
 }
 
 func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UUID, bodyHTML, bodyText, subject string,
-	to, cc, bcc []string, authorID *uuid.UUID, bot ollieSender) (string, error) {
+	to, cc, bcc []string, authorID *uuid.UUID, bot ollieSender, mailboxID *uuid.UUID) (string, *sentAs, error) {
 	t, err := loadTicketInfo(ctx, s.d.DB.Pool, wid, ticketID)
 	if db.IsNotFound(err) {
-		return "", permanent("The ticket no longer exists.")
+		return "", nil, permanent("The ticket no longer exists.")
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	m, err := s.sendingMailbox(ctx, wid, t)
+	m, err := s.sendingMailbox(ctx, wid, t, mailboxID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if m.Status == "disabled" {
-		return "", permanent("The mailbox is disabled.")
+		return "", nil, permanent("The mailbox is disabled.")
 	}
 	if len(dedupe(to)) == 0 {
 		if t.contactEmail == nil || *t.contactEmail == "" {
-			return "", permanent("The customer has no email address.")
+			return "", nil, permanent("The customer has no email address.")
 		}
 		to = []string{*t.contactEmail}
 	}
-	agent := ""
+	if to, err = replyDestination(ctx, s.d.DB.Pool, wid, ticketID, t.contactEmail, to); err != nil {
+		return "", nil, err
+	}
+	names := t.names
+	names.mailbox = m.displayName()
 	if authorID != nil {
 		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
-			agent = displayname.Displayable(u.Name)
+			names.agent = agentName(u.Name)
 		}
 	} else if bot.ai {
-		agent = displayname.Displayable(bot.name)
+		names.agent = agentName(bot.name)
 	}
-	from, replyTo, envFrom := s.addressing(m, agent, t.number)
+	alias := m.alias(t.receivedAt)
+	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), t.number, alias)
 	inReplyTo, refs, err := threadHeaders(ctx, s.d.DB.Pool, wid, ticketID, mid)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	msgID := messageIDFor("m", mid, t.number, m)
 	// Record our id first so a fast reply threads even before the send returns.
 	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE messages SET email_message_id = $3 WHERE workspace_id = $1 AND id = $2 AND email_message_id IS NULL`,
 		wid, mid, msgID); err != nil && !db.IsUniqueViolation(err, "") {
-		return "", err
+		return "", nil, err
 	}
 	atts, html, err := s.outboundAttachments(ctx, wid, mid, bodyHTML)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if strings.TrimSpace(bodyText) == "" {
 		bodyText = htmlToText(bodyHTML)
@@ -314,12 +384,51 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 	if strings.TrimSpace(subject) == "" || !subjectTagRe.MatchString(subject) {
 		subject = replySubject(firstNonEmpty(subject, t.subject), t.number, inReplyTo != "")
 	}
+	sig := signatureFor(t.teamSignature, m.SignatureHTML, templateVars(names, firstNonEmpty(alias, m.Email), t.number, t.subject, t.contactName))
 	out := &outMessage{From: from, ReplyTo: replyTo, To: to, Cc: cc, Bcc: bcc, Subject: subject, MessageID: msgID,
-		InReplyTo: inReplyTo, References: refs, HTML: wrapHTML(html, m.SignatureHTML),
-		Text: withTextSignature(bodyText, m.SignatureHTML), Attachments: atts,
-		// The agent's replies are automatic: autoresponders must not answer them (RFC 3834).
-		AutoGenerated: bot.ai && authorID == nil}
-	return s.deliver(ctx, m, out, envFrom)
+		InReplyTo: inReplyTo, References: refs, HTML: wrapHTML(html, sig),
+		Text: withTextSignature(bodyText, sig), Attachments: atts, Loop: s.loopToken(m.ID),
+		// The agent's and automations' replies are automatic: autoresponders must not
+		// answer them (RFC 3834).
+		AutoGenerated: authorID == nil && (bot.ai || bot.system)}
+	stamped, err := s.deliver(ctx, m, out, envFrom)
+	if err != nil {
+		return stamped, nil, err
+	}
+	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, ticketMailbox: t.mailboxID == nil,
+		to: dedupe(to)}, nil
+}
+
+// replyDestination sends a reply addressed to the customer to the Reply-To of their latest
+// message instead, when it is at the same domain as the From they wrote from (a shared or
+// system address answering for a person of the same organization). Any other Reply-To
+// stays on their message for agents to see, and replies go to the From address.
+func replyDestination(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, contactEmail *string, to []string) ([]string, error) {
+	if contactEmail == nil || *contactEmail == "" {
+		return to, nil
+	}
+	var from, replyTo string
+	err := q.QueryRow(ctx, `SELECT from_email, reply_to FROM messages
+		WHERE workspace_id = $1 AND ticket_id = $2 AND direction = 'inbound' AND kind = 'reply' AND NOT auth_failed
+		ORDER BY created_at DESC LIMIT 1`, wid, ticketID).Scan(&from, &replyTo)
+	if db.IsNotFound(err) {
+		return to, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if replyTo == "" || !strings.EqualFold(from, *contactEmail) || !validAddress(replyTo) ||
+		!strings.EqualFold(emailDomain(replyTo), emailDomain(from)) {
+		return to, nil
+	}
+	out := make([]string, 0, len(to))
+	for _, a := range to {
+		if strings.EqualFold(strings.TrimSpace(a), *contactEmail) {
+			a = replyTo
+		}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -403,7 +512,7 @@ func (s *service) outboundAttachments(ctx context.Context, wid, mid uuid.UUID, b
 }
 
 // recordDelivery stores the outcome and publishes message.updated.
-func (s *service) recordDelivery(ctx context.Context, wid, mid, ticketID uuid.UUID, status, detail, stamped string) error {
+func (s *service) recordDelivery(ctx context.Context, wid, mid, ticketID uuid.UUID, status, detail, stamped string, sent *sentAs) error {
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		if status == "sent" {
 			if _, err := tx.Exec(ctx, `SAVEPOINT stamp`); err != nil {
@@ -428,17 +537,40 @@ func (s *service) recordDelivery(ctx context.Context, wid, mid, ticketID uuid.UU
 		if tag.RowsAffected() == 0 {
 			return nil
 		}
+		if sent != nil {
+			// The message records the address and name it actually went out as.
+			if _, err := tx.Exec(ctx, `UPDATE messages SET mailbox_id = $3, from_email = $4, from_name = $5,
+				to_emails = CASE WHEN cardinality($6::text[]) > 0 THEN $6 ELSE to_emails END WHERE workspace_id = $1 AND id = $2`,
+				wid, mid, sent.mailboxID, sent.fromEmail, truncate(sent.fromName, 200), sent.to); err != nil {
+				return err
+			}
+			if sent.ticketMailbox {
+				// A ticket without a reply address takes the one it first sent from.
+				tag, err := tx.Exec(ctx, `UPDATE tickets SET mailbox_id = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2 AND mailbox_id IS NULL`,
+					wid, ticketID, sent.mailboxID)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() > 0 {
+					if err := domain.PublishTicketUpdated(ctx, tx, wid, ticketID, []string{"mailbox_id"}); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		msg, err := domain.LoadMessage(ctx, tx, wid, mid)
 		if err != nil {
 			return err
 		}
-		_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "message.updated",
+		_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "message.updated", TicketID: &ticketID,
 			Data: map[string]any{"ticket_id": ticketID, "message": msg}})
 		return err
 	})
 }
 
-// sendTicketEmail sends an auto-reply or CSAT email from the ticket's mailbox.
+// sendTicketEmail sends an auto-reply or CSAT email from the ticket's reply address. It
+// has no author: the From name reads the address, team or brand, and the signature is the
+// team's or the address's.
 func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArgs) error {
 	t, err := loadTicketInfo(ctx, s.d.DB.Pool, a.WorkspaceID, a.TicketID)
 	if db.IsNotFound(err) {
@@ -450,14 +582,17 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 	if t.contactEmail == nil || !validAddress(strings.ToLower(*t.contactEmail)) || t.contactBlocked {
 		return nil
 	}
-	m, err := s.sendingMailbox(ctx, a.WorkspaceID, t)
+	m, err := s.sendingMailbox(ctx, a.WorkspaceID, t, nil)
 	if err != nil {
 		return err
 	}
 	if m.Status == "disabled" {
 		return nil
 	}
-	from, replyTo, envFrom := s.addressing(m, "", t.number)
+	names := t.names
+	names.mailbox = m.displayName()
+	alias := m.alias(t.receivedAt)
+	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), t.number, alias)
 	inReplyTo, refs, err := threadHeaders(ctx, s.d.DB.Pool, a.WorkspaceID, t.id, uuid.Nil)
 	if err != nil {
 		return err
@@ -466,17 +601,32 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 	if strings.TrimSpace(subject) == "" {
 		subject = replySubject(t.subject, t.number, inReplyTo != "")
 	}
+	sig := signatureFor(t.teamSignature, m.SignatureHTML, templateVars(names, firstNonEmpty(alias, m.Email), t.number, t.subject, t.contactName))
 	text := a.Text
 	if strings.TrimSpace(text) == "" {
 		text = htmlToText(a.HTML)
 	}
-	body := a.HTML
-	if !strings.Contains(strings.ToLower(body), "<html") {
-		body = wrapHTML(body, "")
-	}
+	text = withTextSignature(text, sig)
+	body := withHTMLSignature(a.HTML, sig)
 	out := &outMessage{From: from, ReplyTo: replyTo, To: []string{strings.ToLower(*t.contactEmail)}, Subject: subject,
-		MessageID: messageIDFor("a", ids.New(), t.number, m), InReplyTo: inReplyTo, References: refs,
-		HTML: body, Text: text, AutoGenerated: a.AutoGenerated, Date: time.Now()}
+		MessageID: s.autoMessageID(a.WorkspaceID, t.number, m), InReplyTo: inReplyTo, References: refs,
+		HTML: body, Text: text, AutoGenerated: a.AutoGenerated, Date: time.Now(), Loop: s.loopToken(m.ID)}
 	_, err = s.deliver(ctx, m, out, envFrom)
 	return err
+}
+
+// withHTMLSignature adds the signature to a body fragment, or before </body> of a whole
+// document.
+func withHTMLSignature(body, sig string) string {
+	lower := strings.ToLower(body)
+	if !strings.Contains(lower, "<html") {
+		return wrapHTML(body, sig)
+	}
+	if strings.TrimSpace(sig) == "" {
+		return body
+	}
+	if i := strings.LastIndex(lower, "</body>"); i >= 0 {
+		return body[:i] + "<br><div>" + sig + "</div>" + body[i:]
+	}
+	return body
 }

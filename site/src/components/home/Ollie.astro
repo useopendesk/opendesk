@@ -1,0 +1,94 @@
+---
+/**
+ * Ollie, the AI's one persona: the soft violet blob from the app
+ * (web/src/components/assistant/ollie.css), breathing with light swirling inside.
+ * `thinking` swirls faster and looks around, as it does while it works.
+ */
+interface Props {
+  size?: number;
+  thinking?: boolean;
+  eyes?: boolean;
+  class?: string;
+}
+const { size = 18, thinking = false, eyes = size >= 14, class: className = '' } = Astro.props;
+---
+<span class={`ollie ${thinking ? 'ollie-thinking' : ''} ${className}`} style={`width:${size}px;height:${size}px;font-size:${size}px`} aria-hidden="true">
+  <span class="ollie-body"><span class="ollie-swirl"></span></span>
+  <span class="ollie-shine"></span>
+  {eyes && <span class="ollie-eyes"><span class="ollie-eye"></span><span class="ollie-eye" style="animation-delay:0.06s"></span></span>}
+</span>
+
+<style is:global>
+  @property --ollie-turn { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
+  .ollie {
+    --ollie-a: #c9bcff;
+    --ollie-b: #7048e8;
+    --ollie-c: #3f22a6;
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+  .dark .ollie { --ollie-a: #ddd3ff; --ollie-b: #8b6cf6; --ollie-c: #5131d0; }
+  .ollie-body {
+    position: absolute;
+    inset: 5%;
+    overflow: hidden;
+    border-radius: 50% 50% 48% 52% / 52% 50% 50% 48%;
+    box-shadow:
+      inset 0 -0.06em 0.16em color-mix(in srgb, var(--ollie-c) 70%, transparent),
+      0 0.08em 0.28em -0.06em color-mix(in srgb, var(--ollie-b) 65%, transparent);
+    animation: ollie-breathe 4.8s ease-in-out infinite;
+  }
+  .ollie-swirl {
+    position: absolute;
+    inset: -35%;
+    background:
+      radial-gradient(circle at 30% 28%, color-mix(in srgb, var(--ollie-a) 85%, white) 0 14%, transparent 42%),
+      conic-gradient(from var(--ollie-turn) at 54% 56%, var(--ollie-a), var(--ollie-b) 30%, var(--ollie-c) 52%, var(--ollie-b) 74%, var(--ollie-a));
+    filter: blur(0.08em);
+    animation: ollie-turn 8s linear infinite;
+  }
+  .ollie-shine {
+    position: absolute;
+    left: 20%;
+    top: 14%;
+    width: 34%;
+    height: 24%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0));
+    rotate: -24deg;
+  }
+  .ollie-eyes {
+    position: absolute;
+    left: 50%;
+    top: 52%;
+    display: flex;
+    gap: 0.15em;
+    translate: -50% -50%;
+  }
+  .ollie-eye {
+    width: 0.1em;
+    height: 0.15em;
+    border-radius: 0.05em;
+    background: rgb(255 255 255 / 0.94);
+    box-shadow: 0 0 0.04em rgb(40 16 120 / 0.35);
+    transform-origin: 50% 60%;
+    animation: ollie-blink 5.2s ease-in-out infinite;
+  }
+  .ollie-thinking .ollie-body { animation-duration: 1.7s; }
+  .ollie-thinking .ollie-swirl { animation-duration: 1.1s; }
+  .ollie-thinking .ollie-eye { animation: ollie-look 1.6s ease-in-out infinite; }
+  @keyframes ollie-breathe {
+    0%, 100% { border-radius: 50% 50% 48% 52% / 52% 50% 50% 48%; transform: scale(1, 1); }
+    35% { border-radius: 54% 46% 50% 50% / 48% 54% 46% 52%; transform: scale(1.035, 0.975); }
+    70% { border-radius: 47% 53% 54% 46% / 53% 47% 53% 47%; transform: scale(0.975, 1.035); }
+  }
+  @keyframes ollie-turn { to { --ollie-turn: 360deg; } }
+  @keyframes ollie-blink { 0%, 44%, 48%, 100% { transform: scaleY(1); } 46% { transform: scaleY(0.1); } }
+  @keyframes ollie-look { 0%, 100% { translate: -0.03em 0; } 50% { translate: 0.03em 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ollie *, .ollie { animation: none !important; }
+  }
+</style>

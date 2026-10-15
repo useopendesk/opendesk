@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AuthHeading } from "@/app/AuthLayout";
 import { WorkspaceGlyph } from "@/app/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Notice } from "@/components/auth/parts";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import { q } from "@/lib/queries";
-import { bootSession, reloadSession, selectWorkspace, signOut, useSession } from "@/lib/session";
+import { bootSession, reloadSession, selectWorkspace, useSession } from "@/lib/session";
 import type { Role } from "@/lib/api/types";
 
 const route = getRouteApi("/auth/invite");
@@ -25,6 +26,7 @@ export default function Invite() {
   const { token = "" } = route.useSearch();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useTranslation("shell");
   const status = useSession((s) => s.status);
   const me = useSession((s) => s.user);
   const lookup = useQuery({ ...q.invitationLookup(token), enabled: !!token });
@@ -49,7 +51,7 @@ export default function Invite() {
     } catch (e) {
       setBusy(false);
       if (isApiError(e, "invitation_email_mismatch"))
-        setError(`This invitation is for ${lookup.data?.email ?? "another address"}. Log out and sign in with that address.`);
+        setError(`This invitation is for ${lookup.data?.email ?? "another address"}. Sign in with that address to accept.`);
       else setError(errorMessage(e));
     }
   };
@@ -102,17 +104,11 @@ export default function Invite() {
             Accept invitation
           </Button>
           {mismatch && (
-            <Button
-              variant="ghost"
-              size="lg"
-              className="w-full"
-              onClick={async () => {
-                await signOut();
-                qc.clear();
-                void navigate({ to: "/login", search: { next } });
-              }}
-            >
-              Log out and switch account
+            // Signs in to the invited address beside this account (or switches to it when it is already signed in here).
+            <Button variant="ghost" size="lg" className="w-full" asChild>
+              <Link to="/login" search={{ next, email: inv.email, add: "1" }}>
+                {t("accounts.reauthAs", { email: inv.email })}
+              </Link>
             </Button>
           )}
         </div>

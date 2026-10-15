@@ -3,6 +3,7 @@ import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AuthHeading } from "@/app/AuthLayout";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import { q } from "@/lib/queries";
 import { track } from "@/lib/analytics";
+import { MAX_ACCOUNTS, useSession } from "@/lib/session";
 
 const route = getRouteApi("/auth/register");
 
@@ -34,6 +36,10 @@ type Values = z.infer<typeof schema>;
 export default function Register() {
   const search = route.useSearch();
   const router = useRouter();
+  const { t } = useTranslation("shell");
+  // Add-account mode keeps the accounts signed in here.
+  const adding = useSession((s) => s.status === "authed") && search.add === "1";
+  const add = adding ? "1" : undefined;
   const { data: cfg } = useQuery(q.authConfig());
   const invite = useMemo(() => inviteTokenFrom(search.next), [search.next]);
   const [token, setToken] = useState<string | null>(null);
@@ -68,12 +74,13 @@ export default function Register() {
         setError(
           <>
             An account already uses this email.{" "}
-            <Link to="/login" search={{ next: search.next }} className="font-medium text-fg underline underline-offset-2">
+            <Link to="/login" search={{ next: search.next, add }} className="font-medium text-fg underline underline-offset-2">
               Log in instead
             </Link>
           </>,
         );
       else if (isApiError(err, "signup_disabled")) setError("New sign-ups are turned off. Ask an admin for an invitation.");
+      else if (isApiError(err, "too_many_accounts")) setError(t("accounts.limit", { count: MAX_ACCOUNTS }));
       else setError(errorMessage(err));
     }
   });
@@ -135,10 +142,17 @@ export default function Register() {
       </form>
       <p className="mt-7 text-center text-[12.5px] text-fg-3">
         Already have an account?{" "}
-        <Link to="/login" search={{ next: search.next }} className="font-medium text-fg hover:underline">
+        <Link to="/login" search={{ next: search.next, add }} className="font-medium text-fg hover:underline">
           Log in
         </Link>
       </p>
+      {adding && (
+        <p className="mt-3 text-center text-[12.5px] text-fg-3">
+          <Link to="/" className="font-medium text-fg-2 transition-colors hover:text-fg">
+            {t("accounts.backPlain")}
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

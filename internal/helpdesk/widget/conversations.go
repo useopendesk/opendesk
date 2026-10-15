@@ -2,8 +2,10 @@ package widget
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,6 +19,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
+	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
@@ -53,9 +56,14 @@ func cleanPageURL(raw string) string {
 	return ""
 }
 
-type widgetPostInput struct {
+type widgetCreateInput struct {
 	Origin string `header:"Origin"`
-	Body   widgetMessageBody
+	Body   struct {
+		Body          string   `json:"body" maxLength:"40000" doc:"Plain text, 1 to 10000 characters"`
+		AttachmentIDs []string `json:"attachment_ids,omitempty" maxItems:"20"`
+		PageURL       string   `json:"page_url,omitempty" maxLength:"2000" doc:"The host page (https): stored on the ticket, used by routing rules and given to the AI agent"`
+		TopicID       string   `json:"topic_id,omitempty" maxLength:"40" doc:"The topic the visitor picked (WidgetConfig.topics)"`
+	}
 }
 
 func cleanBody(s string) (string, error) {
@@ -72,6 +80,21 @@ func cleanBody(s string) (string, error) {
 const conversationCols = `SELECT id, subject, status, last_message_preview, last_message_at,
 	COALESCE(custom->>'ai_handoff' = 'true', false) FROM tickets`
 
+// sameBrand limits a visitor's conversations to the brand of the widget their session
+// started in, bound as $n.
+func sameBrand(n int) string {
+	return fmt.Sprintf(` AND ($%[1]d::uuid IS NULL OR brand_id = (SELECT g.brand_id FROM widgets g WHERE g.id = $%[1]d))`, n)
+}
+
+// sessionWidget is the visitor's widget id for sameBrand, nil for a session without one.
+func sessionWidget(p *auth.Principal) *uuid.UUID {
+	if p.WidgetID == uuid.Nil {
+		return nil
+	}
+	id := p.WidgetID
+	return &id
+}
+
 // loadConversation returns the visitor's own chat ticket, or not found.
 func loadConversation(ctx context.Context, q db.Querier, p *auth.Principal, rawID string) (WidgetConversation, error) {
 	var c WidgetConversation
@@ -80,12 +103,19 @@ func loadConversation(ctx context.Context, q db.Querier, p *auth.Principal, rawI
 		return c, httpx.NotFound("Conversation")
 	}
 	err := q.QueryRow(ctx, conversationCols+` WHERE workspace_id = $1 AND id = $2 AND contact_id = $3 AND channel = 'chat'
-		AND deleted_at IS NULL`, p.WorkspaceID, id, p.ContactID).
+		AND deleted_at IS NULL`+sameBrand(4), p.WorkspaceID, id, p.ContactID, sessionWidget(p)).
 		Scan(&c.ID, &c.Subject, &c.Status, &c.LastMessagePreview, &c.LastMessageAt, &c.AIHandoff)
 	if db.IsNotFound(err) {
 		return c, httpx.NotFound("Conversation")
 	}
 	return c, err
+}
+
+// seen records that the visitor is on the page now: an agent's reply posted before this
+// is not emailed to them (domain.ChatFollowUpDue).
+func (h *handler) seen(ctx context.Context, p *auth.Principal) error {
+	_, err := h.d.DB.Pool.Exec(ctx, `UPDATE widget_sessions SET last_seen_at = now() WHERE id = $1 AND workspace_id = $2`, p.VisitorID, p.WorkspaceID)
+	return err
 }
 
 func (h *handler) registerConversations(api huma.API) {
@@ -103,7 +133,7 @@ func (h *handler) registerConversations(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			rows, err := h.d.DB.Pool.Query(ctx, conversationCols+` WHERE workspace_id = $1 AND contact_id = $2 AND channel = 'chat'
-				AND deleted_at IS NULL ORDER BY last_message_at DESC, id DESC LIMIT 100`, p.WorkspaceID, p.ContactID)
+				AND deleted_at IS NULL`+sameBrand(3)+` ORDER BY last_message_at DESC, id DESC LIMIT 100`, p.WorkspaceID, p.ContactID, sessionWidget(p))
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -133,7 +163,7 @@ func (h *handler) registerConversations(api huma.API) {
 	}
 	huma.Register(api, huma.Operation{OperationID: "widget-create-conversation", Method: http.MethodPost, Path: "/v1/widget/conversations",
 		Summary: "Start a conversation", Tags: []string{"Widget"}, DefaultStatus: http.StatusCreated},
-		func(ctx context.Context, in *widgetPostInput) (*struct{ Body created }, error) {
+		func(ctx context.Context, in *widgetCreateInput) (*struct{ Body created }, error) {
 			p, err := h.visitor(ctx, in.Origin)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -149,21 +179,53 @@ func (h *handler) registerConversations(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			pageURL := cleanPageURL(in.Body.PageURL)
 			out := &struct{ Body created }{}
 			err = h.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if err := hd.CheckAttachments(ctx, tx, p.WorkspaceID, attIDs, &p.ContactID); err != nil {
+				if err := hd.CheckAttachments(ctx, tx, p.WorkspaceID, attIDs, hd.Uploader{Contact: &p.ContactID}); err != nil {
 					return err
 				}
-				t, err := domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: p.WorkspaceID, Subject: hd.Excerpt(body, 80),
-					Channel: domain.ChannelChat, ContactID: &p.ContactID})
+				g, err := loadVisitorWidget(ctx, tx, p)
 				if err != nil {
 					return err
+				}
+				topic := strings.TrimSpace(in.Body.TopicID)
+				if topic != "" && !slices.ContainsFunc(g.Settings.Topics, func(t hd.WidgetTopic) bool { return t.ID == topic }) {
+					return httpx.Validation("topic_id is not a topic of this widget")
+				}
+				contact, err := domain.LoadContact(ctx, tx, p.WorkspaceID, p.ContactID)
+				if err != nil {
+					return err
+				}
+				fromEmail := ""
+				if contact.Email != nil {
+					fromEmail = *contact.Email
+				}
+				subject := hd.Excerpt(body, 80)
+				widgetID := g.ID
+				res, err := routing.Resolve(ctx, tx, routing.Input{WorkspaceID: p.WorkspaceID, Channel: domain.ChannelChat,
+					BrandID: g.BrandID, WidgetID: &widgetID, Topic: topic, FromEmail: fromEmail, Subject: subject, Body: body,
+					PageURL: pageURL, ContactID: &p.ContactID})
+				if err != nil {
+					return err
+				}
+				brandID := g.BrandID
+				t, err := domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: p.WorkspaceID, Subject: subject,
+					Channel: domain.ChannelChat, ContactID: &p.ContactID, TeamID: res.TeamID, Routed: res.Routed,
+					BrandID: &brandID, WidgetID: &widgetID, PageURL: pageURL})
+				if err != nil {
+					return err
+				}
+				if rule := res.RuleID(); rule != nil {
+					if err := routing.Count(ctx, tx, *rule); err != nil {
+						return err
+					}
 				}
 				m, err := domain.AddMessage(ctx, tx, h.d.Jobs, h.visitorMessage(p, t.ID, body, attIDs, jobs.TriggerTicketCreated))
 				if err != nil {
 					return err
 				}
-				if err := hd.EnqueueAIWidgetAnswer(ctx, tx, h.d.Jobs, h.d.Cfg, p.WorkspaceID, t.ID, m.ID, cleanPageURL(in.Body.PageURL)); err != nil {
+				if err := hd.EnqueueAIWidgetAnswer(ctx, tx, h.d.Jobs, h.d.Cfg, p.WorkspaceID, t.ID, m.ID, pageURL); err != nil {
 					return err
 				}
 				out.Body.Message = publicMessage(m)
@@ -197,10 +259,36 @@ func (h *handler) registerConversations(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			if err := h.seen(ctx, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			for i := range msgs {
 				msgs[i] = publicMessage(msgs[i])
 			}
 			return &struct{ Body messagesOut }{messagesOut{msgs}}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "widget-seen", Method: http.MethodPost, Path: "/v1/widget/conversations/{id}/seen",
+		Summary: "Mark a conversation seen", Tags: []string{"Widget"}, DefaultStatus: http.StatusNoContent,
+		Description: "The widget calls this while a conversation is on screen and a reply arrives: a visitor who is there does not get the reply by email (email_follow_up)."},
+		func(ctx context.Context, in *struct {
+			ID     string `path:"id"`
+			Origin string `header:"Origin"`
+		}) (*hd.Empty, error) {
+			p, err := h.visitor(ctx, in.Origin)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := h.allowWrite(p, "seen", visitorWrites); err != nil {
+				return nil, err
+			}
+			if _, err := loadConversation(ctx, h.d.DB.Pool, p, in.ID); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := h.seen(ctx, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return nil, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "widget-post-message", Method: http.MethodPost, Path: "/v1/widget/conversations/{id}/messages",
@@ -234,7 +322,7 @@ func (h *handler) registerConversations(api huma.API) {
 				if c.Status == domain.StatusClosed {
 					return httpx.E(http.StatusConflict, "conversation_closed", "This conversation is closed. Start a new one.")
 				}
-				if err := hd.CheckAttachments(ctx, tx, p.WorkspaceID, attIDs, &p.ContactID); err != nil {
+				if err := hd.CheckAttachments(ctx, tx, p.WorkspaceID, attIDs, hd.Uploader{Contact: &p.ContactID}); err != nil {
 					return err
 				}
 				if err := hd.ExpireAIActions(ctx, tx, p.WorkspaceID, c.ID); err != nil {
@@ -272,7 +360,7 @@ func (h *handler) registerConversations(api huma.API) {
 				if err != nil {
 					return err
 				}
-				_, err = hd.MarkAIHandoff(ctx, tx, p.WorkspaceID, c.ID, "contact")
+				_, err = hd.MarkAIHandoff(ctx, tx, p.WorkspaceID, c.ID, "contact", hd.HandoffBot{})
 				return err
 			})
 			if err != nil {

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { getRouteApi, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -24,6 +25,7 @@ export default function HelpLayout() {
   const atHome = path.replace(/\/+$/, "") === `/help/${slug}`;
   const title = data?.title || t("help.default_title");
   useDocumentTitle(atHome && loaded ? title : null);
+  useFavicon(data?.favicon_url);
 
   return (
     <div data-public-page className="flex min-h-dvh flex-col bg-surface text-fg">
@@ -35,7 +37,7 @@ export default function HelpLayout() {
       >
         <div className={cn("mx-auto flex h-14 items-center gap-4 px-5", atHome ? "max-w-[960px]" : "max-w-[760px]")}>
           <Link to="/help/$slug" params={{ slug }} className="flex min-w-0 items-center gap-2.5 rounded-md">
-            {loaded && <HelpGlyph name={title} />}
+            {loaded && <HelpGlyph name={title} src={data?.logo_url} />}
             <bdi className="truncate text-[14px] font-semibold tracking-[-0.015em]">{loaded ? title : ""}</bdi>
           </Link>
           <div className="ms-auto flex items-center gap-2">
@@ -76,4 +78,30 @@ export default function HelpLayout() {
       </footer>
     </div>
   );
+}
+
+/** The brand's help center favicon while the help center is open; the app's icon comes back after. */
+function useFavicon(href: string | null | undefined) {
+  useEffect(() => {
+    if (!href) return;
+    const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')];
+    const before = links.map((l) => [l, l.href, l.type] as const);
+    let added: HTMLLinkElement | null = null;
+    if (links.length) {
+      for (const l of links) {
+        l.href = href;
+        l.removeAttribute("type");
+      }
+    } else {
+      added = Object.assign(document.createElement("link"), { rel: "icon", href });
+      document.head.appendChild(added);
+    }
+    return () => {
+      for (const [l, h, type] of before) {
+        l.href = h;
+        if (type) l.type = type;
+      }
+      added?.remove();
+    };
+  }, [href]);
 }

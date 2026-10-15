@@ -1,24 +1,49 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Icon from '../components/Icon.astro';
+import Backdrop from '../components/home/Backdrop.astro';
 import { LINKS } from '../lib/site';
+
+const links = [
+  ['Features', '/features/'],
+  ['Pricing', '/pricing/'],
+  ['Blog', '/blog/'],
+  ['Contact', '/contact/'],
+] as const;
 ---
-<Layout title="Page not found" description="This page does not exist." noIndex>
-  <section class="relative overflow-hidden">
-    <div class="pointer-events-none absolute inset-0" aria-hidden="true"></div>
-    <div class="container-page relative flex min-h-[64vh] flex-col items-center justify-center py-24 text-center">
-      <!-- The Module mark with its circle gone missing. -->
-      <svg viewBox="0 0 64 64" class="size-20 text-fg" aria-hidden="true">
-        <path fill="currentColor" d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" />
-        <circle cx="47" cy="17" r="12.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3" />
-      </svg>
-      <div class="mt-10 font-mono text-[13px] text-subtle">404</div>
-      <h1 class="h-hero mt-3">This page is missing a piece.</h1>
-      <p class="lede mt-4 max-w-md text-[17px]">The page you asked for does not exist, or it moved.</p>
-      <div class="mt-9 flex flex-wrap justify-center gap-3">
-        <a href="/" class="btn btn-primary">Go home<Icon name="arrowRight" size={15} /></a>
-        <a href={LINKS.docs} class="btn btn-ghost">Search the docs</a>
+<Layout cta={false} preload={{ name: 'sky-fields', sizes: '100vw' }} title="Page not found" description="This page does not exist." noIndex>
+  <section class="px-2 pt-2 md:px-3 md:pt-3">
+    <div class="relative isolate flex min-h-[calc(100dvh-88px)] items-center overflow-hidden rounded-[22px] md:min-h-[calc(100dvh-96px)] md:rounded-[28px]">
+      <Backdrop name="sky-fields" priority sizes="100vw" class="absolute inset-0 -z-10 h-full w-full" style="object-position:50% 35%" />
+      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-[radial-gradient(60%_55%_at_50%_45%,rgb(16_46_116/0.6),transparent_80%),linear-gradient(180deg,rgb(16_46_116/0.4),rgb(16_46_116/0.15))]"></div>
+
+      <div class="container-page flex flex-col items-center py-20 text-center text-white">
+        <!-- The Module mark with its circle gone missing. -->
+        <span class="flex size-[120px] items-center justify-center rounded-[32px] bg-white/12 ring-1 ring-white/25 backdrop-blur-md">
+          <svg viewBox="0 0 64 64" class="size-16" aria-hidden="true">
+            <path fill="currentColor" d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" />
+            <circle class="nf-missing" cx="47" cy="17" r="12.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3" />
+          </svg>
+        </span>
+        <div class="mt-9 inline-flex h-8 items-center gap-2 rounded-full bg-white/12 px-3.5 font-mono text-[11.5px] font-medium uppercase tracking-[0.06em] text-white/90 ring-1 ring-white/25 backdrop-blur-md"><span class="size-[6px] rounded-full bg-white"></span>404</div>
+        <h1 class="mt-6 max-w-[16ch] text-balance text-[40px] font-semibold leading-[1.02] tracking-[-0.045em] [text-shadow:0_2px_30px_rgb(10_30_80/0.35)] sm:text-[56px] lg:text-[72px]">This page is missing a piece.</h1>
+        <p class="mt-6 max-w-[520px] text-[17px] leading-[1.55] [text-shadow:0_1px_2px_rgb(10_30_80/0.35),0_2px_24px_rgb(10_30_80/0.5)] md:text-[19px]">The page you asked for does not exist, or it moved.</p>
+        <div class="mt-9 flex flex-col items-center gap-3 sm:flex-row">
+          <a href="/" class="btn btn-lg bg-white text-[#0a0a0a] shadow-[0_10px_30px_-10px_rgb(10_30_80/0.5)] hover:bg-white/90">Go home<Icon name="arrowRight" size={15} /></a>
+          <a href={LINKS.docs} class="btn btn-lg bg-white/10 text-white ring-1 ring-white/30 backdrop-blur-md hover:bg-white/20"><Icon name="search" size={15} />Search the documentation</a>
+        </div>
+        <nav class="mt-12 flex max-w-[560px] flex-wrap justify-center gap-2" aria-label="Popular pages">
+          {links.map(([t, h]) => (
+            <a href={h} class="inline-flex h-8 items-center rounded-full bg-white/10 px-3.5 text-[13px] text-white/90 ring-1 ring-white/20 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white">{t}</a>
+          ))}
+        </nav>
       </div>
     </div>
   </section>
 </Layout>
+
+<style>
+  .nf-missing { transform-box: fill-box; transform-origin: center; animation: nf-turn 14s linear infinite; }
+  @keyframes nf-turn { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .nf-missing { animation: none; } }
+</style>

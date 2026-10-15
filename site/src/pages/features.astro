@@ -1,218 +1,68 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
-import SectionHead from '../components/SectionHead.astro';
-import Icon from '../components/Icon.astro';
-import CTA from '../components/CTA.astro';
-import CodeTabs from '../components/CodeTabs.astro';
-import MailboxScene from '../components/scenes/MailboxScene.astro';
-import ChatScene from '../components/scenes/ChatScene.astro';
-import AiScene from '../components/scenes/AiScene.astro';
-import KbScene from '../components/scenes/KbScene.astro';
-import AutomationScene from '../components/scenes/AutomationScene.astro';
-import ReportsScene from '../components/scenes/ReportsScene.astro';
-import PresenceScene from '../components/scenes/PresenceScene.astro';
-import ApiScene from '../components/scenes/ApiScene.astro';
+import Showcase from '../components/features/Showcase.astro';
+import LiveWidget from '../components/home/LiveWidget.astro';
+import InboxScreen from '../components/features/screens/InboxScreen.astro';
+import OllieScreen from '../components/features/screens/OllieScreen.astro';
+import KbScreen from '../components/features/screens/KbScreen.astro';
+import AutomationsScreen from '../components/features/screens/AutomationsScreen.astro';
+import ReportsScreen from '../components/features/screens/ReportsScreen.astro';
+import ApiScreen from '../components/features/screens/ApiScreen.astro';
 import { LINKS } from '../lib/site';
-import { CREATE_TICKET, VERIFY, REALTIME } from '../lib/samples';
 
-type Section = {
-  id: string;
-  eyebrow: string;
-  title: string;
-  body: string;
-  points: string[];
-  docs?: string;
-};
-
-const sections: Section[] = [
-  {
-    id: 'inbox',
-    eyebrow: 'Shared inbox',
-    title: 'One queue for every mailbox.',
-    body: 'Email from every address your team answers becomes a ticket with a number, a status and an owner. Reply from the mailbox the customer wrote to, with your signature, and keep internal notes in the same thread.',
-    points: [
-      'Connect by forwarding, IMAP and SMTP, Google or Microsoft 365',
-      'Statuses: open, pending, on hold, solved and closed',
-      'Assign to an agent or a team, tag, snooze, merge and mark spam',
-      'Bulk actions across any selection of tickets',
-      'Internal notes with @mentions, kept out of customer replies',
-      'Saved replies with shortcuts, personal and shared views',
-      'Per-mailbox auto-replies, signatures and team routing',
-      'Delivery status on every reply: sent, failed or bounced',
-    ],
-    docs: '/guides/inbox-and-tickets/',
-  },
-  {
-    id: 'chat',
-    eyebrow: 'Live chat',
-    title: 'Chat that lands in the same inbox.',
-    body: 'Add the widget to your site and conversations arrive as chat tickets next to your email. Visitors see agents typing, agents see visitors typing, and replies arrive without a refresh on either side.',
-    points: [
-      'The widget speaks 13 languages, and messages translate both ways',
-      'Greeting, brand colour and an optional email requirement',
-      'Allowed origins, so the widget only loads where you put it',
-      'Identity verification: sign the user id with HMAC-SHA256 on your server',
-      'Conversation history kept per visitor, with attachments',
-      'A link to your help center from inside the widget',
-    ],
-    docs: '/guides/live-chat/',
-  },
-  {
-    id: 'ai',
-    eyebrow: 'AI',
-    title: 'AI that writes like your team.',
-    body: 'AI is built into the inbox, not bolted on. It drafts replies from the thread, your saved replies and your knowledge base, in your tone and in the customer’s language. It suggests; your agents decide. The only thing it sends by itself is the widget answer bot, which you turn on, which is labelled as AI, and which hands off to a person.',
-    points: [
-      'Reply drafts in your voice: set a tone and extra instructions once',
-      'Rewrite a draft: shorter, friendlier, more formal or fixed grammar',
-      'Summaries with key points and sentiment on long threads',
-      'A copilot that answers questions about a ticket, citing your articles',
-      'Auto-triage on arrival: tags, priority, sentiment and language',
-      'Translation both ways, so one team supports customers worldwide',
-      'An answer bot in the widget, grounded only in your published articles',
-      'Semantic search across tickets and articles',
-      'Customer content goes to the AI provider only to run the feature, and is never used to train models',
-      'Self-hosters bring their own key, or run a local model',
-    ],
-    docs: '/guides/ai/',
-  },
-  {
-    id: 'knowledge-base',
-    eyebrow: 'Knowledge base',
-    title: 'Answers customers find themselves.',
-    body: 'Write articles, group them into collections and publish them to a public help center at your workspace address. Drafts stay private until you publish.',
-    points: [
-      'Collections with ordering and descriptions',
-      'Draft and published states, with publish dates',
-      'Search across published articles, from the help center and the widget',
-      'View counts on every article',
-      'Global search covers tickets, contacts and articles together',
-    ],
-    docs: '/guides/knowledge-base/',
-  },
-  {
-    id: 'automations',
-    eyebrow: 'Automations and SLAs',
-    title: 'Rules that run before anyone looks.',
-    body: 'Automations run when a ticket is created, when a customer or agent replies, and when a ticket changes. Conditions all have to match; actions apply in order. SLA policies put first-reply and resolution clocks on tickets by priority.',
-    points: [
-      'Match on subject, body, sender, channel, mailbox, priority, status or tag',
-      'Set status or priority, assign a person or team, tag, reply, add a note or mark spam',
-      'Run counts on every rule, and a fixed order you control',
-      'First-reply and resolution targets per priority',
-      'Breaches show on the ticket and notify the assignee',
-      'Sort any view by what is due next',
-    ],
-    docs: '/guides/automations/',
-  },
-  {
-    id: 'reports',
-    eyebrow: 'Reports and CSAT',
-    title: 'The numbers support runs on.',
-    body: 'An overview report for any date range: tickets created and solved, what is open now, median first-reply and resolution times, SLA breaches and customer satisfaction, by day, channel and agent.',
-    points: [
-      'Median first reply and resolution, not averages skewed by outliers',
-      'Breakdowns by channel and by agent',
-      'CSAT surveys after a ticket is solved, with a score and a comment',
-      'Every number is also available from the API',
-    ],
-    docs: '/guides/reports/',
-  },
-  {
-    id: 'realtime',
-    eyebrow: 'Realtime and presence',
-    title: 'Everyone sees the same desk.',
-    body: 'Every change is written as an event in the same transaction as the change itself, then pushed to every open browser. Presence shows who is viewing a ticket and who is replying, so two people never answer the same customer.',
-    points: [
-      'Presence on every ticket: viewing, replying or idle',
-      'Typing indicators between agents, and to and from chat visitors',
-      'Notifications for assignments, mentions, replies and SLA breaches',
-      'Missed events are replayed on reconnect, in order',
-    ],
-    docs: '/api/realtime/',
-  },
+const stops: [string, string][] = [
+  ['inbox', 'Inbox'],
+  ['chat', 'Live chat'],
+  ['ai', 'Ollie'],
+  ['knowledge-base', 'Knowledge base'],
+  ['automations', 'Automations and SLAs'],
+  ['reports', 'Reports'],
+  ['api', 'API'],
 ];
-const scenes = { inbox: MailboxScene, chat: ChatScene, ai: AiScene, 'knowledge-base': KbScene, automations: AutomationScene, reports: ReportsScene, realtime: PresenceScene } as const;
+const guide = (path: string) => `${LINKS.docs}${path}`;
 ---
-<Layout title="Features" description="Shared inboxes, live chat, AI drafts and translation, a knowledge base, automations, SLA policies, reports, a public REST API, webhooks and realtime presence. Every feature in opendesk, on the cloud and self-hosted.">
-  <PageHero label="Features" title="Everything a support team does." lede="Email, chat and a help center in one inbox, with AI, rules, targets and reports that keep it moving, and an API under all of it.">
-    <nav class="mt-10 flex flex-wrap gap-2" aria-label="Feature sections">
-      {[...sections.map((s) => [s.id, s.eyebrow]), ['api', 'API and webhooks']].map(([id, label]) => (
-        <a href={`#${id}`} class="inline-flex h-8 items-center rounded-[5px] bg-bg px-3 text-[13.5px] text-muted ring-1 ring-line transition-colors hover:text-fg hover:ring-line-strong">{label}</a>
+<Layout cta={{ painting: 'sunflowers' }} title="Features" description="Shared inboxes, live chat, AI drafts and translation, a knowledge base, automations, SLA policies, reports, a public REST API, webhooks and realtime presence. Every feature in opendesk, on the cloud and self-hosted.">
+  <section class="container-page pt-16 text-center md:pt-24">
+    <div class="label inline-flex items-center gap-2"><span class="dot"></span>Features</div>
+    <h1 class="mx-auto mt-6 max-w-[14ch] text-balance text-[44px] font-semibold leading-[0.98] tracking-[-0.05em] text-fg sm:text-[64px] lg:text-[80px]">Everything a support team does.</h1>
+    <p class="lede mx-auto mt-6 max-w-[520px]">Every feature on every plan, on the cloud or on your own servers.</p>
+    <nav class="mx-auto mt-10 flex max-w-[760px] flex-wrap justify-center gap-2" aria-label="Features">
+      {stops.map(([id, label]) => (
+        <a href={`#${id}`} class="inline-flex h-9 items-center rounded-full bg-surface-2 px-4 text-[14px] text-body ring-1 ring-line transition-colors hover:bg-bg hover:text-fg">{label}</a>
       ))}
     </nav>
-  </PageHero>
-
-  {sections.map((s, i) => {
-    const Scene = scenes[s.id as keyof typeof scenes];
-    return (
-      <section id={s.id} class={`scroll-mt-20 py-20 md:py-28 ${i % 2 ? 'band' : ''}`}>
-        <div class="container-page">
-          <SectionHead index={String(i + 1).padStart(2, '0')} label={s.eyebrow} title={s.title} lede={s.body} />
-          <div class={`mt-12 md:mt-16 modules ${s.id === 'ai' ? 'lg:grid-cols-[1.35fr_1fr]' : 'lg:grid-cols-[1.15fr_1fr]'}`}>
-            <div class={`snap ${i % 2 ? 'lg:order-2' : ''}`} style={`--sx:${i % 2 ? 10 : -10}px;--sy:0px`}><Scene /></div>
-            <div class="flex flex-col p-6 md:p-10">
-              <ul class="grid gap-3.5 text-[15px] text-body">
-                {s.points.map((p, k) => (
-                  <li class="snap flex gap-3" style={`--d:${k * 40}ms`}><Icon name="check" size={16} class="mt-1 shrink-0 text-fg" />{p}</li>
-                ))}
-              </ul>
-              {s.docs && <a href={`${LINKS.docs}${s.docs}`} class="link-arrow mt-10 lg:mt-auto lg:pt-10">Read the guide<Icon name="arrowRight" size={14} /></a>}
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  })}
-
-  <section id="api" class="scroll-mt-20 band py-20 md:py-28">
-    <div class="container-page">
-      <SectionHead index="08" label="API and webhooks" title="The API is the product." lede="The opendesk web app is a client of the public REST API, so anything you can do in the app you can do from code. The server generates an OpenAPI 3.1 spec, and webhooks carry the same events the app receives." />
-      <div class="mt-12 md:mt-16 modules lg:grid-cols-[1fr_1.25fr]">
-        <div class="flex flex-col">
-          <div class="border-b border-line"><ApiScene /></div>
-          <ul class="grid gap-3 p-6 text-[14.5px] text-body md:p-8">
-            {[
-              'API keys bound to one workspace, with scopes for tickets, contacts, KB, settings and realtime',
-              'Idempotency keys on every create, kept for 24 hours',
-              'Cursor pagination, RFC 9457 errors with stable codes, rate limit headers',
-              'Webhooks for every event, signed with HMAC-SHA256, with delivery history and tests',
-              'A realtime socket for keys with the realtime scope',
-            ].map((p) => <li class="flex gap-3"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-fg" />{p}</li>)}
-          </ul>
-        </div>
-        <div class="flex min-w-0 flex-col">
-          <CodeTabs id="features-code" class="!rounded-none !border-0 !shadow-none flex-1" tabs={[
-            { label: 'Create a ticket', lang: 'bash', code: CREATE_TICKET },
-            { label: 'Verify a webhook', lang: 'js', code: VERIFY },
-            { label: 'Realtime', lang: 'js', code: REALTIME },
-          ]} />
-          <div class="flex flex-wrap gap-3 border-t border-line p-5 md:px-6">
-            <a href={`${LINKS.docs}/api/`} class="btn btn-primary btn-sm">API docs<Icon name="arrowRight" size={14} /></a>
-            <a href={LINKS.openapi} class="btn btn-ghost btn-sm font-mono !text-[12.5px]">openapi.json</a>
-          </div>
-        </div>
-      </div>
-    </div>
   </section>
 
-  <section class="container-page pt-20 md:pt-28">
-    <div class="modules sm:grid-cols-2 lg:grid-cols-4">
-      {[
-        ['users', 'Teams and roles', 'Owner, admin, agent and viewer, plus teams for routing.', 't-blue'],
-        ['lock', 'Sign-in your way', 'Passwords, two-factor, and Google, Microsoft, GitHub or OIDC.', 't-green'],
-        ['shield', 'Audit log', 'Sign-ins, role changes, keys, webhooks and mailbox changes.', 't-amber'],
-        ['keyboard', 'Keyboard-first', 'Move through the queue and reply without the mouse.', 't-violet'],
-      ].map(([icon, t, d, c], i) => (
-        <div class="snap p-6 md:p-7" style={`--d:${i * 60}ms`}>
-          <span class={`${c} tint-bg inline-flex size-8 items-center justify-center rounded-[6px]`}><Icon name={icon as 'users'} size={16} /></span>
-          <div class="mt-5 text-[15px] font-medium text-fg">{t}</div>
-          <div class="mt-1.5 text-[14px] leading-relaxed text-muted">{d}</div>
-        </div>
-      ))}
-    </div>
-  </section>
+  <Showcase id="inbox" label="Shared inbox" title="One queue for every mailbox." body="Email from every address you answer becomes a ticket with an owner and a status." painting="plains" focus="50% 40%" w={1280} h={804} alt="The opendesk inbox: tickets from every mailbox in one list, new ones arriving." href={guide('/guides/inbox-and-tickets/')}>
+    <InboxScreen />
+  </Showcase>
 
-  <CTA />
+  <Showcase id="chat" label="Live chat" title="Chat that knows when to step aside." body="Ollie answers first. A person joins the moment someone asks." painting="cumulus-fields" focus="50% 60%" alt="The opendesk chat widget, live. Try it.">
+    <div class="relative mx-auto h-[640px] w-full max-w-[480px]"><LiveWidget scene="chat" autoplay /></div>
+  </Showcase>
+
+  <Showcase id="ai" label="Ollie" title="AI that writes like your team." body="Drafts, summaries and translations, from your own replies and articles." painting="pink-valley" focus="50% 50%" w={1280} h={804} alt="A ticket with Ollie's drafted reply, ready to send." href={guide('/guides/ai/')}>
+    <OllieScreen />
+  </Showcase>
+
+  <Showcase id="knowledge-base" label="Knowledge base" title="Answers customers find themselves." body="Write an article once. It powers your help center and Ollie." painting="lake" focus="50% 55%" w={1280} h={804} alt="The knowledge base: articles in collections, one open in the editor." href={guide('/guides/knowledge-base/')}>
+    <KbScreen />
+  </Showcase>
+
+  <Showcase id="automations" label="Automations and SLAs" title="Rules that run before anyone looks." body="Route, tag and prioritise on arrival, with targets that warn before they break." painting="golden-field" focus="50% 55%" w={1280} h={804} alt="An automation rule: when a ticket arrives that mentions a refund, tag it, assign billing and raise the priority." href={guide('/guides/automations/')}>
+    <AutomationsScreen />
+  </Showcase>
+
+  <Showcase id="reports" label="Reports" title="The numbers support runs on." body="Volume, reply times, SLAs and satisfaction, by channel and by agent." painting="savanna" focus="50% 60%" w={1280} h={804} alt="The reports overview: tickets, first reply time, SLA and satisfaction over the last 30 days." href={guide('/guides/reports/')}>
+    <ReportsScreen />
+  </Showcase>
+
+  <Showcase id="api" label="API and webhooks" title="The API is the product." body="Everything the app does, over REST, with signed webhooks for every event." painting="blue-ridges" focus="50% 60%" w={1280} h={804} alt="API keys and webhook deliveries in opendesk settings." href={`${LINKS.docs}/api/`}>
+    <ApiScreen />
+  </Showcase>
 </Layout>
+
+<script>
+  import { initLive } from '../lib/live';
+  initLive();
+</script>

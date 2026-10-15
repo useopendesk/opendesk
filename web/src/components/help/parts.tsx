@@ -7,8 +7,14 @@ import { cn } from "@/lib/cn";
 import { shortDate } from "@/lib/format";
 import { tone, toneFor } from "@/lib/tones";
 
-/** The help center's tile: the first letter on the workspace's identity hue. */
-export function HelpGlyph({ name, className }: { name: string; className?: string }) {
+/**
+ * The help center's mark: its logo (the brand's help center logo, else the brand logo,
+ * else the workspace's; the API picks), or the first letter on the name's hue.
+ */
+export function HelpGlyph({ name, src, className }: { name: string; src?: string | null; className?: string }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  if (src && broken !== src)
+    return <img src={src} alt="" onError={() => setBroken(src)} className={cn("size-6 shrink-0 rounded-md object-contain", className)} />;
   return (
     <span
       aria-hidden

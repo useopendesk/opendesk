@@ -104,7 +104,7 @@ func (s *Service) Draft(ctx context.Context, p *auth.Principal, rawID string, in
 	if err != nil {
 		return nil, err
 	}
-	tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, rawID)
+	tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, rawID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +113,11 @@ func (s *Service) Draft(ctx context.Context, p *auth.Principal, rawID string, in
 		return nil, err
 	}
 	query := tc.T.Subject + "\n" + clip(lastCustomerText(tc.Msgs), 2000)
-	sources, err := s.retrieveKB(ctx, p.WorkspaceID, tc.Workspace.Slug, query, 4, false)
+	sources, err := s.retrieveKB(ctx, p.WorkspaceID, ticketBrand(tc.T), query, 4, false)
 	if err != nil {
 		return nil, err
 	}
-	replies, err := s.savedReplies(ctx, p.WorkspaceID, query, 3)
+	replies, err := s.savedReplies(ctx, p, tc.T.TeamID, query, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,17 @@ func (s *Service) Draft(ctx context.Context, p *auth.Principal, rawID string, in
 }
 
 // savedReplies picks the saved replies most related to query, rendered as a data block.
-func (s *Service) savedReplies(ctx context.Context, wid uuid.UUID, query string, n int) (string, error) {
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT title, body_html FROM saved_replies WHERE workspace_id = $1 ORDER BY updated_at DESC LIMIT 300`, wid)
+// Only the replies the composer offers on this ticket are considered: those with no team
+// and those of the ticket's team, never a private team p may not see (contracts/teams.md
+// "Settings scoped to a team").
+func (s *Service) savedReplies(ctx context.Context, p *auth.Principal, teamID *uuid.UUID, query string, n int) (string, error) {
+	hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)
+	if err != nil {
+		return "", err
+	}
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT title, body_html FROM saved_replies
+		WHERE workspace_id = $1 AND (team_id IS NULL OR (team_id = $2 AND NOT team_id = ANY($3::uuid[])))
+		ORDER BY updated_at DESC LIMIT 300`, p.WorkspaceID, teamID, hidden)
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +243,7 @@ func (s *Service) Ask(ctx context.Context, p *auth.Principal, rawID string, in A
 	if err != nil {
 		return nil, err
 	}
-	tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, rawID)
+	tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, rawID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +251,7 @@ func (s *Service) Ask(ctx context.Context, p *auth.Principal, rawID string, in A
 	if err != nil {
 		return nil, err
 	}
-	sources, err := s.retrieveKB(ctx, p.WorkspaceID, tc.Workspace.Slug, q+"\n"+tc.T.Subject, 4, false)
+	sources, err := s.retrieveKB(ctx, p.WorkspaceID, ticketBrand(tc.T), q+"\n"+tc.T.Subject, 4, false)
 	if err != nil {
 		return nil, err
 	}
@@ -541,6 +550,11 @@ func (s *Service) KBDraft(ctx context.Context, p *auth.Principal, in KBDraftInpu
 			continue
 		}
 		seen[id] = true
+		if _, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, id.String()); isNotFound(err) {
+			return nil, httpx.Validation("ticket not found in this workspace")
+		} else if err != nil {
+			return nil, err
+		}
 		tc, err := s.loadTicketCtx(ctx, s.d.DB.Pool, p.WorkspaceID, id, true)
 		if isNotFound(err) {
 			return nil, httpx.Validation("ticket not found in this workspace")
@@ -554,7 +568,7 @@ func (s *Service) KBDraft(ctx context.Context, p *auth.Principal, in KBDraftInpu
 	if len(parts) == 0 {
 		tickets = block("tickets", nil, "(none: write from the topic and the knowledge base only)")
 	}
-	related, err := s.retrieveKB(ctx, p.WorkspaceID, wsSlug, topic+" "+strings.Join(parts, " "), 3, false)
+	related, err := s.retrieveKB(ctx, p.WorkspaceID, nil, topic+" "+strings.Join(parts, " "), 3, false)
 	if err != nil {
 		return nil, err
 	}

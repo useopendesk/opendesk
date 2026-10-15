@@ -5,9 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/helpdesk/kb"
+	"github.com/useopendesk/opendesk/internal/ids"
 )
 
 type article struct {
@@ -20,6 +24,7 @@ type article struct {
 	Status       string  `json:"status"`
 	Views        int     `json:"views"`
 	PublishedAt  *string `json:"published_at"`
+	BrandID      *string `json:"brand_id"`
 	Author       *struct {
 		ID    string `json:"id"`
 		Name  string `json:"name"`
@@ -28,10 +33,11 @@ type article struct {
 }
 
 type collection struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Slug         string `json:"slug"`
-	ArticleCount int    `json:"article_count"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Slug         string  `json:"slug"`
+	ArticleCount int     `json:"article_count"`
+	BrandID      *string `json:"brand_id"`
 }
 
 func createArticle(t *testing.T, e *hdtest.Env, a hdtest.Auth, body map[string]any) article {
@@ -193,7 +199,7 @@ func TestPublicHelpCenter(t *testing.T) {
 	e.Do("GET", base+"/search?q=billing", none, nil).Want(t, 404)
 	e.Do("GET", "/v1/public/help/no-such-workspace", none, nil).Want(t, 404)
 
-	e.SetSettings(ws, map[string]any{"help_center_enabled": true, "help_center_title": "Acme help"})
+	e.Exec(`UPDATE brands SET help_center_enabled = true, help_center_title = 'Acme help' WHERE id = $1`, ws.BrandID)
 	var home struct {
 		Title       string
 		Collections []collection
@@ -242,6 +248,150 @@ func TestPublicHelpCenter(t *testing.T) {
 	e.Do("GET", base+"/search?q="+"%27%3A*%20%26%20%21", none, nil).Want(t, 200)
 
 	// Disabled again: gone.
-	e.SetSettings(ws, map[string]any{"help_center_enabled": false})
+	e.Exec(`UPDATE brands SET help_center_enabled = false WHERE id = $1`, ws.BrandID)
 	e.Do("GET", base, none, nil).Want(t, 404)
+}
+
+func TestHelpCenterPerBrand(t *testing.T) {
+	e := hdtest.New(t, kb.Register)
+	ws := e.NewWorkspace()
+	agent := ws.Agent.As(ws)
+	none := hdtest.Auth{}
+	other := e.NewWorkspace()
+
+	brand := ids.New()
+	slug := "shop-" + strings.ToLower(crypto.RandomString(8))
+	e.Exec(`INSERT INTO brands (id, workspace_id, name, slug, help_center_enabled, help_center_title) VALUES ($1, $2, 'Shop', $3, true, 'Shop help')`,
+		brand, ws.ID, slug)
+	e.Exec(`UPDATE brands SET help_center_enabled = true WHERE id = $1`, ws.BrandID)
+
+	// Brand references are checked against the workspace.
+	e.Do("POST", "/v1/kb/collections", agent, map[string]any{"name": "X", "brand_id": other.BrandID.String()}).Want(t, 422)
+	e.Do("POST", "/v1/kb/articles", agent, map[string]any{"title": "X", "brand_id": "nope"}).Want(t, 422)
+
+	var shopCol, shared collection
+	e.Do("POST", "/v1/kb/collections", agent, map[string]any{"name": "Orders", "brand_id": brand.String()}).Want(t, 201).JSON(t, &shopCol)
+	if shopCol.BrandID == nil || *shopCol.BrandID != brand.String() {
+		t.Fatalf("collection brand %+v", shopCol)
+	}
+	e.Do("POST", "/v1/kb/collections", agent, map[string]any{"name": "General"}).Want(t, 201).JSON(t, &shared)
+	// In the shop's collection: the shop's, whatever its own brand says.
+	inShop := createArticle(t, e, agent, map[string]any{"title": "Track an order", "status": "published", "collection_id": shopCol.ID,
+		"brand_id": ws.BrandID.String()})
+	// Shared collection, own brand: only that brand.
+	defaultOnly := createArticle(t, e, agent, map[string]any{"title": "Desk login", "status": "published", "collection_id": shared.ID,
+		"brand_id": ws.BrandID.String()})
+	everyone := createArticle(t, e, agent, map[string]any{"title": "Contact us", "status": "published", "collection_id": shared.ID})
+
+	type home struct {
+		Title       string
+		Collections []collection
+		Featured    []article
+	}
+	idsOf := func(list []article) []string {
+		out := []string{}
+		for _, a := range list {
+			out = append(out, a.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	want := func(list ...article) []string { return idsOf(list) }
+
+	var h home
+	e.Do("GET", "/v1/public/help/"+slug, none, nil).Want(t, 200).JSON(t, &h)
+	if h.Title != "Shop help" || !slices.Equal(idsOf(h.Featured), want(inShop, everyone)) || len(h.Collections) != 2 {
+		t.Fatalf("shop home %+v", h)
+	}
+	for _, c := range h.Collections {
+		if c.ArticleCount != 1 {
+			t.Fatalf("shop counts %+v", h.Collections)
+		}
+	}
+	e.Do("GET", "/v1/public/help/"+ws.Slug, none, nil).Want(t, 200).JSON(t, &h)
+	if !slices.Equal(idsOf(h.Featured), want(defaultOnly, everyone)) || len(h.Collections) != 1 || h.Collections[0].ArticleCount != 2 {
+		t.Fatalf("default home %+v", h)
+	}
+	e.Do("GET", "/v1/public/help/"+ws.Slug+"/collections/"+shopCol.Slug, none, nil).Want(t, 404)
+	e.Do("GET", "/v1/public/help/"+ws.Slug+"/articles/"+inShop.Slug, none, nil).Want(t, 404)
+	e.Do("GET", "/v1/public/help/"+slug+"/articles/"+defaultOnly.Slug, none, nil).Want(t, 404)
+	e.Do("GET", "/v1/public/help/"+slug+"/articles/"+inShop.Slug, none, nil).Want(t, 200)
+	var res []article
+	e.Do("GET", "/v1/public/help/"+slug+"/search?q=desk", none, nil).Want(t, 200).JSON(t, &res)
+	if len(res) != 0 {
+		t.Fatalf("search leaked %+v", res)
+	}
+	var cp struct {
+		Collection collection
+		Articles   []article
+	}
+	e.Do("GET", "/v1/public/help/"+slug+"/collections/"+shared.Slug, none, nil).Want(t, 200).JSON(t, &cp)
+	if !slices.Equal(idsOf(cp.Articles), want(everyone)) {
+		t.Fatalf("shared collection on shop %+v", cp)
+	}
+
+	// Agent filters.
+	var cols struct{ Data []collection }
+	e.Do("GET", "/v1/kb/collections?brand_id="+brand.String(), agent, nil).Want(t, 200).JSON(t, &cols)
+	if len(cols.Data) != 1 || cols.Data[0].ID != shopCol.ID {
+		t.Fatalf("collections filter %+v", cols)
+	}
+	e.Do("GET", "/v1/kb/collections?brand_id=none", agent, nil).Want(t, 200).JSON(t, &cols)
+	if len(cols.Data) != 1 || cols.Data[0].ID != shared.ID {
+		t.Fatalf("shared filter %+v", cols)
+	}
+	var arts struct{ Data []article }
+	e.Do("GET", "/v1/kb/articles?brand_id="+brand.String(), agent, nil).Want(t, 200).JSON(t, &arts)
+	if !slices.Equal(idsOf(arts.Data), want(inShop)) {
+		t.Fatalf("articles filter %+v", arts)
+	}
+	e.Do("GET", "/v1/kb/articles?brand_id=none", agent, nil).Want(t, 200).JSON(t, &arts)
+	if !slices.Equal(idsOf(arts.Data), want(everyone)) {
+		t.Fatalf("shared articles filter %+v", arts)
+	}
+	// The composer's scope: what a brand shows, its own and shared articles.
+	e.Do("GET", "/v1/kb/articles?for_brand_id="+brand.String(), agent, nil).Want(t, 200).JSON(t, &arts)
+	if !slices.Equal(idsOf(arts.Data), want(inShop, everyone)) {
+		t.Fatalf("for_brand_id %+v", arts)
+	}
+	e.Do("GET", "/v1/kb/articles?for_brand_id="+ws.BrandID.String()+"&q=desk", agent, nil).Want(t, 200).JSON(t, &arts)
+	if !slices.Equal(idsOf(arts.Data), want(defaultOnly)) {
+		t.Fatalf("for_brand_id search %+v", arts)
+	}
+	e.Do("GET", "/v1/kb/articles?for_brand_id=nope", agent, nil).Want(t, 422)
+	for _, c := range []struct {
+		brand *uuid.UUID
+		want  []string
+	}{{nil, want(inShop, defaultOnly, everyone)}, {&brand, want(inShop, everyone)}, {&ws.BrandID, want(defaultOnly, everyone)}} {
+		found, err := kb.Search(e.Ctx, e.D.DB.Pool, ws.ID, "track or desk or contact", 10, c.brand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := []string{}
+		for _, a := range found {
+			got = append(got, a.ID.String())
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Fatalf("search for brand %v: %v, want %v", c.brand, got, c.want)
+		}
+	}
+
+	// Clearing a collection's brand shares it with every brand.
+	e.Do("PATCH", "/v1/kb/collections/"+shopCol.ID, agent, map[string]any{"brand_id": nil}).Want(t, 200).JSON(t, &shopCol)
+	if shopCol.BrandID != nil {
+		t.Fatalf("cleared %+v", shopCol)
+	}
+	e.Do("GET", "/v1/public/help/"+ws.Slug+"/articles/"+inShop.Slug, none, nil).Want(t, 200)
+	var a article
+	e.Do("PATCH", "/v1/kb/articles/"+everyone.ID, agent, map[string]any{"brand_id": brand.String()}).Want(t, 200).JSON(t, &a)
+	if a.BrandID == nil || *a.BrandID != brand.String() {
+		t.Fatalf("article brand %+v", a)
+	}
+	e.Do("GET", "/v1/public/help/"+ws.Slug+"/articles/"+everyone.Slug, none, nil).Want(t, 404)
+
+	// A brand's help center can be off on its own.
+	e.Exec(`UPDATE brands SET help_center_enabled = false WHERE id = $1`, brand)
+	e.Do("GET", "/v1/public/help/"+slug, none, nil).Want(t, 404)
+	e.Do("GET", "/v1/public/help/"+ws.Slug, none, nil).Want(t, 200)
 }

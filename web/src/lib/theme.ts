@@ -30,6 +30,8 @@ export function applyTheme(pref: ThemePref = current) {
   const root = document.documentElement;
   root.classList.toggle("dark", dark);
   root.style.colorScheme = dark ? "dark" : "light";
+  // The desktop app's window chrome follows the preference (desktop/src/preload).
+  root.dataset.themePref = pref;
 }
 
 export function setTheme(pref: ThemePref) {

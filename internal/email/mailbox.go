@@ -43,6 +43,9 @@ type MailboxConfig struct {
 	SMTPUsername string `json:"smtp_username,omitempty"`
 	SMTPTLS      string `json:"smtp_tls,omitempty" enum:"tls,starttls,none"`
 	OAuthEmail   string `json:"oauth_email,omitempty"`
+	// MailHost is who hosts the mailbox's mail (mailhost.Host values, e.g. gmail,
+	// google_workspace, yahoo, other), for labels and connection fixes.
+	MailHost string `json:"mail_host,omitempty" maxLength:"32"`
 }
 
 // Mailbox is the API shape. Credentials are never part of it.
@@ -61,13 +64,26 @@ type Mailbox struct {
 	AutoReplySubject  string        `json:"auto_reply_subject"`
 	AutoReplyHTML     string        `json:"auto_reply_html"`
 	// Ollie answers emails to this mailbox (contracts/agent.md "Email"), off by default.
-	AIAnswers             bool       `json:"ai_answers"`
-	AIAnswersMode         string     `json:"ai_answers_mode" enum:"draft,send"`
-	AIAnswersOutsideHours bool       `json:"ai_answers_outside_hours"`
-	Status                string     `json:"status" enum:"active,error,disabled"`
-	LastError             string     `json:"last_error"`
-	LastSyncedAt          *time.Time `json:"last_synced_at"`
-	CreatedAt             time.Time  `json:"created_at"`
+	AIAnswers             bool   `json:"ai_answers"`
+	AIAnswersMode         string `json:"ai_answers_mode" enum:"draft,send"`
+	AIAnswersOutsideHours bool   `json:"ai_answers_outside_hours"`
+	// BrandID is the brand the address belongs to (contracts/teams.md).
+	BrandID uuid.UUID `json:"brand_id"`
+	// Aliases are other addresses that deliver into this mailbox.
+	Aliases []string `json:"aliases"`
+	// FromNameFormat is the From name of its emails: {agent}, {agent_first}, {team}, {brand}, {mailbox}.
+	FromNameFormat string `json:"from_name_format"`
+	// TrustedFormSenders are the website contact forms whose authenticated mail is from the
+	// visitor its Reply-To names: exact addresses or "@domain" entries. Admins only.
+	TrustedFormSenders []string `json:"trusted_form_senders"`
+	// BotID is the bot the AI agent answers and signs as here (contracts/bots.md); nil = the default bot.
+	BotID *uuid.UUID `json:"bot_id"`
+	// Private is true when its team is private: only that team's members send from it.
+	Private      bool       `json:"private"`
+	Status       string     `json:"status" enum:"active,error,disabled"`
+	LastError    string     `json:"last_error"`
+	LastSyncedAt *time.Time `json:"last_synced_at"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 // mailboxRow is the stored mailbox, including fields the API never returns.
@@ -106,16 +122,24 @@ func (c credentials) smtpPassword() string {
 const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kind, forwarding_token, outbound_kind,
 	config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html,
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
-	ai_answers, ai_answers_mode, ai_answers_outside_hours`
+	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
+	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
 	err := row.Scan(&m.ID, &m.WorkspaceID, &m.Name, &m.Email, &m.DisplayName, &m.InboundKind, &m.ForwardingToken,
 		&m.OutboundKind, &m.Config, &m.CredentialsEnc, &m.TeamID, &m.SignatureHTML, &m.AutoReplyEnabled,
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
-		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours)
+		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
+		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID)
 	if err != nil {
 		return nil, err
+	}
+	if m.Aliases == nil {
+		m.Aliases = []string{}
+	}
+	if m.TrustedFormSenders == nil {
+		m.TrustedFormSenders = []string{}
 	}
 	return &m, nil
 }
@@ -135,6 +159,41 @@ func loadMailboxByToken(ctx context.Context, q db.Querier, token string) (*mailb
 	return scanMailbox(q.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE forwarding_token = $1`, token))
 }
 
+// addresses are the mailbox's own addresses, lowercased: its address, the connected
+// account's and its aliases.
+func (m *mailboxRow) addresses() []string {
+	out := []string{strings.ToLower(m.Email)}
+	if m.Config.OAuthEmail != "" {
+		out = append(out, strings.ToLower(m.Config.OAuthEmail))
+	}
+	for _, a := range m.Aliases {
+		out = append(out, strings.ToLower(a))
+	}
+	return out
+}
+
+// alias returns addr when it is one of the mailbox's aliases (not its own address).
+func (m *mailboxRow) alias(addr string) string {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	if addr == "" || strings.EqualFold(addr, m.Email) {
+		return ""
+	}
+	for _, a := range m.Aliases {
+		if strings.EqualFold(a, addr) {
+			return addr
+		}
+	}
+	return ""
+}
+
+// displayName is what {mailbox} reads: the display name, else the name.
+func (m *mailboxRow) displayName() string {
+	if d := strings.TrimSpace(m.DisplayName); d != "" {
+		return d
+	}
+	return m.Name
+}
+
 func (s *service) forwardingAddress(token string) string {
 	return token + "@" + s.inboundDomain()
 }
@@ -149,6 +208,7 @@ func (s *service) api(m *mailboxRow, withConfig bool) Mailbox {
 	out.ForwardingAddress = s.forwardingAddress(m.ForwardingToken)
 	if !withConfig {
 		out.Config = MailboxConfig{}
+		out.TrustedFormSenders = []string{}
 	}
 	return out
 }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f5" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#080808" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141416" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>opendesk</title>
@@ -14,6 +14,8 @@
     <style>
       html { background: #f5f5f5; }
       html.dark { background: #080808; }
+      /* The desktop app's translucent window (vibrancy, mica) shows through. */
+      html[data-desktop="darwin"], html[data-desktop="win32"] { background: transparent; }
     </style>
   </head>
   <body>

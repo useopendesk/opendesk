@@ -10,6 +10,9 @@ export type LiveReply = {
   reply_id: string;
   ticket_id: string;
   bot: string;
+  /** The bot's look and picture (contracts/bots.md); absent from older servers. */
+  botLook?: unknown;
+  botAvatar?: string;
   /** Raw markdown so far, citation markers included. */
   text: string;
   tools: { tool: string; status: "running" | "done" | "error" }[];
@@ -27,6 +30,10 @@ type RealtimeState = {
   customerTyping: Record<string, number>;
   /** One live reply per ticket at most. */
   live: Record<string, LiveReply>;
+  /** The ticket this person has open, if any. */
+  active: string | null;
+  /** Tickets that moved out of this person's view (a private team they are not on), by id. */
+  hidden: Record<string, number>;
 };
 
 export const useRealtime = create<RealtimeState>(() => ({
@@ -35,7 +42,24 @@ export const useRealtime = create<RealtimeState>(() => ({
   typing: {},
   customerTyping: {},
   live: {},
+  active: null,
+  hidden: {},
 }));
+
+/** A ticket left this person's view: an open detail closes and says why. */
+export function markHidden(ticketId: string) {
+  useRealtime.setState((s) => ({ hidden: { ...s.hidden, [ticketId]: Date.now() } }));
+}
+
+/** Visible again (moved out of the private team, or the person joined it). */
+export function unmarkHidden(ticketId: string) {
+  if (!useRealtime.getState().hidden[ticketId]) return;
+  useRealtime.setState((s) => {
+    const hidden = { ...s.hidden };
+    delete hidden[ticketId];
+    return { hidden };
+  });
+}
 
 export function setPresence(ticketId: string, state: PresenceState) {
   useRealtime.setState((s) => ({ presence: { ...s.presence, [ticketId]: state } }));
@@ -100,8 +124,8 @@ export function applyLive(ticketId: string, type: string, data: Record<string, u
       : { reply_id: replyId, ticket_id: ticketId, bot: "", text: "", tools: [], ended: false, at: Date.now() };
   switch (type) {
     case "ai.reply.started": {
-      const bot = (data.bot as { name?: string } | undefined)?.name ?? "";
-      setLive(ticketId, { ...base, bot, at: Date.now() });
+      const b = (data.bot ?? {}) as { name?: string; look?: unknown; avatar_url?: string };
+      setLive(ticketId, { ...base, bot: b.name ?? "", botLook: b.look, botAvatar: b.avatar_url, at: Date.now() });
       break;
     }
     case "ai.reply.delta":

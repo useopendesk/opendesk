@@ -3,40 +3,69 @@ title: AI
 description: Draft, summarize, ask, triage, rewrite, translate and search with the AI endpoints.
 ---
 
-When no AI provider is configured, `GET /v1/ai/config` reports `enabled: false` and every other AI route returns `404 ai_disabled`, except triage, which also runs on a decision engine alone. On Cloud, routes that cost credits return `402 no_credits` when the workspace has none left.
+When no AI provider is configured, `GET /v1/ai/config` reports `enabled: false` and every other AI route returns `404 ai_disabled`, except triage, which also runs on a decision engine alone. On Cloud, AI routes are charged to the workspace's AI balance in US dollars, and return `402 ai_balance_empty` when the balance does not cover the call's estimate (the model is not called). See [Billing](/api/resources/billing/#ai-usage).
 
-| Method | Path | Min role | Credits | Description |
+| Method | Path | Min role | Typical cost | Description |
 | --- | --- | --- | --- | --- |
-| `GET` | `/v1/ai/config` | viewer | 0 | Provider, models and settings |
-| `PATCH` | `/v1/ai/settings` | admin | 0 | Update workspace AI settings |
-| `POST` | `/v1/tickets/{id}/ai/draft` | agent | 3 | Draft a reply |
-| `POST` | `/v1/tickets/{id}/ai/summary` | viewer | 1 | Summarize a ticket |
-| `POST` | `/v1/tickets/{id}/ai/ask` | viewer | 2 | Ask about a ticket |
-| `POST` | `/v1/tickets/{id}/ai/triage` | agent | 1 | Triage, optionally applying the result |
-| `DELETE` | `/v1/tickets/{id}/ai/suggestions/{field}` | agent | 0 | Dismiss Ollie's suggestion for `priority`, `severity`, `labels`, `team` or `spam` |
-| `POST` | `/v1/ai/rewrite` | agent | 1 | Rewrite HTML |
-| `POST` | `/v1/ai/translate` | agent | 1 | Translate HTML or text |
-| `POST` | `/v1/kb/articles/ai/draft` | agent | 5 | Draft an article (not saved) |
-| `GET` | `/v1/ai/search?q=` | viewer | 0 | Semantic search, same shape as `/v1/search` |
+| `GET` | `/v1/ai/config` | viewer | $0 | Provider, models and settings |
+| `GET` | `/v1/ai/models` | viewer | $0 | The models the workspace can choose, with their prices |
+| `PATCH` | `/v1/ai/settings` | admin | $0 | Update workspace AI settings |
+| `POST` | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | Draft a reply |
+| `POST` | `/v1/tickets/{id}/ai/summary` | viewer | $0.01 | Summarize a ticket |
+| `POST` | `/v1/tickets/{id}/ai/ask` | viewer | $0.02 | Ask about a ticket |
+| `POST` | `/v1/tickets/{id}/ai/triage` | agent | $0.01 | Triage, optionally applying the result |
+| `DELETE` | `/v1/tickets/{id}/ai/suggestions/{field}` | agent | $0 | Dismiss Ollie's suggestion for `priority`, `severity`, `labels`, `team` or `spam` |
+| `POST` | `/v1/ai/rewrite` | agent | $0.01 | Rewrite HTML |
+| `POST` | `/v1/ai/translate` | agent | $0.01 | Translate HTML or text |
+| `POST` | `/v1/kb/articles/ai/draft` | agent | $0.05 | Draft an article (not saved) |
+| `GET` | `/v1/ai/search?q=` | viewer | $0 | Semantic search, same shape as `/v1/search` |
+
+Each call is charged on its real cost on the workspace's chosen model: the provider's cost times the instance markup (1.5 on opendesk Cloud). The typical cost column is what a call is charged when that cost is unknown. `costs` in [`GET /v1/ai/config`](#config) gives a typical call of each feature on the workspace's chosen models. A failed call costs nothing, and calls on the workspace's own provider key cost $0.
 
 ## Config
 
 ```json
 {
   "enabled": true,
-  "provider": "anthropic",
-  "models": { "default": "claude-sonnet-5-5", "fast": "claude-haiku-4-5-20251001" },
+  "provider": "openrouter",
+  "models": { "default": "anthropic/claude-sonnet-5.5", "fast": "anthropic/claude-haiku-5.5" },
   "embeddings": true,
   "features": { "enabled": true, "auto_triage": false, "auto_summarize": false, "widget_answers": false, "assistant": true, "tone": "friendly", "reply_language": "customer", "instructions": "" },
-  "costs": { "summarize": 1, "rewrite": 1, "translate": 1, "triage": 1, "decide": 1, "answer_check": 0, "copilot": 2, "draft_reply": 3, "answer": 3, "kb_draft": 5, "assistant": 2 },
+  "costs": { "summarize": 0.0135, "rewrite": 0.00042, "translate": 0.000495, "triage": 0.01, "decide": 0.01, "answer_check": 0.001, "copilot": 0.018, "draft_reply": 0.0195, "answer": 0.021, "answer_email": 0.0225, "playground": 0.021, "kb_draft": 0.0465, "assistant": 0.024 },
+  "metered": true,
   "assistant_name": "Ollie",
   "decisions": { "provider": "typesafe", "model": "jev-latest", "connected": true }
 }
 ```
 
+`costs` is what a typical call of each feature costs on the workspace's chosen models, in US dollars (numbers with up to 6 decimals). Features decided by Jev (`triage`, `decide`, `answer_check`) keep a fixed typical cost. `metered` is true: each call is charged on its real cost.
+
 `decisions` is the decision engine: `typesafe` (Jev by TypeSafe), `llm` (the configured AI model) or `none`.
 
-`PATCH /v1/ai/settings` accepts any subset of `features`. `tone` is `friendly`, `professional`, `concise` or free text up to 200 characters; `instructions` up to 2,000 characters.
+`PATCH /v1/ai/settings` accepts any subset of `features`. `tone` is `friendly`, `professional`, `concise` or free text up to 200 characters; `instructions` up to 2,000 characters. `model`, `fast_model` and `widget_model` are `""` (the instance default) or an `id` from `GET /v1/ai/models`. `widget_monthly_cap_usd` is what the AI agent may spend a calendar month (UTC), in US dollars: 0 to 10,000, rounded to cents, 0 for no cap.
+
+## Models
+
+`GET /v1/ai/models` lists the models the workspace can choose, and the instance defaults:
+
+```json
+{
+  "data": [
+    { "id": "anthropic/claude-sonnet-5.5", "name": "Claude Sonnet 5.5", "vendor": "Anthropic", "context_length": 1000000,
+      "usd_per_mtok": { "input": 3, "output": 15 }, "typical_reply_usd": 0.0195 },
+    { "id": "anthropic/claude-haiku-5.5", "name": "Claude Haiku 5.5", "vendor": "Anthropic", "context_length": 200000,
+      "usd_per_mtok": { "input": 0.15, "output": 0.75 }, "typical_reply_usd": 0.000975 }
+  ],
+  "default": "anthropic/claude-sonnet-5.5",
+  "fast": "anthropic/claude-haiku-5.5"
+}
+```
+
+- `usd_per_mtok` is the price per 1 million input and output tokens in US dollars, as the workspace pays it: the provider's list price times the instance markup (1.5 on opendesk Cloud).
+- `typical_reply_usd` is what a typical draft reply (4,000 input and 500 output tokens) costs on the model.
+- Both are `null` when the price is unknown, and on the workspace's own provider key, where the workspace pays its provider.
+
+Choosing a model is never gated on plan: a pricier model is charged more per call.
 
 ## Draft a reply
 
@@ -106,7 +135,7 @@ Modes: `friendlier`, `more_formal`, `shorter`, `longer`, `fix_grammar`, `simplif
 
 ## Streaming
 
-`draft`, `ask` and `rewrite` stream when you send `Accept: text/event-stream`. The response is a series of `delta` events carrying text chunks, then one `done` event carrying the same JSON the non-streaming call returns. Credits are spent once, at `done`.
+`draft`, `ask` and `rewrite` stream when you send `Accept: text/event-stream`. The response is a series of `delta` events carrying text chunks, then one `done` event carrying the same JSON the non-streaming call returns. The call is charged once, at `done`.
 
 ```
 event: delta

@@ -38,9 +38,10 @@ func TestAgentSetupFollowsTheWorkspace(t *testing.T) {
 		t.Fatalf("email answers step: %v %+v", hasEmail, st)
 	}
 
-	e.Do("PATCH", "/v1/ai/settings", e.admin(), map[string]any{"widget_instructions": "Answer like the Acme team."}).Want(t, 200)
+	// Telling the bot how to help (contracts/bots.md) is the identity step.
+	e.Exec(`INSERT INTO bots (workspace_id, name, look, personality, is_default) VALUES ($1, 'Ollie', '{}', '{"instructions":"Answer like the Acme team."}', true)`, e.WS.ID)
 	e.Exec(`INSERT INTO kb_articles (workspace_id, title, slug, status, published_at) VALUES ($1, 'Refunds', 'refunds', 'published', now())`, e.WS.ID)
-	e.Exec(`INSERT INTO ai_usage (workspace_id, feature, millicredits) VALUES ($1, 'playground', 0)`, e.WS.ID)
+	e.Exec(`INSERT INTO ai_usage (workspace_id, feature, micro_usd) VALUES ($1, 'playground', 0)`, e.WS.ID)
 	e.Exec(`UPDATE workspaces SET widget_seen_at = now() WHERE id = $1`, e.WS.ID)
 	s, m = setupSteps(t, e)
 	if !m[agentsetup.StepIdentity].Done || !m[agentsetup.StepKnowledge].Done || !m[agentsetup.StepPlayground].Done ||

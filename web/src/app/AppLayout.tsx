@@ -4,22 +4,29 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
 import { Dialog as D } from "radix-ui";
 import { identify } from "@/lib/analytics";
+import { formatUsd } from "@/lib/format";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useHeartbeat } from "@/lib/pictures";
+import { playAlertOnce, type AlertSound } from "@/lib/alertSound";
 import { startRealtime, stopRealtime } from "@/lib/realtime/manager";
+import { useRealtime } from "@/lib/realtime/store";
 import { reloadSession, useSession } from "@/lib/session";
 import { useUpgrade } from "@/lib/upgrade";
 import { toast } from "@/components/ui/toast";
 import { AssistantDock, AssistantRoot } from "@/components/assistant/AssistantRoot";
-import type { Notification } from "@/lib/api/types";
+import type { Notification, Ticket } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
+import { i18n } from "@/i18n";
+import { describe, joinedTeam } from "./Notifications";
 import { Sidebar } from "./Sidebar";
 import { AppHeader } from "./AppHeader";
 import { cn } from "@/lib/cn";
 import { CommandPalette } from "./CommandPalette";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { CreditsBanner } from "@/components/billing/CreditsBanner";
+import { notifyDesktop, useDesktopBadge, useDesktopPreferences } from "./useDesktopBridge";
+import { AiBalanceBanner } from "@/components/billing/AiBalanceBanner";
+import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
 import { shell, toggleNav, useNav, useShell } from "./shellStore";
 
 const NewTicketDialog = lazy(() => import("@/components/tickets/NewTicketDialog"));
@@ -39,26 +46,54 @@ function notificationText(n: Notification) {
     case "ai_handoff":
       return `A customer asked for a person ${subject}`;
     case "ai_cap_reached":
-      return "Ollie reached this month's agent credit cap";
-    case "credits_low":
-      return "AI credits are running low";
-    case "credits_out":
-      return "AI credits are out";
+      return typeof n.data.cap_usd === "number" ? `Ollie reached this month's ${formatUsd(n.data.cap_usd)} agent cap` : "Ollie reached this month's agent cap";
+    case "ai_balance_low":
+      return typeof n.data.remaining_usd === "number" ? `The AI balance is running low: ${formatUsd(n.data.remaining_usd)} left` : "The AI balance is running low";
+    case "ai_balance_out":
+      return "The AI balance is used up";
     case "auto_recharge_failed":
       return "Auto-recharge failed and is now off";
     case "ai_key_failed":
       return n.data.reason === "no_funds" ? "Your AI provider account is out of funds" : "Your AI provider rejected the workspace's key";
+    case "team_joined":
+      return describe(n, i18n.getFixedT(null, "shell"));
     default:
       return `Notification ${subject}`;
   }
 }
 
 const billingNoticeBody: Partial<Record<Notification["type"], string>> = {
-  credits_low: "Add credits or turn on auto-recharge to keep Ollie working.",
-  credits_out: "Ollie is paused and drafts are unavailable until credits are added.",
+  ai_balance_low: "Add AI usage or turn on auto-recharge to keep Ollie working.",
+  ai_balance_out: "Ollie is paused and drafts are unavailable until you add a top-up.",
   auto_recharge_failed: "The payment didn't go through. Update the payment method, then turn it back on.",
   ai_key_failed: "AI features are paused until the key works again. Fix it in AI settings.",
 };
+
+// Everyday sounds (lib/alertSound.ts); live chat has its own alarm in useWaitingAlerts.
+const notificationSound: Partial<Record<Notification["type"], AlertSound>> = {
+  customer_replied: "reply",
+  assigned: "assigned",
+  mentioned: "assigned",
+  sla_breached: "assigned",
+};
+
+/** Whether this person is looking at the ticket right now, so a sound would only interrupt. */
+function lookingAt(ticketId: string | undefined) {
+  return !!ticketId && document.hasFocus() && useRealtime.getState().active === ticketId;
+}
+
+function soundForNotification(n: Notification) {
+  const kind = notificationSound[n.type];
+  if (!kind || (n.type === "customer_replied" && lookingAt(n.ticket?.id))) return;
+  playAlertOnce(kind, n.id);
+}
+
+/** A customer wrote in (not a chat, which alerts on its own) to the team or to you. */
+function soundForTicket(t: Ticket, me: string) {
+  if (t.channel === "chat" || t.spam || !t.last_customer_message_at) return;
+  if (t.assignee && t.assignee.id !== me) return;
+  playAlertOnce("ticket", t.id);
+}
 
 function useRealtimeConnection() {
   const qc = useQueryClient();
@@ -73,6 +108,8 @@ function useRealtimeConnection() {
       workspaceId: wid,
       userId: uid,
       onNotification: (n) => {
+        notifyDesktop(n);
+        soundForNotification(n);
         if (n.type === "customer_replied") return;
         if (n.type === "ai_key_failed") void qc.invalidateQueries({ queryKey: qk.aiProvider });
         toast.info(notificationText(n), {
@@ -83,13 +120,23 @@ function useRealtimeConnection() {
                 onClick: () =>
                   void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "mine", ticketId: n.ticket!.id } }),
               }
-            : n.type === "ai_cap_reached" || n.type === "ai_key_failed"
+            : n.type === "team_joined"
+              ? {
+                  label: "View team",
+                  onClick: () => {
+                    const id = joinedTeam(n).id;
+                    if (id) void navigate({ to: "/settings/teams/$teamId", params: { teamId: id } });
+                    else void navigate({ to: "/settings/teams" });
+                  },
+                }
+              : n.type === "ai_cap_reached" || n.type === "ai_key_failed"
               ? { label: "Settings", onClick: () => void navigate({ to: n.type === "ai_key_failed" ? "/settings/ai" : "/settings/ai/behaviour" }) }
               : billingNoticeBody[n.type]
                 ? { label: "Billing", onClick: () => void navigate({ to: "/settings/billing" }) }
                 : undefined,
         });
       },
+      onTicketCreated: (t) => soundForTicket(t, uid),
       onSelfMembershipChanged: () => {
         void reloadSession().then((s) => {
           if (!s.workspaceId) void navigate({ to: "/onboarding" });
@@ -105,6 +152,8 @@ export function AppLayout() {
   const section = useRouterState({ select: (s) => { const p = s.location.pathname.split("/").filter(Boolean); return p[0] ?? ""; } });
   useRealtimeConnection();
   useHeartbeat();
+  useDesktopBadge();
+  useDesktopPreferences();
   const navigate = useNavigate();
   const newTicketOpen = useShell((s) => s.newTicketOpen);
   const sidebarOpen = useShell((s) => s.sidebarOpen);
@@ -133,9 +182,10 @@ export function AppLayout() {
   if (!authed) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-chrome text-fg">
+    <div className="fixed inset-0 flex flex-col bg-frame text-fg">
       <AppHeader />
-      <div className="flex min-h-0 flex-1">
+      {/* In the desktop app the work panel floats inset in the window frame. */}
+      <div className="flex min-h-0 flex-1 desktop:pb-2 desktop:pr-2">
         <aside className={cn("hidden shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none md:flex", collapsed ? "w-14" : "w-60")}>
           <Sidebar />
         </aside>
@@ -156,9 +206,10 @@ export function AppLayout() {
         </D.Root>
 
         {/* The work panel: pure white, its inner corner softened where it meets the chrome. */}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden border-t border-line bg-surface md:rounded-tl-2xl md:border-l">
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden border-t border-line bg-surface md:rounded-tl-2xl md:border-l desktop:rounded-2xl desktop:border desktop:border-panel-line desktop:shadow-[0_1px_3px_rgb(0_0_0/0.04)]">
           <ConnectionBanner />
-          <CreditsBanner />
+          <AiBalanceBanner />
+          <DesktopUpdateBanner />
           {/* Moving between areas cross-fades the panel; moving within one (ticket to ticket) does not. */}
           <div key={section} className="flex min-h-0 flex-1 flex-col animate-route-in motion-reduce:animate-none">
             <Outlet />

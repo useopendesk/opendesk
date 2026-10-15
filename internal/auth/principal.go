@@ -58,6 +58,7 @@ type Principal struct {
 	Scopes      []string  // api keys
 	ContactID   uuid.UUID // visitors
 	VisitorID   uuid.UUID // visitors: widget_sessions.id
+	WidgetID    uuid.UUID // visitors: the widget the session started in
 	WorkspaceID uuid.UUID // zero until resolved from OD-Workspace or the credential
 	Role        Role      // users, once the workspace is resolved
 	Verified    bool      // visitors: identity signed by the customer's backend
@@ -71,6 +72,9 @@ type Principal struct {
 	// with OAuth (contracts/agent.md). Scopes then bound the request like an API key's,
 	// on top of the user's role, and account routes are refused.
 	GrantID uuid.UUID
+	// HiddenTeams caches the private teams this caller may not see (domain.HiddenTeams).
+	HiddenTeams       []uuid.UUID
+	HiddenTeamsLoaded bool
 }
 
 func (p *Principal) HasScope(s string) bool { return slices.Contains(p.Scopes, s) }

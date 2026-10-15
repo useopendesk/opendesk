@@ -9,6 +9,5 @@
     "back": "Geri",
     "continue": "Devam"
   },
-  "credits_one": "{{count}} kredi",
-  "credits_other": "{{count}} kredi"
+  "aboutCost": "yaklaşık {{cost}}"
 }

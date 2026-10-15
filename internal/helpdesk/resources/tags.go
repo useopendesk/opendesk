@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -31,20 +33,89 @@ func lockKind(ctx context.Context, tx pgx.Tx, wid uuid.UUID, kind string) error 
 
 // SavedReply is the contract shape.
 type SavedReply struct {
-	ID        uuid.UUID `json:"id"`
-	Title     string    `json:"title"`
-	Shortcut  string    `json:"shortcut"`
-	BodyHTML  string    `json:"body_html"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID       uuid.UUID `json:"id"`
+	Title    string    `json:"title"`
+	Shortcut string    `json:"shortcut"`
+	BodyHTML string    `json:"body_html"`
+	// TeamID offers the reply only on that team's tickets; nil offers it everywhere.
+	TeamID    *uuid.UUID `json:"team_id" doc:"Offered only on this team's tickets; null for everyone"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
-const savedReplySelect = `SELECT id, title, shortcut, body_html, created_at, updated_at FROM saved_replies`
+const savedReplySelect = `SELECT id, title, shortcut, body_html, team_id, created_at, updated_at FROM saved_replies`
 
 type savedReplyWriteBody struct {
-	Title    *string `json:"title,omitempty" maxLength:"200"`
-	Shortcut *string `json:"shortcut,omitempty" maxLength:"64"`
-	BodyHTML *string `json:"body_html,omitempty" maxLength:"100000"`
+	Title    *string          `json:"title,omitempty" maxLength:"200"`
+	Shortcut *string          `json:"shortcut,omitempty" maxLength:"64"`
+	BodyHTML *string          `json:"body_html,omitempty" maxLength:"100000"`
+	TeamID   Nullable[string] `json:"team_id,omitempty" doc:"A team the caller is on (admins: any team), or null for everyone"`
+}
+
+// applyTeam sets the reply's team. Admins (and API keys with settings:write) pick any team
+// of the workspace; agents only a team they lead or are a member of.
+func (b *savedReplyWriteBody) applyTeam(ctx context.Context, q db.Querier, p *auth.Principal, r *SavedReply) error {
+	if !b.TeamID.Set {
+		return nil
+	}
+	if b.TeamID.Null || strings.TrimSpace(b.TeamID.Value) == "" {
+		r.TeamID = nil
+		return nil
+	}
+	id, err := hd.ParseRef(b.TeamID.Value, "team_id")
+	if err != nil {
+		return err
+	}
+	if err := hd.CheckRef(ctx, q, p.WorkspaceID, "team", id); err != nil {
+		return err
+	}
+	r.TeamID = &id
+	return canWriteTeamReply(ctx, q, p, r.TeamID)
+}
+
+// canWriteTeamReply allows changing a team's saved reply to admins, keys with
+// settings:write, and the team's leads and members.
+func canWriteTeamReply(ctx context.Context, q db.Querier, p *auth.Principal, team *uuid.UUID) error {
+	if team == nil || teamManager(p) {
+		return nil
+	}
+	if p.Kind != auth.KindUser {
+		return httpx.Forbidden()
+	}
+	role, err := hd.TeamRole(ctx, q, p.WorkspaceID, *team, p.UserID)
+	if err != nil {
+		return err
+	}
+	if role != hd.TeamLead && role != hd.TeamMember {
+		return httpx.E(403, "forbidden", "Only the team's members can change its saved replies.")
+	}
+	return nil
+}
+
+// teamManager reports an admin, or an API key with settings:write.
+func teamManager(p *auth.Principal) bool {
+	return (p.Kind == auth.KindUser && p.Role.AtLeast(auth.RoleAdmin)) || (p.Kind == auth.KindAPIKey && p.HasScope(auth.ScopeSettingsWrite))
+}
+
+// privateTeam returns team when it is private: events about its rows go to its topic.
+func privateTeam(ctx context.Context, q db.Querier, wid uuid.UUID, team *uuid.UUID) (*uuid.UUID, error) {
+	private, err := hd.TeamPrivate(ctx, q, wid, team)
+	if err != nil || !private {
+		return nil, err
+	}
+	return team, nil
+}
+
+// replyHidden reports a saved reply of a private team the caller may not see.
+func replyHidden(ctx context.Context, q db.Querier, p *auth.Principal, r SavedReply) (bool, error) {
+	if r.TeamID == nil {
+		return false, nil
+	}
+	hidden, err := domain.HiddenTeams(ctx, q, p)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(hidden, *r.TeamID), nil
 }
 
 var shortcutRe = regexp.MustCompile(`^[a-z0-9_-]{0,32}$`)
@@ -92,12 +163,12 @@ func saveSavedReply(ctx context.Context, tx pgx.Tx, wid uuid.UUID, r *SavedReply
 	}
 	var err error
 	if create {
-		err = tx.QueryRow(ctx, `INSERT INTO saved_replies (id, workspace_id, title, shortcut, body_html, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6) RETURNING created_at, updated_at`, r.ID, wid, r.Title, r.Shortcut, r.BodyHTML, createdBy).
+		err = tx.QueryRow(ctx, `INSERT INTO saved_replies (id, workspace_id, title, shortcut, body_html, created_by, team_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING created_at, updated_at`, r.ID, wid, r.Title, r.Shortcut, r.BodyHTML, createdBy, r.TeamID).
 			Scan(&r.CreatedAt, &r.UpdatedAt)
 	} else {
-		err = tx.QueryRow(ctx, `UPDATE saved_replies SET title = $3, shortcut = $4, body_html = $5, updated_at = now()
-			WHERE workspace_id = $1 AND id = $2 RETURNING created_at, updated_at`, wid, r.ID, r.Title, r.Shortcut, r.BodyHTML).
+		err = tx.QueryRow(ctx, `UPDATE saved_replies SET title = $3, shortcut = $4, body_html = $5, team_id = $6, updated_at = now()
+			WHERE workspace_id = $1 AND id = $2 RETURNING created_at, updated_at`, wid, r.ID, r.Title, r.Shortcut, r.BodyHTML, r.TeamID).
 			Scan(&r.CreatedAt, &r.UpdatedAt)
 	}
 	if err != nil {
@@ -107,7 +178,11 @@ func saveSavedReply(ctx context.Context, tx pgx.Tx, wid uuid.UUID, r *SavedReply
 	if create {
 		typ = "saved_reply.created"
 	}
-	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"saved_reply": r}})
+	scope, err := privateTeam(ctx, tx, wid, r.TeamID)
+	if err != nil {
+		return err
+	}
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, TeamID: scope, Data: map[string]any{"saved_reply": r}})
 	return err
 }
 
@@ -121,18 +196,49 @@ type titleCursor struct {
 func registerSavedReplies(d *deps.Deps, api huma.API) {
 	scan := func(r pgx.Row) (SavedReply, error) {
 		var s SavedReply
-		err := r.Scan(&s.ID, &s.Title, &s.Shortcut, &s.BodyHTML, &s.CreatedAt, &s.UpdatedAt)
+		err := r.Scan(&s.ID, &s.Title, &s.Shortcut, &s.BodyHTML, &s.TeamID, &s.CreatedAt, &s.UpdatedAt)
 		return s, err
 	}
 
 	huma.Register(api, op("list-saved-replies", http.MethodGet, "/v1/saved-replies", "List saved replies", "Saved replies", 0),
 		func(ctx context.Context, in *struct {
 			httpx.ListParams
-			Q string `query:"q" maxLength:"200" doc:"Search title and shortcut"`
+			Q        string `query:"q" maxLength:"200" doc:"Search title and shortcut"`
+			TicketID string `query:"ticket_id" doc:"Only the replies offered on this ticket: those of no team and of its team"`
+			TeamID   string `query:"team_id" doc:"Only this team's replies, or none for replies of no team"`
 		}) (*struct{ Body httpx.Page[SavedReply] }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
 			if err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			// A private team's replies are listed only to those who see the team.
+			hidden, err := domain.HiddenTeams(ctx, d.DB.Pool, p)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			scope, team := "", (*uuid.UUID)(nil)
+			switch {
+			case strings.TrimSpace(in.TicketID) != "":
+				tid, err := hd.ParseRef(in.TicketID, "ticket_id")
+				if err != nil {
+					return nil, err
+				}
+				t, err := domain.LoadVisibleTicket(ctx, d.DB.Pool, p, tid)
+				if db.IsNotFound(err) {
+					return nil, httpx.NotFound("Ticket")
+				}
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				scope, team = "ticket", t.TeamID
+			case strings.TrimSpace(in.TeamID) == hd.TeamNone:
+				scope = "none"
+			case strings.TrimSpace(in.TeamID) != "":
+				id, err := hd.ParseRef(in.TeamID, "team_id")
+				if err != nil {
+					return nil, err
+				}
+				scope, team = "team", &id
 			}
 			var cur titleCursor
 			if err := httpx.DecodeCursor(in.Cursor, &cur); err != nil {
@@ -143,7 +249,11 @@ func registerSavedReplies(d *deps.Deps, api huma.API) {
 			rows, err := d.DB.Pool.Query(ctx, savedReplySelect+` WHERE workspace_id = $1
 				AND ($2 = '' OR title ILIKE $3 OR shortcut ILIKE $3)
 				AND (NOT $4 OR (lower(title), id) > (lower($5), $6))
-				ORDER BY lower(title), id LIMIT $7`, p.WorkspaceID, q, like, in.Cursor != "", cur.Title, cur.ID, in.Limit+1)
+				AND (team_id IS NULL OR NOT team_id = ANY($8::uuid[]))
+				AND CASE $9 WHEN 'ticket' THEN team_id IS NULL OR team_id = $10
+					WHEN 'none' THEN team_id IS NULL WHEN 'team' THEN team_id = $10 ELSE true END
+				ORDER BY lower(title), id LIMIT $7`, p.WorkspaceID, q, like, in.Cursor != "", cur.Title, cur.ID, in.Limit+1,
+				hidden, scope, team)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -166,6 +276,9 @@ func registerSavedReplies(d *deps.Deps, api huma.API) {
 				return nil, err
 			}
 			if err := d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := in.Body.applyTeam(ctx, tx, p, &r); err != nil {
+					return err
+				}
 				return saveSavedReply(ctx, tx, p.WorkspaceID, &r, p.ActorUserID(), true)
 			}); err != nil {
 				return nil, httpx.Wrap(err)
@@ -189,6 +302,11 @@ func registerSavedReplies(d *deps.Deps, api huma.API) {
 			}
 			if err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			if hidden, err := replyHidden(ctx, d.DB.Pool, p, r); err != nil {
+				return nil, httpx.Wrap(err)
+			} else if hidden {
+				return nil, httpx.NotFound("Saved reply")
 			}
 			return &savedReplyOut{r}, nil
 		})
@@ -216,7 +334,18 @@ func registerSavedReplies(d *deps.Deps, api huma.API) {
 				if err != nil {
 					return err
 				}
+				if hidden, err := replyHidden(ctx, tx, p, r); err != nil {
+					return err
+				} else if hidden {
+					return httpx.NotFound("Saved reply")
+				}
+				if err := canWriteTeamReply(ctx, tx, p, r.TeamID); err != nil {
+					return err
+				}
 				if err := in.Body.apply(&r); err != nil {
+					return err
+				}
+				if err := in.Body.applyTeam(ctx, tx, p, &r); err != nil {
 					return err
 				}
 				return saveSavedReply(ctx, tx, p.WorkspaceID, &r, nil, false)
@@ -238,14 +367,30 @@ func registerSavedReplies(d *deps.Deps, api huma.API) {
 				return nil, err
 			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, `DELETE FROM saved_replies WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id)
+				r, err := scan(tx.QueryRow(ctx, savedReplySelect+` WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, p.WorkspaceID, id))
+				if db.IsNotFound(err) {
+					return httpx.NotFound("Saved reply")
+				}
 				if err != nil {
 					return err
 				}
-				if tag.RowsAffected() == 0 {
+				if hidden, err := replyHidden(ctx, tx, p, r); err != nil {
+					return err
+				} else if hidden {
 					return httpx.NotFound("Saved reply")
 				}
-				_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "saved_reply.deleted", Data: map[string]any{"saved_reply_id": id}})
+				if err := canWriteTeamReply(ctx, tx, p, r.TeamID); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `DELETE FROM saved_replies WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id); err != nil {
+					return err
+				}
+				scope, err := privateTeam(ctx, tx, p.WorkspaceID, r.TeamID)
+				if err != nil {
+					return err
+				}
+				_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "saved_reply.deleted", TeamID: scope,
+					Data: map[string]any{"saved_reply_id": id}})
 				return err
 			})
 			if err != nil {

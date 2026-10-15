@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"net"
+	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -113,4 +114,28 @@ func withDeadline(ctx context.Context, c net.Conn, d time.Duration) (net.Conn, f
 	_ = c.SetDeadline(deadline)
 	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
 	return c, func() { stop() }
+}
+
+// httpClient fetches from hosts named by user input (mail autoconfig files): every
+// dial goes through the guard, no proxy, HTTPS only, at most three redirects, each
+// to an HTTPS URL on the default port.
+func (g *netGuard) httpClient() *http.Client {
+	d := &net.Dialer{Timeout: 5 * time.Second, Control: g.control}
+	tr := &http.Transport{
+		DialContext:           d.DialContext,
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: g.rootCAs},
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
+		MaxIdleConns:          8,
+		IdleConnTimeout:       30 * time.Second,
+	}
+	return &http.Client{Transport: tr, Timeout: 8 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 3 {
+			return errors.New("too many redirects")
+		}
+		if req.URL.Scheme != "https" || req.URL.User != nil || (req.URL.Port() != "" && req.URL.Port() != "443") {
+			return errors.New("redirect refused")
+		}
+		return nil
+	}}
 }

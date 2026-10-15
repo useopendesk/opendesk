@@ -1,21 +1,22 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AtSign, Bell, CornerDownLeft, CreditCard, Gauge, Hand, KeyRound, Sparkles, TimerOff, UserPlus } from "lucide-react";
+import { AtSign, Bell, BellOff, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { api } from "@/lib/api/endpoints";
 import type { Notification } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
-import { relShort } from "@/lib/format";
-import { q, qk } from "@/lib/queries";
+import { clock, formatUsd, relShort } from "@/lib/format";
+import { notificationHolds } from "@/lib/notificationPrefs";
+import { q } from "@/lib/queries";
 import { AI_TONE, tone, type Tone } from "@/lib/tones";
 import { Popover } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/tabs";
+import { useMarkNotificationsRead } from "./notificationRead";
 
 // Each kind keeps one icon and one hue, so the list scans by what happened.
 const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> = {
@@ -25,13 +26,40 @@ const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> 
   sla_breached: { icon: <TimerOff />, tone: "red" },
   ai_handoff: { icon: <Hand />, tone: AI_TONE },
   ai_cap_reached: { icon: <Gauge />, tone: AI_TONE },
-  credits_low: { icon: <Sparkles />, tone: "amber" },
-  credits_out: { icon: <Sparkles />, tone: "red" },
+  ai_balance_low: { icon: <Sparkles />, tone: "amber" },
+  ai_balance_out: { icon: <Sparkles />, tone: "red" },
   auto_recharge_failed: { icon: <CreditCard />, tone: "red" },
   ai_key_failed: { icon: <KeyRound />, tone: "red" },
+  team_joined: { icon: <UsersRound />, tone: "cyan" },
 };
 
-function describe(n: Notification, t: TFunction<"shell">): string {
+/** Where a notification leads: its ticket, or the settings page it is about. */
+export function notificationPath(n: Notification): string | null {
+  if (n.type === "ai_cap_reached") return "/settings/ai/behaviour";
+  if (n.type === "ai_key_failed") return "/settings/ai";
+  if (n.type === "ai_balance_low" || n.type === "ai_balance_out" || n.type === "auto_recharge_failed") return "/settings/billing";
+  if (n.type === "team_joined") {
+    const id = joinedTeam(n).id;
+    return id ? `/settings/teams/${encodeURIComponent(id)}` : "/settings/teams";
+  }
+  if (n.ticket) return `/inbox/mine/${encodeURIComponent(n.ticket.id)}`;
+  return null;
+}
+
+/** The team of a `team_joined` notification and who joined it. */
+export function joinedTeam(n: Notification): { id: string | null; name: string | null; private: boolean; who: string | null } {
+  const team = (n.data.team ?? {}) as { id?: unknown; name?: unknown; private?: unknown };
+  const user = (n.data.user ?? {}) as { name?: unknown };
+  const id = typeof team.id === "string" && team.id ? team.id : typeof n.data.team_id === "string" && n.data.team_id ? n.data.team_id : null;
+  return {
+    id,
+    name: typeof team.name === "string" && team.name ? team.name : null,
+    private: team.private === true,
+    who: typeof user.name === "string" && user.name ? user.name : null,
+  };
+}
+
+export function describe(n: Notification, t: TFunction<"shell">): string {
   const actor = n.data.actor as { name?: string } | undefined;
   const who = typeof actor?.name === "string" ? actor.name : null;
   const c = n.data.contact as { name?: string } | undefined;
@@ -48,15 +76,21 @@ function describe(n: Notification, t: TFunction<"shell">): string {
     case "ai_handoff":
       return contact ? t("notifications.type.handoff", { who: contact }) : t("notifications.type.handoffAnon");
     case "ai_cap_reached":
-      return t("notifications.type.capReached");
-    case "credits_low":
-      return t("notifications.type.creditsLow");
-    case "credits_out":
-      return t("notifications.type.creditsOut");
+      return typeof n.data.cap_usd === "number" ? t("notifications.type.capReachedUsd", { cap: formatUsd(n.data.cap_usd) }) : t("notifications.type.capReached");
+    case "ai_balance_low":
+      return typeof n.data.remaining_usd === "number" ? t("notifications.type.balanceLowUsd", { remaining: formatUsd(n.data.remaining_usd) }) : t("notifications.type.balanceLow");
+    case "ai_balance_out":
+      return t("notifications.type.balanceOut");
     case "auto_recharge_failed":
       return t("notifications.type.rechargeFailed");
     case "ai_key_failed":
       return n.data.reason === "no_funds" ? t("notifications.type.keyNoFunds") : t("notifications.type.keyRejected");
+    case "team_joined": {
+      const j = joinedTeam(n);
+      const who = j.who ?? t("notifications.type.someone");
+      if (!j.name) return t("notifications.type.teamJoinedAnon", { who });
+      return j.private ? t("notifications.type.teamJoinedPrivate", { who, team: j.name }) : t("notifications.type.teamJoined", { who, team: j.name });
+    }
     default:
       return t("notifications.type.other");
   }
@@ -65,7 +99,6 @@ function describe(n: Notification, t: TFunction<"shell">): string {
 export function NotificationsButton() {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const qc = useQueryClient();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
   const { data, isLoading } = useQuery(q.notifications());
@@ -81,25 +114,19 @@ export function NotificationsButton() {
     seen.current = unread;
   }, [data, unread]);
 
-  const markRead = useMutation({
-    mutationFn: (b: { ids?: string[]; all?: boolean }) => api.notifications.read(b),
-    onMutate: async (b) => {
-      await qc.cancelQueries({ queryKey: qk.notifications });
-      const prev = qc.getQueryData<Notification[]>(qk.notifications);
-      const now = new Date().toISOString();
-      qc.setQueryData<Notification[]>(qk.notifications, (old) => old?.map((n) => (b.all || b.ids?.includes(n.id) ? { ...n, read_at: n.read_at ?? now } : n)));
-      return { prev };
-    },
-    onError: (_e, _b, ctx) => ctx?.prev && qc.setQueryData(qk.notifications, ctx.prev),
-  });
+  const markRead = useMarkNotificationsRead();
 
   const openTicket = (n: Notification) => {
     if (!n.read_at) markRead.mutate({ ids: [n.id] });
     setOpen(false);
     if (n.type === "ai_cap_reached") void navigate({ to: "/settings/ai/behaviour" });
     else if (n.type === "ai_key_failed") void navigate({ to: "/settings/ai" });
-    else if (n.type === "credits_low" || n.type === "credits_out" || n.type === "auto_recharge_failed") void navigate({ to: "/settings/billing" });
-    else if (n.ticket)
+    else if (n.type === "ai_balance_low" || n.type === "ai_balance_out" || n.type === "auto_recharge_failed") void navigate({ to: "/settings/billing" });
+    else if (n.type === "team_joined") {
+      const id = joinedTeam(n).id;
+      if (id) void navigate({ to: "/settings/teams/$teamId", params: { teamId: id } });
+      else void navigate({ to: "/settings/teams" });
+    } else if (n.ticket)
       void navigate({
         to: "/inbox/$folder/{-$ticketId}",
         params: { folder: n.type === "assigned" || n.type === "mentioned" ? "mine" : "open", ticketId: n.ticket.id },
@@ -150,6 +177,16 @@ export function NotificationsButton() {
               {t("notifications.markAll")}
             </button>
           )}
+          <Tooltip content={t("notifications.settings")}>
+            <Link
+              to="/settings/notifications"
+              aria-label={t("notifications.settings")}
+              onClick={() => setOpen(false)}
+              className="flex size-6 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg [&_svg]:size-3.5"
+            >
+              <Settings2 />
+            </Link>
+          </Tooltip>
           <Segmented
             size="xs"
             value={filter}
@@ -161,6 +198,7 @@ export function NotificationsButton() {
           />
         </div>
       </div>
+      <HoldStrip onOpen={() => setOpen(false)} />
       <div className="max-h-[440px] overflow-y-auto p-1">
         {isLoading ? (
           <div className="flex flex-col gap-1 p-1" aria-busy="true">
@@ -232,5 +270,33 @@ export function NotificationsButton() {
         )}
       </div>
     </Popover>
+  );
+}
+
+/** Why nothing reaches you outside the app right now, with the way back to turn it on. */
+function HoldStrip({ onOpen }: { onOpen: () => void }) {
+  const { t } = useTranslation("shell");
+  const { data: prefs } = useQuery(q.notificationPreferences());
+  const hold = prefs ? notificationHolds(prefs)[0] : undefined;
+  if (!hold) return null;
+  const { icon, text } =
+    hold.kind === "paused"
+      ? { icon: <Moon />, text: t("notifications.hold.paused", { when: clock(hold.until) }) }
+      : hold.kind === "unsubscribed"
+        ? { icon: <MailX />, text: t("notifications.hold.unsubscribed") }
+        : { icon: <BellOff />, text: t("notifications.hold.emailOff") };
+  return (
+    <Link
+      to="/settings/notifications"
+      onClick={onOpen}
+      className={cn("flex items-center gap-2 border-b px-3.5 py-2 text-[12px] transition-colors hover:brightness-[0.98] [&_svg]:size-3.5", tone.amber.soft, tone.amber.line)}
+    >
+      <span className={tone.amber.text}>{icon}</span>
+      <span className="min-w-0 flex-1 truncate text-fg-2">{text}</span>
+      <span className="flex items-center gap-0.5 font-medium text-fg">
+        {t("notifications.hold.turnOn")}
+        <ChevronRight />
+      </span>
+    </Link>
   );
 }

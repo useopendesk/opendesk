@@ -10,6 +10,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+
+	"github.com/useopendesk/opendesk/internal/email/mailcause"
 )
 
 // xoauth2 is the SASL XOAUTH2 mechanism Gmail and Outlook use for IMAP with OAuth.
@@ -43,6 +45,10 @@ func (s *imapSession) Close() {
 type imapError struct {
 	msg  string
 	auth bool // credentials or token refused
+	// reason (mailcause.Reason*) and detail, the server's own words, explain a
+	// failed connection check; detail is scrubbed before anyone sees it.
+	reason string
+	detail string
 }
 
 func (e *imapError) Error() string { return e.msg }
@@ -56,7 +62,7 @@ func (s *service) dialIMAP(ctx context.Context, m *mailboxRow) (*imapSession, er
 		return nil, &imapError{msg: "The IMAP server is not configured."}
 	}
 	if mode == TLSNone && !s.guard.allowPrivate {
-		return nil, &imapError{msg: "The IMAP connection must use TLS."}
+		return nil, &imapError{msg: "The IMAP connection must use TLS.", reason: mailcause.ReasonCleartext}
 	}
 	raw, err := s.guard.dial(ctx, host, port)
 	if err != nil {
@@ -72,14 +78,14 @@ func (s *service) dialIMAP(ctx context.Context, m *mailboxRow) (*imapSession, er
 		if err != nil {
 			_ = conn.Close()
 			stop()
-			return nil, &imapError{msg: "Could not start TLS with the IMAP server: " + tlsReason(err)}
+			return nil, &imapError{msg: "Could not start TLS with the IMAP server: " + tlsReason(err), reason: mailcause.ReasonTLS, detail: tlsReason(err)}
 		}
 	default:
 		tc := tls.Client(conn, s.guard.tlsConfig(host))
 		if err := tc.HandshakeContext(ctx); err != nil {
 			_ = conn.Close()
 			stop()
-			return nil, &imapError{msg: "Could not establish TLS with the IMAP server: " + tlsReason(err)}
+			return nil, &imapError{msg: "Could not establish TLS with the IMAP server: " + tlsReason(err), reason: mailcause.ReasonTLS, detail: tlsReason(err)}
 		}
 		c = imapclient.New(tc, nil)
 	}
@@ -87,7 +93,7 @@ func (s *service) dialIMAP(ctx context.Context, m *mailboxRow) (*imapSession, er
 	if err := c.WaitGreeting(); err != nil {
 		_ = c.Close()
 		stop()
-		return nil, &imapError{msg: "The IMAP server did not answer."}
+		return nil, &imapError{msg: "The IMAP server did not answer.", reason: mailcause.ReasonTimeout}
 	}
 	switch m.InboundKind {
 	case KindGoogle, KindMicrosoft:
@@ -119,7 +125,8 @@ func (s *service) dialIMAP(ctx context.Context, m *mailboxRow) (*imapSession, er
 		if c.Caps().Has(imap.CapLoginDisabled) {
 			_ = c.Close()
 			stop()
-			return nil, &imapError{msg: "The IMAP server does not allow password login on this connection."}
+			return nil, &imapError{msg: "The IMAP server does not allow password login on this connection.",
+				reason: mailcause.ReasonAuthUnavailable, detail: "LOGINDISABLED"}
 		}
 		if err := c.Login(cfg.IMAPUsername, creds.Password).Wait(); err != nil {
 			_ = c.Close()
@@ -134,29 +141,51 @@ func imapLoginError(err error, oauth bool) error {
 	var ie *imap.Error
 	if errors.As(err, &ie) {
 		text := strings.TrimSpace(ie.Text)
+		detail := imapDetail(ie)
 		if oauth {
-			return &imapError{msg: "The provider refused the mailbox token. Reconnect the mailbox. (" + truncate(text, 160) + ")", auth: true}
+			return &imapError{msg: "The provider refused the mailbox token. Reconnect the mailbox. (" + truncate(text, 160) + ")", auth: true,
+				reason: mailcause.ReasonAuthRefused, detail: detail}
+		}
+		switch ie.Code {
+		case imap.ResponseCodeUnavailable, imap.ResponseCodeLimit:
+			return &imapError{msg: "The IMAP server refused the login: " + truncate(text, 200), reason: mailcause.ReasonTemporary, detail: detail}
 		}
 		if ie.Code == imap.ResponseCodeAuthenticationFailed || ie.Type == imap.StatusResponseTypeNo {
-			return &imapError{msg: "The IMAP server refused the login: " + truncate(text, 200), auth: true}
+			return &imapError{msg: "The IMAP server refused the login: " + truncate(text, 200), auth: true,
+				reason: mailcause.ReasonAuthRefused, detail: detail}
 		}
-		return &imapError{msg: "The IMAP server refused the login: " + truncate(text, 200)}
+		return &imapError{msg: "The IMAP server refused the login: " + truncate(text, 200), reason: mailcause.ReasonProtocol, detail: detail}
 	}
-	return &imapError{msg: "The IMAP connection dropped during login."}
+	if isTimeout(err) {
+		return &imapError{msg: "The IMAP server stopped answering during login.", reason: mailcause.ReasonTimeout}
+	}
+	return &imapError{msg: "The IMAP connection dropped during login.", reason: mailcause.ReasonProtocol}
+}
+
+// imapDetail is a server reply as the server said it: "[CODE] text".
+func imapDetail(ie *imap.Error) string {
+	text := strings.TrimSpace(ie.Text)
+	if ie.Code != "" {
+		text = "[" + string(ie.Code) + "] " + text
+	}
+	return truncate(text, 400)
 }
 
 func dialError(label string, err error) error {
 	switch {
 	case errors.Is(err, errBlockedAddress):
-		return &imapError{msg: "The " + label + " server address is not allowed (it must be a public address)."}
+		return &imapError{msg: "The " + label + " server address is not allowed (it must be a public address).", reason: mailcause.ReasonBlocked}
 	case isTimeout(err):
-		return &imapError{msg: "Timed out connecting to the " + label + " server."}
+		return &imapError{msg: "Timed out connecting to the " + label + " server.", reason: mailcause.ReasonTimeout}
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return &imapError{msg: "The " + label + " server host name does not resolve."}
+		if dnsErr.IsNotFound {
+			return &imapError{msg: "The " + label + " server host name does not resolve.", reason: mailcause.ReasonUnreachable, detail: "no such host"}
+		}
+		return &imapError{msg: "The " + label + " server host name does not resolve.", reason: mailcause.ReasonUnreachable, detail: "lookup failed"}
 	}
-	return &imapError{msg: "Could not connect to the " + label + " server."}
+	return &imapError{msg: "Could not connect to the " + label + " server.", reason: mailcause.ReasonUnreachable, detail: "connection refused"}
 }
 
 func isTimeout(err error) bool {
@@ -183,10 +212,11 @@ func tlsReason(err error) string {
 func opError(what string, err error) error {
 	var ie *imap.Error
 	if errors.As(err, &ie) {
-		return &imapError{msg: fmt.Sprintf("The IMAP server refused %s: %s", what, truncate(strings.TrimSpace(ie.Text), 200))}
+		return &imapError{msg: fmt.Sprintf("The IMAP server refused %s: %s", what, truncate(strings.TrimSpace(ie.Text), 200)),
+			reason: mailcause.ReasonProtocol, detail: imapDetail(ie)}
 	}
 	if isTimeout(err) {
-		return &imapError{msg: "The IMAP server stopped answering during " + what + "."}
+		return &imapError{msg: "The IMAP server stopped answering during " + what + ".", reason: mailcause.ReasonTimeout}
 	}
-	return &imapError{msg: "The IMAP connection dropped during " + what + "."}
+	return &imapError{msg: "The IMAP connection dropped during " + what + ".", reason: mailcause.ReasonProtocol}
 }

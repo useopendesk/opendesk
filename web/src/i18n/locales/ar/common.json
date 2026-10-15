@@ -9,10 +9,5 @@
     "back": "رجوع",
     "continue": "متابعة"
   },
-  "credits_zero": "لا أرصدة",
-  "credits_one": "رصيد واحد",
-  "credits_two": "رصيدان",
-  "credits_few": "{{count}} أرصدة",
-  "credits_many": "{{count}} رصيدًا",
-  "credits_other": "{{count}} رصيد"
+  "aboutCost": "حوالي {{cost}}"
 }

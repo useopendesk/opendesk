@@ -1,273 +1,239 @@
+// Settings > Teams: who owns which work (contracts/teams.md). The list shows
+// each team's colour, privacy, people, open work and addresses; a team opens
+// on its own page.
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Inbox, MoreHorizontal, Pencil, Plus, Trash2, UserCheck } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronRight, Inbox, Lock, Plus, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconTile, ListSkeleton } from "@/components/settings2/bits";
+import { Section, SettingsPage } from "@/components/layout";
+import { ListSkeleton } from "@/components/settings2/bits";
+import { ColorSwatchPicker } from "@/components/settings2/ColorSwatchPicker";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
-import { toneFor } from "@/lib/tones";
-import { SettingsPage, Section, ListRow } from "@/components/layout";
-import { Avatar, AvatarStack } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui/confirm";
-import { Drawer } from "@/components/ui/dialog";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
-import { Field, TextInput } from "@/components/ui/input";
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
-import { Picker } from "@/components/ui/picker";
+import { PrivatePill, TeamDot } from "@/components/settings2/teams";
+import { AvatarStack } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Textarea, TextInput } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
+import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { Member, Team } from "@/lib/api/types";
-import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
-import { atLeast, useRole } from "@/lib/session";
+import type { LabelColor, Member, Team } from "@/lib/api/types";
+import { cn } from "@/lib/cn";
+import { q, qk, upsertInList } from "@/lib/queries";
+import { atLeast, useRole, useUser } from "@/lib/session";
+import { tone } from "@/lib/tones";
 
 export default function Teams() {
-  const { t: tr } = useTranslation("settings");
-  const role = useRole();
-  const admin = atLeast(role, "admin");
-  const qc = useQueryClient();
-  const confirm = useConfirm();
+  const { t } = useTranslation("settingsTeams");
+  const admin = atLeast(useRole(), "admin");
   const { data: teams, isLoading } = useQuery(q.teams());
   const { data: members } = useQuery(q.members());
-  const { data: mailboxes } = useQuery(q.mailboxes());
-  const [editing, setEditing] = useState<Team | "new" | null>(null);
-
+  const { data: mailboxes } = useQuery({ ...q.mailboxes(), enabled: admin });
+  const [creating, setCreating] = useState(false);
   const byId = new Map((members ?? []).map((m) => [m.user.id, m]));
 
-  const remove = async (t: Team) => {
-    const prev = qc.getQueryData<Team[]>(qk.teams);
-    removeFromList(qc, qk.teams, t.id);
-    try {
-      await api.teams.remove(t.id);
-    } catch (e) {
-      if (prev) qc.setQueryData(qk.teams, prev);
-      throw e;
-    }
-  };
+  const newButton = (variant: "primary" | "secondary" = "primary") =>
+    admin && (
+      <Button variant={variant} icon={<Plus className="size-3.5" />} onClick={() => setCreating(true)}>
+        {t("list.new")}
+      </Button>
+    );
 
   return (
-    <SettingsPage
-      title={tr("teams.title")}
-      description={tr("teams.description")}
-      actions={
-        admin && (
-          <Button variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEditing("new")}>
-            {tr("teams.new")}
-          </Button>
-        )
-      }
-    >
+    <SettingsPage title={t("list.title")} description={t("list.description")} actions={teams?.length ? newButton() : undefined}>
       {isLoading ? (
         <Section flush>
-          <ListSkeleton rows={3} />
+          <ListSkeleton rows={4} />
         </Section>
       ) : !teams?.length ? (
         <Section flush>
           <SettingsEmpty
             art="contacts"
             ghost="people"
-            title={tr("teams.emptyTitle")}
-            description={tr("teams.emptyHint")}
-            action={
-              admin && (
-                <Button variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEditing("new")}>
-                  {tr("teams.new")}
-                </Button>
-              )
-            }
+            title={t("list.emptyTitle")}
+            description={t("list.emptyHint")}
+            action={newButton()}
             tips={[
-              { label: tr("teams.emptyTips.mailbox"), icon: <Inbox /> },
-              { label: tr("teams.emptyTips.delete"), icon: <UserCheck /> },
+              { label: t("list.tips.address"), icon: <Inbox /> },
+              { label: t("list.tips.private"), icon: <Lock /> },
             ]}
           />
         </Section>
       ) : (
-        <Section flush title={tr("teams.count", { count: teams.length })}>
+        <Section flush title={t("list.count", { count: teams.length })}>
+          <div className="hidden h-8 items-center gap-3 border-b border-line-soft bg-sunken/50 px-4 text-[11px] font-medium text-fg-4 md:flex">
+            <span className="flex-1">{t("list.colTeam")}</span>
+            <span className="w-[120px]">{t("list.colPeople")}</span>
+            <span className="w-[64px] text-right">{t("list.colOpen")}</span>
+            <span className="w-[84px] text-right">{t("list.colUnassigned")}</span>
+            <span className="w-4" />
+          </div>
           <MotionList>
-          {teams.map((t) => {
-            const people = t.member_ids.map((id) => byId.get(id)).filter((m): m is Member => !!m);
-            return (
-              <MotionRow key={t.id}>
-              <ListRow onClick={admin ? () => setEditing(t) : undefined}>
-                <IconTile tone={toneFor(t.name)} className="text-[12px] font-semibold">
-                  {t.name.charAt(0).toUpperCase()}
-                </IconTile>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium">{t.name}</div>
-                  <div className="flex items-center gap-1.5 text-xs text-fg-3">
-                    <span>{people.length ? people.slice(0, 3).map((m) => m.user.name.split(" ")[0]).join(", ") + (people.length > 3 ? tr("teams.andMore", { count: people.length - 3 }) : "") : tr("teams.noMembers")}</span>
-                    {(() => {
-                      const n = (mailboxes ?? []).filter((m) => m.team_id === t.id).length;
-                      return n ? (
-                        <>
-                          <span className="text-fg-4">·</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Inbox className="size-3 text-fg-4" />
-                            {tr("teams.mailboxes", { count: n })}
-                          </span>
-                        </>
-                      ) : null;
-                    })()}
-                  </div>
-                </div>
-                <span className="mono hidden w-16 text-right text-[11px] tabular-nums text-fg-4 sm:block">{tr("teams.members", { count: t.member_ids.length })}</span>
-                <AvatarStack people={people.map((m) => ({ id: m.user.id, name: m.user.name, avatar: m.user.avatar_url }))} max={5} size="md" />
-                {admin && (
-                  <Menu>
-                    <MenuTrigger asChild>
-                      <Button size="sm" variant="ghost" square aria-label={`Actions for ${t.name}`} onClick={(e) => e.stopPropagation()}>
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    </MenuTrigger>
-                    <MenuContent>
-                      <MenuItem icon={<Pencil />} onSelect={() => setEditing(t)}>
-                        {tr("teams.edit")}
-                      </MenuItem>
-                      <MenuSeparator />
-                      <MenuItem
-                        danger
-                        icon={<Trash2 />}
-                        onSelect={() =>
-                          confirm.show(tr("teams.deleteBody", { name: t.name }), () => remove(t), {
-                            title: tr("teams.deleteTitle"),
-                            confirmLabel: tr("teams.delete"),
-                            danger: true,
-                          })
-                        }
-                      >
-                        {tr("teams.delete")}
-                      </MenuItem>
-                    </MenuContent>
-                  </Menu>
-                )}
-              </ListRow>
+            {teams.map((team) => (
+              <MotionRow key={team.id}>
+                <TeamRow team={team} byId={byId} addresses={(mailboxes ?? []).filter((m) => m.team_id === team.id).map((m) => m.email)} />
               </MotionRow>
-            );
-          })}
+            ))}
           </MotionList>
         </Section>
       )}
-      {editing && <TeamDrawer team={editing === "new" ? null : editing} members={members ?? []} onClose={() => setEditing(null)} />}
+      {creating && <NewTeamDialog onClose={() => setCreating(false)} />}
     </SettingsPage>
   );
 }
 
-function TeamDrawer({ team, members, onClose }: { team: Team | null; members: Member[]; onClose: () => void }) {
-  const { t } = useTranslation("settings");
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const [name, setName] = useState(team?.name ?? "");
-  const [ids, setIds] = useState<string[]>(team?.member_ids ?? []);
-  const [error, setError] = useState<string | null>(null);
-  const dirty = name !== (team?.name ?? "") || ids.join() !== (team?.member_ids ?? []).join();
+function TeamRow({ team, byId, addresses }: { team: Team; byId: Map<string, Member>; addresses: string[] }) {
+  const { t } = useTranslation("settingsTeams");
+  const me = useUser();
+  const people = team.members.map((m) => byId.get(m.user_id)).filter((m): m is Member => !!m);
+  const mine = team.members.some((m) => m.user_id === me.id);
+  const hidden = team.private && !team.members.length && !mine;
+  const shown = addresses.slice(0, 2);
+  return (
+    <Link
+      to="/settings/teams/$teamId"
+      params={{ teamId: team.id }}
+      className="group flex min-h-14 items-center gap-3 border-b border-line-soft px-4 py-2.5 outline-none transition-colors last:border-0 hover:bg-sunken focus-visible:bg-sunken"
+    >
+      <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-md", tone[team.color]?.soft ?? tone.gray.soft)}>
+        <TeamDot team={team} className="size-2.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[13px] font-medium">{team.name}</span>
+          {team.private && <PrivatePill />}
+          {mine && <span className="text-[11px] text-fg-4">{t("list.youreOn")}</span>}
+        </div>
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">
+          {shown.length ? (
+            <>
+              <Inbox className="size-3 shrink-0 text-fg-4" aria-hidden />
+              <span className="mono truncate text-[11.5px]">
+                {shown.join(", ")}
+                {addresses.length > shown.length && <span className="text-fg-4"> {t("list.more", { count: addresses.length - shown.length })}</span>}
+              </span>
+            </>
+          ) : (
+            <span className="truncate">{team.description || t("list.noAddress")}</span>
+          )}
+        </div>
+      </div>
+      <div className="hidden w-[120px] items-center md:flex">
+        {hidden ? (
+          <Tooltip content={t("list.hiddenMembers")}>
+            <span className="inline-flex items-center gap-1 text-[12px] text-fg-4">
+              <Lock className="size-3" aria-hidden />
+              {t("list.membersCount", { count: team.member_ids.length })}
+            </span>
+          </Tooltip>
+        ) : people.length ? (
+          <AvatarStack people={people.map((m) => ({ id: m.user.id, name: m.user.name, avatar: m.user.avatar_url }))} max={4} size="md" />
+        ) : (
+          <span className="text-[12px] text-fg-4">{t("list.noMembers")}</span>
+        )}
+      </div>
+      <span className={cn("hidden w-[64px] text-right text-[13px] tabular-nums md:block", team.open_count ? "text-fg" : "text-fg-4")}>{team.open_count}</span>
+      <span className={cn("hidden w-[84px] text-right text-[13px] tabular-nums md:block", team.unassigned_count ? tone.amber.text : "text-fg-4")}>{team.unassigned_count}</span>
+      <ChevronRight className="size-4 shrink-0 text-fg-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden />
+    </Link>
+  );
+}
 
-  const save = useMutation({
-    mutationFn: () => (team ? api.teams.update(team.id, { name: name.trim(), member_ids: ids }) : api.teams.create({ name: name.trim(), member_ids: ids })),
-    onMutate: () => {
-      const prev = qc.getQueryData<Team[]>(qk.teams);
-      if (team) upsertInList(qc, qk.teams, { ...team, name: name.trim(), member_ids: ids });
-      return { prev };
-    },
-    onSuccess: (saved) => {
-      upsertInList(qc, qk.teams, saved);
-      toast.success(team ? t("teams.saved") : t("teams.created"));
+function NewTeamDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation("settingsTeams");
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const me = useUser();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [color, setColor] = useState<LabelColor>("blue");
+  const [priv, setPriv] = useState(false);
+  const [join, setJoin] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.teams.create({
+        name: name.trim(),
+        description: description.trim(),
+        color,
+        private: priv,
+        members: join ? [{ user_id: me.id, role: "lead" }] : [],
+      }),
+    onSuccess: (team) => {
+      upsertInList(qc, qk.teams, team);
+      toast.success(t("list.created", { name: team.name }));
       onClose();
+      void navigate({ to: "/settings/teams/$teamId", params: { teamId: team.id } });
     },
-    onError: (e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.teams, ctx.prev);
-      setError(errorMessage(e));
-    },
+    onError: (e) => setError(errorMessage(e)),
   });
 
-  const requestClose = () => {
-    if (!dirty) return onClose();
-    confirm.show(t("teams.discardBody"), onClose, { title: t("teams.discardTitle"), confirmLabel: t("teams.discard"), danger: true });
-  };
-
-  const selected = members.filter((m) => ids.includes(m.user.id));
-
   return (
-    <Drawer
+    <Dialog
       open
-      onOpenChange={(o) => !o && requestClose()}
-      onEscapeKeyDown={(e) => {
-        if (dirty) {
-          e.preventDefault();
-          requestClose();
-        }
-      }}
-      onInteractOutside={(e) => {
-        if (dirty) {
-          e.preventDefault();
-          requestClose();
-        }
-      }}
-      title={team ? t("teams.editTitle") : t("teams.new")}
-      width={440}
+      onOpenChange={(o) => !o && onClose()}
+      title={t("list.new")}
+      description={t("list.newHint")}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form="new-team" loading={create.isPending} icon={<UsersRound className="size-3.5" />}>
+            {t("list.create")}
+          </Button>
+        </>
+      }
     >
       <form
-        className="flex h-full flex-col"
+        id="new-team"
+        className="flex flex-col gap-4 pb-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim()) return setError(t("teams.nameRequired"));
-          save.mutate();
+          if (!name.trim()) return setError(t("general.nameRequired"));
+          create.mutate();
         }}
       >
-        <div className="flex flex-1 flex-col gap-5 p-4">
-          <Field label={t("teams.name")} error={error}>
-            {({ id, invalid }) => (
-              <TextInput id={id} autoFocus invalid={invalid} value={name} maxLength={60} placeholder={t("teams.namePlaceholder")} onChange={(e) => setName(e.target.value)} />
-            )}
-          </Field>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[12.5px] font-medium">{t("teams.membersLabel")}</span>
-              <Picker
-                multi
-                values={ids}
-                onChange={setIds}
-                placeholder={t("teams.searchMembers")}
-                align="end"
-                items={members
-                  .filter((m) => m.role !== "viewer")
-                  .map((m) => ({ value: m.user.id, label: m.user.name, hint: m.role, icon: <Avatar name={m.user.name} src={m.user.avatar_url} size="xs" /> }))}
-                trigger={
-                  <Button size="sm" iconRight={<ChevronDown className="size-3 text-fg-4" />}>
-                    {t("teams.addMembers")}
-                  </Button>
-                }
-              />
-            </div>
-            {selected.length ? (
-              <div className="rounded-md border border-line">
-                {selected.map((m) => (
-                  <div key={m.user.id} className="group flex h-10 items-center gap-2.5 border-b border-line-soft px-3 last:border-0">
-                    <Avatar name={m.user.name} src={m.user.avatar_url} size="sm" presence={m.presence} />
-                    <span className="flex-1 truncate text-[12.5px]">{m.user.name}</span>
-                    <button
-                      type="button"
-                      className="rounded-sm px-1.5 py-0.5 text-xs text-fg-3 opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
-                      onClick={() => setIds((cur) => cur.filter((x) => x !== m.user.id))}
-                    >
-                      {t("teams.remove")}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="rounded-md border border-dashed border-line px-3 py-4 text-center text-xs text-fg-3">{t("teams.noMembers")}</p>
-            )}
-          </div>
+        <Field label={t("general.name")} error={error}>
+          {({ id, invalid }) => (
+            <TextInput id={id} autoFocus invalid={invalid} value={name} maxLength={60} placeholder={t("general.namePlaceholder")} onChange={(e) => setName(e.target.value)} />
+          )}
+        </Field>
+        <Field label={t("general.description")} optional>
+          {({ id }) => (
+            <Textarea id={id} rows={2} value={description} maxLength={280} placeholder={t("general.descriptionPlaceholder")} onChange={(e) => setDescription(e.target.value)} />
+          )}
+        </Field>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12.5px] font-medium">{t("general.color")}</span>
+          <ColorSwatchPicker value={color} onChange={(c) => setColor(c)} label={t("general.color")} size="sm" />
         </div>
-        <div className="flex justify-end gap-2 border-t border-line p-3">
-          <Button variant="ghost" onClick={requestClose}>
-            {t("cancel")}
-          </Button>
-          <Button type="submit" variant="primary" loading={save.isPending}>
-            {team ? t("teams.save") : t("teams.create")}
-          </Button>
+        <div className="flex flex-col rounded-md border border-line">
+          <label className="flex items-center justify-between gap-3 border-b border-line-soft px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-medium">{t("list.joinAsLead")}</span>
+              <span className="block text-[12px] text-fg-3">{t("list.joinAsLeadHint")}</span>
+            </span>
+            <Switch checked={join} onCheckedChange={setJoin} aria-label={t("list.joinAsLead")} />
+          </label>
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-[12.5px] font-medium">
+                <Lock className="size-3 text-fg-3" aria-hidden />
+                {t("privacy.label")}
+              </span>
+              <span className="block text-[12px] text-fg-3">{t("list.privateHint")}</span>
+            </span>
+            <Switch checked={priv} onCheckedChange={setPriv} aria-label={t("privacy.label")} />
+          </label>
         </div>
       </form>
-    </Drawer>
+    </Dialog>
   );
 }

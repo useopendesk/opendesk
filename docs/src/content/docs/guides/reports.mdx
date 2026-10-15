@@ -1,0 +1,100 @@
+---
+title: Reports
+description: Ticket volume, backlog, response and resolution times, SLA breaches, CSAT and the leaderboard for any date range, plus figures by team and brand.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+The reports page shows how your support is going over a date range you choose, compared with the period before it. Open **Reports** in the sidebar.
+
+<Screenshot src="/guides/reports/overview" alt="The Reports page: the team, brand and date range filters ringed as 1, the headline numbers as 2, Volume over time as 3, Backlog as 4, the breakdowns by channel, severity, priority and label as 5, By team and By brand as 6, and the Leaderboard with Response times as 7" />
+
+<Legend>
+
+1. **Filters**: the team and brand to report on, and the date range every figure covers.
+2. **Headline numbers**: created, solved, open now, median first response and resolution, CSAT and SLA breaches, each compared with the previous period.
+3. **Volume over time**: tickets created and solved each day.
+4. **Backlog**: open work right now, by status, and how much of it is unassigned.
+5. **Breakdowns**: tickets by channel and severity in the period, and open work by priority and label.
+6. **By team** and **By brand**: created, solved, open now and median first response for each.
+7. **Leaderboard** and **Response times**: tickets each agent solved, with their median first response, and the period's medians.
+
+</Legend>
+
+## Read a report
+
+<Steps>
+<Step title="Pick a date range">
+
+Click the range at the top right and choose **Last 7 days**, **Last 30 days**, **Last 90 days**, **This month** or **Last month**, or pick your own days under **Custom range** and click **Apply range**.
+
+<Screenshot src="/guides/reports/range" alt="The date range menu open: the presets from Last 7 days to Last month ringed as 1, and the custom range calendar with Apply range ringed as 2" />
+
+</Step>
+<Step title="Compare with the period before">
+
+Each headline number shows how it moved against the previous period of the same length. An arrow up on solved tickets is good; an arrow up on response times is not, so the colour says which way is better.
+
+<Screenshot src="/guides/reports/kpis" alt="The headline numbers from Created to SLA breached: a change against the previous period ringed as 1, and the median first response time ringed as 2" />
+
+</Step>
+<Step title="See the days behind it">
+
+**Volume over time** switches between a **Chart** and a **Table** of each day. Under it, the daily average, the busiest day, and the solve rate: tickets solved as a share of tickets created.
+
+<Screenshot src="/guides/reports/volume" alt="Volume over time as a table: the Chart and Table switch ringed as 1, and the daily average, busiest day and solve rate ringed as 2" />
+
+</Step>
+<Step title="Narrow to a team or brand">
+
+Click **All teams** and pick a team, or **No team** for tickets nobody routed, to see every figure for that team only. **All brands** does the same for a brand, and shows once you have more than one. You can also click a team or brand in **By team** or **By brand**.
+
+<Screenshot src="/guides/reports/teams" alt="The team filter open next to All brands: the two filters ringed as 1, and the Support team ringed as 2" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+Medians are used rather than averages, so one very slow ticket does not hide how the team usually performs. **By priority** and **By label** describe open work now, from the 50 most recent open tickets, not the selected range.
+
+</Callout>
+
+<Fold>
+
+## What each number means
+
+| Metric | Meaning |
+| --- | --- |
+| Created | Tickets created in the range. |
+| Solved | Tickets solved in the range. |
+| Open now | Tickets open at this moment. |
+| First response | Median time from a ticket's creation to the first agent reply. |
+| Resolution | Median time from creation to solved. |
+| CSAT | Average satisfaction score and the number of ratings. See [CSAT](/guides/csat/). |
+| SLA breached | Tickets that missed an [SLA](/guides/sla-policies/) target. |
+
+</Fold>
+
+## Private teams
+
+[Private teams](/guides/teams-and-roles/) you are not on are left out of **By team** and the team filter. Their tickets still count in the totals and by brand, but never with their subjects or customers.
+
+<Fold>
+
+## By team and by brand in the API
+
+The [Reports API](/api/resources/search-reports/) returns the same breakdowns (`by_team` and `by_brand`) and narrows every figure with `team_id` and `brand_id`. `team_id=none` reports on tickets with no team. The API lists every team, private ones included.
+
+</Fold>
+
+## Related
+
+- [CSAT](/guides/csat/)
+- [SLA policies](/guides/sla-policies/)
+- [Reports API](/api/resources/search-reports/)

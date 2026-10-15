@@ -1,0 +1,95 @@
+---
+title: iPhone app
+description: Work your inbox from an iPhone. Connect to Cloud or your own server, sign in, and get push notifications.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Fold from '../../../components/Fold.astro';
+
+The opendesk iPhone app is a native app for the work you do away from your desk: reading and answering tickets, live chat and notifications. It needs iOS 26 or later and works with opendesk Cloud and with self-hosted instances.
+
+## Get started
+
+<Steps>
+<Step title="Connect to a server">
+
+When you open the app, it asks which server to use.
+
+- **opendesk Cloud:** type `opendesk.sh`.
+- **Your own server:** type its address, such as `desk.example.com`.
+
+The app reads the server's `/config.json` to find its API, then asks the server how you can sign in. A self-hosted server needs a release that serves `/config.json`.
+
+</Step>
+<Step title="Sign in">
+
+Use whichever way your server offers:
+
+| Option | Cloud | Self-hosted |
+| --- | --- | --- |
+| Email and password, with your two-factor code | Yes | Yes |
+| Google, Microsoft, GitHub or SSO | Yes, those the server offers | Yes, those the server offers |
+| Passkeys | Yes | No |
+
+**Google, Microsoft, GitHub and SSO** open in the system sign-in sheet, the same one Safari uses, and return to the app when you are done. If your account has a password and you sign in with a provider for the first time, the app asks for the password once to link the two.
+
+</Step>
+<Step title="Allow notifications">
+
+When the app asks, allow notifications. Assigned to you, mentioned, customer replied and SLA breached then reach the phone as push notifications. Tap one to open its ticket.
+
+</Step>
+</Steps>
+
+<Callout type="note" title="Passkeys work on Cloud only">
+
+A passkey belongs to a website's domain, and iOS lets an app use it only for domains that the app lists when it is built and that list the app in return. The App Store app lists `app.opendesk.sh`. It cannot list every self-hosted domain, so on your own server sign in with a password, a provider or SSO.
+
+</Callout>
+
+## Push notifications
+
+The app icon's badge counts your unread notifications across all your workspaces and clears as you read them, on any device.
+
+- **Cloud:** push works out of the box. Notifications show the ticket subject.
+- **Self-hosted:** push depends on how the server is set up, and may be off. Notifications sent through the opendesk relay show the type and ticket number but not the subject, which never leaves your server. See [Push notifications](/self-hosting/push-notifications/).
+
+In the app's notification settings you can turn off each type for this phone, see the other phones signed in to your account, and remove one. When the server has push off, the settings say so; the app still updates live while it is open.
+
+<Callout>
+
+Signing out, changing your password, or signing the session out from another device ends the phone's session, and it stops receiving notifications at once. Your account's session list shows it as **iPhone**.
+
+</Callout>
+
+## On the phone and on the web
+
+| On the phone | On the web (and the [desktop app](/guides/desktop-app/)) |
+| --- | --- |
+| Inbox, folders and views | Everything on the phone |
+| Ticket view: messages, notes, details | Workspace settings: members, teams, roles |
+| Reply and internal note | Mailboxes and their connections |
+| Assign, status and priority | Integrations and API keys |
+| Live chat | Automations, SLA policies, saved replies |
+| Notifications | The chat widget and help center settings |
+| Ollie's suggestions on a ticket | Knowledge base editing and reports |
+| Your account and sessions | Billing (Cloud) |
+
+Anything that changes how the workspace is set up stays on the web. Connecting a mailbox or an integration signs you in to another provider, which the app sends you to the web for.
+
+<Fold>
+
+## Security
+
+- Provider and SSO sign-ins are protected with PKCE, so only the app that started the sign-in can finish it.
+- Where the web asks for a Turnstile check, the app proves instead that it is the genuine opendesk app on a genuine iPhone, with Apple's App Attest. You see nothing. On a self-hosted server with Turnstile on, the administrator sets `APP_ATTEST_APP_IDS` so the server accepts that proof (see [Configuration reference](/self-hosting/configuration/#native-apps)).
+- The app keeps its session in the iPhone's Keychain.
+
+</Fold>
+
+## Related
+
+- [Desktop app](/guides/desktop-app/)
+- [Notifications](/guides/notifications/)

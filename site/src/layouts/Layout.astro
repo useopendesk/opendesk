@@ -2,30 +2,45 @@
 import '../styles/global.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
-import { SITE, LINKS, EMAILS } from '../lib/site';
+import CTA from '../components/CTA.astro';
+import type { Props as CtaProps } from '../components/CTA.astro';
+import { SITE, LINKS, EMAIL, COMPANY } from '../lib/site';
+import { backdrop } from '../lib/backdrops';
 
 interface Props {
   title: string;
   description?: string;
   ogImage?: string;
   ogType?: 'website' | 'article';
+  /** For ogType article: dates and topics, as article:* tags. */
+  article?: { published: Date; modified?: Date; tags?: string[] };
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
   noIndex?: boolean;
+  /** The painted closing frame before the footer, or false for none. */
+  cta?: CtaProps | false;
+  /** The painting above the fold, fetched from <head> before the body is parsed. Match its Backdrop. */
+  preload?: { name: string; sizes: string };
 }
 
 const {
   title,
   description = SITE.description,
-  ogImage = '/og.png',
+  ogImage = '/og.jpg',
   ogType = 'website',
+  article,
   jsonLd,
   noIndex = false,
+  cta = {},
+  preload,
 } = Astro.props;
+const hero = preload ? await backdrop(preload.name) : undefined;
 
 const site = Astro.site ?? new URL(SITE.url);
 const canonical = new URL(Astro.url.pathname, site).toString();
-const ogAbsolute = new URL(ogImage, site).toString();
 const fullTitle = title.includes('opendesk') ? title : `${title} · opendesk`;
+const ogAbsolute = new URL(ogImage, site).toString();
+// public/og.jpg, from `pnpm og`: the hero's app window on its painting.
+const ogAlt = 'The opendesk inbox: live chats and email tickets in one queue, with a ticket open beside it.';
 const extra = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
 
 const organization = {
@@ -33,10 +48,21 @@ const organization = {
   '@type': 'Organization',
   '@id': `${SITE.url}/#org`,
   name: 'opendesk',
+  legalName: COMPANY.legalName,
   url: SITE.url,
   logo: `${SITE.url}/icon-512.png`,
-  email: EMAILS.hello,
+  email: EMAIL,
   sameAs: [LINKS.github],
+};
+
+const website = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  '@id': `${SITE.url}/#website`,
+  name: 'opendesk',
+  url: SITE.url,
+  publisher: { '@id': `${SITE.url}/#org` },
+  inLanguage: 'en',
 };
 
 // Analytics are a build-time choice: with no key, no script tag is emitted at all.
@@ -50,12 +76,14 @@ const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
+    {hero && preload && <link rel="preload" as="image" type="image/avif" imagesrcset={hero.avif} imagesizes={preload.sizes} fetchpriority="high" />}
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     <meta name="generator" content={Astro.generator} />
-    <meta name="robots" content={noIndex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large'} />
+    <meta name="robots" content={noIndex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1'} />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141416" />
 
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
@@ -70,16 +98,24 @@ const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:image" content={ogAbsolute} />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="opendesk, the open-source helpdesk" />
+    <meta property="og:image:secure_url" content={ogAbsolute} />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1920" />
+    <meta property="og:image:height" content="1008" />
+    <meta property="og:image:alt" content={ogAlt} />
+    {article && <meta property="article:published_time" content={article.published.toISOString()} />}
+    {article && <meta property="article:modified_time" content={(article.modified ?? article.published).toISOString()} />}
+    {article?.tags?.map((t) => <meta property="article:tag" content={t} />)}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogAbsolute} />
+    <meta name="twitter:image:alt" content={ogAlt} />
 
     <script type="application/ld+json" is:inline set:html={JSON.stringify(organization)} />
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(website)} />
     {extra.map((s) => <script type="application/ld+json" is:inline set:html={JSON.stringify(s)} />)}
 
     <!-- Theme before first paint. White first: dark only when someone chose it (or chose "system" on a dark system). -->
@@ -117,12 +153,13 @@ const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog
     <Header />
     <main id="main" class="relative flex-1">
       <slot />
+      {cta && <CTA {...cta} />}
     </main>
     <Footer />
     <script>
-      import { initReveal } from '../lib/reveal';
+      import { initOnscreen } from '../lib/onscreen';
       import { initScenes } from '../lib/scenes';
-      initReveal();
+      initOnscreen();
       initScenes();
     </script>
   </body>

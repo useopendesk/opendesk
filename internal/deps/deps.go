@@ -17,6 +17,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/mailer"
 	"github.com/useopendesk/opendesk/internal/natsx"
 	"github.com/useopendesk/opendesk/internal/plan"
+	"github.com/useopendesk/opendesk/internal/push"
 	"github.com/useopendesk/opendesk/internal/storage"
 )
 
@@ -34,6 +35,8 @@ type Deps struct {
 	Tokens    *auth.Tokens
 	Captcha   *captcha.Turnstile
 	Limiter   *httpx.Limiter
-	// Plan enforces plan limits and AI credits; unlimited when billing is disabled.
+	// Plan enforces plan limits and the AI balance; unlimited when billing is disabled.
 	Plan *plan.Service
+	// APNs sends pushes to the iPhone app; nil unless APNS_KEY is set (push = direct).
+	APNs *push.APNs
 }

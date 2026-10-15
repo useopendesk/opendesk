@@ -4,7 +4,11 @@
 // hue (violet) for everything the agent does. A workspace sets the colour,
 // theme, corner style and position: the host carries them as CSS variables
 // (--brand, --brand-fg, --r-*, --ox, --oy; see config.ts hostVars).
-// Motion: under 250ms, ease-out, off under prefers-reduced-motion.
+// Motion: under 250ms, ease-out, off under prefers-reduced-motion. Bot faces
+// carry the shared look motion (BOT_LOOK_CSS): an idle blink in the header, a
+// bob while the bot writes, one hop when its reply lands.
+
+import { BOT_LOOK_CSS } from "../../src/lib/botlook";
 
 const LIGHT = `
   --bg: #ffffff; --bg-2: #f4f4f5; --bg-3: #fafafa; --line: #e7e7e9; --line-2: #d6d6d9;
@@ -12,6 +16,7 @@ const LIGHT = `
   --accent: var(--brand, #0a0a0a); --accent-fg: var(--brand-fg, #ffffff);
   --ai: #6d4bd8; --ai-soft: #f4f0ff; --ai-line: #e4dcff;
   --ok: #15803d; --ok-soft: #ecfdf3; --danger: #dc2626; --danger-soft: #fef2f2;
+  --warn: color-mix(in srgb, #d48806 82%, var(--fg)); --warn-soft: color-mix(in srgb, #d48806 8%, var(--bg)); --warn-line: color-mix(in srgb, #d48806 20%, var(--bg));
   --shadow: 0 0 0 1px rgb(10 10 10 / .06), 0 12px 28px -8px rgb(10 10 10 / .18), 0 32px 64px -20px rgb(10 10 10 / .24);
   --l-shadow: 0 0 0 1px rgb(255 255 255 / .08) inset, 0 8px 20px -6px rgb(0 0 0 / .3), 0 2px 4px rgb(0 0 0 / .08);
   --ring: color-mix(in srgb, var(--fg) 8%, transparent);
@@ -23,6 +28,7 @@ const DARK = `
   --accent: var(--brand, #fafafa); --accent-fg: var(--brand-fg, #0a0a0a);
   --ai: #b9a3ff; --ai-soft: #231d33; --ai-line: #372d52;
   --ok: #4ade80; --ok-soft: #12261a; --danger: #f87171; --danger-soft: #2a1515;
+  --warn: color-mix(in srgb, #f5b53d 82%, var(--fg)); --warn-soft: color-mix(in srgb, #f5b53d 9%, var(--bg)); --warn-line: color-mix(in srgb, #f5b53d 18%, var(--bg));
   --shadow: 0 0 0 1px rgb(255 255 255 / .08), 0 12px 28px -8px rgb(0 0 0 / .6), 0 32px 64px -20px rgb(0 0 0 / .7);
   --l-shadow: 0 0 0 1px rgb(255 255 255 / .14), 0 8px 20px -6px rgb(0 0 0 / .6);
   --ring: color-mix(in srgb, var(--fg) 12%, transparent);
@@ -125,14 +131,15 @@ img { display: block; }
 /* Avatars */
 .av { width: 18px; height: 18px; flex: none; border-radius: var(--r-av, 6px); background: var(--bg-2); color: var(--fg-2); font-size: 8.5px; font-weight: 600; display: grid; place-items: center; overflow: hidden; }
 .av img { width: 100%; height: 100%; object-fit: cover; }
-.bot-av { background: var(--ai-soft); }
-.bot-av.is-ollie { background: transparent; overflow: visible; }
+/* A bot's look draws its own shape; an uploaded picture is a circle. */
+.bot-av { background: transparent; overflow: visible; }
+.bot-av.is-pic { border-radius: 50%; overflow: hidden; background: var(--ai-soft); }
+.face { display: block; width: 100%; height: 100%; }
 .stack { display: inline-flex; align-items: center; flex: none; }
 .stack .av { box-shadow: 0 0 0 2px var(--head-bg, var(--bg)); }
 .stack .av + .av { margin-inline-start: -7px; }
-.stack .bot-av.is-ollie { box-shadow: none; }
-.ollie-eyes { transform-box: fill-box; transform-origin: center; animation: blink 5.2s ease-in-out infinite; }
-@keyframes blink { 0%, 95%, 100% { transform: none; } 97% { transform: scaleY(.15); } }
+.stack .bot-av:not(.is-pic) { box-shadow: none; }
+.stack .bot-av:not(.is-pic) + .av { margin-inline-start: 1px; }
 
 /* Home */
 .body { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
@@ -175,6 +182,45 @@ img { display: block; }
 .link-row svg { color: var(--fg-3); transition: transform .16s var(--ease); }
 .link-row:hover svg { transform: translate(1px, -1px); }
 
+/* Topics: one list of rows, on the home screen and before a new conversation's first message. */
+.topics { display: flex; flex-direction: column; }
+.topic {
+  width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px;
+  text-align: start; font-size: 13.5px; line-height: 19px; font-weight: 500; color: var(--fg); border-top: 1px solid var(--line);
+  transition: background .12s, color .12s; animation: rise .2s calc(var(--i, 0) * 25ms + 30ms) var(--ease) both;
+}
+.topic:first-child { border-top: 0; }
+.card-h + .topics .topic:first-child { border-top: 0; }
+.topic:hover { background: var(--bg-3); }
+.topic:focus-visible { outline-offset: -2px; border-radius: var(--r-card, 10px); }
+.topic:active { background: var(--bg-2); }
+.topic:disabled { opacity: .5; cursor: default; background: none; }
+.topic-ic { display: grid; place-items: center; color: var(--fg-4); flex: none; transition: transform .16s var(--ease), color .12s; }
+.topic:hover .topic-ic, .topic:focus-visible .topic-ic { color: var(--fg-2); transform: translateX(2px); }
+[dir="rtl"] .topic:hover .topic-ic, [dir="rtl"] .topic:focus-visible .topic-ic { transform: translateX(-2px); }
+.picker { padding: 18px 14px 12px; display: flex; flex-direction: column; animation: rise .22s var(--ease) both; }
+.picker b { font-size: 15px; line-height: 21px; font-weight: 600; letter-spacing: -.015em; }
+.picker p { margin: 2px 0 12px; font-size: 12.5px; line-height: 18px; color: var(--fg-3); }
+.queued { padding-bottom: 0; }
+.topic-row { display: flex; justify-content: center; padding: 14px 14px 0; }
+.topic-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 26px; padding: 0 4px 0 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg)); color: var(--fg); border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--bg));
+  font-size: 12px; font-weight: 500; animation: pop .22s var(--ease) both;
+}
+.topic-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-chip button { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 999px; color: var(--fg-3); transition: background .12s, color .12s; }
+.topic-chip button:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); }
+
+/* Closed: the offline message, on the home screen and above the composer. */
+.away { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border-radius: var(--r-card, 10px); background: var(--warn-soft); border: 1px solid var(--warn-line); animation: rise .2s var(--ease) both; }
+.away-ic { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 999px; background: var(--bg); color: var(--warn); box-shadow: 0 0 0 1px var(--warn-line); }
+.away-text { font-size: 12.5px; line-height: 18px; color: var(--fg-2); white-space: pre-line; overflow-wrap: anywhere; align-self: center; }
+.away.bar { margin: 0 12px; padding: 7px 10px; gap: 8px; align-items: center; border-radius: var(--r-ctl, 8px); animation: none; }
+.away.bar .away-ic { width: 20px; height: 20px; }
+.away.bar .away-text { font-size: 12px; line-height: 17px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.away.bar + .composer { padding-top: 8px; }
+
 /* Thread */
 .body-inner { min-height: 100%; display: flex; flex-direction: column; }
 .thread { padding: 16px 14px 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -190,6 +236,7 @@ img { display: block; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .who { font-size: 11.5px; color: var(--fg-3); margin: 0 2px 4px; display: flex; align-items: center; gap: 6px; }
 .who-name { font-weight: 500; color: var(--fg-2); }
+.who-role { color: var(--fg-4); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg { padding: 8px 12px; border-radius: var(--r-bubble, 14px); font-size: 13.5px; line-height: 19.5px; overflow-wrap: anywhere; max-width: 100%; }
 .me .msg { background: var(--accent); color: var(--accent-fg); border-end-end-radius: 4px; white-space: pre-wrap; transition: opacity .15s; }
 .is-pending .msg { opacity: .72; }
@@ -219,6 +266,7 @@ a.chip:hover { border-color: var(--line-2); }
 /* The agent: violet kept to its avatar, the AI pill, tool steps and the caret. */
 .ai .msg { background: var(--bg-3); border: 1px solid var(--line); }
 .ai-pill { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; background: var(--ai-soft); color: var(--ai); font-size: 9.5px; font-weight: 600; letter-spacing: .04em; }
+.greeting .msg { white-space: pre-line; }
 .live .msg { min-width: 52px; transition: min-height .2s var(--ease); }
 .live.leaving { animation: fade-out .2s ease-out forwards; }
 @keyframes fade-out { to { opacity: 0; transform: translateY(-2px); } }
@@ -382,6 +430,8 @@ input.field:focus { border-color: var(--fg-4); box-shadow: 0 0 0 3px var(--ring)
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .skel { height: 12px; border-radius: 4px; margin: 10px 14px; background: linear-gradient(90deg, var(--bg-2) 0%, var(--bg-3) 50%, var(--bg-2) 100%) 0 0 / 200% 100%; animation: skel 1.4s ease-in-out infinite; }
 @keyframes skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+${BOT_LOOK_CSS}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

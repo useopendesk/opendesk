@@ -1,0 +1,39 @@
+---
+title: Requirements
+description: What you need to run opendesk on your own server.
+---
+
+import Callout from '../../../components/Callout.astro';
+
+<Callout type="note" title="The short list">
+
+- A Linux server with Docker and the Compose plugin: 2 vCPUs and 4 GB of RAM to start.
+- A domain or subdomain whose `A` or `AAAA` record points at it.
+- Ports 80 and 443 open to the internet.
+
+Everything else on this page is optional. When you have these, run the [install script](/self-hosting/install-script/).
+
+</Callout>
+
+## Server
+
+- **Linux** on **amd64** or **arm64**. macOS works for trying it out with Docker Desktop. On Windows, run it inside WSL with Docker Desktop.
+- **Docker** with the Compose plugin. The installer offers to install Docker on Linux if it is missing.
+- **Memory and disk:** as a starting point for a small team, plan for 2 vCPUs and 4 GB of RAM, then size from what you observe. Disk grows with email and attachments, so start with at least 20 GB and watch it, or move attachments to [object storage](/self-hosting/storage/).
+
+## Network
+
+- A **domain** (or subdomain) with an `A`/`AAAA` record pointing at the server, such as `desk.example.com`.
+- Ports **80** and **443** open, so Caddy can obtain and renew a certificate and serve HTTPS.
+- Outbound access to your mail providers (IMAP 993, SMTP 465 or 587) and to Google and Microsoft if you connect those mailboxes.
+- Optional: port **25** open and an `MX` record if you want to receive forwarded mail directly on this server. See [Email setup](/self-hosting/email/).
+
+## Optional services
+
+| For | You need |
+| --- | --- |
+| Password resets, invitations, verification email | An SMTP server, or Amazon SES. See [Email setup](/self-hosting/email/). |
+| One-click Google or Microsoft mailboxes and sign-in | Your own OAuth apps. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/). |
+| Attachments outside the server | S3, Cloudflare R2 or MinIO. See [Storage](/self-hosting/storage/). |
+| Bot protection on sign-in | A Cloudflare Turnstile site key and secret. |
+| A managed database | Any Postgres, including Neon. See [Postgres and Neon](/self-hosting/postgres/). |

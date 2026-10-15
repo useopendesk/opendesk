@@ -1,8 +1,13 @@
-// Builds the mock database: the Fieldnote workspace (rich) and Lumen Labs (small).
+// Builds the mock database: the Margin workspace (rich) and Lumen Labs (small).
 
 import { applyDecisions, severityFor } from "./decisions";
 import type {
   ApiKey,
+  Brand,
+  RoutingRule,
+  Team,
+  TeamRole,
+  Widget,
   Attachment,
   AuditLog,
   Automation,
@@ -36,12 +41,14 @@ import {
   type TeamKey,
 } from "./content";
 import { contactRef, db, defaultRouting, userRef, type WsData } from "./db";
-import { logoMark, portrait } from "./avatars";
+import { brandLogo, logoMark, portrait } from "./avatars";
 import { teammatePresence, type Meta } from "./gateway";
 import { seedDefaultLabels } from "./labels";
-import { labelName, seedFieldnoteFields, seedFieldnoteLabels, seedTicketTypes } from "./seedLabels";
+import { seedDefaultBrand } from "./handlers/teams";
+import { labelName, seedMarginFields, seedMarginLabels, seedTicketTypes } from "./seedLabels";
 import { addActivity, addMessage, computeSla, ensureTags, newTicket } from "./tickets";
 import { DAY, HOUR, MIN, ago, chance, int, iso, NOW, pick, preview, reseed, shuffle, slugify, textToHtml, uuid } from "./util";
+import { defaultPersonality, newBot } from "./bots";
 
 const svgData = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
@@ -79,7 +86,7 @@ export function baseWorkspace(id: string, name: string, slug: string): WsData {
       settings: {},
       avatar_url: null,
       avatar_source: null,
-      images: { help_center_logo: null, help_center_favicon: null, widget_avatar: null, widget_launcher: null, widget_bot: null },
+      images: { help_center_logo: null, help_center_favicon: null, widget_avatar: null, widget_launcher: null },
       created_at: ago(400 * DAY),
     },
     members: [],
@@ -118,6 +125,10 @@ export function baseWorkspace(id: string, name: string, slug: string): WsData {
     knowledge: [],
     knowledgeDocs: {},
     routing: defaultRouting(),
+    brands: [],
+    widgets: [],
+    widgetSecrets: {},
+    routingRules: [],
   };
 }
 
@@ -141,7 +152,9 @@ export function defaultWidget(): WidgetSettings {
     show_team: true,
     suggestions: [],
     sound: false,
-    bot_name: "",
+    topics: [],
+    offline_message: "",
+    email_follow_up: true,
   };
 }
 
@@ -159,20 +172,19 @@ export function defaultAi(): AISettings {
     model: "",
     fast_model: "",
     widget_model: "",
-    widget_instructions: "",
     widget_max_replies: 20,
     widget_blocked_topics: [],
-    widget_monthly_cap: 0,
+    widget_monthly_cap_usd: 0,
     widget_collect_email: true,
   };
 }
 
-const FIELDNOTE_AGENT = [
-  "Fieldnote is a note-taking app for teams, on the web, Mac, Windows, iOS and Android.",
+const MARGIN_AGENT = [
+  "Margin is a note-taking app for teams, on the web, Mac, Windows, iOS and Android.",
   "Plans: Free (1 workspace, 3 members), Team at $8 per member per month, Business at $15 per member per month with SSO and audit logs.",
   "Refunds: we refund annual plans in full within 30 days of payment. Monthly plans are not refunded but can be cancelled any time.",
   "Support hours: Monday to Friday, 8:00 to 18:00 CET. Outside those hours, say the team will reply the next working day.",
-  "Links: pricing https://fieldnote.app/pricing, status https://status.fieldnote.app, help center https://fieldnote.app/help.",
+  "Links: pricing https://margin.app/pricing, status https://status.margin.app, help center https://margin.app/help.",
   "Never promise a feature date. For bugs, ask for the app version and device.",
 ].join("\n");
 
@@ -189,8 +201,8 @@ export function defaultBilling(): WsData["billing"] {
     cancel_at_period_end: false,
     limits: { max_mailboxes: 0, max_members: 0 },
     usage: { mailboxes: 0, members: 0 },
-    credits: { unlimited: true, monthly: 0, used: 0, purchased: 0, remaining: 0, period_end: new Date(NOW + 30 * DAY).toISOString() },
-    prices: { pro_month: null, pro_year: null, credit_pack: null },
+    ai: { unlimited: true, monthly_usd: 0, used_usd: 0, purchased_usd: 0, remaining_usd: 0, period_end: new Date(NOW + 30 * DAY).toISOString() },
+    prices: { pro_month: null, pro_year: null, ai_top_up: null },
   };
 }
 
@@ -219,31 +231,30 @@ function seedUsers() {
 
 const uid = (k: TeamKey) => db.users[TEAM.findIndex((t) => t.key === k)].id;
 
-function seedFieldnote(): WsData {
-  const ws = baseWorkspace(uuid(), "Fieldnote", "fieldnote");
+function seedMargin(): WsData {
+  const ws = baseWorkspace(uuid(), "Margin", "margin");
   ws.workspace.settings = {
     timezone: "Europe/Berlin",
     help_center_enabled: true,
-    help_center_title: "Fieldnote Help",
+    help_center_title: "Margin Help",
     csat_enabled: true,
     auto_assign: "round_robin",
   };
   ws.widget = {
     ...defaultWidget(),
-    greeting: "Hi! Ask us anything about Fieldnote.",
+    greeting: "Hi! Ask us anything about Margin.",
     require_email: true,
-    allowed_origins: ["https://fieldnote.app", "https://www.fieldnote.app"],
+    allowed_origins: ["https://margin.app", "https://www.margin.app"],
     color: "#4f46e5",
-    title: "Fieldnote support",
+    title: "Margin support",
     subtitle: "We usually reply in a few minutes",
     suggestions: ["Where's my order?", "Change my plan", "Export my notes"],
   };
   ws.ai = {
     ...defaultAi(),
     widget_answers: true,
-    widget_instructions: FIELDNOTE_AGENT,
     widget_blocked_topics: ["legal advice", "competitor pricing", "medical advice"],
-    widget_monthly_cap: 500,
+    widget_monthly_cap_usd: 25,
   };
 
   const availability = { maya: "online", jonas: "online", priya: "away", sam: "online", lea: "offline", theo: "online" } as const;
@@ -257,9 +268,10 @@ function seedFieldnote(): WsData {
       last_seen_at: ago((i + 1) * 7 * MIN),
     }),
   );
-  ws.workspace.avatar_url = logoMark("Fieldnote");
+  ws.workspace.avatar_url = brandLogo("margin", "#4f46e5");
   ws.workspace.avatar_source = "upload";
-  ws.workspace.images.help_center_favicon = logoMark("Fieldnote");
+  ws.workspace.images.help_center_logo = brandLogo("margin", "#4f46e5", true);
+  ws.workspace.images.help_center_favicon = brandLogo("margin", "#4f46e5");
   ws.routing.autoAwayMinutes = 30;
   ws.routing.widgetSeen = true;
   ws.routing.hours = {
@@ -267,40 +279,94 @@ function seedFieldnote(): WsData {
     schedule: { mon: [{ start: "08:00", end: "18:00" }], tue: [{ start: "08:00", end: "18:00" }], wed: [{ start: "08:00", end: "18:00" }], thu: [{ start: "08:00", end: "18:00" }], fri: [{ start: "08:00", end: "16:00" }], sat: [], sun: [] },
     holidays: [{ date: "2026-12-24", name: "Christmas Eve" }, { date: "2026-12-25", name: "Christmas Day" }, { date: "2027-01-01", name: "New Year's Day" }],
   };
+  // Maya (the signed-in owner) is on Support, Billing and Partnerships, not on the private Legal and Security teams.
+  const team = (name: string, color: Team["color"], days: number, members: [TeamKey, TeamRole][], extra: Partial<Team> = {}): Team => ({
+    id: uuid(),
+    name,
+    description: "",
+    color,
+    private: false,
+    members: members.map(([k, role]) => ({ user_id: uid(k), role })),
+    member_ids: members.map(([k]) => uid(k)),
+    signature_html: "",
+    business_hours: null,
+    assign_mode: null,
+    mailbox_ids: [],
+    open_count: 0,
+    unassigned_count: 0,
+    created_at: ago(days * DAY),
+    updated_at: ago(int(2, 40) * DAY),
+    ...extra,
+  });
   ws.teams = [
-    { id: uuid(), name: "Support", member_ids: [uid("maya"), uid("jonas"), uid("priya"), uid("sam")], created_at: ago(300 * DAY) },
-    { id: uuid(), name: "Billing", member_ids: [uid("lea"), uid("maya")], created_at: ago(280 * DAY) },
+    team("Support", "blue", 300, [["maya", "lead"], ["jonas", "member"], ["priya", "member"], ["sam", "member"], ["theo", "observer"]], {
+      description: "First line for product questions, bugs and how-tos.",
+      signature_html: "<p>{{agent.first_name}} from {{brand.name}} support<br>Ticket #{{ticket.number}}</p>",
+    }),
+    team("Billing", "amber", 280, [["lea", "lead"], ["maya", "member"], ["sam", "member"]], {
+      description: "Invoices, refunds, plan changes and payment problems.",
+      signature_html: "<p>{{agent.name}}<br>{{team.name}}, {{brand.name}}</p>",
+    }),
+    team("Legal", "violet", 160, [["lea", "lead"], ["jonas", "member"]], {
+      description: "Contracts, DPAs, GDPR requests and anything a lawyer should read first.",
+      private: true,
+      signature_html: "<p>{{agent.name}}<br>Legal, {{brand.name}}</p>",
+      business_hours: {
+        enabled: true,
+        timezone: "Europe/Berlin",
+        schedule: { mon: [{ start: "09:00", end: "17:00" }], tue: [{ start: "09:00", end: "17:00" }], wed: [{ start: "09:00", end: "17:00" }], thu: [{ start: "09:00", end: "17:00" }], fri: [{ start: "09:00", end: "13:00" }], sat: [], sun: [] },
+        holidays: [],
+      },
+    }),
+    team("Security", "red", 120, [["jonas", "lead"], ["priya", "member"]], {
+      description: "Vulnerability reports and account security. Reports are confidential until fixed.",
+      private: true,
+    }),
+    // Jonas (an admin) joined as an observer, which told the leads (the seeded team_joined notification).
+    team("Partnerships", "green", 90, [["sam", "lead"], ["maya", "lead"], ["jonas", "observer"]], {
+      description: "Resellers, integrations and co-marketing.",
+    }),
   ];
-  ws.routing.rules = [{ target_type: "team", target_id: ws.teams[1].id, mode: "load_balanced" }];
-  const teamId = (n: "Support" | "Billing" | null) => (n ? ws.teams.find((t) => t.name === n)!.id : null);
+  const teamId = (n: "Support" | "Billing" | "Legal" | "Security" | "Partnerships" | null) => (n ? ws.teams.find((t) => t.name === n)!.id : null);
+  ws.routing.rules = [
+    { target_type: "team", target_id: teamId("Billing")!, mode: "load_balanced" },
+    { target_type: "team", target_id: teamId("Legal")!, mode: "none" },
+    { target_type: "team", target_id: teamId("Support")!, mode: "round_robin" },
+  ];
 
   ws.invitations = [
-    { id: uuid(), token: "inv_demo", email: "rafael@fieldnote.app", role: "agent", expires_at: iso(NOW + 5 * DAY), created_at: ago(2 * DAY), invited_by: userRef(uid("maya")) },
-    { id: uuid(), token: "inv_demo2", email: "noor@fieldnote.app", role: "admin", expires_at: iso(NOW + 6 * DAY), created_at: ago(1 * DAY), invited_by: userRef(uid("jonas")) },
+    { id: uuid(), token: "inv_demo", email: "rafael@margin.app", role: "agent", expires_at: iso(NOW + 5 * DAY), created_at: ago(2 * DAY), invited_by: userRef(uid("maya")) },
+    { id: uuid(), token: "inv_demo2", email: "noor@margin.app", role: "admin", expires_at: iso(NOW + 6 * DAY), created_at: ago(1 * DAY), invited_by: userRef(uid("jonas")) },
   ];
 
   // Tags, SLA, mailboxes.
-  seedFieldnoteLabels(ws);
+  seedMarginLabels(ws);
   const sla: SlaPolicy[] = [
     { id: uuid(), name: "Urgent", priority: "urgent", first_response_minutes: 60, resolution_minutes: 8 * 60, business_hours: false, enabled: true, position: 0 },
     { id: uuid(), name: "High priority", priority: "high", first_response_minutes: 2 * 60, resolution_minutes: 24 * 60, business_hours: true, enabled: true, position: 1 },
-    { id: uuid(), name: "Standard", priority: null, first_response_minutes: 8 * 60, resolution_minutes: 3 * 24 * 60, business_hours: true, enabled: true, position: 2 },
+    { id: uuid(), name: "Legal requests", priority: null, first_response_minutes: 2 * 24 * 60, resolution_minutes: 30 * 24 * 60, business_hours: true, enabled: true, position: 2, team_id: teamId("Legal") },
+    { id: uuid(), name: "Security reports", priority: null, first_response_minutes: 4 * 60, resolution_minutes: 7 * 24 * 60, business_hours: false, enabled: true, position: 3, team_id: teamId("Security") },
+    { id: uuid(), name: "Standard", priority: null, first_response_minutes: 8 * 60, resolution_minutes: 3 * 24 * 60, business_hours: true, enabled: true, position: 4 },
   ];
   ws.sla = sla;
 
-  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null };
+  // Every address belongs to a brand; the brand ids are filled in once the brands exist (below).
+  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null, brand_id: "", aliases: [] as string[], trusted_form_senders: [] as string[], from_name_format: "{agent} at {mailbox}", private: false };
   const support: Mailbox = {
     ...mbBase,
     id: uuid(),
     name: "Support",
-    email: "support@fieldnote.app",
-    display_name: "Fieldnote Support",
+    email: "support@margin.app",
+    display_name: "Margin Support",
     inbound_kind: "google",
     outbound_kind: "google",
-    forwarding_address: "fieldnote-support-2m9q@in.opendesk.sh",
-    config: { oauth_email: "support@fieldnote.app" },
+    forwarding_address: "margin-support-2m9q@in.opendesk.sh",
+    config: { oauth_email: "support@margin.app" },
     team_id: teamId("Support"),
-    signature_html: "<p>{{agent.first_name}} from Fieldnote<br>fieldnote.app</p>",
+    aliases: ["help@margin.app", "hello@margin.app"],
+    // The contact form on margin.app sends from this address with the visitor as Reply-To.
+    trusted_form_senders: ["website@margin.app"],
+    signature_html: "<p>{{agent.first_name}} from Margin<br>margin.app</p>",
     auto_reply_enabled: true,
     auto_reply_subject: "We got your message",
     auto_reply_html: "<p>Thanks for writing in. We usually reply within a few hours on weekdays.</p>",
@@ -313,13 +379,15 @@ function seedFieldnote(): WsData {
     ...mbBase,
     id: uuid(),
     name: "Billing",
-    email: "billing@fieldnote.app",
-    display_name: "Fieldnote Billing",
+    email: "billing@margin.app",
+    display_name: "Margin Billing",
     inbound_kind: "forwarding",
     outbound_kind: "system",
-    forwarding_address: "fieldnote-billing-7f3k@in.opendesk.sh",
+    forwarding_address: "margin-billing-7f3k@in.opendesk.sh",
     config: {},
     team_id: teamId("Billing"),
+    from_name_format: "{agent_first} from {team}",
+    aliases: ["invoices@margin.app"],
     status: "active",
     last_synced_at: ago(12 * MIN),
     created_at: ago(260 * DAY),
@@ -328,18 +396,228 @@ function seedFieldnote(): WsData {
     ...mbBase,
     id: uuid(),
     name: "Partners",
-    email: "partners@fieldnote.app",
-    display_name: "Fieldnote Partnerships",
+    email: "partners@margin.app",
+    display_name: "Margin Partnerships",
     inbound_kind: "imap",
     outbound_kind: "smtp",
-    forwarding_address: "fieldnote-partners-q81z@in.opendesk.sh",
-    config: { imap_host: "imap.fastmail.com", imap_port: 993, imap_username: "partners@fieldnote.app", imap_tls: "tls", smtp_host: "smtp.fastmail.com", smtp_port: 465, smtp_username: "partners@fieldnote.app", smtp_tls: "tls" },
+    forwarding_address: "margin-partners-q81z@in.opendesk.sh",
+    config: { imap_host: "imap.fastmail.com", imap_port: 993, imap_username: "partners@margin.app", imap_tls: "tls", smtp_host: "smtp.fastmail.com", smtp_port: 465, smtp_username: "partners@margin.app", smtp_tls: "tls" },
     status: "error",
     last_error: "IMAP login failed: [AUTHENTICATIONFAILED] Invalid credentials",
     last_synced_at: ago(2 * DAY),
     created_at: ago(90 * DAY),
   };
-  ws.mailboxes = [support, billing, partners];
+  const legal: Mailbox = {
+    ...mbBase,
+    id: uuid(),
+    name: "Legal",
+    email: "legal@margin.app",
+    display_name: "Margin Legal",
+    inbound_kind: "forwarding",
+    outbound_kind: "system",
+    forwarding_address: "margin-legal-x4c8@in.opendesk.sh",
+    config: {},
+    team_id: teamId("Legal"),
+    private: true,
+    aliases: ["privacy@margin.app", "dpo@margin.app"],
+    from_name_format: "{team} at {brand}",
+    auto_reply_enabled: true,
+    auto_reply_subject: "We received your request",
+    auto_reply_html: "<p>Thanks for writing to our legal team. We answer within two working days, and within 30 days for GDPR requests.</p>",
+    status: "active",
+    last_synced_at: ago(25 * MIN),
+    created_at: ago(160 * DAY),
+  };
+  const security: Mailbox = {
+    ...mbBase,
+    id: uuid(),
+    name: "Security",
+    email: "security@margin.app",
+    display_name: "Margin Security",
+    inbound_kind: "google",
+    outbound_kind: "google",
+    forwarding_address: "margin-security-k2v1@in.opendesk.sh",
+    config: { oauth_email: "security@margin.app" },
+    team_id: teamId("Security"),
+    private: true,
+    from_name_format: "{agent} at {mailbox}",
+    status: "active",
+    last_synced_at: ago(2 * MIN),
+    created_at: ago(120 * DAY),
+  };
+  const pressroom: Mailbox = {
+    ...mbBase,
+    id: uuid(),
+    name: "Pressroom",
+    email: "hello@pressroom.app",
+    display_name: "Pressroom",
+    inbound_kind: "google",
+    outbound_kind: "google",
+    forwarding_address: "margin-pressroom-h7d2@in.opendesk.sh",
+    config: { oauth_email: "hello@pressroom.app" },
+    team_id: teamId("Support"),
+    aliases: ["support@pressroom.app"],
+    from_name_format: "{agent_first} at {brand}",
+    signature_html: "<p>{{agent.first_name}}, Pressroom<br>pressroom.app</p>",
+    status: "active",
+    last_synced_at: ago(4 * MIN),
+    created_at: ago(70 * DAY),
+  };
+  ws.mailboxes = [support, billing, legal, security, partners, pressroom];
+
+  // Brands: Margin (the default, its help center at the workspace slug) and Pressroom, a second product.
+  const brand = (name: string, slug: string, color: string, days: number, extra: Partial<Brand> = {}): Brand => ({
+    id: uuid(),
+    name,
+    slug,
+    is_default: false,
+    color,
+    locale: "en",
+    help_center: { enabled: true, title: `${name} Help`, url: "" },
+    // The logo is the mark on the brand colour; the help center has its own, the mark on white.
+    images: { logo: brandLogo(slug, color), help_center_logo: brandLogo(slug, color, true), help_center_favicon: brandLogo(slug, color) },
+    default_mailbox_id: null,
+    mailbox_count: 0,
+    widget_count: 0,
+    position: 0,
+    created_at: ago(days * DAY),
+    updated_at: ago(int(1, 20) * DAY),
+    ...extra,
+  });
+  const marginBrand = brand("Margin", "margin", "#4f46e5", 400, { is_default: true });
+  const pressBrand = brand("Pressroom", "pressroom", "#e11d48", 70, { position: 1, help_center: { enabled: false, title: "Pressroom Help Desk", url: "" } });
+  ws.brands = [marginBrand, pressBrand];
+  for (const m of ws.mailboxes) m.brand_id = m === pressroom ? pressBrand.id : marginBrand.id;
+
+  // Chat widgets, one per website. Topics route a conversation before its first message.
+  const topic = (label: string, team: Parameters<typeof teamId>[0]) => ({ id: uuid(), label, team_id: teamId(team) });
+  const marketingTopics = [topic("Billing and plans", "Billing"), topic("Technical help", "Support"), topic("Legal and privacy", "Legal")];
+  const docsTopics = [topic("Technical help", "Support"), topic("Report a vulnerability", "Security")];
+  const widget = (b: Brand, name: string, key: string, position: number, team: Parameters<typeof teamId>[0], settings: Partial<WidgetSettings>, days: number): Widget => ({
+    id: uuid(),
+    brand_id: b.id,
+    name,
+    key,
+    team_id: teamId(team),
+    bot_id: null,
+    settings: { ...defaultWidget(), ...settings },
+    images: { avatar: null, launcher: null },
+    install: { snippet: "" },
+    seen_at: ago((days - 1) * DAY),
+    position,
+    created_at: ago(days * DAY),
+    updated_at: ago(int(1, 30) * DAY),
+  });
+  const marketingSite = widget(marginBrand, "Marketing site", ws.workspace.widget_key, 0, "Support", { ...ws.widget, topics: marketingTopics, offline_message: "We're offline right now. Leave your email and we'll reply first thing tomorrow." }, 380);
+  const docsWidget = widget(marginBrand, "Docs", `wk_margin_docs${uuid().slice(0, 6)}`, 1, "Support", {
+    greeting: "Stuck on something in the docs? Ask away.",
+    allowed_origins: ["https://docs.margin.app"],
+    color: "#4f46e5",
+    title: "Margin docs",
+    subtitle: "Engineers answer here on weekdays",
+    suggestions: ["API rate limits", "Webhook signatures"],
+    topics: docsTopics,
+  }, 200);
+  const pressWidget = widget(pressBrand, "Pressroom app", `wk_pressroom_${uuid().slice(0, 8)}`, 0, "Support", {
+    greeting: "Hi! Questions about your publication? We're here.",
+    allowed_origins: ["https://pressroom.app", "https://app.pressroom.app"],
+    color: "#e11d48",
+    title: "Pressroom",
+    subtitle: "Usually replies within an hour",
+    suggestions: ["Custom domains", "Import subscribers"],
+    topics: [topic("Publishing help", "Support"), topic("Payments and payouts", "Billing")],
+    require_email: true,
+  }, 65);
+  ws.widgets = [marketingSite, docsWidget, pressWidget];
+
+  // Bots (contracts/bots.md): Ollie answers by default; Pip on the docs, the Concierge for Pressroom.
+  const ollie = newBot("Ollie", {
+    is_default: true,
+    role: "Margin support",
+    personality: { ...defaultPersonality(), instructions: MARGIN_AGENT, handoff_message: "I'll bring in someone from the team. They'll reply right here." },
+    created_at: ago(380 * DAY),
+    updated_at: ago(12 * DAY),
+  });
+  const pip = newBot("Pip", {
+    role: "Docs sidekick",
+    position: 1,
+    look: { kind: "built", shape: "squircle", fill: { type: "gradient", color: "#9ff0e3", to: "#0b7f73" }, eyes: "happy", mouth: "grin", accessory: "sprout", accent: "#4cc27a", blush: true, background: "soft", emoji: "" },
+    personality: {
+      ...defaultPersonality(),
+      tone: "playful",
+      emoji: "lots",
+      reply_length: "medium",
+      greeting: "Hey! I'm Pip. Stuck on something in the docs? Ask me anything 🌱",
+      handoff_message: "Ooh, that one needs a human. Fetching an engineer for you now!",
+      instructions: "You help developers with the Margin API and SDKs. Link the docs page for every answer. Ask for the SDK version when something fails.",
+      blocked_topics: ["unreleased features"],
+    },
+    created_at: ago(40 * DAY),
+    updated_at: ago(3 * DAY),
+  });
+  const concierge = newBot("Margin Concierge", {
+    role: "Pressroom publishing desk",
+    position: 2,
+    look: { kind: "built", shape: "circle", fill: { type: "solid", color: "#16151c", to: "#16151c" }, eyes: "glasses", mouth: "smile", accessory: "none", accent: "#f6b81a", blush: false, background: "ring", emoji: "" },
+    personality: {
+      ...defaultPersonality(),
+      tone: "professional",
+      reply_length: "detailed",
+      greeting: "Good day. How may I help with your publication?",
+      handoff_message: "I'm passing this to our publishing team, who will reply here shortly.",
+      instructions: "Pressroom is a publishing platform for newsletters and magazines. Payouts run on the 1st and 15th. Custom domains need a CNAME to pressroom.app.",
+      sign_off: "Kind regards,\nThe Pressroom desk",
+    },
+    created_at: ago(60 * DAY),
+    updated_at: ago(9 * DAY),
+  });
+  ws.bots = [ollie, pip, concierge];
+  docsWidget.bot_id = pip.id;
+  pressWidget.bot_id = concierge.id;
+  pressroom.bot_id = concierge.id;
+  for (const w of ws.widgets) ws.widgetSecrets[w.id] = `wsec_${uuid().replace(/-/g, "")}`;
+  ws.widget = marketingSite.settings;
+
+  // Routing rules, first match wins.
+  const rule = (name: string, position: number, match: RoutingRule["match"], conditions: RoutingRule["conditions"], team: Parameters<typeof teamId>[0], run_count: number, enabled = true): RoutingRule => ({
+    id: uuid(),
+    name,
+    enabled,
+    position,
+    run_count,
+    match,
+    conditions,
+    team_id: teamId(team)!,
+    created_at: ago((150 - position * 20) * DAY),
+    updated_at: ago((20 - position * 3) * DAY),
+  });
+  ws.routingRules = [
+    rule("Invoices to Billing", 0, "any", [
+      { field: "subject", op: "contains", value: "invoice" },
+      { field: "subject", op: "contains", value: "refund" },
+      { field: "body", op: "contains", value: "VAT" },
+    ], "Billing", 214),
+    rule("GDPR requests to Legal", 1, "any", [
+      { field: "subject", op: "contains", value: "GDPR" },
+      { field: "subject", op: "contains", value: "DPA" },
+      { field: "body", op: "contains", value: "right to erasure" },
+      { field: "body", op: "contains", value: "data processing agreement" },
+    ], "Legal", 31),
+    rule("Vulnerability reports to Security", 2, "any", [
+      { field: "subject", op: "contains", value: "vulnerability" },
+      { field: "subject", op: "contains", value: "disclosure" },
+      { field: "body", op: "contains", value: "CVE-" },
+      { field: "topic", op: "equals", value: docsTopics[1].id },
+    ], "Security", 9),
+    rule("Partner domains to Partnerships", 3, "any", [
+      { field: "from_domain", op: "equals", value: "copperleaf.dev" },
+      { field: "from_domain", op: "equals", value: "fjord.ai" },
+    ], "Partnerships", 12),
+    rule("Contract questions, Ollie decides", 4, "all", [
+      { field: "channel", op: "equals", value: "email" },
+      { field: "ai_decide", op: "gt", value: "0.8", question: "Is the customer asking about a contract, a privacy policy or another legal matter?" },
+    ], "Legal", 0, false),
+  ];
 
   // Companies and contacts.
   ws.companies = COMPANIES.map((c, i) => ({
@@ -385,9 +663,10 @@ function seedFieldnote(): WsData {
       email,
       name,
       phone: chance(0.4) ? `+49 30 ${int(1000000, 9999999)}` : "",
-      // Roughly a third have a picture: Gravatar for most, the verified chat widget for some.
+      // Roughly a third have a picture: the verified chat widget's for most, an agent's upload for
+      // some. Gravatar pictures is off in this workspace, so none come from Gravatar.
       avatar_url: i % 3 === 0 ? portrait(email) : null,
-      avatar_source: i % 3 === 0 ? (i % 2 === 0 ? "gravatar" : "widget") : null,
+      avatar_source: i % 3 === 0 ? (i % 2 === 0 ? "widget" : "upload") : null,
       company: company ? { id: company.id, name: company.name, domain: company.domain, avatar_url: company.avatar_url } : null,
       external_id: chance(0.5) ? `usr_${int(10000, 99999)}` : null,
       notes: i === 0 ? "IT lead. Prefers email, very responsive. Escalate SSO issues to Jonas." : "",
@@ -499,6 +778,60 @@ function seedFieldnote(): WsData {
     if (chance(0.22) && t.priority !== "urgent") t.sla = null;
   });
 
+  // Work for the private teams, Partnerships and the second brand.
+  const extra: {
+    subject: string;
+    contact: number;
+    to: string;
+    mailbox: Mailbox;
+    team: Parameters<typeof teamId>[0];
+    status: TicketStatus;
+    priority: Priority;
+    assignee: TeamKey | null;
+    hours: number;
+    body: string;
+    channel?: "email" | "chat";
+    widget?: Widget;
+    page?: string;
+    topic?: string;
+  }[] = [
+    { subject: "GDPR data access request", contact: 17, to: "privacy@margin.app", mailbox: legal, team: "Legal", status: "open", priority: "normal", assignee: null, hours: 5, body: "Under Article 15 of the GDPR I'd like a copy of all personal data you hold about me, including notes your team wrote." },
+    { subject: "Subprocessor list for our vendor review", contact: 1, to: "legal@margin.app", mailbox: legal, team: "Legal", status: "pending", priority: "normal", assignee: "lea", hours: 30, body: "Our procurement team needs your current list of subprocessors and where each one stores data." },
+    { subject: "Please delete my data under GDPR", contact: 22, to: "support@margin.app", mailbox: support, team: "Legal", status: "open", priority: "high", assignee: null, hours: 2, body: "I closed my account last month. Please confirm you have deleted my data, under my right to erasure." },
+    { subject: "Responsible disclosure: stored XSS in shared note titles", contact: 26, to: "security@margin.app", mailbox: security, team: "Security", status: "open", priority: "urgent", assignee: "jonas", hours: 3, body: "A note title with an SVG payload runs script when the shared link is opened. Proof of concept attached on request. I'll wait 90 days before publishing." },
+    { subject: "Open redirect on the sign-in page", contact: 29, to: "support@margin.app", mailbox: support, team: "Security", status: "open", priority: "high", assignee: null, hours: 9, body: "The next= parameter on /login accepts any domain. Similar to CVE-2024-1234 in other apps. Happy to share details privately." },
+    { subject: "Found an API key in a docs example", contact: 33, to: "", mailbox: support, team: "Security", status: "pending", priority: "high", assignee: "priya", hours: 20, body: "The webhook guide shows a key that looks real. You may want to rotate it.", channel: "chat", widget: docsWidget, page: "https://docs.margin.app/guides/webhooks", topic: docsTopics[1].id },
+    { subject: "Reseller agreement for the Nordics", contact: 9, to: "partners@margin.app", mailbox: partners, team: "Partnerships", status: "open", priority: "normal", assignee: "sam", hours: 26, body: "We'd like to resell Margin to our customers in Norway and Sweden. Who should we talk to about terms?" },
+    { subject: "Co-marketing webinar in November", contact: 4, to: "support@margin.app", mailbox: support, team: "Partnerships", status: "pending", priority: "low", assignee: "sam", hours: 50, body: "Paperplane would love to run a joint webinar about note-taking for startups. Interested?" },
+    { subject: "Newsletter scheduled for 9:00 went out at 10:00", contact: 14, to: "hello@pressroom.app", mailbox: pressroom, team: "Support", status: "open", priority: "high", assignee: null, hours: 4, body: "My Tuesday issue was scheduled for 9:00 Berlin time but subscribers got it an hour late." },
+    { subject: "Custom domain for my publication", contact: 18, to: "", mailbox: pressroom, team: "Support", status: "open", priority: "normal", assignee: "priya", hours: 7, body: "I added the CNAME record two days ago but the domain still shows as pending.", channel: "chat", widget: pressWidget, page: "https://app.pressroom.app/settings/domain" },
+    { subject: "Import subscribers from Substack", contact: 21, to: "support@pressroom.app", mailbox: pressroom, team: "Support", status: "pending", priority: "normal", assignee: "sam", hours: 28, body: "I exported my list from Substack as CSV. The import says 0 subscribers found." },
+    { subject: "Refund for a paid subscriber", contact: 24, to: "hello@pressroom.app", mailbox: pressroom, team: "Billing", status: "open", priority: "normal", assignee: null, hours: 11, body: "A reader paid twice for an annual subscription. How do I refund one of the charges?" },
+    { subject: "Pricing question", contact: 27, to: "", mailbox: support, team: "Billing", status: "open", priority: "normal", assignee: null, hours: 1, body: "Is the Business plan billed per member or per workspace?", channel: "chat", widget: marketingSite, page: "https://margin.app/pricing", topic: marketingTopics[0].id },
+  ];
+  const extraMeta = new Map<string, (typeof extra)[number]>();
+  for (const x of extra) {
+    const c = ws.contacts[x.contact % ws.contacts.length];
+    const t = newTicket(ws, {
+      subject: x.subject,
+      contact: contactRef(c),
+      channel: x.channel ?? "email",
+      priority: x.priority,
+      mailbox_id: x.mailbox.id,
+      assignee: x.assignee ? userRef(uid(x.assignee)) : null,
+      team_id: teamId(x.team),
+      created_at: ago(x.hours * HOUR),
+    });
+    extraMeta.set(t.id, x);
+    if (x.assignee) addActivity(ws, t, "assigned", { from: null, to: userRef(uid(x.assignee)) }, null, iso(Date.parse(t.created_at) + 60_000), false);
+    addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hi,\n\n${x.body}\n\n${c.name.split(" ")[0]}`), at: t.created_at }, { publish: false });
+    if (x.status === "pending" && x.assignee) {
+      const who = TEAM.find((p) => p.key === x.assignee)!.name.split(" ")[0];
+      addMessage(ws, t, { kind: "reply", direction: "outbound", html: textToHtml(`Hi ${c.name.split(" ")[0]},\n\nThanks, I'm on it and will get back to you shortly.\n\n${who}`), user: userRef(uid(x.assignee)), at: iso(Date.parse(t.created_at) + 40 * MIN) }, { publish: false });
+    }
+    finalize(ws, t, x.status);
+  }
+
   // Make one generated open, unassigned, high ticket close to its first-response deadline.
   const dueSoon = ws.tickets.find((t) => t.status === "open" && !t.assignee && t.number < 1061 && !t.first_responded_at);
   if (dueSoon) {
@@ -510,6 +843,78 @@ function seedFieldnote(): WsData {
     dueSoon.last_customer_message_at = iso(created);
     dueSoon.waiting_since = iso(created);
     dueSoon.sla = computeSla(ws, dueSoon, false);
+  }
+
+  // Sender checks: a website contact form, and a reply that failed its domain's authentication.
+  {
+    const visitor = ws.contacts.find((c, i) => i > 12 && !c.company) ?? ws.contacts[13];
+    const form = newTicket(ws, {
+      subject: "Question about team pricing",
+      contact: contactRef(visitor),
+      channel: "email",
+      priority: "normal",
+      mailbox_id: support.id,
+      assignee: null,
+      team_id: teamId("Support"),
+      tags: [],
+      created_at: ago(35 * MIN),
+    });
+    addMessage(
+      ws,
+      form,
+      {
+        kind: "reply",
+        direction: "inbound",
+        form_sender: "website@margin.app",
+        html: textToHtml(`Name: ${visitor.name}\nTopic: Pricing\n\nWe're a team of 14 writers. Do you offer a discount for nonprofits, and can we pay yearly by invoice?`),
+        at: ago(35 * MIN),
+      },
+      { publish: false },
+    );
+    finalize(ws, form, "open");
+
+    const payer = ws.contacts[2];
+    const domain = payer.email?.split("@")[1] ?? "example.com";
+    const bank = newTicket(ws, {
+      subject: "Invoice copy for March",
+      contact: contactRef(payer),
+      channel: "email",
+      priority: "normal",
+      mailbox_id: billing.id,
+      assignee: userRef(uid("lea")),
+      team_id: teamId("Billing"),
+      tags: [],
+      created_at: ago(3 * DAY),
+    });
+    seedActivities(ws, bank, uid("lea"), []);
+    const first = payer.name.split(" ")[0];
+    addMessage(
+      ws,
+      bank,
+      { kind: "reply", direction: "inbound", reply_to: `accounts@${domain}`, html: textToHtml(`Hi,\n\nCould you send us a copy of the March invoice? Our accounts team handles payments, so replies can go to them.\n\n${first}`), at: ago(3 * DAY) },
+      { publish: false },
+    );
+    addMessage(
+      ws,
+      bank,
+      { kind: "reply", direction: "outbound", user: userRef(uid("lea")), html: textToHtml(`Hi ${first},\n\nHere is the March invoice. Let me know if you need anything else.\n\nLea`), at: ago(3 * DAY - 2 * HOUR) },
+      { publish: false },
+    );
+    finalize(ws, bank, "solved");
+    addMessage(
+      ws,
+      bank,
+      {
+        kind: "reply",
+        direction: "inbound",
+        auth_failed: true,
+        reply_to: "payments@ledger-transfers.net",
+        html: textToHtml(`Hi Lea,\n\nOur bank details have changed. Please update them before the next invoice and confirm the change by replying to this email.\n\n${first}`),
+        at: ago(50 * MIN),
+      },
+      { publish: false },
+    );
+    bank.updated_at = bank.last_message_at;
   }
 
   // Spam.
@@ -572,12 +977,89 @@ function seedFieldnote(): WsData {
     );
   }
 
+  // Where each ticket came in and how it found its team (contracts/teams.md "Routing").
+  const dpa = byNumber(ws, 1063);
+  if (dpa) {
+    // Maya answered first, then moved it to Legal: the reply address followed the team.
+    dpa.team_id = teamId("Legal");
+    dpa.assignee = userRef(uid("lea"));
+    dpa.mailbox_id = legal.id;
+    addActivity(ws, dpa, "team_changed", { from: null, to: "Legal", via: "agent", mailbox_from: support.email, mailbox_to: legal.email }, userRef(uid("maya")), iso(Date.parse(dpa.created_at) + 2 * HOUR + 10 * MIN), false);
+  }
+  const rulesInOrder = ws.routingRules.filter((r) => r.enabled).sort((a, b) => a.position - b.position);
+  const byRule = (t: Ticket, from: string) => {
+    const body = (ws.messages.find((m) => m.ticket_id === t.id && m.direction === "inbound")?.body_html ?? "").toLowerCase();
+    const domain = from.split("@")[1] ?? "";
+    return rulesInOrder.find((r) =>
+      r.conditions.some((c) =>
+        c.field === "subject" ? t.subject.toLowerCase().includes(c.value.toLowerCase()) : c.field === "body" ? body.includes(c.value.toLowerCase()) : c.field === "from_domain" ? domain === c.value : false,
+      ),
+    );
+  };
+  for (const t of ws.tickets) {
+    const x = extraMeta.get(t.id);
+    const from = t.contact?.email ?? "";
+    t.widget_id = null;
+    t.page_url = "";
+    t.routed = null;
+    t.received_at = "";
+    t.origin_mailbox_id = null;
+    if (t.channel === "chat") {
+      const w = x?.widget ?? (chance(0.7) ? marketingSite : docsWidget);
+      t.widget_id = w.id;
+      t.brand_id = w.brand_id;
+      t.page_url = x?.page ?? (w === docsWidget ? pick(["https://docs.margin.app/api/rate-limits", "https://docs.margin.app/guides/sso", "https://docs.margin.app/guides/webhooks"]) : pick(["https://margin.app/pricing", "https://margin.app/", "https://margin.app/features/search"]));
+      const tp = w.settings.topics.find((y) => y.id === x?.topic) ?? (t.team_id ? w.settings.topics.find((y) => y.team_id === t.team_id) : undefined);
+      t.routed = t.team_id ? (tp ? { via: "topic" } : { via: "widget" }) : null;
+      if (tp?.team_id === teamId("Security")) t.routed = { via: "rule", rule_id: ws.routingRules[2].id, rule_name: ws.routingRules[2].name };
+      // A chat takes the brand's address for its team when it first needs one.
+      t.mailbox_id = ws.mailboxes.find((m) => m.brand_id === t.brand_id && m.team_id === t.team_id)?.id ?? (w.brand_id === pressBrand.id ? pressroom.id : support.id);
+      continue;
+    }
+    const arrived = ws.mailboxes.find((m) => m.id === t.mailbox_id) ?? support;
+    t.origin_mailbox_id = arrived.id;
+    t.brand_id = arrived.brand_id;
+    t.received_at = x?.to || (arrived.aliases.length && chance(0.25) ? arrived.aliases[0] : arrived.email);
+    if (t.channel === "api" || t.channel === "portal") {
+      t.routed = t.team_id ? { via: "api" } : null;
+      continue;
+    }
+    if (t === dpa) {
+      t.routed = { via: "agent", by: userRef(uid("maya"))! };
+      continue;
+    }
+    // Billing mail written to support@ was moved by "Invoices to Billing"; its reply address followed.
+    const r = !x && t.team_id === teamId("Billing") && arrived === billing && /invoice|refund/i.test(t.subject) && chance(0.6) ? byRule(t, from) : undefined;
+    if (r && r.team_id === t.team_id) {
+      t.origin_mailbox_id = support.id;
+      t.received_at = support.email;
+      t.routed = { via: "rule", rule_id: r.id, rule_name: r.name };
+      continue;
+    }
+    if (x?.team === "Partnerships" && x.assignee === "sam" && arrived === support) {
+      t.routed = { via: "agent", by: userRef(uid("sam"))! };
+      continue;
+    }
+    const rr = t.team_id && arrived.team_id !== t.team_id ? byRule(t, from) : undefined;
+    if (rr && rr.team_id === t.team_id) {
+      t.routed = { via: "rule", rule_id: rr.id, rule_name: rr.name };
+      const box = ws.mailboxes.find((m) => m.brand_id === t.brand_id && m.team_id === t.team_id);
+      if (box) t.mailbox_id = box.id;
+    } else if (t.team_id) t.routed = arrived.team_id === t.team_id ? { via: "address" } : { via: "triage" };
+  }
+
   // Saved replies, views, automations.
-  ws.savedReplies = SAVED_REPLIES.map((r, i) => ({ id: uuid(), title: r.title, shortcut: r.shortcut, body_html: r.body, created_at: ago((100 - i) * DAY), updated_at: ago(int(1, 30) * DAY) }));
+  ws.savedReplies = SAVED_REPLIES.map((r, i) => ({ id: uuid(), title: r.title, shortcut: r.shortcut, body_html: r.body, team_id: r.shortcut === "refund" ? teamId("Billing") : null, created_at: ago((100 - i) * DAY), updated_at: ago(int(1, 30) * DAY) }));
+  ws.savedReplies.push(
+    { id: uuid(), title: "DPA and subprocessors", shortcut: "dpa", body_html: "<p>Our data processing agreement and the current subprocessor list are attached. Sign the DPA and reply with the PDF, and we'll countersign within two working days.</p>", team_id: teamId("Legal"), created_at: ago(50 * DAY), updated_at: ago(6 * DAY) },
+    { id: uuid(), title: "Disclosure received", shortcut: "vuln", body_html: "<p>Thanks for the report. We've reproduced it and are working on a fix. We'll let you know when it ships and credit you in our security page if you like.</p>", team_id: teamId("Security"), created_at: ago(40 * DAY), updated_at: ago(12 * DAY) },
+    { id: uuid(), title: "Pressroom custom domains", shortcut: "domain", body_html: "<p>DNS changes can take up to 48 hours. Once the CNAME points at <strong>domains.pressroom.app</strong>, the domain switches to active on its own.</p>", team_id: teamId("Support"), created_at: ago(30 * DAY), updated_at: ago(3 * DAY) },
+  );
   ws.views = [
     { id: uuid(), name: "Urgent", shared: true, filters: { status: ["open", "pending"], priority: ["urgent", "high"] }, position: 0 },
-    { id: uuid(), name: "Billing queue", shared: true, filters: { status: ["open", "pending", "on_hold"], team_id: teamId("Billing")! }, position: 1 },
+    { id: uuid(), name: "Billing queue", shared: false, team_id: teamId("Billing"), filters: { status: ["open", "pending", "on_hold"], team_id: teamId("Billing")! }, position: 1 },
     { id: uuid(), name: "Waiting on engineering", shared: false, filters: { status: ["on_hold", "pending"], tag: "Bug" }, position: 2 },
+    { id: uuid(), name: "Legal requests due", shared: false, team_id: teamId("Legal"), filters: { status: ["open", "pending"], team_id: teamId("Legal")! }, position: 3 },
   ];
   const tagName = (n: string) => n;
   const autos: Automation[] = [
@@ -625,13 +1107,16 @@ function seedFieldnote(): WsData {
   ws.automations = autos;
 
   // Knowledge base.
-  ws.collections = COLLECTIONS.map((c, i): KbCollection => ({ id: uuid(), name: c.name, slug: c.slug, description: c.description, position: i, article_count: 0 }));
+  // Most of it is shared by every brand; Pressroom has its own Publishing collection and one article of its own.
+  const brandOf = (slug?: string) => (slug ? (ws.brands.find((b) => b.slug === slug)?.id ?? null) : null);
+  ws.collections = COLLECTIONS.map((c, i): KbCollection => ({ id: uuid(), name: c.name, slug: c.slug, description: c.description, position: i, article_count: 0, brand_id: brandOf(c.brand) }));
   ws.articles = ARTICLES.map((a, i): KbArticle => {
     const col = ws.collections[a.collection];
     col.article_count++;
     const updated = ago(int(1, 60) * DAY);
     return {
       id: uuid(),
+      brand_id: brandOf(a.brand),
       collection_id: col.id,
       title: a.title,
       slug: slugify(a.title),
@@ -648,11 +1133,14 @@ function seedFieldnote(): WsData {
   // API keys and webhooks.
   const keys: ApiKey[] = [
     { id: uuid(), name: "Zapier", prefix: "od_live_Zq4kP2mA", scopes: ["tickets:read", "tickets:write", "contacts:read"], last_used_at: ago(3 * MIN), expires_at: null, created_at: ago(120 * DAY), created_by: userRef(uid("maya")) },
-    { id: uuid(), name: "Data warehouse export", prefix: "od_live_8sTnW7cE", scopes: ["tickets:read", "contacts:read", "kb:read"], last_used_at: ago(9 * HOUR), expires_at: iso(NOW + 60 * DAY), created_at: ago(45 * DAY), created_by: userRef(uid("jonas")) },
+    { id: uuid(), name: "Data warehouse export", prefix: "od_live_8sTnW7cE", scopes: ["tickets:read", "contacts:read", "kb:read"], last_used_at: ago(9 * HOUR), expires_at: iso(NOW + 60 * DAY), created_at: ago(45 * DAY), created_by: userRef(uid("jonas")), private_team_ids: [] },
+    { id: uuid(), name: "Legal hold archive", prefix: "od_live_Lg2Hq9Xa", scopes: ["tickets:read"], last_used_at: ago(2 * DAY), expires_at: null, created_at: ago(20 * DAY), created_by: userRef(uid("jonas")), private_team_ids: [teamId("Legal")!], private_teams: [{ id: teamId("Legal")!, name: "Legal", granted_by: userRef(uid("jonas")) }] },
   ];
+  keys[0].private_team_ids = [];
   ws.apiKeys = keys;
   const hooks: Webhook[] = [
-    { id: uuid(), url: "https://hooks.fieldnote.app/opendesk", description: "Internal event bus", events: ["ticket.created", "ticket.updated", "message.created"], enabled: true, created_at: ago(100 * DAY) },
+    { id: uuid(), url: "https://hooks.margin.app/opendesk", description: "Internal event bus", events: ["ticket.created", "ticket.updated", "message.created"], enabled: true, created_at: ago(100 * DAY),
+      private_team_ids: [teamId("Security")!], private_teams: [{ id: teamId("Security")!, name: "Security", granted_by: userRef(uid("priya")) }] },
     { id: uuid(), url: "https://hooks.slack.com/services/T0001/B0002/XXXX", description: "Urgent tickets to #support-alerts", events: ["ticket.created"], enabled: true, created_at: ago(30 * DAY) },
   ];
   ws.webhooks = hooks;
@@ -678,18 +1166,18 @@ function seedFieldnote(): WsData {
   const actions: [string, string, () => Record<string, unknown>][] = [
     ["auth.login", "user", () => ({})],
     ["auth.login_failed", "user", () => ({ reason: "invalid_credentials" })],
-    ["member.invited", "invitation", () => ({ email: "rafael@fieldnote.app", role: "agent" })],
+    ["member.invited", "invitation", () => ({ email: "rafael@margin.app", role: "agent" })],
     ["member.role_changed", "member", () => ({ from: "agent", to: "admin" })],
     ["api_key.created", "api_key", () => ({ name: "Zapier" })],
-    ["webhook.created", "webhook", () => ({ url: "https://hooks.fieldnote.app/opendesk" })],
-    ["mailbox.connected", "mailbox", () => ({ email: "support@fieldnote.app", kind: "google" })],
-    ["mailbox.disconnected", "mailbox", () => ({ email: "sales@fieldnote.app" })],
+    ["webhook.created", "webhook", () => ({ url: "https://hooks.margin.app/opendesk" })],
+    ["mailbox.connected", "mailbox", () => ({ email: "support@margin.app", kind: "google" })],
+    ["mailbox.disconnected", "mailbox", () => ({ email: "sales@margin.app" })],
     ["auth.totp_enabled", "user", () => ({})],
     ["auth.password_changed", "user", () => ({})],
     ["workspace.updated", "workspace", () => ({ fields: ["settings.csat_enabled"] })],
     ["automation.updated", "automation", () => ({ name: "Escalate SSO outages" })],
     ["sla_policy.created", "sla_policy", () => ({ name: "Urgent" })],
-    ["member.removed", "member", () => ({ email: "alex@fieldnote.app" })],
+    ["member.removed", "member", () => ({ email: "alex@margin.app" })],
   ];
   const ips = ["84.152.33.17", "62.214.8.201", "91.64.120.5", "185.12.44.9", "2a02:8109:9a40::1c"];
   const audit: AuditLog[] = [];
@@ -719,10 +1207,12 @@ function seedFieldnote(): WsData {
     { id: uuid(), type: "mentioned", ticket: nref(byNum(1072)), data: { actor: jonas }, read_at: null, created_at: ago(61 * MIN) },
     { id: uuid(), type: "customer_replied", ticket: nref(byNum(1068)), data: { contact: { name: "Tomás García" } }, read_at: null, created_at: ago(35 * MIN) },
     { id: uuid(), type: "sla_breached", ticket: nref(byNum(1067)), data: { kind: "first_response" }, read_at: null, created_at: ago(2 * HOUR) },
+    // Jonas (an admin) joined Partnerships, which Maya co-leads.
+    { id: uuid(), type: "team_joined", ticket: null, data: { team_id: teamId("Partnerships"), team: { id: teamId("Partnerships"), name: "Partnerships", private: false }, user: userRef(uid("jonas")), by: uid("jonas") }, read_at: null, created_at: ago(3 * HOUR) },
     { id: uuid(), type: "assigned", ticket: nref(byNum(1062)), data: { actor: jonas }, read_at: ago(8 * HOUR), created_at: ago(9 * HOUR) },
     { id: uuid(), type: "assigned", ticket: nref(byNum(1068)), data: { actor: null }, read_at: ago(4 * HOUR), created_at: ago(5 * HOUR) },
     { id: uuid(), type: "mentioned", ticket: nref(byNum(1070)), data: { actor: userRef(uid("lea")) }, read_at: ago(20 * HOUR), created_at: ago(25 * HOUR) },
-    { id: uuid(), type: "customer_replied", ticket: nref(byNum(1063)), data: { contact: { name: "Hugo Moreau" } }, read_at: ago(60 * HOUR), created_at: ago(68 * HOUR) },
+    { id: uuid(), type: "customer_replied", ticket: nref(byNum(1065)), data: { contact: { name: "Hugo Moreau" } }, read_at: ago(60 * HOUR), created_at: ago(68 * HOUR) },
   ];
 
   ws.csat.demo = { ticket_id: byNum(1066).id, score: null, comment: "" };
@@ -744,8 +1234,24 @@ function seedFieldnote(): WsData {
   place(byNum(1068), meta("lea", "viewing"));
 
   seedTicketTypes(ws);
-  seedFieldnoteFields(ws, { maya: uid("maya"), jonas: uid("jonas"), lea: uid("lea"), priya: uid("priya") });
+  seedMarginFields(ws, { maya: uid("maya"), jonas: uid("jonas"), lea: uid("lea"), priya: uid("priya") });
   return ws;
+}
+
+const byNumber = (ws: WsData, n: number) => ws.tickets.find((t) => t.number === n);
+
+/** A one-brand workspace without teams: every ticket arrived at its mailbox. */
+function placeSimple(ws: WsData) {
+  const brandId = ws.brands[0]?.id ?? "";
+  for (const t of ws.tickets) {
+    const box = ws.mailboxes.find((m) => m.id === t.mailbox_id);
+    t.brand_id = brandId;
+    t.widget_id = null;
+    t.origin_mailbox_id = box?.id ?? null;
+    t.received_at = box?.email ?? "";
+    t.page_url = "";
+    t.routed = null;
+  }
 }
 
 function seedActivities(ws: WsData, t: Ticket, assigneeId: string | null, tags: string[]) {
@@ -797,6 +1303,10 @@ function seedLumen(): WsData {
       forwarding_address: "lumen-hello-a1b2@in.opendesk.sh",
       config: {},
       team_id: null,
+      brand_id: "",
+      aliases: [],
+      from_name_format: "{agent} at {mailbox}",
+      private: false,
       signature_html: "",
       auto_reply_enabled: false,
       auto_reply_subject: "",
@@ -836,11 +1346,66 @@ function seedLumen(): WsData {
     addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hello,\n\n${subject}. Can you help?`), at: t.created_at }, { publish: false });
     if (i === 3) t.status = "pending";
   });
+  seedDefaultBrand(ws);
+  placeSimple(ws);
+  return ws;
+}
+
+/** The email of the second seeded account: the same person, signed in with another address (multi-account). */
+export const SECOND_ACCOUNT_EMAIL = "maya@harbor.studio";
+
+/** A second account for Maya, owner of a small side workspace, so the account switcher has something to group. */
+function seedHarbor(): WsData {
+  const u: User = {
+    id: uuid(),
+    email: SECOND_ACCOUNT_EMAIL,
+    name: "Maya Chen",
+    avatar_url: null,
+    avatar_source: null,
+    email_verified: true,
+    totp_enabled: false,
+    created_at: ago(90 * DAY),
+  };
+  db.users.push(u);
+  const ws = baseWorkspace(uuid(), "Harbor Studio", "harbor");
+  ws.workspace.settings = { timezone: "Europe/Lisbon", help_center_enabled: false, csat_enabled: false, auto_assign: "none" };
+  ws.members = [{ user_id: u.id, role: "owner", created_at: ago(90 * DAY), availability: "online" }];
+  ws.sla = [{ id: uuid(), name: "Default", priority: null, first_response_minutes: 480, resolution_minutes: 4320, business_hours: false, enabled: true, position: 0 }];
+  seedDefaultLabels(ws);
+  const names = ["Inês Duarte", "Felix Hartmann", "Grace Okoye"];
+  ws.contacts = names.map((name) => ({
+    id: uuid(),
+    email: `${name.split(" ")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}@example.com`,
+    name,
+    phone: "",
+    avatar_url: null,
+    avatar_source: null,
+    company: null,
+    external_id: null,
+    notes: "",
+    custom: {},
+    tags: [],
+    fields: {},
+    blocked: false,
+    ticket_count: 1,
+    created_at: ago(20 * DAY),
+    updated_at: ago(2 * DAY),
+  }));
+  const subjects = ["Quote for the spring catalogue", "Can we move Thursday's shoot?", "Invoice 0042 has the old address"];
+  subjects.forEach((subject, i) => {
+    const t = newTicket(ws, { subject, contact: contactRef(ws.contacts[i]), channel: "email", created_at: ago((i + 1) * 5 * HOUR) });
+    t.number = 41 + i;
+    addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hi Maya,\n\n${subject}. Let me know.`), at: t.created_at }, { publish: false });
+  });
+  seedDefaultBrand(ws);
+  placeSimple(ws);
   return ws;
 }
 
 export function seed() {
   reseed(0x2f6e2b1);
   seedUsers();
-  db.workspaces = [seedFieldnote(), seedLumen()];
+  db.notificationSettings = {};
+  db.workspaces = [seedMargin(), seedLumen()];
+  db.workspaces.push(seedHarbor());
 }

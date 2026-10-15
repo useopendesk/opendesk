@@ -23,9 +23,9 @@ export function setAIKey(ws: WsData, k: MockAIKey | null) {
   else keys.delete(ws);
 }
 
-const m = (id: string, name: string, vendor: string, context_length: number | null = null): AIModel => ({ id, name, vendor, context_length, credits_per_mtok: null });
+const m = (id: string, name: string, vendor: string, context_length: number | null = null): AIModel => ({ id, name, vendor, context_length, usd_per_mtok: null, typical_reply_usd: null });
 
-/** The models each provider lists for a key (no credit prices: calls on a key use none). */
+/** The models each provider lists for a key (no prices: the workspace pays its provider). */
 export const OWN_MODELS: Record<AIKeyKind, AIModel[]> = {
   openrouter: [
     m("anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5", "Anthropic", 1_000_000),
@@ -64,7 +64,7 @@ export const KEY_LABEL: Record<AIKeyKind, string> = { openrouter: "OpenRouter", 
 
 /**
  * Before a call on the key: a key the provider rejects fails the call like an
- * outage (502), never falling back to credits, and tells admins at most hourly.
+ * outage (502), never falling back to the AI balance, and tells admins at most hourly.
  */
 export function checkKeyOnUse(ws: WsData) {
   const k = aiKeyOf(ws);

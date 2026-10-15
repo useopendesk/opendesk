@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/useopendesk/opendesk/internal/notifyprefs"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -27,28 +28,63 @@ type svc struct {
 	devURL bool         // development instance: webhooks may target http://localhost
 	// webauthn is the passkey relying party derived from APP_URL; nil turns passkeys off.
 	webauthn *webauthn.WebAuthn
+	// push is the relay client (push = relay) and, on a relay, the instance key cache.
+	push *pushSender
 }
 
 func newSvc(d *deps.Deps) *svc {
 	dev := !d.Cfg.IsProduction()
-	return &svc{d: d, oauth: newOAuthProviders(d.Cfg), hooks: webhookClient(dev), devURL: dev, webauthn: newWebAuthn(d.Cfg)}
+	s := &svc{d: d, oauth: newOAuthProviders(d.Cfg), hooks: webhookClient(dev), devURL: dev, webauthn: newWebAuthn(d.Cfg)}
+	s.push = s.newPushSender()
+	notifyprefs.Configure(d.Cfg.NotifyEmail)
+	return s
 }
 
 // reqInfo is what anonymous handlers need from the raw request.
 type reqInfo struct {
 	IP        string
 	UserAgent string
+	// Client is the app the request comes from: web, desktop or ios (sessions.client).
+	Client string
+	// Native marks a native request (contracts/native.md): OD-Client ios/<version> and
+	// no Origin header. Only a native request receives a refresh token in a body.
+	Native bool
+	// Cookies are the refresh cookies the browser sent, one per signed-in account (and
+	// the legacy single-account cookie). Native requests never read them.
+	Cookies []presentedCookie
 }
+
+// ClientHeader names the calling app: ios/<version> or desktop/<version>.
+const ClientHeader = "OD-Client"
+
+// desktopUA is the user agent suffix of the desktop shell.
+const desktopUA = "opendesk-desktop/"
 
 type reqInfoKey struct{}
 
 func (s *svc) withReqInfo(ctx huma.Context, next func(huma.Context)) {
 	ri := reqInfo{}
 	if r, _ := humachi.Unwrap(ctx); r != nil {
-		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy)(r)
-		ri.UserAgent = truncate(r.UserAgent(), 400)
+		ri = s.readReqInfo(r)
 	}
 	next(huma.WithValue(ctx, reqInfoKey{}, ri))
+}
+
+// readReqInfo reads the caller's address, user agent and client. Browsers always send
+// Origin on POST, so a request with Origin is never native, whatever OD-Client says.
+func (s *svc) readReqInfo(r *http.Request) reqInfo {
+	ri := reqInfo{IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: truncate(r.UserAgent(), 400), Client: "web"}
+	od := r.Header.Get(ClientHeader)
+	switch {
+	case strings.HasPrefix(od, "ios/") && r.Header.Get("Origin") == "":
+		ri.Client, ri.Native = "ios", true
+	case strings.HasPrefix(od, "desktop/") || strings.Contains(r.UserAgent(), desktopUA):
+		ri.Client = "desktop"
+	}
+	if !ri.Native {
+		ri.Cookies = readRefreshCookies(r)
+	}
+	return ri
 }
 
 func requestInfo(ctx context.Context) reqInfo {
@@ -113,7 +149,7 @@ func requireRecentLogin(ctx context.Context, q db.Querier, p *auth.Principal) er
 }
 
 // RecentLoginWindow bounds how old a session may be for owner-level operations.
-const RecentLoginWindow = 12 * time.Hour
+const RecentLoginWindow = auth.RecentLoginWindow
 
 // requireUserWorkspace demands a signed-in member with at least role (API keys refused).
 func requireUserWorkspace(ctx context.Context, role auth.Role) (*auth.Principal, error) {

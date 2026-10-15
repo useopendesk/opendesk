@@ -1,0 +1,447 @@
+---
+/**
+ * The opendesk desktop app on Reports, 1:1 at 1280 x 804: AppWindow with
+ * ReportsPage in its work panel as the app lays it out at this size (KPI
+ * tiles, Volume over time beside Backlog, then the breakdown cards running
+ * under the fold). Every value follows web/src/pages/reports/ReportsPage.tsx
+ * and web/src/components/reports (VolumeChart, Bars, ChannelBars).
+ *
+ * The lines draw in when the stage first scrolls in. On the timeline
+ * (`data-seq`) the pointer reads three days off the chart, then leaves, and
+ * today's tickets tick up: the line's end rises and Created follows.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic, prioIcon, statusIcon, type Tone } from '../../app/icons';
+
+// lucide glyphs this page needs beyond the shared set (24 grid, stroke 2).
+const G: Record<string, string> = {
+  calendarDays: '<path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M8 13h.01"/><path d="M12 13h.01"/><path d="M16 13h.01"/><path d="M8 17h.01"/><path d="M12 17h.01"/><path d="M16 17h.01"/>',
+};
+const gl = (name: string, size: number, cls = '') =>
+  `<svg class="dm-ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${G[name]}</svg>`;
+
+// The last 30 days, Sun Sep 13 to today, Mon Oct 12. Today's created count
+// rises from `today[0]` to `today[1]` on the timeline.
+const today = [27, 30] as const;
+const created = [12, 36, 33, 31, 30, 26, 13, 11, 38, 35, 33, 32, 27, 14, 12, 40, 36, 34, 31, 28, 12, 10, 37, 35, 32, 33, 25, 13, 11];
+const solved = [10, 29, 35, 33, 31, 28, 12, 11, 32, 37, 34, 32, 29, 13, 12, 33, 39, 36, 32, 29, 13, 10, 31, 37, 34, 33, 27, 12, 11, 22];
+const start = Date.UTC(2026, 8, 13);
+const dayAt = (i: number) => new Date(start + i * 86400_000);
+const md = (i: number) => dayAt(i).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const wmd = (i: number) => dayAt(i).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+const createdAt = (k: 0 | 1) => [...created, today[k]];
+const sum = (a: number[]) => a.reduce((n, x) => n + x, 0);
+const nf = (n: number) => n.toLocaleString('en-US');
+
+const totals = [sum(createdAt(0)), sum(createdAt(1))];
+const solvedTotal = sum(solved);
+const avg = totals.map((t) => (t / 30).toFixed(1));
+const busiest = createdAt(1).reduce((m, v, i, a) => (v > a[m] ? i : m), 0);
+const rate = Math.round((solvedTotal / totals[1]) * 100);
+
+// VolumeChart at this width: the card body is 615px, the plot 539 x 240.
+const W = 615;
+const H = 240;
+const ML = 36;
+const MR = 40;
+const MT = 12;
+const AXIS = 28;
+const plotW = W - ML - MR;
+const top = 40;
+const ticks = [0, 10, 20, 30, 40];
+const last = 29;
+const x = (i: number) => ML + (i / last) * plotW;
+const y = (v: number) => MT + H - (v / top) * H;
+const r1 = (n: number) => Math.round(n * 100) / 100;
+
+/** Monotone cubic path (web/src/components/reports/useSize.ts). */
+function monotone(pts: [number, number][]) {
+  const n = pts.length;
+  const dx: number[] = [];
+  const m: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(pts[i + 1][0] - pts[i][0]);
+    m.push((pts[i + 1][1] - pts[i][1]) / (dx[i] || 1));
+  }
+  const t: number[] = [m[0]];
+  for (let i = 1; i < n - 1; i++) t.push(m[i - 1] * m[i] <= 0 ? 0 : (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]));
+  t.push(m[n - 2]);
+  let d = `M${r1(pts[0][0])},${r1(pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += `C${r1(pts[i][0] + h)},${r1(pts[i][1] + t[i] * h)} ${r1(pts[i + 1][0] - h)},${r1(pts[i + 1][1] - t[i + 1] * h)} ${r1(pts[i + 1][0])},${r1(pts[i + 1][1])}`;
+  }
+  return d;
+}
+const line = (vals: number[]) => monotone(vals.map((v, i) => [x(i), y(v)]));
+const area = (vals: number[]) => `${line(vals)}L${r1(x(last))},${y(0)}L${ML},${y(0)}Z`;
+const xTicks = [0, 5, 10, 15, 20, 25];
+
+// The days the pointer reads, in order.
+const hovers = [8, 15, 20];
+const hoverVars = hovers
+  .map((d, k) => `--h${k + 1}x:${r1(x(d))}px;--h${k + 1}a:${r1(y(created[d]))}px;--h${k + 1}b:${r1(y(solved[d]))}px`)
+  .join(';');
+
+/** A 12-point sparkline, 56 x 20 (VolumeChart Sparkline). */
+function spark(values: number[], w = 56) {
+  const v = values.slice(-12);
+  const hh = 20;
+  const max = Math.max(1, ...v);
+  const pts = v.map((n, i) => [(i / (v.length - 1)) * (w - 4) + 2, hh - 2 - (n / max) * (hh - 4)] as [number, number]);
+  return { d: monotone(pts), end: pts[pts.length - 1] };
+}
+
+interface Kpi {
+  label: string;
+  value: string | [string, string];
+  unit?: string;
+  delta?: { text: string; tone: Tone };
+  note?: string;
+  trend?: { values: number[]; tone: Tone };
+}
+const kpis: Kpi[] = [
+  { label: 'Created', value: [nf(totals[0]), nf(totals[1])], delta: { text: '↑4%', tone: 'gray' }, trend: { values: createdAt(0), tone: 'blue' } },
+  { label: 'Solved', value: nf(solvedTotal), delta: { text: '↑6%', tone: 'green' }, trend: { values: solved, tone: 'teal' } },
+  { label: 'Open now', value: '41', note: 'Right now' },
+  { label: 'First response', value: '38m', delta: { text: '↓12%', tone: 'green' }, note: 'Median' },
+  { label: 'Resolution', value: '5h 12m', delta: { text: '↓8%', tone: 'green' }, note: 'Median' },
+  { label: 'CSAT', value: '4.7', unit: '/ 5', delta: { text: '↑2%', tone: 'green' }, note: '212 ratings' },
+  { label: 'SLA breached', value: '4', delta: { text: '↓50%', tone: 'green' } },
+];
+
+interface BarRow { label: string; value: number; tone: Tone; icon: string }
+const channelGlyph = (c: 'email' | 'chat' | 'api' | 'portal') => {
+  const s = `stroke="var(--dm-${({ email: 'blue', chat: 'teal', api: 'violet', portal: 'indigo' } as const)[c]})" stroke-width="1.5"`;
+  const inner = {
+    email: `<rect x="1.75" y="3.25" width="12.5" height="9.5" rx="2" ${s}/><path d="M2.5 4.5L8 8.6l5.5-4.1" ${s} stroke-linejoin="round"/>`,
+    chat: `<path d="M3.75 2.75h8.5a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7.5L4.6 13.9a.5.5 0 0 1-.85-.36V11.7a2 2 0 0 1-2-2V4.75a2 2 0 0 1 2-2z" ${s} stroke-linejoin="round"/>`,
+    api: `<path d="M5.5 3.5C4 3.5 4 4.5 4 6s-1.5 2-1.5 2S4 8.5 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 4.5 12 6s1.5 2 1.5 2S12 8.5 12 10s0 2.5-1.5 2.5" ${s} stroke-linecap="round" stroke-linejoin="round"/>`,
+    portal: `<circle cx="8" cy="8" r="6" ${s}/><path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" ${s} stroke-linejoin="round"/>`,
+  }[c];
+  return `<svg class="dm-ic" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">${inner}</svg>`;
+};
+const email = Math.round(totals[1] * 0.62);
+const chat = Math.round(totals[1] * 0.27);
+const api = Math.round(totals[1] * 0.06);
+const channels: BarRow[] = [
+  { label: 'Email', value: email, tone: 'blue', icon: channelGlyph('email') },
+  { label: 'Chat', value: chat, tone: 'teal', icon: channelGlyph('chat') },
+  { label: 'API', value: api, tone: 'violet', icon: channelGlyph('api') },
+  { label: 'Portal', value: totals[1] - email - chat - api, tone: 'indigo', icon: channelGlyph('portal') },
+];
+const sevChip = (n: number, tone: Tone) => `<span class="dm-mono dm-sev dm-chip dm-t-${tone}">S${n}</span>`;
+const severities: BarRow[] = [
+  { label: 'Sev 1', value: 14, tone: 'red', icon: sevChip(1, 'red') },
+  { label: 'Sev 2', value: 61, tone: 'orange', icon: sevChip(2, 'orange') },
+  { label: 'Sev 3', value: 142, tone: 'amber', icon: sevChip(3, 'amber') },
+  { label: 'Sev 4', value: 168, tone: 'gray', icon: sevChip(4, 'gray') },
+  { label: 'No severity', value: totals[1] - 385, tone: 'gray', icon: '<span class="rpt-nosev"></span>' },
+];
+const priorities: BarRow[] = [
+  { label: 'Urgent', value: 4, tone: 'red', icon: prioIcon('urgent') },
+  { label: 'High', value: 9, tone: 'orange', icon: prioIcon('high') },
+  { label: 'Normal', value: 21, tone: 'blue', icon: prioIcon('normal') },
+  { label: 'Low', value: 7, tone: 'gray', icon: prioIcon('low') },
+];
+const labelChip = (name: string, tone: Tone) => `<span class="dm-label dm-chip dm-t-${tone}"><i></i>${name}</span>`;
+const labels: BarRow[] = [
+  { label: 'Bug', value: 11, tone: 'red', icon: labelChip('Bug', 'red') },
+  { label: 'Sync', value: 8, tone: 'blue', icon: labelChip('Sync', 'blue') },
+  { label: 'Billing', value: 7, tone: 'orange', icon: labelChip('Billing', 'orange') },
+  { label: 'Export', value: 5, tone: 'violet', icon: labelChip('Export', 'violet') },
+];
+const backlog: BarRow[] = [
+  { label: 'Open', value: 26, tone: 'blue', icon: statusIcon('open') },
+  { label: 'Pending', value: 11, tone: 'amber', icon: statusIcon('pending') },
+  { label: 'On hold', value: 4, tone: 'violet', icon: statusIcon('on_hold') },
+];
+const total = (rows: BarRow[]) => sum(rows.map((r) => r.value));
+const share = (rows: BarRow[], r: BarRow) => `${Math.round((r.value / total(rows)) * 100)}%`;
+const pct = (rows: BarRow[], r: BarRow) => `${(r.value / Math.max(...rows.map((x) => x.value))) * 100}%`;
+const sorted = (rows: BarRow[]) => [...rows].sort((a, b) => b.value - a.value);
+
+const cards = [
+  { title: 'By channel', subtitle: 'Tickets created in the period', rows: sorted(channels) },
+  { title: 'By severity', subtitle: 'Tickets created in the period', rows: severities },
+  { title: 'By priority', subtitle: 'The 50 most recent open tickets', rows: priorities },
+  { title: 'By label', subtitle: 'The 50 most recent open tickets', rows: labels },
+];
+---
+<AppWindow active="reports" crumbs={['Reports']} width={1280}>
+  <div class="rpt" data-seq data-hold="3600">
+    <!-- PageHeader -->
+    <header class="rpt-head">
+      <Fragment set:html={ic('chartColumn', 16, 'dm-fg3')} />
+      <span class="rpt-title">Reports</span>
+      <span class="rpt-head-sep"></span>
+      <span class="rpt-head-sub">Compared with the previous 30 days</span>
+      <span class="dm-btn rpt-range"><Fragment set:html={gl('calendarDays', 14, 'dm-fg3')} />Last 30 days<Fragment set:html={ic('chevronDown', 12, 'dm-fg4')} /></span>
+    </header>
+
+    <div class="rpt-body">
+      <!-- KPI tiles -->
+      <div class="rpt-kpis">
+        {kpis.map((k) => (
+          <div class="rpt-tile">
+            <span class="rpt-caps dm-truncate">{k.label}</span>
+            <span class="rpt-val">
+              {Array.isArray(k.value) ? (
+                <span class="rpt-num"><span data-step="0" data-until="4" data-wait="0">{k.value[0]}</span><span class="s-swap" data-step="4">{k.value[1]}</span></span>
+              ) : (
+                <span class="rpt-num">{k.value}</span>
+              )}
+              {k.unit && <span class="dm-mono rpt-unit">{k.unit}</span>}
+            </span>
+            <span class="rpt-foot">
+              {k.delta && <span class={`dm-mono rpt-delta dm-chip dm-t-${k.delta.tone}`}>{k.delta.text}</span>}
+              {k.note && <span class="dm-truncate dm-fg4">{k.note}</span>}
+              {k.trend && (() => {
+                const s = spark(k.trend.values);
+                return (
+                  <svg class="rpt-spark" width="56" height="20" aria-hidden="true">
+                    <path class="enter-draw" d={s.d} pathLength="1" fill="none" stroke={`var(--dm-${k.trend.tone})`} stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="--d:300ms" />
+                    <circle cx={s.end[0]} cy={s.end[1]} r="2.5" fill={`var(--dm-${k.trend.tone})`} stroke="var(--dm-surface)" stroke-width="1.5" />
+                  </svg>
+                );
+              })()}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div class="rpt-row">
+        <!-- Volume over time -->
+        <section class="rpt-card rpt-volume">
+          <div class="rpt-card-head">
+            <div>
+              <h2 class="rpt-card-title">Volume over time</h2>
+              <p class="rpt-card-sub">Tickets created and solved each day</p>
+            </div>
+            <div class="rpt-card-acts">
+              <span class="rpt-legend"><span><i style="background:var(--dm-blue)"></i>Created</span><span><i style="background:var(--dm-teal)"></i>Solved</span></span>
+              <span class="rpt-seg"><span class="rpt-seg-on">Chart</span><span>Table</span></span>
+            </div>
+          </div>
+          <div class="rpt-card-body">
+            <div class="rpt-figs rpt-figs-3">
+              <div><div class="rpt-caps">Daily average</div><div class="rpt-fig"><span><span data-step="0" data-until="4" data-wait="0">{avg[0]}</span><span class="s-swap" data-step="4">{avg[1]}</span></span><span class="rpt-fig-sub">created a day</span></div></div>
+              <div><div class="rpt-caps">Busiest day</div><div class="rpt-fig">{createdAt(1)[busiest]}<span class="rpt-fig-sub">{wmd(busiest)}</span></div></div>
+              <div><div class="rpt-caps">Solve rate</div><div class="rpt-fig">{rate}%<span class="rpt-fig-sub">solved of created</span></div></div>
+            </div>
+
+            <!-- VolumeChart -->
+            <div class="rpt-plot" style={hoverVars}>
+              <i class="rpt-m rpt-m1" data-step="1" data-until="2" data-wait="1800"></i>
+              <i class="rpt-m rpt-m2" data-step="2" data-until="3" data-wait="1500"></i>
+              <i class="rpt-m rpt-m3" data-step="3" data-until="4" data-wait="1500"></i>
+              <i class="rpt-today" data-step="4" data-wait="1600"></i>
+              <svg width={W} height={H + MT + AXIS} aria-hidden="true">
+                {ticks.map((t) => (
+                  <g>
+                    <line x1={ML} x2={ML + plotW} y1={y(t)} y2={y(t)} stroke="var(--dm-line-soft)" stroke-width="1" shape-rendering="crispEdges" />
+                    <text x={ML - 8} y={y(t)} dy="0.32em" text-anchor="end" class="rpt-axis">{t}</text>
+                  </g>
+                ))}
+                <line x1={ML} x2={ML + plotW} y1={y(0)} y2={y(0)} stroke="var(--dm-line)" stroke-width="1" shape-rendering="crispEdges" />
+                {xTicks.map((i) => <text x={r1(x(i))} y={MT + H + 18} text-anchor="middle" class="rpt-axis">{md(i)}</text>)}
+
+                <path class="rpt-area rpt-before" d={area(createdAt(0))} fill="var(--dm-blue)" />
+                <path class="rpt-area rpt-after" d={area(createdAt(1))} fill="var(--dm-blue)" />
+                <path class="enter-draw" d={line(solved)} pathLength="1" fill="none" stroke="var(--dm-teal)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                <path class="enter-draw rpt-before" d={line(createdAt(0))} pathLength="1" fill="none" stroke="var(--dm-blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                <path class="rpt-after" d={line(createdAt(1))} fill="none" stroke="var(--dm-blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+
+                <!-- The ends, with their values, while nothing is hovered -->
+                <g class="rpt-ends">
+                  <g class="rpt-end-rise" style={`--rise:${y(today[1]) - y(today[0])}px`}>
+                    <circle cx={r1(x(last))} cy={y(today[0])} r="4" fill="var(--dm-blue)" stroke="var(--dm-surface)" stroke-width="2" />
+                    <text x={r1(x(last) + 9)} y={y(today[0])} dy="0.32em" class="rpt-end"><tspan data-step="0" data-until="4" data-wait="0">{today[0]}</tspan><tspan class="s-swap" data-step="4">{today[1]}</tspan></text>
+                  </g>
+                  <circle cx={r1(x(last))} cy={y(solved[last])} r="4" fill="var(--dm-teal)" stroke="var(--dm-surface)" stroke-width="2" />
+                  <text x={r1(x(last) + 9)} y={y(solved[last])} dy="0.32em" class="rpt-end">{solved[last]}</text>
+                </g>
+
+                <!-- Crosshair -->
+                <g class="rpt-hover">
+                  <line class="rpt-cross" x1="0" x2="0" y1={MT} y2={MT + H} stroke="var(--dm-line-strong)" stroke-width="1" shape-rendering="crispEdges" />
+                  <circle class="rpt-dot-a" r="4" fill="var(--dm-blue)" stroke="var(--dm-surface)" stroke-width="2" />
+                  <circle class="rpt-dot-b" r="4" fill="var(--dm-teal)" stroke="var(--dm-surface)" stroke-width="2" />
+                </g>
+              </svg>
+              <div class="rpt-tip rpt-hover">
+                {hovers.map((d, k) => (
+                  <div class={`rpt-tip-day rpt-tip-${k + 1}`}>
+                    <div class="dm-mono rpt-tip-date">{wmd(d)}</div>
+                    <div class="rpt-tip-row"><i style="background:var(--dm-blue)"></i><span class="dm-mono">{created[d]}</span><span>Created</span></div>
+                    <div class="rpt-tip-row"><i style="background:var(--dm-teal)"></i><span class="dm-mono">{solved[d]}</span><span>Solved</span></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Backlog -->
+        <section class="rpt-card">
+          <div class="rpt-card-head">
+            <div>
+              <h2 class="rpt-card-title">Backlog</h2>
+              <p class="rpt-card-sub">Open work right now, by status</p>
+            </div>
+          </div>
+          <div class="rpt-card-body rpt-stack">
+            <div class="rpt-figs rpt-figs-2">
+              <div><div class="rpt-caps">Open work</div><div class="rpt-fig">{total(backlog)}<span class="rpt-fig-sub">tickets</span></div></div>
+              <div><div class="rpt-caps">Unassigned</div><div class="rpt-fig">9<span class="rpt-fig-sub">22%</span></div></div>
+            </div>
+            <div class="rpt-share">{backlog.map((r) => <i class="enter-grow-x" style={`flex-grow:${r.value};background:var(--dm-${r.tone})`}></i>)}</div>
+            <ul class="rpt-bars">
+              {backlog.map((r) => (
+                <li>
+                  <div class="rpt-bar-line"><Fragment set:html={r.icon} /><span class="dm-truncate rpt-bar-label">{r.label}</span><span class="dm-mono rpt-bar-n">{r.value}</span><span class="dm-mono rpt-bar-pct">{share(backlog, r)}</span></div>
+                  <div class="rpt-bar"><i class="enter-grow-x" style={`width:${pct(backlog, r)};background:var(--dm-${r.tone});--d:150ms`}></i></div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      </div>
+
+      <!-- Breakdowns, under the fold -->
+      <div class="rpt-quad">
+        {cards.map((c) => (
+          <section class="rpt-card">
+            <div class="rpt-card-head">
+              <div>
+                <h2 class="rpt-card-title">{c.title}</h2>
+                <p class="rpt-card-sub">{c.subtitle}</p>
+              </div>
+            </div>
+            <div class="rpt-card-body rpt-stack">
+              {c.title.endsWith('channel') || c.title.endsWith('severity') ? (
+                <div class="rpt-share">{c.rows.map((r) => <i style={`flex-grow:${r.value};background:var(--dm-${r.tone})`}></i>)}</div>
+              ) : null}
+              <ul class="rpt-bars">
+                {c.rows.map((r) => (
+                  <li>
+                    <div class="rpt-bar-line"><Fragment set:html={r.icon} />{!c.title.endsWith('label') && <span class="dm-truncate rpt-bar-label">{r.label}</span>}<span class="dm-mono rpt-bar-n">{nf(r.value)}</span><span class="dm-mono rpt-bar-pct">{share(c.rows, r)}</span></div>
+                    <div class="rpt-bar"><i style={`width:${pct(c.rows, r)};background:var(--dm-${r.tone})`}></i></div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  </div>
+</AppWindow>
+
+<style is:global>
+  /* ReportsPage; the window and shared pieces are in app/app.css. */
+  .rpt { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  .rpt-head { display: flex; height: 48px; flex-shrink: 0; align-items: center; gap: 8px; border-bottom: 1px solid var(--dm-line); padding: 0 20px; }
+  .rpt-title { font-size: 13.5px; font-weight: 600; letter-spacing: -0.015em; }
+  .rpt-head-sep { margin: 0 4px; width: 1px; height: 16px; flex-shrink: 0; background: var(--dm-line); }
+  .rpt-head-sub { font-size: 12.5px; color: var(--dm-fg-3); white-space: nowrap; }
+  .rpt-range { margin-left: auto; }
+  .rpt-body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 16px; overflow: hidden; padding: 20px 24px 0; }
+  .rpt-caps { display: block; font-size: 10px; line-height: 14px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dm-fg-4); }
+  .rpt-card, .rpt-tile { border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs); }
+
+  /* KPI tiles */
+  .rpt-kpis { display: grid; flex-shrink: 0; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; }
+  .rpt-tile { display: flex; min-width: 0; flex-direction: column; gap: 12px; padding: 14px 16px; }
+  .rpt-val { display: flex; min-width: 0; align-items: baseline; gap: 4px; }
+  .rpt-num { font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rpt-unit { font-size: 12px; color: var(--dm-fg-4); }
+  .rpt-foot { display: flex; min-height: 22px; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dm-fg-3); }
+  .rpt-delta { display: inline-flex; flex-shrink: 0; align-items: center; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 500; }
+  .rpt-spark { margin-left: auto; flex-shrink: 0; overflow: visible; }
+  .rpt-spark path, .rpt-plot path.enter-draw { stroke-dasharray: 1; }
+
+  /* Cards */
+  .rpt-row { display: grid; flex-shrink: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .rpt-volume { grid-column: span 2; }
+  .rpt-card { display: flex; min-width: 0; flex-direction: column; }
+  .rpt-card-head { display: flex; min-height: 48px; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px 0; }
+  .rpt-card-title { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .dm .rpt-card-sub { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--dm-fg-3); white-space: nowrap; }
+  .rpt-card-acts { display: flex; flex-shrink: 0; align-items: center; gap: 12px; }
+  .rpt-card-body { flex: 1; padding: 16px; }
+  .rpt-legend { display: flex; align-items: center; gap: 12px; }
+  .rpt-legend span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dm-fg-2); }
+  .rpt-legend i, .rpt-tip-row i { width: 8px; height: 8px; border-radius: 2px; }
+  .rpt-seg { display: inline-flex; align-items: center; border-radius: 5px; background: var(--dm-hover); padding: 2px; }
+  .rpt-seg span { display: inline-flex; height: 24px; align-items: center; border-radius: 5px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--dm-fg-3); }
+  .rpt-seg .rpt-seg-on { background: var(--dm-surface); color: var(--dm-fg); box-shadow: 0 0 0 1px var(--dm-line), 0 1px 2px rgb(0 0 0 / 0.06); }
+
+  .rpt-figs { display: grid; gap: 16px; }
+  .rpt-figs-3 { margin-bottom: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--dm-line-soft); padding-bottom: 16px; }
+  .rpt-figs-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpt-fig { margin-top: 4px; display: flex; align-items: baseline; gap: 6px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .rpt-fig-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 400; letter-spacing: normal; color: var(--dm-fg-4); }
+
+  /* Bars */
+  .rpt-stack { display: flex; flex-direction: column; gap: 20px; }
+  .rpt-share { display: flex; height: 8px; gap: 2px; overflow: hidden; border-radius: 2px; }
+  .rpt-share i { height: 100%; flex-basis: 0; }
+  .rpt-bars { margin: 0; display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none; }
+  .rpt-bar-line { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .rpt-bar-label { color: var(--dm-fg-2); }
+  .rpt-bar-n { margin-left: auto; font-size: 12px; }
+  .rpt-bar-pct { width: 36px; text-align: right; font-size: 11px; color: var(--dm-fg-4); }
+  .rpt-bar { height: 6px; overflow: hidden; border-radius: 2px; background: var(--dm-sunken); }
+  .rpt-bar i { display: block; height: 100%; border-radius: 2px; }
+  .rpt-nosev { width: 22px; height: 16px; flex-shrink: 0; border: 1px dashed var(--dm-line-strong); border-radius: 4px; }
+  .rpt-quad { display: grid; flex-shrink: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+
+  /* VolumeChart */
+  .rpt-plot { position: relative; height: 280px; --hx: var(--h1x); --ha: var(--h1a); --hb: var(--h1b); }
+  .rpt-plot svg { display: block; overflow: visible; }
+  .rpt-m, .rpt-today { display: none; }
+  .rpt-axis { font-family: var(--font-mono); font-size: 10.5px; fill: var(--dm-fg-4); }
+  .rpt-end { font-family: var(--font-mono); font-size: 11px; fill: var(--dm-fg-2); }
+  .rpt-area { fill-opacity: 0.07; transition: opacity 700ms ease; }
+  .js-stage .rpt-area.rpt-before { transition: opacity 700ms ease 900ms; }
+  .js-stage:not(.is-seen) .rpt-area { opacity: 0; }
+  .rpt-after { opacity: 0; transition: opacity 700ms ease; }
+  .rpt-before { transition: opacity 700ms ease; }
+  .rpt-plot path.enter-draw.rpt-before { transition: stroke-dashoffset 1600ms cubic-bezier(0.4, 0, 0.2, 1), opacity 700ms ease; }
+  .rpt-plot:has(.rpt-today.on) .rpt-after { opacity: 1; }
+  .rpt-plot:has(.rpt-today.on) .rpt-before { opacity: 0; }
+  .rpt-end-rise { transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .rpt-plot:has(.rpt-today.on) .rpt-end-rise { transform: translateY(var(--rise)); }
+  .rpt-ends { transition: opacity 200ms ease; }
+
+  /* The pointer reading days: a crosshair, two dots, the tooltip. */
+  .rpt-plot:has(.rpt-m2.on:not(.off)) { --hx: var(--h2x); --ha: var(--h2a); --hb: var(--h2b); }
+  .rpt-plot:has(.rpt-m3.on:not(.off)) { --hx: var(--h3x); --ha: var(--h3a); --hb: var(--h3b); }
+  .rpt-hover { opacity: 0; transition: opacity 220ms ease; }
+  .rpt-plot:has(.rpt-m.on:not(.off)) .rpt-hover { opacity: 1; }
+  .rpt-plot:has(.rpt-m.on:not(.off)) .rpt-ends { opacity: 0; }
+  .rpt-cross, .rpt-dot-a, .rpt-dot-b, .rpt-tip { transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .rpt-cross { transform: translateX(var(--hx)); }
+  .rpt-dot-a { transform: translate(var(--hx), var(--ha)); }
+  .rpt-dot-b { transform: translate(var(--hx), var(--hb)); }
+  .rpt-tip {
+    position: absolute; left: 12px; top: 16px; z-index: 2; min-width: 148px; pointer-events: none;
+    border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); padding: 8px 12px;
+    box-shadow: 0 4px 12px -2px rgb(10 10 10 / 0.08), 0 2px 4px rgb(10 10 10 / 0.04);
+    transform: translateX(var(--hx));
+  }
+  .dark .rpt-tip { box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px rgb(0 0 0 / 0.3); }
+  .rpt-tip-day { display: none; }
+  .rpt-tip-1 { display: block; }
+  .rpt-plot:has(.rpt-m2.on:not(.off)) .rpt-tip-1, .rpt-plot:has(.rpt-m3.on:not(.off)) .rpt-tip-1 { display: none; }
+  .rpt-plot:has(.rpt-m2.on:not(.off)) .rpt-tip-2, .rpt-plot:has(.rpt-m3.on:not(.off)) .rpt-tip-3 { display: block; }
+  .rpt-tip-date { margin-bottom: 6px; font-size: 10.5px; line-height: 16px; color: var(--dm-fg-3); }
+  .rpt-tip-row { display: flex; align-items: center; gap: 8px; padding: 1px 0; font-size: 12px; line-height: 18px; color: var(--dm-fg-3); }
+  .rpt-tip-row .dm-mono { min-width: 24px; font-size: 12.5px; font-weight: 600; color: var(--dm-fg); }
+
+  /* Without the timeline (no JS, reduced motion): today's final count, nothing hovered. */
+  [data-seq]:not(.seq-js) .rpt-after { opacity: 1; }
+  [data-seq]:not(.seq-js) .rpt-before { opacity: 0; }
+  [data-seq]:not(.seq-js) .rpt-end-rise { transform: translateY(var(--rise)); }
+</style>

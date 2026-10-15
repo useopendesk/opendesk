@@ -185,7 +185,7 @@ export default function Triage() {
   );
 }
 
-/** Which engine decides: Jev by TypeSafe, the LLM fallback, or nothing yet. */
+/** Which engine decides: the decision model, the LLM fallback, or nothing yet. The model is never named. */
 function EngineRow({ engine, name }: { engine: DecisionEngine; name: string }) {
   const { t } = useTranslation("settingsInbox");
   const jev = engine.provider === "typesafe";
@@ -199,7 +199,7 @@ function EngineRow({ engine, name }: { engine: DecisionEngine; name: string }) {
       description={jev ? t("triage.engine.jevHint", { name }) : engine.provider === "llm" ? t("triage.engine.llmHint") : t("triage.engine.noneHint", { name })}
     >
       <div className="flex items-center gap-2">
-        {engine.model && (
+        {engine.model && !jev && (
           <span className="mono hidden text-[11px] text-fg-4 sm:inline" title={t("triage.engine.model")}>
             {engine.model}
           </span>

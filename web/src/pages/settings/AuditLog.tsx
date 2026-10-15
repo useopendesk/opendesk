@@ -128,7 +128,13 @@ const verbs: Record<string, string> = {
   "widget.settings_updated": "updated the chat widget",
   "ai.settings_updated": "updated AI settings",
   "billing.updated": "changed the subscription",
-  "billing.credits_purchased": "bought AI credits",
+  "billing.ai_top_up_purchased": "added AI usage",
+  "billing.ai_recharged": "auto-recharged the AI balance",
+  "billing.auto_recharge_updated": "changed auto-recharge",
+  "billing.auto_recharge_failed": "had an auto-recharge fail",
+  // Older entries, from before AI usage was counted in US dollars.
+  "billing.credits_purchased": "added AI usage",
+  "billing.credits_recharged": "auto-recharged the AI balance",
   "billing.payment_failed": "had a payment fail",
   "billing.seats_synced": "synced billed seats",
 };

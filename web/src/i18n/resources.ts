@@ -3,6 +3,7 @@
 
 import agent from "./locales/en/agent.json";
 import agentQuality from "./locales/en/agentQuality.json";
+import bots from "./locales/en/bots.json";
 import ai from "./locales/en/ai.json";
 import aiSetup from "./locales/en/aiSetup.json";
 import aiTicket from "./locales/en/aiTicket.json";
@@ -18,9 +19,10 @@ import settings from "./locales/en/settings.json";
 import settingsChannels from "./locales/en/settingsChannels.json";
 import settingsDev from "./locales/en/settingsDev.json";
 import settingsInbox from "./locales/en/settingsInbox.json";
+import settingsTeams from "./locales/en/settingsTeams.json";
 import setup from "./locales/en/setup.json";
 import shell from "./locales/en/shell.json";
 
-export const en = { common, billing, ai, agent, agentQuality, aiSetup, aiTicket, assistant, public: pub, shell, settings, settingsInbox, settingsDev, settingsChannels, contacts, kb, reports, inbox, setup } as const;
-export const NAMESPACES = ["common", "billing", "ai", "agent", "agentQuality", "aiSetup", "aiTicket", "assistant", "public", "shell", "settings", "settingsInbox", "settingsDev", "settingsChannels", "contacts", "kb", "reports", "inbox", "setup"] as const;
+export const en = { common, billing, ai, agent, agentQuality, bots, aiSetup, aiTicket, assistant, public: pub, shell, settings, settingsInbox, settingsDev, settingsChannels, settingsTeams, contacts, kb, reports, inbox, setup } as const;
+export const NAMESPACES = ["common", "billing", "ai", "agent", "agentQuality", "bots", "aiSetup", "aiTicket", "assistant", "public", "shell", "settings", "settingsInbox", "settingsDev", "settingsChannels", "settingsTeams", "contacts", "kb", "reports", "inbox", "setup"] as const;
 export type Namespace = (typeof NAMESPACES)[number];

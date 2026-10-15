@@ -1,33 +1,52 @@
 ---
+/**
+ * The closing frame on every page (Layout renders it): one more painting, the mark turning its
+ * last tile now and then, a line, and the way in. With `command`, the install
+ * command sits beside the button instead of a second link.
+ */
 import Icon from './Icon.astro';
-import ModuleMark from './ModuleMark.astro';
+import CopyCommand from './CopyCommand.astro';
+import Backdrop from './home/Backdrop.astro';
 import { LINKS } from '../lib/site';
 
-/** The closing module on every page: ink, one line, two buttons, and the mark snapping together. */
-interface Props {
+export interface Props {
   title?: string;
   body?: string;
   secondary?: { href: string; label: string };
+  command?: boolean;
+  /** A warm painting: the words are ink. */
+  painting?: string;
+  focus?: string;
 }
 const {
-  title = 'Give every customer a good answer.',
+  title = 'Give every customer a calm, good answer.',
   body = 'Start on the cloud in a minute, or self-host it tonight. It is the same code either way.',
-  secondary = { href: '/self-hosting/', label: 'Self-host it' },
+  secondary,
+  command = !secondary,
+  painting = 'pampas-sun',
+  focus = '50% 40%',
 } = Astro.props;
 ---
-<section class="container-page py-20 md:py-28">
-  <div class="snap grid overflow-hidden rounded-[8px] bg-[#0a0a0a] text-white ring-1 ring-white/10 md:grid-cols-[1fr_auto]">
-    <div class="px-6 py-12 sm:px-10 md:px-14 md:py-20">
-      <div class="font-mono text-[11.5px] font-medium uppercase tracking-[0.06em] text-white/50">Get started</div>
-      <h2 class="mt-5 max-w-xl text-[32px] font-semibold leading-[1.06] tracking-[-0.04em] md:text-[46px]">{title}</h2>
-      <p class="mt-5 max-w-md text-[16px] leading-[1.6] text-white/60 md:text-[17px]">{body}</p>
-      <div class="mt-9 flex flex-wrap items-center gap-3">
-        <a href={LINKS.signup} class="btn btn-lg bg-white text-[#0a0a0a] hover:bg-white/90">Start free<Icon name="arrowRight" size={15} /></a>
-        <a href={secondary.href} class="btn btn-lg text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.22)] hover:bg-white/[0.06]">{secondary.label}</a>
+<section class="px-2 pb-2 pt-28 md:px-3 md:pb-3 md:pt-40">
+  <div class="relative isolate overflow-hidden rounded-[22px] md:rounded-[28px]">
+    <Backdrop name={painting} sizes="100vw" class="absolute inset-0 -z-10 h-full w-full" style={`object-position:${focus}`} />
+    <div aria-hidden="true" class="absolute inset-0 -z-10 bg-[radial-gradient(55%_58%_at_50%_52%,rgb(255_246_238/0.72),rgb(255_246_238/0.25)_70%,transparent_95%)]"></div>
+    <div class="container-page flex flex-col items-center py-24 text-center md:py-36">
+      <svg viewBox="0 0 64 64" class="size-12 text-[#2a1a14]" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /><path class="cta-turn" d="M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /></svg>
+      <h2 class="mt-8 max-w-[16ch] text-balance text-[38px] font-semibold leading-[1.02] tracking-[-0.045em] text-[#2a1a14] md:text-[64px]">{title}</h2>
+      <p class="mt-5 max-w-[480px] text-[17px] leading-[1.55] text-[#2a1a14]/75 md:text-[18.5px]">{body}</p>
+      <div class="mt-9 flex flex-col items-center gap-3 sm:flex-row">
+        <a href={LINKS.signup} class="btn btn-lg bg-[#1a100c] text-white hover:bg-[#1a100c]/85">Start free<Icon name="arrowRight" size={15} /></a>
+        {command
+          ? <CopyCommand class="w-[min(470px,86vw)] !bg-white/45 !ring-[#2a1a14]/15 backdrop-blur-md [&_*]:!text-[#2a1a14]" />
+          : secondary && <a href={secondary.href} class="btn btn-lg bg-white/45 text-[#2a1a14] ring-1 ring-[#2a1a14]/15 backdrop-blur-md hover:bg-white/65">{secondary.label}</a>}
       </div>
-    </div>
-    <div class="hidden md:flex items-center border-l border-white/10 px-16">
-      <div class="w-[200px] text-white"><ModuleMark plain /></div>
     </div>
   </div>
 </section>
+
+<style is:global>
+  .cta-turn { transform-box: fill-box; transform-origin: center; animation: cta-turn 7s cubic-bezier(0.34, 1.4, 0.64, 1) infinite; }
+  @keyframes cta-turn { 0%, 72% { transform: rotate(0); } 86%, 100% { transform: rotate(90deg); } }
+  @media (prefers-reduced-motion: reduce) { .cta-turn { animation: none; } }
+</style>

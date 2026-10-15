@@ -48,18 +48,18 @@
 }
 
 .dark {
-  --bg: var(--ink);
+  --bg: #141416;
   --fg: var(--paper);
   --body: #d4d4d4;
   --muted: #a3a3a3;
   --subtle: #7a7a7a;
   --faint: #525252;
-  --line: #242424;
-  --line-soft: #1a1a1a;
-  --line-strong: #333333;
-  --surface: var(--coal);
-  --surface-2: #0f0f0f;
-  --raised: #121212;
+  --line: #2c2d31;
+  --line-soft: #222326;
+  --line-strong: #3a3b40;
+  --surface: #202124;
+  --surface-2: #1a1b1e;
+  --raised: #1d1e21;
   --inverse: var(--paper);
   --inverse-fg: var(--ink);
   --grid: rgba(255, 255, 255, 0.06);
@@ -237,18 +237,6 @@
   .link-arrow svg { transition: transform 200ms ease; }
   .link-arrow:hover svg { transform: translateX(3px); }
 
-  /* Modules: cells joined by 1px hairlines, inside one frame. */
-  .modules {
-    display: grid;
-    gap: 1px;
-    background: var(--line);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-  }
-  .modules > * { background: var(--bg); min-width: 0; }
-
   /* Graph paper behind product scenes. */
   .graph {
     background-color: var(--surface);
@@ -259,16 +247,18 @@
     background-position: -1px -1px;
   }
 
+  /* Ollie's tint behind an AI scene. */
+  .tile-violet {
+    background:
+      radial-gradient(90% 70% at 50% 0%, color-mix(in oklab, var(--c-violet) 16%, transparent), transparent 70%),
+      color-mix(in oklab, var(--c-violet) 5%, var(--surface));
+  }
+
   .card {
     background: var(--raised);
     border: 1px solid var(--line);
     border-radius: 8px;
     box-shadow: var(--shadow);
-  }
-  /* A tinted band behind a section, edge to edge. */
-  .band {
-    background: var(--surface-2);
-    border-block: 1px solid var(--line);
   }
 
   /* App window chrome inside a scene, with the app's radii. */
@@ -305,7 +295,7 @@
     background: var(--bg);
   }
 
-  /* Long-form text: legal pages, blog, changelog. */
+  /* Long-form text: legal pages and the blog. */
   .prose-od {
     color: var(--body);
     font-size: 16.5px;
@@ -349,16 +339,6 @@
 }
 
 
-/* Scroll reveal. Without JS nothing is hidden. */
-.js .reveal { opacity: 0; transform: translateY(12px); transition: opacity 600ms ease, transform 700ms cubic-bezier(0.16, 1, 0.3, 1); transition-delay: var(--d, 0ms); }
-/* A module snaps into its cell: a small slide and settle. */
-.js .snap { opacity: 0; transform: translate(var(--sx, 0), var(--sy, 10px)) scale(0.985); transition: opacity 500ms ease, transform 650ms cubic-bezier(0.16, 1, 0.3, 1); transition-delay: var(--d, 0ms); }
-.js .snap.is-in { opacity: 1; transform: none; }
-.js .reveal.is-in { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .js .reveal, .js .snap { opacity: 1; transform: none; transition: none; }
-}
-
 /* Loops in a scene only run while it is on screen. */
 [data-live]:not(.is-live) *,
 [data-live]:not(.is-live) *::before,
@@ -383,10 +363,6 @@
   font-weight: var(--shiki-dark-font-weight) !important;
 }
 
-/* Above-the-fold entrance: plays on load, no JS needed, and never hides content for long. */
-.rise { animation: rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: var(--d, 0ms); }
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
-@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
 
 /* Shared scene loops. */
 @keyframes od-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -413,10 +389,12 @@
 .seq-js [data-step]:not(.on).s-grow { width: 0 !important; }
 .seq-js .w { opacity: 0; transition: opacity 260ms ease; }
 .seq-js .w.on { opacity: 1; }
-.seq-js.seq-reset { opacity: 0; transition: opacity 400ms ease; }
-.seq-js { transition: opacity 400ms ease; }
 .seq-js [data-step].off { display: none; }
 [data-seq]:not(.seq-js) [data-until] { display: none; }
+/* Takes the place of a [data-until] sibling when its step comes. */
+.seq-js [data-step]:not(.on).s-swap { display: none; }
+.seq-js [data-step].on.s-swap { animation: s-swap-in 420ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes s-swap-in { from { opacity: 0; transform: translateY(3px) scale(0.96); } }
 
 /*
  * Semantic colour, used only inside product illustrations: ticket status,

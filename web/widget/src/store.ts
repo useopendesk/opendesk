@@ -16,6 +16,10 @@ export type State = {
   conversations: Conversation[] | null;
   /** Open conversation id, or null for a new one. */
   active: string | null;
+  /** The topic picked for the new conversation (config.topics), sent as topic_id. */
+  topic: string | null;
+  /** A suggestion tapped before a topic was picked: sent once the visitor picks one. */
+  queued: string | null;
   messages: Record<string, UiMessage[]>;
   /** ticket_id -> agent name, while they are typing. */
   typing: Record<string, string>;
@@ -49,6 +53,8 @@ export const initialState = (): State => ({
   session: null,
   conversations: null,
   active: null,
+  topic: null,
+  queued: null,
   messages: {},
   typing: {},
   unread: 0,

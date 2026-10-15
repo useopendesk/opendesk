@@ -1,0 +1,220 @@
+---
+/**
+ * The knowledge base, 1:1: AppWindow on Knowledge base with an article open in
+ * ArticleEditor at its wide layout (web/src/pages/kb/ArticleEditor.tsx): the
+ * header with the collection picker, ArticleStatus and the save state, the
+ * title, excerpt, toolbar and body, and the Details aside.
+ *
+ * On the timeline (`data-step`) the last paragraph is written, the article is
+ * published (Draft turns Published, the Publish button goes, View appears) and
+ * the first readers arrive in Views. Without JS or under reduced motion it
+ * rests published.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic } from '../../app/icons';
+
+// lucide glyphs the shared set does not carry yet, drawn the same way as `ic`.
+const L: Record<string, string> = {
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  heading2: '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/>',
+  heading3: '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2"/><path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2"/>',
+  strikethrough: '<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/>',
+  quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
+  code: '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  cloudCheck: '<path d="m17 15-5.5 5.5L9 18"/><path d="M5.516 16.07A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 3.501 7.327"/>',
+  notebook: '<path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/>',
+};
+const lc = (name: string, size: number, cls = '', sw = 2) =>
+  `<svg class="dm-ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${L[name]}</svg>`;
+
+const toolbar: (string | null)[] = ['heading2', 'heading3', null, 'bold', 'italic', 'strikethrough', 'link', 'list', 'listOrdered', 'quote', 'code', 'image'];
+const glyph = (n: string) => (n in L ? lc(n, 15) : ic(n, 15));
+
+const maya =
+  "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' fill='%23d6cfd8'/%3E%3Cpath d='M76 92c0-38 22-58 52-58s52 20 52 58v74h-104z' fill='%23d8b47a'/%3E%3Cpath d='M40 256c6-52 44-80 88-80s82 28 88 80z' fill='%23f4f4f4'/%3E%3Crect x='114' y='138' width='28' height='40' rx='12' fill='%23f1d3bd'/%3E%3Cellipse cx='128' cy='104' rx='40' ry='46' fill='%23f1d3bd'/%3E%3Cpath d='M86 96c0-30 18-48 42-48s42 18 42 48c-10-16-26-24-42-24s-32 8-42 24z' fill='%23d8b47a'/%3E%3C/svg%3E";
+
+// Steps: 1 the paragraph is written, 2 Publish, 3 live, 4 and 5 the first readers.
+---
+<AppWindow active="knowledge" crumbs={['Knowledge base', 'Working offline']} width={1280}>
+  <div class="dm-kb" data-seq data-hold="4200">
+    <header class="dm-kb-head">
+      <span class="dm-kb-back"><Fragment set:html={lc('chevronLeft', 14)} />Knowledge base</span>
+      <span class="dm-fg4">/</span>
+      <span class="dm-kb-coll"><i class="dm-t-violet"></i>Sync<Fragment set:html={ic('chevronDown', 12, 'dm-fg4')} /></span>
+      <span class="dm-pill dm-chip dm-t-amber dm-kb-status" data-step="0" data-until="3" data-wait="0"><i></i>Draft</span>
+      <span class="dm-pill dm-chip dm-t-green dm-kb-status s-swap" data-step="3" data-wait="900"><i></i>Published</span>
+      <span class="dm-kb-saved">
+        <span class="dm-kb-state" data-step="0" data-until="1" data-wait="0"><Fragment set:html={ic('check', 12, 'dm-green', 2.5)} />Saved 2 minutes ago</span>
+        <span class="dm-kb-state s-swap" data-step="1" data-until="2" data-wait="1300"><i class="dm-kb-dirty"></i>Unsaved changes</span>
+        <span class="dm-kb-state s-swap" data-step="2" data-until="3" data-wait="900"><Fragment set:html={lc('loader', 12, 'dm-kb-spin')} />Saving</span>
+        <span class="dm-kb-state s-swap" data-step="3"><Fragment set:html={ic('check', 12, 'dm-green', 2.5)} />Saved just now</span>
+      </span>
+
+      <span class="dm-kb-acts">
+        <span class="dm-btn dm-kb-ghost s-swap" data-step="3"><Fragment set:html={ic('externalLink', 14)} />View</span>
+        <span class="dm-btn dm-kb-ghost"><Fragment set:html={ic('sparkles', 14, 'dm-violet', 1.75)} />Draft from tickets</span>
+        <span class="dm-btn dm-kb-off" data-step="0" data-until="1" data-wait="0">Save draft</span>
+        <span class="dm-btn s-swap" data-step="1" data-until="3">Save draft</span>
+        <span class="dm-btn dm-kb-off s-swap" data-step="3">Save</span>
+        <span class="dm-btn dm-btn-ink" data-step="0" data-until="2" data-wait="0">Publish</span>
+        <span class="dm-btn dm-btn-ink dm-kb-busy s-swap" data-step="2" data-until="3"><span class="dm-kb-hide">Publish</span><Fragment set:html={lc('loader', 14, 'dm-kb-spin')} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('ellipsis', 16)} /></span>
+      </span>
+    </header>
+
+    <div class="dm-kb-split">
+      <div class="dm-kb-doc">
+        <div class="dm-kb-page">
+          <h1 class="dm-kb-title">Working offline</h1>
+          <p class="dm-kb-excerpt">Keep writing on a plane or a train. Everything syncs when you're back online.</p>
+
+          <div class="dm-kb-tools">
+            {toolbar.map((t) => (t ? <span class="dm-kb-tb"><Fragment set:html={glyph(t)} /></span> : <span class="dm-kb-tbsep"></span>))}
+          </div>
+
+          <div class="dm-kb-prose">
+            <p>Margin keeps your notebooks on your device, so you can open, write and sketch without a connection. Your changes sync the moment you're back online.</p>
+            <h2>Make a notebook available offline</h2>
+            <ol>
+              <li>Open the notebook's menu and turn on <strong>Available offline</strong>.</li>
+              <li>Wait for the check next to its name. The notebook is now on this device.</li>
+              <li>Do the same on each device you write on.</li>
+            </ol>
+            <!-- The screenshot in the article: Margin's notebook list with the menu open -->
+            <figure class="dm-kb-img">
+              <div class="dm-kb-shot">
+                <div class="dm-kb-shot-list">
+                  {[
+                    ['Field notes', true],
+                    ['Client brief', true],
+                    ['Recipes', false],
+                    ['Reading list', false],
+                  ].map(([name, off]) => (
+                    <span class={`dm-kb-shot-row ${name === 'Recipes' ? 'dm-kb-shot-on' : ''}`}>
+                      <Fragment set:html={lc('notebook', 14, 'dm-fg3')} />
+                      <span class="dm-grow">{name}</span>
+                      {off && <Fragment set:html={lc('cloudCheck', 14, 'dm-green')} />}
+                    </span>
+                  ))}
+                </div>
+                <div class="dm-kb-shot-menu">
+                  <span class="dm-kb-shot-item">Rename</span>
+                  <span class="dm-kb-shot-item">Share</span>
+                  <span class="dm-kb-shot-item dm-kb-shot-hl">Available offline<span class="dm-kb-switch"><i></i></span></span>
+                  <span class="dm-kb-shot-item">Export as PDF</span>
+                </div>
+              </div>
+            </figure>
+            <p class="dm-kb-typed" data-step="1" data-wait="1300" data-stream="34">Notebooks you haven't opened in 30 days leave the device to save space. They stay safe in your account and download again the next time you open them.</p>
+          </div>
+        </div>
+      </div>
+
+      <aside class="dm-kb-side">
+        <div class="dm-caps dm-kb-caps">Details</div>
+        <dl class="dm-kb-meta">
+          <div><dt>Status</dt><dd><span class="dm-pill dm-chip dm-t-amber dm-kb-status" data-step="0" data-until="3" data-wait="0"><i></i>Draft</span><span class="dm-pill dm-chip dm-t-green dm-kb-status s-swap" data-step="3"><i></i>Published</span></dd></div>
+          <div><dt>Collection</dt><dd>Sync</dd></div>
+          <div><dt>Author</dt><dd><img class="dm-kb-av" src={maya} alt="" width="16" height="16" />Maya Chen</dd></div>
+          <div>
+            <dt>Views</dt>
+            <dd class="dm-mono">
+              <Fragment set:html={lc('eye', 14, 'dm-fg4')} />
+              <span data-step="0" data-until="3" data-wait="0">–</span>
+              <span class="s-swap" data-step="3" data-until="4">0</span>
+              <span class="s-swap" data-step="4" data-until="5" data-wait="1600">2</span>
+              <span class="s-swap" data-step="5" data-wait="1500">5</span>
+            </dd>
+          </div>
+          <div><dt>Published</dt><dd><span data-step="0" data-until="3" data-wait="0">–</span><span class="s-swap" data-step="3">Oct 12</span></dd></div>
+          <div><dt>Updated</dt><dd><span data-step="0" data-until="3" data-wait="0">2 minutes ago</span><span class="s-swap" data-step="3">just now</span></dd></div>
+        </dl>
+        <div class="dm-caps dm-kb-caps dm-kb-url">URL</div>
+        <div class="dm-kb-slug"><span class="dm-mono">/a/</span><span class="dm-mono dm-kb-slug-in">working-offline</span></div>
+        <p class="dm-kb-hint">The address of this article in your help center. Changing it breaks old links.</p>
+      </aside>
+    </div>
+  </div>
+</AppWindow>
+
+<style is:global>
+  /* ArticleEditor at its wide layout; the window and shared pieces are in app/app.css. */
+  .dm-kb { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  .dm-kb-head { display: flex; height: 48px; flex-shrink: 0; align-items: center; gap: 8px; border-bottom: 1px solid var(--dm-line); padding: 0 16px; }
+  .dm-kb-back { margin-left: -4px; display: inline-flex; height: 24px; align-items: center; gap: 2px; padding: 0 6px 0 2px; font-size: 12.5px; color: var(--dm-fg-3); }
+  .dm-kb-coll { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 8px; font-size: 12.5px; color: var(--dm-fg-2); }
+  .dm-kb-coll > i { width: 8px; height: 8px; border-radius: 2px; background: var(--t); }
+  .dm-kb-status { padding: 0 6px; }
+  .dm-kb-status > i { width: 6px; height: 6px; border-radius: 9999px; background: var(--t); }
+  .dm-kb-saved { margin-left: 4px; display: inline-flex; align-items: center; font-size: 12px; line-height: 16px; color: var(--dm-fg-4); }
+  .dm-kb-state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dm-kb-dirty { width: 6px; height: 6px; border-radius: 9999px; background: var(--dm-amber); }
+  @keyframes dm-kb-spin { to { transform: rotate(360deg); } }
+  .dm-kb-spin { animation: dm-kb-spin 0.8s linear infinite; }
+  .dm-kb-acts { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .dm-kb-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--dm-fg-2); }
+  .dm-kb-off { opacity: 0.5; }
+  .dm-kb-busy { position: relative; justify-content: center; }
+  .dm-kb-busy .dm-kb-hide { visibility: hidden; }
+  .dm-kb-busy .dm-ic { position: absolute; left: calc(50% - 7px); }
+
+  .dm-kb-split { display: flex; min-height: 0; flex: 1; }
+  .dm-kb-doc { min-width: 0; flex: 1; overflow: hidden; }
+  .dm-kb-page { margin: 0 auto; max-width: 760px; padding: 48px 40px 0; }
+  .dm-kb-title { margin: 0; font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.03em; color: var(--dm-fg); }
+  .dm-kb-excerpt { margin-top: 8px !important; height: 27px; font-size: 15px; line-height: 27px; color: var(--dm-fg-2); }
+  .dm-kb-tools {
+    margin: 32px -12px 0; display: flex; height: 42px; align-items: center; gap: 2px; padding: 0 6px;
+    border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs);
+  }
+  .dm-kb-tb { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 5px; color: var(--dm-fg-3); }
+  .dm-kb-tbsep { margin: 0 4px; width: 1px; height: 16px; background: var(--dm-line); }
+
+  /* .prose-od.prose-lg */
+  .dm-kb-prose { margin-top: 24px; padding-top: 10px; font-size: 15.5px; line-height: 1.7; color: var(--dm-fg); }
+  .dm-kb-prose > * + * { margin-top: 0.65em; }
+  .dm-kb-prose h2 { margin: 1.2em 0 0; font-size: 1.25em; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+  .dm-kb-prose ol { margin-bottom: 0; list-style: decimal; padding-left: 1.3em; }
+  .dm-kb-prose li + li { margin-top: 0.2em; }
+  .dm-kb-prose strong { font-weight: 600; }
+
+  /* The article's image: a screenshot of Margin, drawn in the app's own greys */
+  .dm-kb-img { margin-left: 0; margin-right: 0; margin-bottom: 0; overflow: hidden; border: 1px solid var(--dm-line); border-radius: 8px; }
+  .dm-kb-shot { position: relative; height: 168px; background: var(--dm-sunken); padding: 18px 0 0 28px; }
+  .dm-kb-shot-list { width: 300px; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); padding: 6px; box-shadow: var(--dm-shadow-xs); }
+  .dm-kb-shot-row { display: flex; height: 30px; align-items: center; gap: 10px; border-radius: 5px; padding: 0 8px; font-size: 12.5px; line-height: 16px; color: var(--dm-fg-2); }
+  .dm-kb-shot-on { background: var(--dm-active); color: var(--dm-fg); font-weight: 500; }
+  .dm-kb-shot-menu {
+    position: absolute; left: 344px; top: 46px; width: 196px; border: 1px solid var(--dm-line); border-radius: 7px;
+    background: var(--dm-surface); padding: 4px; box-shadow: 0 10px 28px -8px rgb(0 0 0 / 0.22), var(--dm-shadow-xs);
+  }
+  .dm-kb-shot-item { display: flex; height: 26px; align-items: center; justify-content: space-between; border-radius: 5px; padding: 0 8px; font-size: 12px; line-height: 16px; color: var(--dm-fg-2); }
+  .dm-kb-shot-hl { background: var(--dm-hover); color: var(--dm-fg); }
+  .dm-kb-switch { display: flex; width: 26px; height: 15px; align-items: center; border-radius: 9999px; background: var(--dm-inverse); padding: 0 1px; justify-content: flex-end; }
+  .dm-kb-switch i { width: 12px; height: 12px; border-radius: 9999px; background: var(--dm-inverse-fg); }
+
+  /* The caret follows the last written word while the paragraph is typed. */
+  .dm-kb.seq-js:not(:has(.dm-kb-saved .s-swap:last-child.on)) .dm-kb-typed .w.on:not(:has(+ .w.on))::after {
+    content: ''; display: inline-block; width: 1.5px; height: 1.1em; margin-left: 2px; vertical-align: -0.18em;
+    background: var(--dm-fg); animation: dm-kb-caret 1s steps(1) infinite;
+  }
+  @keyframes dm-kb-caret { 50% { opacity: 0; } }
+
+  /* Details */
+  .dm-kb-side { width: 300px; flex-shrink: 0; overflow: hidden; border-left: 1px solid var(--dm-line); padding: 24px 20px; }
+  .dm-kb-caps { height: 14px; margin-bottom: 12px; }
+  .dm-kb-meta { margin: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+  .dm-kb-meta > div { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+  .dm-kb-meta > div + div { border-top: 1px solid var(--dm-line-soft); }
+  .dm-kb-meta dt { flex-shrink: 0; color: var(--dm-fg-3); }
+  .dm-kb-meta dd { margin: 0; display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 6px; color: var(--dm-fg); }
+  .dm-kb-av { width: 16px; height: 16px; border-radius: 9999px; }
+  .dm-kb-url { margin-top: 28px; margin-bottom: 8px; }
+  .dm-kb-slug { display: flex; align-items: center; gap: 6px; border: 1px solid var(--dm-line); border-radius: 5px; background: var(--dm-sunken); padding: 4px 4px 4px 10px; }
+  .dm-kb-slug > .dm-mono:first-child { flex-shrink: 0; font-size: 12px; color: var(--dm-fg-4); }
+  .dm-kb-slug-in { display: flex; height: 28px; min-width: 0; flex: 1; align-items: center; border: 1px solid var(--dm-line); border-radius: 5px; background: var(--dm-surface); padding: 0 8px; font-size: 12.5px; }
+  .dm-kb-hint { margin-top: 8px !important; font-size: 12px; line-height: 18px; color: var(--dm-fg-3); }
+</style>

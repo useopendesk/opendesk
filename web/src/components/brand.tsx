@@ -1,10 +1,19 @@
 // The opendesk mark ("Module") and lockup, drawn in currentColor so they follow the theme.
 import { cn } from "@/lib/cn";
 
-export function Mark({ className }: { className?: string }) {
+/**
+ * The mark as four modules. `turn` gives the bottom-right module a quarter turn on its
+ * own centre when an ancestor `group` is hovered; the rest stays still.
+ */
+export function Mark({ className, turn }: { className?: string; turn?: boolean }) {
   return (
     <svg viewBox="0 0 64 64" className={cn("size-5", className)} aria-hidden fill="none">
-      <path fill="currentColor" fillRule="evenodd" d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" />
+      <path fill="currentColor" d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" />
+      <path
+        fill="currentColor"
+        d="M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z"
+        className={cn(turn && "origin-center transition-transform duration-500 ease-[cubic-bezier(0.34,1.4,0.64,1)] [transform-box:fill-box] group-hover:rotate-90 motion-reduce:transition-none")}
+      />
     </svg>
   );
 }

@@ -29,7 +29,7 @@ type Querier interface {
 }
 
 type DB struct {
-	// Pool is the pooled connection for request handlers (Neon -pooler endpoint).
+	// Pool is the pooled connection for request handlers (PgBouncer in transaction mode).
 	Pool *pgxpool.Pool
 	// Direct is unpooled, for River, LISTEN/NOTIFY and the event relay.
 	Direct *pgxpool.Pool

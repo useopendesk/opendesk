@@ -14,12 +14,15 @@ export function MenuContent({
   side = "bottom",
   className,
   sideOffset = 6,
+  onCloseAutoFocus,
 }: {
   children: ReactNode;
   align?: "start" | "center" | "end";
   side?: "top" | "bottom" | "left" | "right";
   className?: string;
   sideOffset?: number;
+  /** preventDefault keeps focus where it went (an item that opens another popover). */
+  onCloseAutoFocus?: (e: Event) => void;
 }) {
   return (
     <M.Portal>
@@ -30,6 +33,7 @@ export function MenuContent({
         collisionPadding={8}
         className={cn(floatingPanel, "min-w-[180px] origin-[var(--radix-dropdown-menu-content-transform-origin)] p-1", className)}
         onClick={(e) => e.stopPropagation()}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         {children}
       </M.Content>
@@ -38,7 +42,7 @@ export function MenuContent({
 }
 
 const itemCls =
-  "relative flex h-7 cursor-default select-none items-center gap-2 rounded-md px-2 transition-colors duration-100 text-[12.5px] text-fg outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-hover [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-3";
+  "group/item relative flex h-7 cursor-default select-none items-center gap-2 rounded-md px-2 transition-colors duration-100 text-[12.5px] text-fg outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-hover [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-3";
 
 export function MenuItem({
   children,

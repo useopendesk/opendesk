@@ -4,6 +4,7 @@ description: Connect to the opendesk realtime gateway with Phoenix Channels for 
 ---
 
 import { Aside } from '@astrojs/starlight/components';
+import Diagram from '../../../components/Diagram.astro';
 
 The realtime gateway pushes every change in your workspace to connected clients as it happens. It speaks **Phoenix Channels** over WebSocket (JSON serializer v2), so the easiest client is the [`phoenix`](https://www.npmjs.com/package/phoenix) npm package.
 
@@ -68,12 +69,21 @@ The gateway checks the token's signature, `purpose`, expiry and, on the agent en
 
 | Topic | Who may join | You receive |
 | --- | --- | --- |
-| `workspace:<wid>` | a `ws` token for that workspace | `"event"` for every event in the workspace |
+| `workspace:<wid>` | a `ws` token for that workspace | `"event"` for every event in the workspace; a stand-in for an event of a private team's ticket |
+| `team:<wid>:<tid>` | a `ws` token whose `teams` lists that private team | `"event"` for that team's tickets, in full |
 | `user:<uid>` | a user's own token | `"event"` for events addressed to that user, such as notifications |
 | `ticket:<wid>:<ticket_id>` | users in the workspace | Presence, `"typing"` and `"customer_typing"` |
 | `contact:<wid>:<contact_id>` | the chat widget for that contact | public `"event"`s and agent `"typing"` |
 
 A successful join replies `{ "server_time": "..." }`. A join you are not allowed replies with `{ "reason": "forbidden" }`.
+
+### Private teams
+
+Tickets of a private team are seen only by the people on that team. An event about one goes in full to `team:<wid>:<tid>`, and `workspace:<wid>` gets a stand-in in its place: the same `seq` and `occurred_at`, with `type: "event.hidden"` and empty `data`. Track `seq` on the workspace channel, and apply team events whenever they arrive, before or after their stand-in.
+
+<Diagram name="event-flow" />
+
+The `ws` token lists the private teams you may see in its `teams` claim. Join `team:<wid>:<tid>` for each of them. When your private teams change (you join or leave one, or one becomes private), the gateway closes your socket; reconnect with a fresh token to get the new list. On `ticket:<wid>:<ticket_id>` for a private team's ticket, join with `{ "team_id": "<tid>" }` to see its presence and typing.
 
 ### Workspace events
 

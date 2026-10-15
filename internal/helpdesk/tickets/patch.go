@@ -44,12 +44,16 @@ var systemActor = Actor{Type: "system"}
 
 // Patch is a set of ticket changes. Nil and unset fields are left alone.
 type Patch struct {
-	Subject    *string
-	Status     *string
-	Priority   *string
-	Severity   Opt[string] // null or "" clears
-	Assignee   Opt[uuid.UUID]
-	Team       Opt[uuid.UUID]
+	Subject  *string
+	Status   *string
+	Priority *string
+	Severity Opt[string] // null or "" clears
+	Assignee Opt[uuid.UUID]
+	Team     Opt[uuid.UUID]
+	// Mailbox is the reply address: an address of the ticket's brand.
+	Mailbox *uuid.UUID
+	// Brand moves the ticket to another brand; the reply address follows it.
+	Brand      *uuid.UUID
 	Snooze     Opt[time.Time]
 	Spam       *bool
 	Tags       *[]string // replaces the tag set, by name
@@ -63,7 +67,26 @@ type Patch struct {
 
 func (p Patch) empty() bool {
 	return p.Subject == nil && p.Status == nil && p.Priority == nil && !p.Severity.Set && !p.Assignee.Set && !p.Team.Set && !p.Snooze.Set &&
-		p.Spam == nil && p.Tags == nil && len(p.AddTags) == 0 && len(p.RemoveTags) == 0 && p.Custom == nil && p.Fields == nil
+		p.Mailbox == nil && p.Brand == nil && p.Spam == nil && p.Tags == nil && len(p.AddTags) == 0 && len(p.RemoveTags) == 0 && p.Custom == nil && p.Fields == nil
+}
+
+// checkCaller applies the checks that depend on who asks: the reply address must be one
+// the caller may send from (an address of a private team is for its members only).
+func (p Patch) checkCaller(ctx context.Context, q db.Querier, pr *auth.Principal, tid uuid.UUID) error {
+	if p.Mailbox == nil {
+		return nil
+	}
+	if err := hd.CheckRef(ctx, q, pr.WorkspaceID, "mailbox", *p.Mailbox); err != nil {
+		return err
+	}
+	ok, err := domain.CanSendFrom(ctx, q, pr, *p.Mailbox)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return httpx.E(403, "forbidden", "Only members of its team can send from this address.")
+	}
+	return nil
 }
 
 type ticketState struct {
@@ -78,13 +101,19 @@ type ticketState struct {
 	Spam     bool
 	Custom   map[string]any
 	Fields   map[string]any
+	Channel  string
+	Brand    uuid.UUID
+	Mailbox  *uuid.UUID
+	Routed   *domain.TicketRouted
 }
 
 func lockTicket(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) (ticketState, error) {
 	var s ticketState
-	err := tx.QueryRow(ctx, `SELECT number, subject, status, priority, severity, assignee_id, team_id, snoozed_until, spam, custom, fields
+	err := tx.QueryRow(ctx, `SELECT number, subject, status, priority, severity, assignee_id, team_id, snoozed_until, spam, custom, fields,
+		channel, brand_id, mailbox_id, routed
 		FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, wid, tid).
-		Scan(&s.Number, &s.Subject, &s.Status, &s.Priority, &s.Severity, &s.Assignee, &s.Team, &s.Snoozed, &s.Spam, &s.Custom, &s.Fields)
+		Scan(&s.Number, &s.Subject, &s.Status, &s.Priority, &s.Severity, &s.Assignee, &s.Team, &s.Snoozed, &s.Spam, &s.Custom, &s.Fields,
+			&s.Channel, &s.Brand, &s.Mailbox, &s.Routed)
 	if err != nil {
 		if db.IsNotFound(err) {
 			return s, httpx.NotFound("Ticket")
@@ -190,12 +219,9 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 				return nil, err
 			}
 		}
-		if !sameID(cur.Assignee, to) {
-			next.Assignee = to
-			changes = append(changes, "assignee_id")
-			acts = append(acts, act{"assigned", map[string]any{"from": idOrNil(cur.Assignee), "to": idOrNil(to)}})
-		}
+		next.Assignee = to
 	}
+	teamChanged := false
 	if p.Team.Set {
 		to := p.Team.Ptr()
 		if to != nil {
@@ -204,10 +230,120 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 			}
 		}
 		if !sameID(cur.Team, to) {
-			next.Team = to
-			changes = append(changes, "team_id")
-			acts = append(acts, act{"team_changed", map[string]any{"from": idOrNil(cur.Team), "to": idOrNil(to)}})
+			next.Team, teamChanged = to, true
+			if next.Routed, err = routedFor(ctx, tx, actor, to); err != nil {
+				return nil, err
+			}
 		}
+	}
+	// The assignee of a private team's ticket must be on the team: naming someone else is
+	// refused (automations skip it); moving the ticket into a team its assignee is not on
+	// unassigns it.
+	if next.Assignee != nil && (teamChanged || !sameID(cur.Assignee, next.Assignee)) {
+		if err := hd.CheckAssigneeOnTeam(ctx, tx, wid, next.Team, next.Assignee); err != nil {
+			named := p.Assignee.Set && !sameID(cur.Assignee, next.Assignee)
+			if named && !o.Lenient {
+				return nil, err
+			}
+			next.Assignee = nil
+			if named && cur.Assignee != nil && hd.CheckAssigneeOnTeam(ctx, tx, wid, next.Team, cur.Assignee) == nil {
+				next.Assignee = cur.Assignee
+			}
+		}
+	}
+	if !sameID(cur.Assignee, next.Assignee) {
+		changes = append(changes, "assignee_id")
+		acts = append(acts, act{"assigned", map[string]any{"from": idOrNil(cur.Assignee), "to": idOrNil(next.Assignee)}})
+	}
+
+	// Brand and reply address (contracts/teams.md "Reply address").
+	if p.Brand != nil && *p.Brand != cur.Brand {
+		if err := hd.CheckRef(ctx, tx, wid, "brand", *p.Brand); err != nil {
+			if !o.Lenient {
+				return nil, err
+			}
+			p.Brand = nil
+		}
+	}
+	if p.Brand != nil && *p.Brand != cur.Brand {
+		next.Brand = *p.Brand
+		changes = append(changes, "brand_id")
+		acts = append(acts, act{"brand_changed", map[string]any{"from": cur.Brand.String(), "to": next.Brand.String()}})
+		if p.Mailbox == nil {
+			inBrand, err := mailboxInBrand(ctx, tx, wid, next.Brand, cur.Mailbox)
+			if err != nil {
+				return nil, err
+			}
+			if !inBrand {
+				m, err := replyMailbox(ctx, tx, wid, next.Brand, next.Team)
+				if err != nil {
+					return nil, err
+				}
+				if m == nil && cur.Channel == domain.ChannelEmail && !o.Lenient {
+					return nil, httpx.Validation("this brand has no address to reply to this email ticket from")
+				}
+				if m != nil || cur.Channel != domain.ChannelEmail {
+					next.Mailbox = m
+				}
+			}
+		}
+	}
+	if p.Mailbox != nil && !sameID(cur.Mailbox, p.Mailbox) {
+		inBrand, err := mailboxInBrand(ctx, tx, wid, next.Brand, p.Mailbox)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case inBrand:
+			next.Mailbox = p.Mailbox
+		case !o.Lenient:
+			return nil, httpx.Validation("mailbox_id must be an address of the ticket's brand")
+		}
+	}
+	mailboxData := map[string]any{}
+	if teamChanged && p.Mailbox == nil && sameID(cur.Mailbox, next.Mailbox) && cur.Mailbox != nil {
+		// The reply address follows the team when it was the old team's (or no team's)
+		// and the brand has an address of the new team. A ticket leaving a private team
+		// also leaves that team's address when the brand has another it may use.
+		var mbTeam *uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT team_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *cur.Mailbox).Scan(&mbTeam); err != nil && !db.IsNotFound(err) {
+			return nil, err
+		}
+		var m *uuid.UUID
+		if next.Team != nil && (mbTeam == nil || sameID(mbTeam, cur.Team)) {
+			if m, err = domain.TeamReplyMailbox(ctx, tx, wid, next.Brand, *next.Team); err != nil {
+				return nil, err
+			}
+		}
+		if m == nil && mbTeam != nil && !sameID(mbTeam, next.Team) {
+			private, err := hd.TeamPrivate(ctx, tx, wid, mbTeam)
+			if err != nil {
+				return nil, err
+			}
+			if private {
+				if m, err = replyMailbox(ctx, tx, wid, next.Brand, next.Team); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if m != nil && *m != *cur.Mailbox {
+			next.Mailbox = m
+			mailboxData = map[string]any{"mailbox_from": cur.Mailbox.String(), "mailbox_to": m.String()}
+		}
+	}
+	if !sameID(cur.Mailbox, next.Mailbox) {
+		changes = append(changes, "mailbox_id")
+		if len(mailboxData) == 0 {
+			acts = append(acts, act{"mailbox_changed", map[string]any{"from": idOrNil(cur.Mailbox), "to": idOrNil(next.Mailbox)}})
+		}
+	}
+	if teamChanged {
+		changes = append(changes, "team_id")
+		data := map[string]any{"from": idOrNil(cur.Team), "to": idOrNil(next.Team), "via": routedVia(next.Routed, actor)}
+		for k, v := range mailboxData {
+			data[k] = v
+		}
+		acts = append(acts, act{"team_changed", data})
 	}
 	if p.Snooze.Set {
 		to := p.Snooze.Ptr()
@@ -337,9 +473,11 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 			snoozed_until = $8, spam = $9, custom = $10, fields = $11, severity = $12,
 			solved_at = CASE WHEN $4 IN ('solved', 'closed') THEN COALESCE(solved_at, now()) ELSE NULL END,
 			closed_at = CASE WHEN $4 = 'closed' THEN COALESCE(closed_at, now()) ELSE NULL END,
+			brand_id = $13, mailbox_id = $14, routed = $15,
 			updated_at = now()
 			WHERE workspace_id = $1 AND id = $2`,
-			wid, tid, next.Subject, next.Status, next.Priority, next.Assignee, next.Team, next.Snoozed, next.Spam, next.Custom, next.Fields, next.Severity)
+			wid, tid, next.Subject, next.Status, next.Priority, next.Assignee, next.Team, next.Snoozed, next.Spam, next.Custom, next.Fields, next.Severity,
+			next.Brand, next.Mailbox, next.Routed)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE tickets SET updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, tid)
 	}
@@ -352,6 +490,18 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 		}
 		if _, err := domain.LogActivity(ctx, tx, wid, tid, actor.Type, actor.UserID, a.typ, a.data); err != nil {
 			return nil, err
+		}
+	}
+	if teamChanged && next.Team != nil {
+		private, err := hd.TeamPrivate(ctx, tx, wid, next.Team)
+		if err != nil {
+			return nil, err
+		}
+		if private {
+			// Clients outside the team drop the ticket; its own events now go to the team.
+			if err := hd.PublishTicketHidden(ctx, tx, wid, tid, *next.Team); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := domain.PublishTicketUpdated(ctx, tx, wid, tid, changes); err != nil {
@@ -458,4 +608,67 @@ func dropSuggestions(custom map[string]any, changes []string) map[string]any {
 		out[domain.CustomAISuggestions] = rest
 	}
 	return out
+}
+
+// routedFor says why a ticket changed team, for the actor who moved it (team nil: none).
+func routedFor(ctx context.Context, q db.Querier, actor Actor, team *uuid.UUID) (*domain.TicketRouted, error) {
+	if team == nil {
+		return nil, nil
+	}
+	switch actor.Type {
+	case "automation":
+		return &domain.TicketRouted{Via: "automation"}, nil
+	case "api":
+		return &domain.TicketRouted{Via: "api"}, nil
+	case "ai":
+		if via, _ := actor.Meta["via"].(string); via == "triage" || actor.UserID == nil {
+			return &domain.TicketRouted{Via: "triage"}, nil
+		}
+	}
+	r := &domain.TicketRouted{Via: "agent"}
+	if actor.UserID != nil {
+		u, err := domain.LoadUserRef(ctx, q, *actor.UserID)
+		if err != nil {
+			return nil, err
+		}
+		r.By = &u
+	}
+	return r, nil
+}
+
+// routedVia is the via of a team_changed activity.
+func routedVia(r *domain.TicketRouted, actor Actor) string {
+	if r != nil {
+		return r.Via
+	}
+	switch actor.Type {
+	case "automation":
+		return "automation"
+	case "api":
+		return "api"
+	}
+	return "agent"
+}
+
+// mailboxInBrand reports whether the workspace's mailbox belongs to brand (false for nil).
+func mailboxInBrand(ctx context.Context, q db.Querier, wid, brand uuid.UUID, mailbox *uuid.UUID) (bool, error) {
+	if mailbox == nil {
+		return false, nil
+	}
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes WHERE workspace_id = $1 AND id = $2 AND brand_id = $3)`,
+		wid, *mailbox, brand).Scan(&ok)
+	return ok, err
+}
+
+// replyMailbox is where a ticket of team in brand replies from by default: the brand's
+// address of the team, else the brand's default address (nil when it has none).
+func replyMailbox(ctx context.Context, q db.Querier, wid, brand uuid.UUID, team *uuid.UUID) (*uuid.UUID, error) {
+	if team != nil {
+		m, err := domain.TeamReplyMailbox(ctx, q, wid, brand, *team)
+		if err != nil || m != nil {
+			return m, err
+		}
+	}
+	return domain.BrandMailboxFor(ctx, q, wid, brand, team)
 }

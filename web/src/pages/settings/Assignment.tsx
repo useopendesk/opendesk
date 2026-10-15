@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { CircleSlash, Inbox, Moon, Plus, Repeat, Scale, Sparkles, UsersRound, X } from "lucide-react";
+import { CircleSlash, Inbox, Lock, Moon, Plus, Repeat, Scale, Shuffle, Sparkles, UsersRound, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ListRow, Row, Section, SettingsPage } from "@/components/layout";
@@ -22,6 +22,8 @@ import { Popover } from "@/components/ui/popover";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Segmented } from "@/components/ui/tabs";
+import { TeamDot, useTeams } from "@/components/settings2/teams";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
@@ -68,6 +70,9 @@ export default function Assignment() {
   const { data: a, isLoading } = useQuery(q.assignment());
   const { data: members, isLoading: membersLoading } = useQuery(q.members());
   const write = useAssignmentWrite();
+  const { teams } = useTeams();
+  const { t: tt } = useTranslation("settingsTeams");
+  const [byTeam, setByTeam] = useState(true);
 
   const assignable = (members ?? []).filter((m) => m.role !== "viewer");
   const count = (p: Member["presence"]) => assignable.filter((m) => m.presence === p).length;
@@ -100,6 +105,8 @@ export default function Assignment() {
         )}
       </Section>
 
+      {teams.length > 0 && <Precedence />}
+
       <RulesSection a={a} loading={isLoading} canEdit={canEdit} onRules={(rules) => write.mutate({ rules })} />
 
       <Section title={t("assignment.awayTitle")} description={t("assignment.awayHint")}>
@@ -112,7 +119,24 @@ export default function Assignment() {
         )}
       </Section>
 
-      <Section flush title={t("assignment.teamTitle")} description={t("assignment.teamHint")}>
+      <Section
+        flush
+        title={t("assignment.teamTitle")}
+        description={t("assignment.teamHint")}
+        actions={
+          teams.length > 0 && (
+            <Segmented
+              size="xs"
+              value={byTeam ? "team" : "all"}
+              onChange={(v) => setByTeam(v === "team")}
+              options={[
+                { value: "team", label: tt("scoped.byTeam") },
+                { value: "all", label: tt("scoped.everyone") },
+              ]}
+            />
+          )
+        }
+      >
         {membersLoading ? (
           <ListSkeleton rows={4} />
         ) : !assignable.length ? (
@@ -131,6 +155,8 @@ export default function Assignment() {
               { label: t("assignment.teamEmpty.tips.online"), icon: <Sparkles /> },
             ]}
           />
+        ) : teams.length && byTeam ? (
+          <TeamGroups assignable={assignable} canEdit={canEdit} mode={a?.mode ?? "none"} />
         ) : (
           <MotionList>
             {assignable.map((m) => (
@@ -320,6 +346,108 @@ function RulesSection({ a, loading, canEdit, onRules }: { a?: A; loading: boolea
         </MotionList>
       )}
     </Section>
+  );
+}
+
+/** Which assignment method a new ticket gets: its team's, else its address's, else the workspace's. */
+function Precedence() {
+  const { t } = useTranslation("settingsTeams");
+  const steps = [
+    { icon: <UsersRound />, hue: "teal" as const, label: t("scoped.precTeam"), hint: t("scoped.precTeamHint") },
+    { icon: <Inbox />, hue: "blue" as const, label: t("scoped.precAddress"), hint: t("scoped.precAddressHint") },
+    { icon: <Shuffle />, hue: "gray" as const, label: t("scoped.precWorkspace"), hint: t("scoped.precWorkspaceHint") },
+  ];
+  return (
+    <section className="animate-rise-in">
+      <div className="mb-3">
+        <h2 className="text-[13px] font-semibold tracking-[-0.01em]">{t("scoped.precTitle")}</h2>
+        <p className="mt-0.5 text-[12px] leading-[18px] text-fg-3">{t("scoped.precHint")}</p>
+      </div>
+      <ol className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-stretch">
+        {steps.map((s, i) => (
+          <li key={i} className="contents">
+            <div className="flex items-start gap-3 rounded-lg border border-line bg-surface px-3.5 py-3 shadow-xs">
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md [&_svg]:size-3.5", tone[s.hue].chip)}>{s.icon}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
+                  <span className="mono text-[10.5px] text-fg-4">{i + 1}</span>
+                  {s.label}
+                </div>
+                <p className="mt-0.5 text-[12px] leading-[17px] text-fg-3">{s.hint}</p>
+              </div>
+            </div>
+            {i < steps.length - 1 && (
+              <span aria-hidden className="hidden items-center text-[11px] text-fg-4 md:flex">
+                {t("scoped.precElse")}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Member load grouped by team (leads and members; observers are never assigned), then everyone not on a team. */
+function TeamGroups({ assignable, canEdit, mode }: { assignable: Member[]; canEdit: boolean; mode: AssignMode }) {
+  const { t } = useTranslation("settingsTeams");
+  const { t: ti } = useTranslation("settingsInbox");
+  const { teams } = useTeams();
+  const groups = teams.map((team) => ({
+    team,
+    people: assignable.filter((m) => team.members.some((x) => x.user_id === m.user.id && x.role !== "observer")),
+  }));
+  const loose = assignable.filter((m) => !teams.some((x) => x.members.some((y) => y.user_id === m.user.id && y.role !== "observer")));
+  return (
+    <div>
+      {groups.map(({ team, people }) => {
+        const tm = team.assign_mode ?? mode;
+        return (
+          <div key={team.id} className="border-b border-line-soft last:border-0">
+            <div className="flex items-center gap-2.5 bg-sunken/60 px-4 py-2">
+              <TeamDot team={team} />
+              <Link to="/settings/teams/$teamId" params={{ teamId: team.id }} className="text-[12.5px] font-medium hover:underline">
+                {team.name}
+              </Link>
+              {team.private && <Lock className="size-3 text-fg-4" aria-label={t("common.private")} />}
+              <span className="text-[11.5px] text-fg-4">{t("list.membersCount", { count: people.length })}</span>
+              <span className={cn("ml-auto inline-flex items-center gap-1 text-[11.5px]", team.assign_mode ? tone[modeTone[tm]].text : "text-fg-3")}>
+                <span className="flex [&_svg]:size-3">{modeIcon[tm]}</span>
+                {ti(`assignment.modes.${tm}.label`)}
+                {!team.assign_mode && <span className="text-fg-4">{t("scoped.default")}</span>}
+              </span>
+            </div>
+            {people.length ? (
+              <MotionList>
+                {people.map((m) => (
+                  <MotionRow key={m.user.id}>
+                    <MemberLoad m={m} canEdit={canEdit} />
+                  </MotionRow>
+                ))}
+              </MotionList>
+            ) : (
+              <div className="px-4 py-3 text-[12px] text-fg-4">{t("scoped.noAssignable")}</div>
+            )}
+          </div>
+        );
+      })}
+      {loose.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2.5 bg-sunken/60 px-4 py-2 text-[12.5px] font-medium">
+            <span aria-hidden className="size-2 rounded-[3px] border border-dashed border-line-strong" />
+            {t("scoped.noTeamGroup")}
+            <span className="text-[11.5px] font-normal text-fg-4">{t("list.membersCount", { count: loose.length })}</span>
+          </div>
+          <MotionList>
+            {loose.map((m) => (
+              <MotionRow key={m.user.id}>
+                <MemberLoad m={m} canEdit={canEdit} />
+              </MotionRow>
+            ))}
+          </MotionList>
+        </div>
+      )}
+    </div>
   );
 }
 

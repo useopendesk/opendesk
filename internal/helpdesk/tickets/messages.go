@@ -27,6 +27,7 @@ type ticketMessageBody struct {
 	Bcc           []string `json:"bcc,omitempty" maxItems:"20"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty" maxItems:"20"`
 	Status        *string  `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed" doc:"Applied after the message is added"`
+	MailboxID     string   `json:"mailbox_id,omitempty" doc:"Replies: send from this address of the ticket's brand (the caller must be allowed to send from it); it becomes the ticket's reply address"`
 }
 
 const activitySelect = `SELECT a.id, a.ticket_id, a.actor_type, a.type, a.data, a.created_at, u.id, u.name, u.email, u.avatar_url
@@ -71,7 +72,7 @@ func registerMessages(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			id, err := resolveTicket(ctx, d.DB.Pool, p.WorkspaceID, in.ID)
+			id, err := resolveVisible(ctx, d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -100,7 +101,7 @@ func registerMessages(d *deps.Deps, api huma.API) {
 			}
 			var msg domain.Message
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				id, err := resolveTicket(ctx, tx, p.WorkspaceID, in.ID)
+				id, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
 					return err
 				}
@@ -126,7 +127,7 @@ func registerMessages(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			id, err := resolveTicket(ctx, d.DB.Pool, p.WorkspaceID, in.ID)
+			id, err := resolveVisible(ctx, d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -174,9 +175,15 @@ func registerMessages(d *deps.Deps, api huma.API) {
 					FullHTML string `json:"full_html"`
 				}
 			}{}
-			err = d.DB.Pool.QueryRow(ctx, `SELECT CASE WHEN m.full_html <> '' THEN m.full_html ELSE m.body_html END
+			var tid uuid.UUID
+			err = d.DB.Pool.QueryRow(ctx, `SELECT CASE WHEN m.full_html <> '' THEN m.full_html ELSE m.body_html END, t.id
 				FROM messages m JOIN tickets t ON t.id = m.ticket_id AND t.deleted_at IS NULL
-				WHERE m.workspace_id = $1 AND m.id = $2`, p.WorkspaceID, id).Scan(&out.Body.FullHTML)
+				WHERE m.workspace_id = $1 AND m.id = $2`, p.WorkspaceID, id).Scan(&out.Body.FullHTML, &tid)
+			if err == nil {
+				if _, err = resolveVisible(ctx, d.DB.Pool, p, tid.String()); err != nil {
+					return nil, httpx.NotFound("Message")
+				}
+			}
 			if db.IsNotFound(err) {
 				return nil, httpx.NotFound("Message")
 			}
@@ -193,10 +200,69 @@ func postMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	actor := actorOf(p)
 	var channel, subject string
 	var mailboxEmail, mailboxName, contactEmail *string
-	if err := tx.QueryRow(ctx, `SELECT t.channel, t.subject, mb.email, mb.display_name, c.email FROM tickets t
+	var mailboxID, team *uuid.UUID
+	var brand uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT t.channel, t.subject, t.mailbox_id, t.brand_id, t.team_id, mb.email, mb.display_name, c.email FROM tickets t
 		LEFT JOIN mailboxes mb ON mb.id = t.mailbox_id LEFT JOIN contacts c ON c.id = t.contact_id
-		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&channel, &subject, &mailboxEmail, &mailboxName, &contactEmail); err != nil {
+		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&channel, &subject, &mailboxID, &brand, &team, &mailboxEmail, &mailboxName, &contactEmail); err != nil {
 		return domain.Message{}, err
+	}
+	// The reply address: the one asked for (it becomes the ticket's), else the ticket's,
+	// else, for an email reply on a ticket without one, the brand's address of its team.
+	var reply *uuid.UUID
+	switch {
+	case strings.TrimSpace(b.MailboxID) != "":
+		if b.Kind != "reply" {
+			return domain.Message{}, httpx.Validation("mailbox_id applies to replies")
+		}
+		id, err := hd.ParseRef(b.MailboxID, "mailbox_id")
+		if err != nil {
+			return domain.Message{}, err
+		}
+		reply = &id
+	case b.Kind == "reply" && channel == domain.ChannelEmail && mailboxID == nil:
+		m, err := replyMailbox(ctx, tx, wid, brand, team)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		if m == nil {
+			return domain.Message{}, httpx.Validation("this ticket's brand has no address to reply from")
+		}
+		reply = m
+	}
+	// The address a reply actually goes out from must be one the caller may send from: a
+	// private team's address is for that team's members (contracts/teams.md "Reply address").
+	if b.Kind == "reply" && strings.TrimSpace(b.MailboxID) == "" {
+		from := mailboxID
+		if reply != nil {
+			from = reply
+		}
+		if from != nil && (channel == domain.ChannelEmail || reply != nil) {
+			ok, err := domain.CanSendFrom(ctx, tx, p, *from)
+			if err != nil {
+				return domain.Message{}, err
+			}
+			if !ok {
+				return domain.Message{}, httpx.E(403, "reply_address_forbidden",
+					"You can't send from this ticket's reply address. Pick another address to reply from.")
+			}
+		}
+	}
+	if reply != nil && !sameID(reply, mailboxID) {
+		patch := Patch{Mailbox: reply}
+		if strings.TrimSpace(b.MailboxID) != "" {
+			if err := patch.checkCaller(ctx, tx, p, tid); err != nil {
+				return domain.Message{}, err
+			}
+		}
+		if _, err := applyPatch(ctx, tx, d, wid, tid, actor, patch, applyOpts{}); err != nil {
+			return domain.Message{}, err
+		}
+		mailboxID = reply
+		if err := tx.QueryRow(ctx, `SELECT email, display_name FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *reply).
+			Scan(&mailboxEmail, &mailboxName); err != nil {
+			return domain.Message{}, err
+		}
 	}
 	bodyHTML := hd.SanitizeRich(b.BodyHTML)
 	bodyText := hd.HTMLToText(bodyHTML)
@@ -207,7 +273,7 @@ func postMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	if bodyText == "" && len(attIDs) == 0 && !strings.Contains(bodyHTML, "<img") {
 		return domain.Message{}, httpx.Validation("the message is empty")
 	}
-	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, nil); err != nil {
+	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, hd.Uploader{User: p.ActorUserID(), APIKey: p.ActorAPIKeyID()}); err != nil {
 		return domain.Message{}, err
 	}
 	authorType := actor.Type
@@ -230,6 +296,7 @@ func postMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		}
 		nm.To, nm.Cc, nm.Bcc = []string{*contactEmail}, cc, bcc
 		nm.FromEmail, nm.FromName = str(mailboxEmail), str(mailboxName)
+		nm.MailboxID = mailboxID
 		nm.DeliveryStatus = "pending"
 	} else if len(b.Cc)+len(b.Bcc) > 0 {
 		return domain.Message{}, httpx.Validation("cc and bcc apply only to email replies")

@@ -133,13 +133,30 @@ func Disconnect(nc *nats.Conn, userID string, sessionID string) {
 const LiveSubjectPrefix = "od.live."
 
 // LiveEvent is a live preview about one chat ticket, pushed by the gateway to the
-// visitor's contact topic and to agents watching the ticket.
+// visitor's contact topic and to agents watching the ticket. TeamID is the ticket's
+// private team: the gateway pushes the preview only to agents whose token lists it.
 type LiveEvent struct {
-	WorkspaceID uuid.UUID `json:"workspace_id"`
-	TicketID    uuid.UUID `json:"ticket_id"`
-	ContactID   uuid.UUID `json:"contact_id"`
-	Type        string    `json:"type"`
-	Data        any       `json:"data"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	TicketID    uuid.UUID  `json:"ticket_id"`
+	ContactID   uuid.UUID  `json:"contact_id"`
+	TeamID      *uuid.UUID `json:"team_id,omitempty"`
+	// BrandID is the chat's brand: the visitor's widget sockets of another brand never get it.
+	BrandID *uuid.UUID `json:"brand_id,omitempty"`
+	Type    string     `json:"type"`
+	Data    any        `json:"data"`
+}
+
+// PrivateTeam returns the ticket's team when that team is private, else nil.
+func PrivateTeam(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, wid, ticketID uuid.UUID) (*uuid.UUID, error) {
+	var team *uuid.UUID
+	err := q.QueryRow(ctx, `SELECT tm.id FROM tickets t JOIN teams tm ON tm.id = t.team_id AND tm.private
+		WHERE t.workspace_id = $1 AND t.id = $2`, wid, ticketID).Scan(&team)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return team, err
 }
 
 // PublishLive sends a live preview. It is best effort: a missed preview is replaced by

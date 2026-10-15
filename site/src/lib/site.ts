@@ -9,7 +9,7 @@ export const SITE = {
 
 export const LINKS = {
   app: 'https://app.opendesk.sh',
-  signup: 'https://app.opendesk.sh/signup',
+  signup: 'https://app.opendesk.sh/register',
   login: 'https://app.opendesk.sh/login',
   docs: 'https://docs.opendesk.sh',
   api: 'https://api.opendesk.sh',
@@ -18,31 +18,33 @@ export const LINKS = {
   github: 'https://github.com/useopendesk/opendesk',
   githubIssues: 'https://github.com/useopendesk/opendesk/issues',
   githubReleases: 'https://github.com/useopendesk/opendesk/releases',
+  discord: 'https://dc.opendesk.sh',
+  selfHosting: 'https://docs.opendesk.sh/self-hosting/',
+  selfHostQuickstart: 'https://docs.opendesk.sh/getting-started/quickstart-self-host/',
   license: 'https://github.com/useopendesk/opendesk/blob/main/LICENSE',
   install: 'curl -fsSL https://opendesk.sh/install.sh | sh',
 } as const;
 
-export const EMAILS = {
-  hello: 'hello@opendesk.sh',
-  support: 'support@opendesk.sh',
-  security: 'security@opendesk.sh',
-  privacy: 'privacy@opendesk.sh',
-  legal: 'legal@opendesk.sh',
-} as const;
+// The one address people reach us on: sales, support, security, privacy and legal alike.
+export const EMAIL = 'team@opendesk.sh';
 
-// PLACEHOLDER: the operating company is not confirmed yet. Replace before launch;
-// these strings appear on /privacy, /terms and /contact.
+// The company that operates opendesk Cloud. UK law asks for the name, number, place of
+// registration and registered office on the site; the ICO reference goes with the
+// privacy policy. Shown in the footer, /privacy, /terms and /contact.
 export const COMPANY = {
-  legalName: '[Company legal name]',
-  address: '[Registered address]',
-  jurisdiction: '[Governing law jurisdiction]',
+  legalName: 'Mindroot Ltd',
+  number: '16543299',
+  registeredIn: 'England and Wales',
+  address: '71-75 Shelton Street, London, England, WC2H 9JQ',
+  shortAddress: '71-75 Shelton Street, London WC2H 9JQ',
+  ico: 'ZB958997',
+  jurisdiction: 'England and Wales',
 } as const;
 
 export const NAV = [
-  { href: '/self-hosting/', label: 'Self-hosting' },
   { href: '/pricing/', label: 'Pricing' },
-  { href: LINKS.docs, label: 'Docs' },
-  { href: '/changelog/', label: 'Changelog' },
+  { href: '/download/', label: 'Download' },
+  { href: LINKS.docs, label: 'Documentation' },
   { href: '/blog/', label: 'Blog' },
 ] as const;
 
@@ -54,7 +56,7 @@ export const PRODUCT_NAV = [
   { icon: 'book', href: '/features/#knowledge-base', title: 'Knowledge base', desc: 'A help center customers search themselves.' },
   { icon: 'zap', href: '/features/#automations', title: 'Automations and SLAs', desc: 'Rules and targets that run on arrival.' },
   { icon: 'chart', href: '/features/#reports', title: 'Reports and CSAT', desc: 'Medians, breaches and satisfaction.' },
-  { icon: 'radio', href: '/features/#realtime', title: 'Realtime', desc: 'Presence, typing and live updates.' },
+  { icon: 'radio', href: '/features/#inbox', title: 'Realtime', desc: 'Presence, typing and live updates.' },
   { icon: 'braces', href: '/features/#api', title: 'API and webhooks', desc: 'The same REST API the app uses.' },
   { icon: 'shield', href: '/security/', title: 'Security', desc: 'CASA Tier 1 controls, written down.' },
 ] as const;

@@ -400,9 +400,14 @@ func registerContacts(d *deps.Deps, api huma.API) {
 			if in.Cursor != "" {
 				curT = &cur.T
 			}
+			hidden, err := domain.HiddenTeams(ctx, d.DB.Pool, p)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			rows, err := d.DB.Pool.Query(ctx, domain.TicketSelect+` WHERE t.workspace_id = $1 AND t.contact_id = $2 AND t.deleted_at IS NULL
 				AND ($3::timestamptz IS NULL OR (t.last_message_at, t.id) < ($3, $4))
-				ORDER BY t.last_message_at DESC, t.id DESC LIMIT $5`, p.WorkspaceID, id, curT, cur.ID, in.Limit+1)
+				AND `+domain.VisibleSQLUser("t", 6, 7)+`
+				ORDER BY t.last_message_at DESC, t.id DESC LIMIT $5`, p.WorkspaceID, id, curT, cur.ID, in.Limit+1, hidden, p.ActorUserID())
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

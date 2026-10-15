@@ -1,6 +1,6 @@
 // Request routing for the mock transport.
 
-import { db, wsById, type WsData } from "./db";
+import { db, userFromToken, wsById, type WsData } from "./db";
 import { isRecord } from "./util";
 
 export class HttpError extends Error {
@@ -111,6 +111,10 @@ export async function dispatch(input: string, init: RequestInit): Promise<Respon
     .sort((a, b) => Object.keys(a.params).length - Object.keys(b.params).length);
   const hit = candidates[0];
   if (!hit) return problem(new HttpError(404, "not_found", `No mock route for ${method} ${pathPart}`));
+
+  // Each request runs as the account its access token names (several can be signed in).
+  const asUser = userFromToken(headers.get("Authorization"));
+  if (asUser) db.meId = asUser;
 
   const wid = headers.get("OD-Workspace");
   const ws = wsById(wid) ?? db.workspaces[0];

@@ -1,0 +1,459 @@
+---
+/**
+ * A diagram drawn as SVG in the docs theme: boxes, groups and arrows in the theme's
+ * greys and soft tones, set in Geist, following light and dark with the page. The
+ * diagrams are data in src/diagrams (one file each, listed in src/diagrams/index.ts):
+ *
+ *   <Diagram name="self-host" />
+ *   <Diagram name="event-flow" caption="Optional, replaces the diagram's own caption" />
+ *
+ * The picture keeps its natural size when the column allows it, scales down with the
+ * column, and scrolls sideways below `minWidth` rather than shrink its text away.
+ */
+import { diagrams, type DiagramName } from '../diagrams';
+import type { Box, Edge, Side } from '../diagrams/types';
+
+interface Props {
+  name: DiagramName;
+  caption?: string;
+}
+
+const { name, caption: captionProp } = Astro.props;
+const spec = diagrams[name];
+if (!spec) throw new Error(`No diagram named ${name}. Add it to docs/src/diagrams/index.ts.`);
+const caption = captionProp ?? spec.caption;
+const uid = `dg-${name}`;
+
+type P = [number, number];
+const byId = new Map(spec.boxes.map((b) => [b.id, b]));
+const box = (id: string): Box => {
+  const b = byId.get(id);
+  if (!b) throw new Error(`Diagram ${name}: no box ${id}`);
+  return b;
+};
+
+const horizontal = (s: Side) => s === 'l' || s === 'r';
+const anchor = (b: Box, side: Side, at = 0.5): P => {
+  switch (side) {
+    case 'l':
+      return [b.x, b.y + b.h * at];
+    case 'r':
+      return [b.x + b.w, b.y + b.h * at];
+    case 't':
+      return [b.x + b.w * at, b.y];
+    default:
+      return [b.x + b.w * at, b.y + b.h];
+  }
+};
+// Without sides given: leave and arrive on the faces that look at each other.
+const autoSides = (a: Box, b: Box): [Side, Side] => {
+  if (b.x >= a.x + a.w) return ['r', 'l'];
+  if (b.x + b.w <= a.x) return ['l', 'r'];
+  if (b.y >= a.y + a.h) return ['b', 't'];
+  return ['t', 'b'];
+};
+
+const route = (e: Edge): P[] => {
+  const a = box(e.from);
+  const b = box(e.to);
+  const [fa, ta] = autoSides(a, b);
+  const fs = e.fromSide ?? fa;
+  const ts = e.toSide ?? ta;
+  const p0 = anchor(a, fs, e.fromAt);
+  const p1 = anchor(b, ts, e.toAt);
+  let pts: P[];
+  if (e.via) pts = [p0, ...e.via, p1];
+  else if (horizontal(fs) && horizontal(ts)) {
+    const mx = Math.round((p0[0] + p1[0]) / 2);
+    pts = p0[1] === p1[1] ? [p0, p1] : [p0, [mx, p0[1]], [mx, p1[1]], p1];
+  } else if (!horizontal(fs) && !horizontal(ts)) {
+    const my = Math.round((p0[1] + p1[1]) / 2);
+    pts = p0[0] === p1[0] ? [p0, p1] : [p0, [p0[0], my], [p1[0], my], p1];
+  } else if (horizontal(fs)) pts = [p0, [p1[0], p0[1]], p1];
+  else pts = [p0, [p0[0], p1[1]], p1];
+  return pts.filter((p, i) => i === 0 || p[0] !== pts[i - 1][0] || p[1] !== pts[i - 1][1]);
+};
+
+const ARROW = 7;
+const len = (a: P, b: P) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+const unit = (a: P, b: P): P => {
+  const l = len(a, b) || 1;
+  return [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+};
+
+/** A path through the points with softly rounded corners, ends drawn back for arrowheads. */
+const pathOf = (raw: P[], startArrow: boolean, endArrow: boolean) => {
+  const pts = raw.map((p) => [...p] as P);
+  const n = pts.length;
+  if (endArrow) {
+    const d = unit(pts[n - 2], pts[n - 1]);
+    pts[n - 1] = [pts[n - 1][0] - d[0] * (ARROW - 1), pts[n - 1][1] - d[1] * (ARROW - 1)];
+  }
+  if (startArrow) {
+    const d = unit(pts[1], pts[0]);
+    pts[0] = [pts[0][0] - d[0] * (ARROW - 1), pts[0][1] - d[1] * (ARROW - 1)];
+  }
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < n - 1; i++) {
+    const r = Math.min(8, len(pts[i - 1], pts[i]) / 2, len(pts[i], pts[i + 1]) / 2);
+    const a = unit(pts[i], pts[i - 1]);
+    const b = unit(pts[i], pts[i + 1]);
+    d += ` L${pts[i][0] + a[0] * r},${pts[i][1] + a[1] * r} Q${pts[i][0]},${pts[i][1]} ${pts[i][0] + b[0] * r},${pts[i][1] + b[1] * r}`;
+  }
+  return d + ` L${pts[n - 1][0]},${pts[n - 1][1]}`;
+};
+
+const arrowAt = (tip: P, from: P) => {
+  const [ux, uy] = unit(from, tip);
+  const bx = tip[0] - ux * ARROW;
+  const by = tip[1] - uy * ARROW;
+  const w = 3.6;
+  return `M${tip[0]},${tip[1]} L${bx - uy * w},${by + ux * w} L${bx + uy * w},${by - ux * w} Z`;
+};
+
+const labelPos = (e: Edge, pts: P[]): P => {
+  if (e.labelAt) return e.labelAt;
+  let best = 0;
+  for (let i = 1; i < pts.length; i++) if (len(pts[i - 1], pts[i]) > len(pts[best], pts[best + 1] ?? pts[best])) best = i - 1;
+  const a = pts[best];
+  const b = pts[best + 1];
+  const mid: P = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  // Above a horizontal run, beside a vertical one.
+  return a[1] === b[1] ? [mid[0], mid[1] - 7] : [mid[0] + 8, mid[1] + 4];
+};
+
+const edges = (spec.edges ?? []).map((e) => {
+  const pts = route(e);
+  const n = pts.length;
+  const end = !e.plain;
+  const start = !!e.both && !e.plain;
+  const [lx, ly] = labelPos(e, pts);
+  const vertical = !e.labelAt && pts.length > 1 && (() => {
+    let best = 0;
+    for (let i = 1; i < pts.length; i++) if (len(pts[i - 1], pts[i]) > len(pts[best], pts[best + 1] ?? pts[best])) best = i - 1;
+    return pts[best][0] === pts[best + 1]?.[0];
+  })();
+  return {
+    e,
+    d: pathOf(pts, start, end),
+    heads: [end ? arrowAt(pts[n - 1], pts[n - 2]) : null, start ? arrowAt(pts[0], pts[1]) : null].filter(Boolean) as string[],
+    label: e.label ? { x: lx, y: ly, anchor: e.labelAnchor ?? (vertical ? 'start' : 'middle') } : null,
+  };
+});
+
+// Text inside a box: the title, then the lines under it, centred as a block.
+const T = { title: 15, sub: 14.5, gap: 3, smallTitle: 13, smallSub: 13 };
+const texts = spec.boxes.map((b) => {
+  const lip = b.shape === 'db' ? 4 : 0;
+  if (b.points?.length) {
+    // Title and points from the top, or centred as a block with valign: 'middle'.
+    const block = 22 + b.points.length * 18 + 4;
+    const top = (b.valign === 'middle' ? b.y + (b.h - block) / 2 + 12 : b.y + 22) + lip;
+    return {
+      b,
+      align: 'start' as const,
+      x: b.x + 14,
+      title: { y: top },
+      sub: [] as { y: number; text: string }[],
+      points: b.points.map((text, i) => ({ y: top + 22 + i * 18, text })),
+    };
+  }
+  const subs = b.sub ? b.sub.split('\n') : [];
+  const th = b.small ? T.smallTitle : T.title;
+  const sh = b.small ? T.smallSub : T.sub;
+  const block = th + (subs.length ? T.gap + subs.length * sh : 0);
+  const top = b.valign === 'top' ? b.y + 14 : b.y + b.h / 2 - block / 2 + lip;
+  const left = b.align === 'left';
+  return {
+    b,
+    align: left ? ('start' as const) : ('middle' as const),
+    x: left ? b.x + 14 : b.x + b.w / 2,
+    title: { y: top + th - (b.small ? 3 : 4) },
+    sub: subs.map((text, i) => ({ y: top + th + T.gap + (i + 1) * sh - 3.5, text })),
+    points: [] as { y: number; text: string }[],
+  };
+});
+
+const cylinder = (b: Box) => {
+  const ry = 6;
+  const rx = b.w / 2;
+  return {
+    body: `M${b.x},${b.y + ry} a${rx},${ry} 0 0 1 ${b.w},0 V${b.y + b.h - ry} a${rx},${ry} 0 0 1 ${-b.w},0 Z`,
+    lip: `M${b.x},${b.y + ry} a${rx},${ry} 0 0 0 ${b.w},0`,
+  };
+};
+
+const minWidth = spec.minWidth ?? 560;
+---
+
+<figure class="od-diagram not-content" style={`--od-diagram-w: ${spec.width}px; --od-diagram-min: ${minWidth}px`}>
+  <div class="od-diagram-frame">
+    <svg viewBox={`0 0 ${spec.width} ${spec.height}`} width={spec.width} height={spec.height} role="img" aria-labelledby={`${uid}-title`}>
+      <title id={`${uid}-title`}>{spec.alt}</title>
+
+      {
+        (spec.groups ?? []).map((g) => (
+          <g class={`dg-group dg-tone-${g.tone ?? 'plain'}`}>
+            <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="12" class:list={['dg-group-rect', { 'dg-dashed': g.dashed }]} />
+            <text x={g.x + 12} y={g.y + 18} class="dg-group-label">
+              {g.label}
+            </text>
+          </g>
+        ))
+      }
+
+      {
+        edges.map(({ e, d, heads }) => (
+          <g class:list={['dg-edge', { 'dg-strong': e.strong }]}>
+            <path d={d} class:list={['dg-line', { 'dg-dashed': e.dashed }]} />
+            {heads.map((h) => (
+              <path d={h} class="dg-head" />
+            ))}
+          </g>
+        ))
+      }
+
+      {
+        texts.map(({ b, align, x, title, sub, points }) => (
+          <g class={`dg-node dg-tone-${b.tone ?? 'plain'}`}>
+            {b.shape === 'db' ? (
+              <>
+                <path d={cylinder(b).body} class="dg-box" />
+                <path d={cylinder(b).lip} class="dg-box dg-lip" />
+              </>
+            ) : (
+              <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={b.small ? 6 : 9} class="dg-box" />
+            )}
+            <text x={x} y={title.y} text-anchor={align} class:list={['dg-title', { 'dg-mono': b.mono, 'dg-small': b.small }]}>
+              {b.title}
+            </text>
+            {sub.map((s) => (
+              <text x={x} y={s.y} text-anchor={align} class:list={['dg-sub', { 'dg-small': b.small }]}>
+                {s.text}
+              </text>
+            ))}
+            {points.map((p) => (
+              <>
+                <circle cx={b.x + 17} cy={p.y - 4} r="2" class="dg-bullet" />
+                <text x={b.x + 26} y={p.y} class="dg-sub">
+                  {p.text}
+                </text>
+              </>
+            ))}
+            {b.n != null && (
+              <>
+                <rect x={b.x - 9} y={b.y - 9} width="20" height="20" rx="6" class="dg-badge" />
+                <text x={b.x + 1} y={b.y + 5} text-anchor="middle" class="dg-badge-text">
+                  {String(b.n)}
+                </text>
+              </>
+            )}
+          </g>
+        ))
+      }
+
+      {
+        edges.map(({ e, label }) =>
+          label ? (
+            <text x={label.x} y={label.y} text-anchor={label.anchor} class:list={['dg-label', { 'dg-mono': e.mono }]}>
+              {e.label}
+            </text>
+          ) : null,
+        )
+      }
+
+      {
+        (spec.notes ?? []).map((n) => (
+          <text x={n.x} y={n.y} text-anchor={n.anchor ?? 'start'} class:list={['dg-note', `dg-note-${n.tone ?? 'plain'}`, { 'dg-mono': n.mono }]}>
+            {n.text}
+          </text>
+        ))
+      }
+    </svg>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+  .od-diagram {
+    --dg-violet: #7c5cff;
+    --dg-red: #e5484d;
+    --dg-bg: var(--od-soft);
+    margin: 1.75rem 0;
+  }
+  :global(:root[data-theme='dark']) .od-diagram {
+    --dg-violet: #a18bff;
+    --dg-red: #ff6b70;
+  }
+  .od-diagram-frame {
+    overflow-x: auto;
+    border: 1px solid var(--od-line);
+    border-radius: 12px;
+    /* A quiet dot grid across the whole frame, however wide the column. */
+    background: radial-gradient(circle at 1px 1px, var(--od-line) 0.9px, transparent 0) 7px 7px / 16px 16px, var(--dg-bg);
+  }
+  .od-diagram svg {
+    display: block;
+    width: 100%;
+    min-width: var(--od-diagram-min);
+    max-width: var(--od-diagram-w);
+    height: auto;
+    margin: 0 auto;
+    font-family: var(--__sl-font);
+  }
+  .od-diagram figcaption {
+    margin-top: 0.625rem;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
+    color: var(--od-muted);
+  }
+
+  /* Groups: a boundary such as a server, a network or a provider. */
+  .dg-group-rect {
+    fill: color-mix(in oklab, var(--od-bg) 55%, transparent);
+    stroke: var(--od-line);
+    stroke-width: 1;
+  }
+  .dg-group-label {
+    font-family: var(--__sl-font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    fill: var(--od-faint);
+  }
+  .dg-dashed {
+    stroke-dasharray: 4 4;
+  }
+
+  /* Lines. */
+  .dg-line {
+    fill: none;
+    stroke: color-mix(in oklab, var(--od-faint) 85%, transparent);
+    stroke-width: 1.25;
+    stroke-linejoin: round;
+  }
+  .dg-head {
+    fill: color-mix(in oklab, var(--od-faint) 85%, transparent);
+  }
+  .dg-strong .dg-line {
+    stroke: var(--od-heading);
+  }
+  .dg-strong .dg-head {
+    fill: var(--od-heading);
+  }
+  .dg-label {
+    font-size: 11px;
+    font-weight: 500;
+    fill: var(--od-muted);
+    paint-order: stroke;
+    stroke: var(--dg-bg);
+    stroke-width: 5px;
+    stroke-linejoin: round;
+  }
+
+  /* Boxes. */
+  .dg-box {
+    fill: var(--od-bg);
+    stroke: var(--od-line);
+    stroke-width: 1;
+  }
+  .dg-lip {
+    fill: none;
+  }
+  .dg-title {
+    font-size: 13px;
+    font-weight: 500;
+    fill: var(--od-heading);
+  }
+  .dg-sub {
+    font-size: 11.5px;
+    fill: var(--od-muted);
+  }
+  .dg-title.dg-small {
+    font-size: 11.5px;
+  }
+  .dg-sub.dg-small {
+    font-size: 10.5px;
+  }
+  .dg-mono {
+    font-family: var(--__sl-font-mono);
+    font-size: 12px;
+  }
+  .dg-title.dg-mono.dg-small {
+    font-size: 11px;
+  }
+  .dg-bullet {
+    fill: var(--od-faint);
+  }
+  .dg-badge {
+    fill: var(--od-ink);
+    stroke: var(--dg-bg);
+    stroke-width: 2;
+  }
+  .dg-badge-text {
+    font-family: var(--__sl-font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    fill: var(--od-ink-fg);
+  }
+  .dg-note {
+    font-size: 11px;
+    fill: var(--od-faint);
+  }
+
+  /* Tones. */
+  .dg-tone-soft .dg-box {
+    fill: var(--od-soft);
+  }
+  .dg-tone-ink .dg-box {
+    fill: var(--od-ink);
+    stroke: var(--od-ink);
+  }
+  .dg-tone-ink .dg-title {
+    fill: var(--od-ink-fg);
+  }
+  .dg-tone-ink .dg-sub {
+    fill: color-mix(in oklab, var(--od-ink-fg) 72%, transparent);
+  }
+  .dg-tone-green {
+    --dg-c: var(--od-tone-green);
+  }
+  .dg-tone-blue {
+    --dg-c: var(--od-tone-blue);
+  }
+  .dg-tone-amber {
+    --dg-c: var(--od-tone-amber);
+  }
+  .dg-tone-violet {
+    --dg-c: var(--dg-violet);
+  }
+  .dg-tone-red {
+    --dg-c: var(--dg-red);
+  }
+  :is(.dg-tone-green, .dg-tone-blue, .dg-tone-amber, .dg-tone-violet, .dg-tone-red) .dg-box {
+    fill: color-mix(in oklab, var(--dg-c) 8%, var(--od-bg));
+    stroke: color-mix(in oklab, var(--dg-c) 42%, var(--od-line));
+  }
+  :is(.dg-tone-green, .dg-tone-blue, .dg-tone-amber, .dg-tone-violet, .dg-tone-red) .dg-group-rect {
+    fill: color-mix(in oklab, var(--dg-c) 4%, transparent);
+    stroke: color-mix(in oklab, var(--dg-c) 38%, var(--od-line));
+  }
+  :is(.dg-tone-green, .dg-tone-blue, .dg-tone-amber, .dg-tone-violet, .dg-tone-red) .dg-group-label {
+    fill: color-mix(in oklab, var(--dg-c) 80%, var(--od-heading));
+  }
+  .dg-note-green {
+    fill: var(--od-tone-green);
+  }
+  .dg-note-blue {
+    fill: var(--od-tone-blue);
+  }
+  .dg-note-amber {
+    fill: var(--od-tone-amber);
+  }
+  .dg-note-violet {
+    fill: var(--dg-violet);
+  }
+  .dg-note-red {
+    fill: var(--dg-red);
+  }
+</style>

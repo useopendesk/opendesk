@@ -7,7 +7,7 @@ We take security reports seriously and appreciate the work of researchers who he
 
 ## How to report
 
-Email **[security@opendesk.sh](mailto:security@opendesk.sh)**, or open a private report through [GitHub security advisories](https://github.com/useopendesk/opendesk/security/advisories/new).
+Email **[team@opendesk.sh](mailto:team@opendesk.sh)**, or open a private report through [GitHub security advisories](https://github.com/useopendesk/opendesk/security/advisories/new).
 
 Please include:
 

@@ -39,8 +39,9 @@ model, not a persona: everything it decides is shown as Ollie. Without a TypeSaf
 keeps working on the LLM path; nothing is gated on Jev.
 
 Every call: `d.Plan.Reserve` → model → `d.Plan.Spend` with the call's real cost (see
-`contracts/billing.md`). A workspace on its own provider key skips `Reserve` and is recorded with 0
-credits ("Provider per workspace" below). Prompts carry only the data the feature needs. Customer content is sent to
+`contracts/billing.md`: `Reserve` checks the AI balance covers the call's estimate, priced on the
+chosen model). A workspace on its own provider key skips `Reserve` and is recorded at $0
+("Provider per workspace" below). Prompts carry only the data the feature needs. Customer content is sent to
 the configured provider only; provider responses are not used for training (Anthropic API default;
 on OpenRouter, `data_collection: "deny"`). No prompt or completion
 text is logged; usage rows store counts only. Workspace admins can turn AI features off
@@ -48,7 +49,7 @@ text is logged; usage rows store counts only. Workspace admins can turn AI featu
 
 ## Provider per workspace
 
-A workspace runs its AI on the instance's provider (the default; on Cloud, paid in opendesk credits)
+A workspace runs its AI on the instance's provider (the default; on Cloud, charged to the workspace's AI balance in US dollars)
 or on its own key. Owners and admins choose in Settings > AI. Kinds:
 
 | kind | key | where calls go |
@@ -64,16 +65,16 @@ or on its own key. Owners and admins choose in Settings > AI. Kinds:
   playground, Ollie (the assistant and its connected tools), and the email agent. No call falls back to
   the instance's provider.
 - Stays on the instance: **embeddings** (semantic search, retrieval; not charged, as before) and
-  **Jev decisions** (triage, the widget relevance check, `ai_decide`), which keep their small credit
-  cost. If Jev cannot run for lack of credits, triage runs on the workspace's key instead.
+  **Jev decisions** (triage, the widget relevance check, `ai_decide`), which keep their small cost
+  to the AI balance. If Jev cannot run because the AI balance is too low, triage runs on the workspace's key instead.
 - Models: `GET /v1/ai/models` lists the provider's models (OpenRouter `GET /v1/models`, the endpoint's
-  `GET /models`, Anthropic `GET /v1/models`; cached an hour), with `credits_per_mtok: null`. The key's
+  `GET /models`, Anthropic `GET /v1/models`; cached an hour), with `usd_per_mtok: null` and `typical_reply_usd: null` (the workspace pays its provider). The key's
   `model` and `fast_model` are the defaults (OpenRouter `anthropic/claude-sonnet-5.5` and
   `anthropic/claude-haiku-5.5`, Anthropic `claude-sonnet-5-5` and `claude-haiku-4-5-20251001` when
   empty). `settings.ai` model choices must be one of these (`422` otherwise); a stored choice the
   provider does not list falls back to the key's default.
-- Billing: calls on the key charge no credits and are never refused for lack of credits; usage rows
-  are still written with `millicredits = 0` and `source = "own_key"` (contracts/billing.md).
+- Billing: calls on the key charge $0 and are never refused for the AI balance; usage rows
+  are still written with `micro_usd = 0` and `source = "own_key"` (contracts/billing.md).
 - Failures: a 401 or 403 from the provider marks the key `rejected`; a 402 (or an OpenAI
   `insufficient_quota`) marks it `no_funds`. The call fails like a provider outage (`502
   ai_key_rejected` / `502 ai_key_no_funds`; automatic features skip as for `ai_unavailable`), and owners
@@ -91,7 +92,7 @@ or on its own key. Owners and admins choose in Settings > AI. Kinds:
 
 ```ts
 type AIKeyKind = "openrouter" | "openai" | "anthropic"
-interface AIProvider { mode: "instance" | "own_key"; instance_provider: string; billing: boolean /* instance calls are charged in credits */;
+interface AIProvider { mode: "instance" | "own_key"; instance_provider: string; billing: boolean /* instance calls are charged to the AI balance, in US dollars */;
   key: { kind: AIKeyKind; base_url_host: string; last4: string; model: string; fast_model: string;
     status: "ok" | "rejected" | "no_funds"; status_at: string | null; created_by: UserRef | null; created_at: string; updated_at: string } | null }
 interface AIProviderKeyInput { kind: AIKeyKind; api_key: string /* 8..500 printable ASCII, write only */;
@@ -121,13 +122,12 @@ interface AISettings {
   auto_summarize: boolean          // keep a summary on tickets with 5+ messages, default false
   widget_answers: boolean          // the AI agent answers chat widget conversations, default false
   assistant: boolean               // Ollie, the assistant panel, default true
-  tone: string                     // "friendly" | "professional" | "concise" | free text up to 200 chars
+  tone: string                     // "friendly" | "professional" | "concise" | free text up to 200 chars; drafts and rewrites (the agent uses its bot's tone, contracts/bots.md)
   reply_language: "customer" | "workspace"  // reply in the customer's language (default) or the workspace's
   instructions: string             // extra guidance for drafts, up to 2,000 chars
   model: string                    // drafts, summaries, copilot, KB drafts, Ollie; "" = the instance default (AI_MODEL)
   fast_model: string               // rewrite, translate, LLM triage and decisions; "" = AI_FAST_MODEL
   widget_model: string             // the widget agent; "" = `model`
-  widget_instructions: string      // what the widget agent should know (products, policies, hours, links), up to 4,000 chars
   widget_max_replies: number       // 1..100, default 20: AI replies in one conversation before it hands off to the team
 }
 ```
@@ -135,15 +135,15 @@ interface AISettings {
 `model`, `fast_model` and `widget_model` must be "" or an `id` from `GET /v1/ai/models`
 (`422 validation_failed` otherwise). A stored model the instance no longer offers falls back to the
 instance default without an error. Choosing a model is never gated on plan: a costlier model simply
-uses more credits.
+costs more of the AI balance per call (each call is charged on its real cost, contracts/billing.md).
 
 `PATCH /v1/ai/settings` merges the given keys into `settings.ai` (others are kept), answers
 `422 validation_failed` for an unknown `reply_language`, a `tone` over 200 characters or
 containing `<`, `>` or control characters, or `instructions` over 2,000 characters (control
 characters other than newline and tab are stripped), and writes the audit entry
 `ai.settings_updated` with the changed keys (not their values). `reply_language: "workspace"`
-means English unless `instructions` name another language. `widget_instructions` follows the
-`instructions` rules with a 4,000 character limit; `widget_max_replies` outside 1..100 is `422`.
+means English unless `instructions` name another language. `widget_max_replies` outside 1..100 is
+`422`. What the agent should know and how it sounds are its bot's personality (contracts/bots.md).
 
 ## Models
 
@@ -162,26 +162,31 @@ interface AIModel {
   name: string                      // e.g. "Claude Sonnet 5.5" (the id when unknown)
   vendor: string                    // e.g. "Anthropic" ("" when unknown)
   context_length: number | null
-  credits_per_mtok: { input: number; output: number } | null  // credits per million tokens, markup included; null when the price is unknown
+  // US dollars per million tokens as the workspace pays them (the instance markup included when
+  // billing is on; the provider's price on a self-hosted instance); null when the price is unknown
+  usd_per_mtok: { input: number; output: number } | null
+  // what a typical draft reply (4,000 input, 500 output tokens) costs on this model, in US dollars; null when the price is unknown
+  typical_reply_usd: number | null
 }
+// Every US dollar value is a number with up to 6 decimals.
 ```
 
 ## Endpoints (owner area: ai)
 
-| method | path | min role | credits (typical) | body → response |
+| method | path | min role | typical cost (default models) | body → response |
 | --- | --- | --- | --- | --- |
-| GET | `/v1/ai/config` | viewer | 0 | `{enabled, provider, models: {default, fast} /* the workspace's effective choices */, embeddings: boolean, features: AISettings, costs: Record<string, number> /* typical credits per call, the minimum balance to start one (contracts/billing.md) */, metered: boolean /* credits follow real usage */, assistant_name: "Ollie", decisions: DecisionEngine /* contracts/api.md */, own_key: boolean /* LLM calls run on the workspace's key ("Provider per workspace") */}`; `provider` and `models` are the workspace's |
-| GET | `/v1/ai/models` | viewer | 0 | → `{data: AIModel[], default, fast}` ("Models" above; on the workspace's own key, its provider's models) |
-| PATCH | `/v1/ai/settings` | admin | 0 | `Partial<AISettings>` → `AISettings` |
-| POST | `/v1/tickets/{id}/ai/draft` | agent | 3 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies and the top KB matches |
-| POST | `/v1/tickets/{id}/ai/summary` | viewer | 1 | `{}` → `{summary: string, key_points: string[], sentiment: Sentiment, updated_at}`; stored on the ticket (`custom.ai_summary`) and published as `ticket.updated` |
-| POST | `/v1/tickets/{id}/ai/ask` | viewer | 2 | `{question: string}` → `{answer_html, sources: KBSource[]}` (copilot) |
-| POST | `/v1/tickets/{id}/ai/triage` | agent | 1 | `{apply: boolean}` → `Triage`; `apply` sets tags/priority/severity with `automation`-style activities attributed to `ai` |
-| DELETE | `/v1/tickets/{id}/ai/suggestions/{field}` | agent | 0 | → 204; dismisses Ollie's suggestion for `field` (`priority`, `severity`, `labels`, `team`, `spam`). Accepting is setting the field (PATCH the ticket), which removes the suggestion |
-| POST | `/v1/ai/rewrite` | agent | 1 | `{html: string, mode: "friendlier"\|"more_formal"\|"shorter"\|"longer"\|"fix_grammar"\|"simplify", instructions?: string}` → `{html}` |
-| POST | `/v1/ai/translate` | agent | 1 | `{html?: string, text?: string, target: string /* BCP 47 */}` → `{html?, text?, source_language}` |
-| POST | `/v1/kb/articles/ai/draft` | agent | 5 | `{ticket_ids?: string[] /* at most 10 */, topic?: string /* up to 300 chars */}` → `{title, body_html, excerpt}` (not saved) |
-| GET | `/v1/ai/search` | viewer | 0 | `?q` semantic search over tickets and articles (embeddings), FTS fallback → same shape as `/v1/search` |
+| GET | `/v1/ai/config` | viewer | $0 | `{enabled, provider, models: {default, fast} /* the workspace's effective choices */, embeddings: boolean, features: AISettings, costs: Record<string, number> /* what a typical call of each feature costs on the workspace's chosen models, in US dollars (contracts/billing.md "Typical costs"); on its own key, LLM features are 0 (the workspace pays its provider) and Jev features keep their cost */, metered: boolean /* each call is charged on its real cost */, assistant_name: "Ollie", decisions: DecisionEngine /* contracts/api.md */, own_key: boolean /* LLM calls run on the workspace's key ("Provider per workspace") */}`; `provider` and `models` are the workspace's |
+| GET | `/v1/ai/models` | viewer | $0 | → `{data: AIModel[], default, fast}` ("Models" above; on the workspace's own key, its provider's models) |
+| PATCH | `/v1/ai/settings` | admin | $0 | `Partial<AISettings>` → `AISettings` |
+| POST | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies and the top KB matches |
+| POST | `/v1/tickets/{id}/ai/summary` | viewer | $0.01 | `{}` → `{summary: string, key_points: string[], sentiment: Sentiment, updated_at}`; stored on the ticket (`custom.ai_summary`) and published as `ticket.updated` |
+| POST | `/v1/tickets/{id}/ai/ask` | viewer | $0.02 | `{question: string}` → `{answer_html, sources: KBSource[]}` (copilot) |
+| POST | `/v1/tickets/{id}/ai/triage` | agent | $0.01 | `{apply: boolean}` → `Triage`; `apply` sets tags/priority/severity with `automation`-style activities attributed to `ai` |
+| DELETE | `/v1/tickets/{id}/ai/suggestions/{field}` | agent | $0 | → 204; dismisses Ollie's suggestion for `field` (`priority`, `severity`, `labels`, `team`, `spam`). Accepting is setting the field (PATCH the ticket), which removes the suggestion |
+| POST | `/v1/ai/rewrite` | agent | $0.01 | `{html: string, mode: "friendlier"\|"more_formal"\|"shorter"\|"longer"\|"fix_grammar"\|"simplify", instructions?: string}` → `{html}` |
+| POST | `/v1/ai/translate` | agent | $0.01 | `{html?: string, text?: string, target: string /* BCP 47 */}` → `{html?, text?, source_language}` |
+| POST | `/v1/kb/articles/ai/draft` | agent | $0.05 | `{ticket_ids?: string[] /* at most 10 */, topic?: string /* up to 300 chars */}` → `{title, body_html, excerpt}` (not saved) |
+| GET | `/v1/ai/search` | viewer | $0 | `?q` semantic search over tickets and articles (embeddings), FTS fallback → same shape as `/v1/search` |
 
 `{id}` is a ticket uuid, `#123` (URL-encoded `%23123`) or `123`. API keys need the scope
 of the data the route reads or writes: `tickets:read` (summary, ask, search),
@@ -195,7 +200,7 @@ Errors, all `application/problem+json`:
 | --- | --- | --- |
 | 404 | `ai_disabled` | the instance has no AI provider |
 | 403 | `ai_off` | `settings.ai.enabled` is false |
-| 402 | `no_credits` | `d.Plan.Reserve` refused; the model was not called |
+| 402 | `ai_balance_empty` | `d.Plan.Reserve` refused: the AI balance does not cover the call's estimate; the model was not called |
 | 503 | `ai_busy` | the provider is rate limited or overloaded after retries |
 | 502 | `ai_unavailable` | the provider failed or timed out |
 | 502 | `ai_bad_output` | the model returned output that failed validation |
@@ -203,17 +208,17 @@ Errors, all `application/problem+json`:
 | 502 | `ai_key_rejected` | the workspace's own key was refused by its provider (401, 403) |
 | 502 | `ai_key_no_funds` | the workspace's own provider account is out of funds or quota |
 
-A failed call costs nothing: credits are spent only after the feature succeeded, and a
+A failed call costs nothing: the AI balance is charged only after the feature succeeded, and a
 usage row (`ai_usage`, counts only) is written with every spend. Without billing (self-host)
 usage rows are still written; there is no balance. Each successful call also sends the
 analytics event `ai_feature_used {feature, model}` (no content).
 
 Streaming: `draft`, `ask` and `rewrite` also accept `Accept: text/event-stream` and stream
-`event: delta` `{text}` chunks, then `event: done` with the full JSON response. Credits are
-spent once, at `done`. Delta text is the raw model text (markdown for draft and ask, HTML
+`event: delta` `{text}` chunks, then `event: done` with the full JSON response. The call is
+charged once, at `done`. Delta text is the raw model text (markdown for draft and ask, HTML
 for rewrite) for a live preview only; render and insert the sanitized `done` payload. An
 error before the first event is a normal problem+json response with its status (so `402
-no_credits` arrives as JSON even on a streaming request); an error after the stream started
+ai_balance_empty` arrives as JSON even on a streaming request); an error after the stream started
 is `event: error` with the problem object as data, and the stream ends.
 
 ```ts
@@ -225,7 +230,7 @@ interface Triage { tags: string[]; suggested_tags: string[]; priority: "low" | "
   decisions: AIDecisions; suggestions: AISuggestions /* what this run left below the threshold */ }
 type Category = "question" | "problem" | "bug" | "billing" | "account" | "feature_request" | "feedback"
   | "sales" | "shipping" | "refund" | "cancellation" | "spam" | "other"
-interface KBSource { article_id: string; title: string; url: string /* {APP_URL}/help/{workspace slug}/articles/{slug} */ }
+interface KBSource { article_id: string; title: string; url: string /* {APP_URL}/help/{brand slug}/a/{slug}: the ticket's brand's help center */ }
 ```
 
 Triage output is validated, never trusted: `tags` are at most 3 of the workspace's existing
@@ -319,16 +324,16 @@ fallback; a provider without tool support answers `501 ai_unsupported`). It need
 user (`kind = user`; API keys get `403`), viewer or above, AI on and `settings.ai.assistant`
 on (`403 assistant_off`). Conversations belong to one user in one workspace.
 
-| method | path | credits | body → response |
+| method | path | typical cost | body → response |
 | --- | --- | --- | --- |
-| GET | `/v1/assistant/sessions` | 0 | `?limit` → `{data: Session[]}` (the caller's, newest first) |
-| POST | `/v1/assistant/sessions` | 0 | `{title?}` → `Session` |
-| GET | `/v1/assistant/sessions/{id}` | 0 | → `{session, items: Item[], approval: Approval \| null}` |
-| PATCH | `/v1/assistant/sessions/{id}` | 0 | `{title}` → `Session` |
-| DELETE | `/v1/assistant/sessions/{id}` | 0 | → 204 |
-| POST | `/v1/assistant/sessions/{id}/messages` | 2 per model turn | `{text /* 1..8000 */, context?: PageContext}` → run (below) |
-| POST | `/v1/assistant/actions/{id}/decision` | 2 per model turn | `{decision: "approve" \| "deny", token}` → run |
-| GET | `/v1/assistant/tips` | 0 | → `{tips: Tip[]}` (counts only, never the model; 30/min, `Cache-Control: private, max-age=60`) |
+| GET | `/v1/assistant/sessions` | $0 | `?limit` → `{data: Session[]}` (the caller's, newest first) |
+| POST | `/v1/assistant/sessions` | $0 | `{title?}` → `Session` |
+| GET | `/v1/assistant/sessions/{id}` | $0 | → `{session, items: Item[], approval: Approval \| null}` |
+| PATCH | `/v1/assistant/sessions/{id}` | $0 | `{title}` → `Session` |
+| DELETE | `/v1/assistant/sessions/{id}` | $0 | → 204 |
+| POST | `/v1/assistant/sessions/{id}/messages` | $0.02 per model turn | `{text /* 1..8000 */, context?: PageContext}` → run (below) |
+| POST | `/v1/assistant/actions/{id}/decision` | $0.02 per model turn | `{decision: "approve" \| "deny", token}` → run |
+| GET | `/v1/assistant/tips` | $0 | → `{tips: Tip[]}` (counts only, never the model; 30/min, `Cache-Control: private, max-age=60`) |
 
 ```ts
 interface Session { id: string; title: string; created_at: string; updated_at: string }
@@ -361,8 +366,8 @@ JSON `{session, text, steps, approval, status}`. Events, in order:
 | `error` | problem JSON; the stream ends |
 
 Limits: 30 messages per user per minute (`429`), at most 8 model steps and one write
-proposal per run, one run per conversation at a time (`409 assistant_busy`). Credits are
-checked before anything is stored (`402 no_credits`).
+proposal per run, one run per conversation at a time (`409 assistant_busy`). The AI balance is
+checked before anything is stored (`402 ai_balance_empty`).
 
 Tools. Reads run directly; writes only propose. Every tool runs **through the public API
 in process, as the user**, so it gets exactly the user's role checks, validation, events
@@ -403,16 +408,16 @@ Condition `{field: "ai_decide", op: "gt" | "lt", value: "0.7", question: "Is the
 churning?"}`: a Noul asked of the decision engine about the ticket (the same state as triage). It holds when
 the probability of yes is above (`gt`) or below (`lt`) `value` (0.01..0.99). The question is 3..300
 characters of plain text written by an admin. Every `ai_decide` question of one trigger run is asked in one
-call (1 credit, feature `decide`) and answers are reused for the rest of the run. Without a decision engine,
-AI off, no credits or a failed call, an `ai_decide` condition does not hold (the automation does not run).
+call (about $0.01, feature `decide`) and answers are reused for the rest of the run. Without a decision engine,
+AI off, an AI balance too low or a failed call, an `ai_decide` condition does not hold (the automation does not run).
 At most 3 `ai_decide` conditions per automation.
 
-New automation action `{type: "ai_triage", value: ""}` (1 credit) and condition
+New automation action `{type: "ai_triage", value: ""}` (about $0.01) and condition
 `{field: "sentiment", op: "eq" | "equals" | "not_equals", value: Sentiment}` (reads
 `custom.ai_sentiment`; `eq` is stored as `equals`). When `settings.ai.auto_triage` is on,
 triage runs on `ticket_created` before other automations, so a sentiment condition on the
 same trigger sees its result. Auto-triage skips spam and already triaged tickets. When AI is
-off, credits ran out or the provider fails, auto-triage and the `ai_triage` action are
+off, the AI balance is used up or the provider fails, auto-triage and the `ai_triage` action are
 skipped (logged) and the rest of the automation runs. The action calls the fast model inside
 the trigger's transaction.
 
@@ -429,7 +434,7 @@ sources, guardrails, playground and reports are specified in `contracts/agent.md
 ## Embeddings
 
 Table `ai_embeddings(workspace_id, kind 'article'|'ticket', ref_id, chunk, content_hash,
-embedding vector)`, created only when the `vector` extension is available (Neon and the
+embedding vector)`, created only when the `vector` extension is available (PlanetScale, Neon and the
 self-host `pgvector/pgvector:pg17` image have it; on stock Postgres without it, semantic
 search uses FTS). A worker (`ai.embed`) indexes published articles on publish and tickets on
 solve. Dimension is fixed per model and recorded; a model change triggers a reindex.
@@ -451,6 +456,13 @@ Search uses brute-force cosine distance per workspace (no ANN index; workspaces 
 enough) fused with full-text results by reciprocal rank (k = 60). Without embeddings, KB
 retrieval for drafts and the widget uses FTS with keyword coverage thresholds instead of a
 similarity threshold.
+
+KB retrieval for a ticket (drafts, ask, the widget and email agents) reads the ticket's brand's
+articles and the shared ones (no brand of their own or of their collection) and links them on
+that brand's help center; without a ticket (playground, KB drafts) it reads every brand's.
+Ticket embeddings serve `GET /v1/ai/search` only, which leaves out private teams' tickets the
+caller cannot see (contracts/teams.md "Visibility"); no answer or draft uses another ticket
+as context. Every `/v1/tickets/{id}/ai/*` route answers `404` for a ticket the caller cannot see.
 
 ## Models and prompts
 

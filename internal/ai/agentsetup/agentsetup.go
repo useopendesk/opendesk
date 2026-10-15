@@ -48,14 +48,13 @@ func Load(ctx context.Context, q db.Querier, wid uuid.UUID, instanceAI bool) (Se
 	var enabled, identity, knowledge, tools, playground, widget, answers bool
 	err := q.QueryRow(ctx, `SELECT
 		COALESCE(w.settings -> 'ai' ->> 'enabled', 'true') = 'true',
-		COALESCE(w.settings -> 'ai' ->> 'widget_instructions', '') <> ''
-			OR COALESCE(w.settings -> 'widget' ->> 'bot_name', '') <> ''
-			OR COALESCE(w.brand_images ->> 'widget_bot', '') <> '',
+		EXISTS (SELECT 1 FROM bots WHERE workspace_id = $1 AND (NOT is_default OR name <> 'Ollie' OR avatar <> ''
+			OR COALESCE(personality ->> 'instructions', '') <> '' OR updated_at > created_at)),
 		EXISTS (SELECT 1 FROM kb_articles WHERE workspace_id = $1 AND status = 'published')
 			OR EXISTS (SELECT 1 FROM ai_knowledge_sources WHERE workspace_id = $1 AND status = 'ready' AND enabled),
 		EXISTS (SELECT 1 FROM ai_mcp_servers WHERE workspace_id = $1 AND enabled AND status = 'connected'),
 		EXISTS (SELECT 1 FROM ai_usage WHERE workspace_id = $1 AND feature = 'playground'),
-		w.widget_seen_at IS NOT NULL,
+		w.widget_seen_at IS NOT NULL OR EXISTS (SELECT 1 FROM widgets WHERE workspace_id = $1 AND seen_at IS NOT NULL),
 		COALESCE(w.settings -> 'ai' ->> 'widget_answers', 'false') = 'true'
 		FROM workspaces w WHERE w.id = $1`, wid).
 		Scan(&enabled, &identity, &knowledge, &tools, &playground, &widget, &answers)
@@ -71,8 +70,8 @@ func Load(ctx context.Context, q db.Querier, wid uuid.UUID, instanceAI bool) (Se
 	steps := []SetupStep{
 		{ID: StepAIOn, Title: "Turn on AI", Description: "Ollie needs AI switched on for the workspace before it can answer anyone.",
 			Done: available && enabled, Href: "/settings/ai"},
-		{ID: StepIdentity, Title: "Name your agent and tell it how to help", Description: "A name, a picture and instructions make answers sound like your team.",
-			Done: identity, Href: "/settings/ai/behaviour"},
+		{ID: StepIdentity, Title: "Build your bot and tell it how to help", Description: "A name, a look and instructions make answers sound like your team.",
+			Done: identity, Href: "/settings/ai/bots"},
 		{ID: StepKnowledge, Title: "Give it something to know", Description: "Ollie answers only from published help articles and ready knowledge sources.",
 			Done: knowledge, Href: "/settings/ai/knowledge"},
 		{ID: StepTools, Title: "Connect tools", Description: "Let Ollie look up orders or accounts in your own systems.",

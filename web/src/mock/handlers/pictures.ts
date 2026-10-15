@@ -28,7 +28,7 @@ import { memberOut } from "./workspace";
 
 const MAX_BYTES = 5 << 20;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-const SLOTS: ("logo" | WorkspaceImageSlot)[] = ["logo", "help_center_logo", "help_center_favicon", "widget_avatar", "widget_launcher", "widget_bot"];
+const SLOTS: ("logo" | WorkspaceImageSlot)[] = ["logo", "help_center_logo", "help_center_favicon", "widget_avatar", "widget_launcher"];
 const MODES: AssignMode[] = ["none", "round_robin", "load_balanced"];
 const AVAILABILITY: Availability[] = ["online", "away", "offline"];
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -43,7 +43,7 @@ function requireRole(ws: WsData, min: Role) {
 }
 
 /** The uploaded `file`, checked as the API checks it. */
-async function readUpload(ctx: Ctx): Promise<string> {
+export async function readUpload(ctx: Ctx): Promise<string> {
   const f = ctx.form?.get("file");
   if (!(f instanceof File)) throw invalid("Choose an image to upload");
   if (f.size > MAX_BYTES) throw new HttpError(413, "too_large", "Images can be at most 5 MB.");
@@ -102,7 +102,7 @@ function hours(ws: WsData): BusinessHours {
 const HHMM = /^([01]\d|2[0-4]):[0-5]\d$/;
 const minutes = (v: string) => Number(v.slice(0, 2)) * 60 + Number(v.slice(3));
 
-function parseHours(body: Record<string, unknown>): Omit<BusinessHours, "timezone"> {
+export function parseHours(body: Record<string, unknown>): Omit<BusinessHours, "timezone"> {
   const schedule = {} as BusinessHours["schedule"];
   const raw = isRecord(body.schedule) ? body.schedule : {};
   for (const k of Object.keys(raw)) if (!WEEKDAYS.includes(k as Weekday)) throw invalid("schedule keys must be mon, tue, wed, thu, fri, sat or sun.");
@@ -255,7 +255,7 @@ export function registerPictures() {
   put("/v1/workspace/images/:slot", async (ctx) => {
     requireRole(ctx.ws, "admin");
     const slot = ctx.params.slot as (typeof SLOTS)[number];
-    if (!SLOTS.includes(slot)) throw invalid("slot must be logo, help_center_logo, help_center_favicon, widget_avatar, widget_launcher or widget_bot");
+    if (!SLOTS.includes(slot)) throw invalid("slot must be logo, help_center_logo, help_center_favicon, widget_avatar or widget_launcher");
     const url = await readUpload(ctx);
     const w = ctx.ws.workspace;
     if (slot === "logo") {

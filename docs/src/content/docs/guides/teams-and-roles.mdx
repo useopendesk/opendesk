@@ -1,0 +1,236 @@
+---
+title: Teams and roles
+description: Invite members and choose their role, group them into teams with their own addresses, hours, signature and assignment, keep a team's tickets private, and secure every account.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+Every member of a workspace has a **role**, which decides what they can change. **Teams** decide who owns which work: a team such as Billing or Legal can have its own email addresses, business hours, signature and assignment method, and a private team keeps its tickets for its own people.
+
+<Screenshot src="/guides/teams/overview" alt="The Teams settings page: the New team button ringed as 1, the Support row ringed as 2, the Private pill on Legal ringed as 3, the People column ringed as 4, and the Open and Unassigned counts ringed as 5" />
+
+<Legend>
+
+1. **New team**: create a team. Admins create teams.
+2. **A team**: its colour, name, description and the addresses that send email to it. Click it to open its settings.
+3. **Private**: only the team's people see its tickets. See [Private teams](#private-teams).
+4. **People**: who is on the team. A private team's people are shown only to its members and to admins.
+5. **Open** and **Unassigned**: the team's live ticket counts.
+
+</Legend>
+
+## Roles
+
+Roles are ordered: each one can do everything the role below it can.
+
+| Role | Can |
+| --- | --- |
+| `owner` | Everything, including deleting the workspace and transferring ownership. |
+| `admin` | Manage settings: members, teams, mailboxes, brands and widgets, routing, API keys, webhooks, automations and SLA policies. |
+| `agent` | Work tickets, contacts and the knowledge base. |
+| `viewer` | Read only. On a team, a viewer can only be an observer. |
+
+Admins invite people by email with a role. The invitation link expires, and pending invitations can be revoked. When someone accepts, they join with the invited role. Changing a role or removing a member takes effect at once: a removed member's sessions and live connections are closed. Member and role changes are recorded in the audit log.
+
+## Create a team
+
+<Steps>
+<Step title="Open Settings, then Teams">
+
+<Screenshot src="/guides/teams/open-settings" alt="The app with Settings in the sidebar ringed as 1 and Teams in the settings menu ringed as 2" />
+
+</Step>
+<Step title="Click New team and fill it in">
+
+Give the team a name and, optionally, a description of what it handles (up to 280 characters, shown in pickers). Pick a colour: it is used for the team's dot and chips everywhere.
+
+<Screenshot src="/guides/teams/new-team" alt="The New team dialog: name and description ringed as 1, the colour choices ringed as 2, Add me as the lead ringed as 3, and Private team ringed as 4" />
+
+**Add me as the lead** puts you on the team as its lead. **Private team** keeps its tickets for its people from the start.
+
+</Step>
+<Step title="Add people and give each a team role">
+
+On the team's page, under **Members**, click **Add people**. Each person has a role on the team, separate from their workspace role.
+
+<Screenshot src="/guides/teams/members" alt="The Members section of the Support team: the three team roles explained ringed as 1, Add people ringed as 2, and Theo Brandt's role set to Observer ringed as 3" />
+
+| Team role | Does |
+| --- | --- |
+| **Lead** | Manages the team's settings and members, and works its tickets. |
+| **Member** | Works the team's tickets and gets new ones by assignment. |
+| **Observer** | Sees the team's tickets and can comment, but is never assigned. |
+
+New tickets are assigned only to leads and members. A team always keeps at least one lead.
+
+</Step>
+<Step title="Give the team an address">
+
+Under **Addresses**, the mailboxes whose email goes to this team are listed. Click **Add an address** to connect one, or set the team on an existing mailbox in [Mailboxes](/guides/mailboxes/).
+
+<Screenshot src="/guides/teams/addresses" alt="The Addresses section of the Support team: Add an address ringed as 1, the support@margin.app and hello@pressroom.app addresses ringed as 2, and the Also routed here list of rules and widget topics ringed as 3" />
+
+**Also routed here** lists the routing rules and widget topics that send tickets to the team as well. See [Routing](/guides/routing/).
+
+</Step>
+</Steps>
+
+<Callout>
+
+- A team's settings can be changed by an admin or by the team's lead. Only admins make a team private or public.
+- Team names are listed for everyone in the workspace, so pickers and filters always work.
+- Open a team's own inbox with **Open inbox** on its page, or from **Teams** in the sidebar.
+
+</Callout>
+
+## Hours, assignment and signature
+
+Each team can work its own way. Anything left unset follows the workspace.
+
+### Business hours
+
+Choose **Workspace hours**, or **Own schedule** with a time zone, a weekly schedule and holidays. A team's hours drive the SLA timers on its tickets, whether a chat widget that sends chats to the team shows as open or closed, and when Ollie answers as after hours.
+
+<Screenshot src="/guides/teams/hours" alt="The Hours section of the Support team: the Workspace hours and Own schedule choice ringed as 1, and the time zone and weekly schedule ringed as 2" />
+
+### Assignment
+
+**Assign new tickets** picks how a new ticket of the team gets a person: **Round robin** (teammates take turns), **Load balanced** (whoever has the fewest open tickets), or **Off** (tickets wait in Unassigned). A team's method wins over its address's, which wins over the workspace default. **Assignment settings** opens the workspace's assignment page. See [Triage and assignment](/guides/triage-and-assignment/).
+
+<Screenshot src="/guides/teams/assignment" alt="The Assignment section of the Support team: the Assign new tickets method ringed as 1, and Assignment settings ringed as 2" />
+
+### Signature
+
+A team signature is added to replies on the team's tickets in place of the address's signature. Leave it empty to use each address's own. Click a variable to insert it; it is filled in when the reply goes out.
+
+<Screenshot src="/guides/teams/signature" alt="The Signature section of the Support team: the signature editor ringed as 1, and the variables you can insert ringed as 2" />
+
+| Variable | Becomes |
+| --- | --- |
+| `{{agent.name}}`, `{{agent.first_name}}` | The person replying. Empty on automated emails. |
+| `{{team.name}}` | The ticket's team, or the brand when it has none. |
+| `{{brand.name}}` | The ticket's brand. |
+| `{{mailbox.email}}` | The address the reply goes out from. |
+| `{{ticket.number}}`, `{{ticket.subject}}` | The ticket. |
+| `{{contact.name}}` | The customer. |
+
+## Private teams
+
+A private team's tickets are visible only to the team's leads, members and observers, to the person a ticket is assigned to, and to API keys and webhooks that were given the team. Everyone else, admins and owners included, does not see them: they are left out of lists, views, search and counts, and opening one by its link shows that it does not exist.
+
+<Screenshot src="/guides/teams/privacy" alt="The Privacy section of the Legal team: the Private team switch ringed as 1, and the note that admins are not exempt ringed as 2" />
+
+<Steps>
+<Step title="Make a team private">
+
+On the team's page, turn on **Private team** under **Privacy**. The confirmation says how many people stop seeing its open tickets. Only admins change a team's privacy, and the change is recorded in the audit log.
+
+</Step>
+<Step title="Join a private team as an admin">
+
+An admin who is not on a private team still manages its settings, and sees a note that its tickets are for its members only. To see its tickets, click **Join to see tickets**.
+
+<Screenshot src="/guides/teams/private-join" alt="The Legal team page for an admin who is not on it: Join to see tickets ringed as 1, and the note that Legal is private ringed as 2" />
+
+You join as an observer. The team's leads are told that you joined, and it is recorded in the audit log.
+
+<Screenshot src="/guides/teams/join-confirm" alt="The Join Legal dialog explaining that you join as an observer, the leads are told and it is audit logged, with the Join as observer button" />
+
+</Step>
+<Step title="Give an API key or webhook a private team">
+
+API keys and webhooks see private teams' tickets only when the team is included. In the key's or webhook's **Private teams** field, include the teams it needs. Only people on a private team can include it, so the others are locked.
+
+<Screenshot src="/guides/teams/api-key" alt="The New API key dialog with the Private teams field ringed: Legal and Security are locked with You're not on this team" />
+
+</Step>
+</Steps>
+
+<Callout type="note">
+
+- When a team becomes public again, or is deleted, it is removed from every API key and webhook. Making it private again does not give it back: include it again where it is needed.
+- A private team's addresses are only for its members: other people cannot send replies from them.
+
+</Callout>
+
+## Saved replies, views and SLA for a team
+
+Several settings can be scoped to one team:
+
+- **SLA policies**: set **Team** on a policy and it applies only to that team's tickets, before policies for any team. See [SLA policies](/guides/sla-policies/).
+- **Saved replies**: set **Offered on** to a team and the reply is offered only on that team's tickets. A private team's saved replies are listed only to its members.
+- **Views**: set **Who sees this view** to **A team** and everyone on the team sees it in their sidebar. Admins and the team's leads create team views. See [Saved replies and views](/guides/saved-replies-and-views/).
+
+<Screenshot src="/guides/teams/scoped-sla" alt="The Edit SLA policy dialog with the Team field set to Legal ringed" />
+
+<Screenshot src="/guides/teams/scoped-reply" alt="A saved reply: its Offered on field set to Billing ringed as 1, and the /refund shortcut chip in the list ringed as 2" />
+
+<Screenshot src="/guides/teams/scoped-view" alt="The Edit view dialog with Who sees this view set to A team, Legal, ringed" />
+
+## Work a team's tickets
+
+**Teams** in the sidebar lists **My teams**, with the tickets of every team you are on, and each of your teams. A team's inbox has **Unassigned**, **Open**, **Pending** and **All** tabs.
+
+<Screenshot src="/guides/teams/team-inbox" alt="The sidebar Teams section with My teams and each team ringed as 1, and the Unassigned, Open, Pending and All tabs of the Billing inbox ringed as 2" />
+
+### Move a ticket to another team
+
+Click the ticket's **Team** in its details and pick the new team. Before you confirm, opendesk shows what changes: who gets the ticket under the new team's assignment method, and whether replies go out from a different address.
+
+<Screenshot src="/guides/teams/move-ticket" alt="Moving a ticket to Billing: the line Replies go from billing@margin.app instead of support@margin.app ringed as 1, and the Move button ringed as 2" />
+
+When the ticket's reply address belongs to the old team (or to no team), and the ticket's brand has an address for the new team, replies switch to the new team's address. The customer's thread stays together: the threading headers and the `[#n]` subject tag are kept. The ticket's activity records the move and the address change.
+
+## Delete a team
+
+Open the team, then **Delete team** at the bottom of its page. The dialog lists what the team still has, and asks where it goes.
+
+<Screenshot src="/guides/teams/delete" alt="The Delete Partnerships dialog: what the team has, open tickets, addresses, widgets and rules, ringed as 1, Move them to set to Support ringed as 2, and the field to type the team's name to confirm ringed as 3" />
+
+- With **Move them to**, its open, pending and on hold tickets, addresses, widgets and widget topics, and routing rules move to the other team. Moved tickets are assigned again in the new team.
+- With **No team**, they lose their team, and the team's routing rules are deleted.
+- A private team that still has tickets must move them, and then all of them move, solved and closed included.
+
+<Fold>
+
+## Ownership
+
+A workspace has an owner. The owner can transfer ownership to another member, and can delete the workspace, which removes all of its data. Both actions require two-factor authentication and a recent sign-in.
+
+</Fold>
+
+<Fold>
+
+## Two-factor authentication
+
+Every member can turn on time-based one-time passwords (TOTP) in their account settings, with any authenticator app. When you enable it, you receive single-use recovery codes. Store them safely: each one works once.
+
+</Fold>
+
+<Fold>
+
+## Sessions
+
+Your account settings list your active sessions with their device and last use. Revoke any session to sign it out everywhere, including its live connections. Changing your password signs out your other sessions.
+
+</Fold>
+
+<Fold>
+
+## Deleting your account
+
+You can delete your account from your account settings. Your data is removed, not hidden. If you are the only owner of a workspace with other members, transfer ownership first.
+
+</Fold>
+
+## Related
+
+- [Routing](/guides/routing/)
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Connect a mailbox](/guides/mailboxes/)
+- [Triage and assignment](/guides/triage-and-assignment/)

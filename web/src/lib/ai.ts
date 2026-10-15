@@ -10,7 +10,7 @@ export type UseAI = {
   enabled: boolean;
   config: AIConfig | null;
   features: AISettings | null;
-  /** Credits one call of `feature` costs, or null when unknown. */
+  /** What a typical call of `feature` costs in US dollars, or null when unknown. */
   cost: (feature: AIFeature) => number | null;
 };
 

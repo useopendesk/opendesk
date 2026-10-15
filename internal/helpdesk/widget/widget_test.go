@@ -36,7 +36,7 @@ func setup(t *testing.T) (*hdtest.Env, hdtest.WS) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Exec(`UPDATE workspaces SET widget_secret_enc = $2 WHERE id = $1`, ws.ID, sealed)
+	e.Exec(`UPDATE widgets SET secret_enc = $2 WHERE id = $1`, ws.WidgetID, sealed)
 	return e, ws
 }
 
@@ -54,13 +54,14 @@ func TestConfig(t *testing.T) {
 	if m["workspace_name"] != "Acme "+ws.Slug || m["help_center_url"] != "" || m["require_email"] != false {
 		t.Fatal(m)
 	}
-	e.SetSettings(ws, map[string]any{"help_center_enabled": true, "brand_color": "#111111",
-		"widget": map[string]any{"greeting": "Hello", "enabled": true, "require_email": true}})
+	e.SetSettings(ws, map[string]any{"brand_color": "#111111"})
+	e.Exec(`UPDATE brands SET help_center_enabled = true WHERE id = $1`, ws.BrandID)
+	e.SetWidgetSettings(ws, uuid.Nil, map[string]any{"greeting": "Hello", "enabled": true, "require_email": true})
 	m = e.Do("GET", "/v1/widget/config?key="+ws.WidgetKey, hdtest.Auth{}, nil).Want(t, 200).Map(t)
 	if m["help_center_url"] != "http://app.test/help/"+ws.Slug || m["greeting"] != "Hello" || m["brand_color"] != "#111111" || m["require_email"] != true {
 		t.Fatal(m)
 	}
-	e.SetSettings(ws, map[string]any{"widget": map[string]any{"enabled": false}})
+	e.SetWidgetSettings(ws, uuid.Nil, map[string]any{"enabled": false})
 	e.Do("GET", "/v1/widget/config?key="+ws.WidgetKey, hdtest.Auth{}, nil).Want(t, 404)
 }
 
@@ -164,7 +165,7 @@ func TestBlockedAndRequireEmailAndOrigins(t *testing.T) {
 	e.Do("POST", "/v1/widget/session", hdtest.Auth{}, map[string]any{"key": ws.WidgetKey, "visitor_token": s.VisitorToken}).Want(t, 403)
 	e.Do("GET", "/v1/widget/conversations", hdtest.Auth{Visitor: s.VisitorToken}, nil).Want(t, 401)
 
-	e.SetSettings(ws, map[string]any{"widget": map[string]any{"enabled": true, "require_email": true, "allowed_origins": []string{"https://shop.example"}}})
+	e.SetWidgetSettings(ws, uuid.Nil, map[string]any{"enabled": true, "require_email": true, "allowed_origins": []string{"https://shop.example"}})
 	allowed := hdtest.Auth{Header: map[string]string{"Origin": "https://shop.example"}}
 	e.Do("POST", "/v1/widget/session", allowed, map[string]any{"key": ws.WidgetKey}).Want(t, 422)
 	e.Do("POST", "/v1/widget/session", hdtest.Auth{Header: map[string]string{"Origin": "https://evil.example"}},
@@ -231,7 +232,7 @@ func TestConversations(t *testing.T) {
 		AND data->'message'->>'body_text' = 'reply body'`, ws.ID).Scan(&vis, &topics); err != nil {
 		t.Fatal(err)
 	}
-	if vis != "public" || !contains(topics, "contact:"+ws.ID.String()+":"+s.Contact.ID.String()) {
+	if vis != "public" || !contains(topics, "contact:"+ws.ID.String()+":"+s.Contact.ID.String()+":"+ws.BrandID.String()) {
 		t.Fatal(vis, topics)
 	}
 	e.D.DB.Pool.QueryRow(e.Ctx, `SELECT visibility FROM events WHERE workspace_id = $1 AND type = 'message.created'
@@ -470,4 +471,38 @@ func TestRateLimits(t *testing.T) {
 	if !limited {
 		t.Fatal("session creation not rate limited")
 	}
+}
+
+// Fetching a conversation's messages and marking it seen say the visitor is on the page.
+func TestSeenRefreshesSession(t *testing.T) {
+	e, ws := setup(t)
+	s := start(t, e, map[string]any{"key": ws.WidgetKey, "email": "seen@example.com"})
+	va := hdtest.Auth{Visitor: s.VisitorToken}
+	var created struct {
+		Conversation struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"conversation"`
+	}
+	e.Do("POST", "/v1/widget/conversations", va, map[string]any{"body": "Hello"}).Want(t, 201).JSON(t, &created)
+	path := "/v1/widget/conversations/" + created.Conversation.ID.String()
+	away := func() {
+		e.Exec(`UPDATE widget_sessions SET last_seen_at = now() - interval '1 hour' WHERE contact_id = $1`, s.Contact.ID)
+	}
+	recent := func() bool {
+		var ok bool
+		e.Scalar(`SELECT bool_and(last_seen_at > now() - interval '1 minute') FROM widget_sessions WHERE contact_id = $1`, &ok, s.Contact.ID)
+		return ok
+	}
+	away()
+	e.Do("GET", path+"/messages", va, nil).Want(t, 200)
+	if !recent() {
+		t.Fatal("fetching messages did not refresh the session")
+	}
+	away()
+	e.Do("POST", path+"/seen", va, nil).Want(t, 204)
+	if !recent() {
+		t.Fatal("seen did not refresh the session")
+	}
+	other := start(t, e, map[string]any{"key": ws.WidgetKey, "email": "other@example.com"})
+	e.Do("POST", path+"/seen", hdtest.Auth{Visitor: other.VisitorToken}, nil).Want(t, 404)
 }

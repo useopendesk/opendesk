@@ -1,0 +1,443 @@
+---
+/**
+ * The opendesk desktop app (desktop/, macOS) on the Unassigned inbox with a
+ * ticket open: AppWindow (frame, AppHeader, Sidebar) with InboxPage and the
+ * ticket view in its work panel, scaled into the 860 x 540 box its parent
+ * gives it. The window frame is translucent, so the painting behind the stage
+ * shows through the sidebar and title bar as the macOS sidebar material does.
+ *
+ * Every value follows the web app in its desktop layout: InboxPage with
+ * WaitingBanner and TicketRow (pinned waiting chats, wait pills, unanswered
+ * counts), and the ticket view (header, thread, Ollie's draft, composer,
+ * properties). On the scene's timeline (`data-step`) Noah's new chat lands in
+ * the list, under the visitor already waiting, as the phone takes the push.
+ */
+import AppWindow from '../app/AppWindow.astro';
+import { clock, ic, prioIcon, statusIcon, type Priority, type Status, type Tone } from '../app/icons';
+import Ollie from './Ollie.astro';
+
+interface Row {
+  who: string;
+  subject: string;
+  preview: string;
+  time: string;
+  status: Status;
+  priority: Priority;
+  /** Ollie set the priority. */
+  ai?: boolean;
+  /** awaitingReply or a waiting chat: name and subject read medium. */
+  unread?: boolean;
+  /** Live chat: a visitor Ollie handed to the team reads "Wants a person". */
+  chat?: 'chat' | 'handoff';
+  /** ChatWait: urgent with the seconds waited, or Ollie is replying. */
+  wait?: { since: number } | { ollie: true };
+  /** unanswered_count as the row shows it. */
+  fresh?: number;
+  severity?: string;
+  sla?: { label: string; breached?: boolean };
+  tags?: { name: string; tone: Tone }[];
+  active?: boolean;
+  /** Arrives on step 1. */
+  arrive?: boolean;
+}
+
+// Unassigned in its default order: chats with a visitor waiting first, longest
+// wait first, then newest activity. Labels and numbers match the phone.
+const rows: Row[] = [
+  {
+    who: 'Hugo Moreau', subject: 'Charged twice for my upgrade', preview: 'Is anyone there? I can see two charges of €96 on my card from this morning.',
+    time: '1m', status: 'open', priority: 'high', ai: true, unread: true, chat: 'chat', wait: { since: 192 }, fresh: 2,
+    tags: [{ name: 'billing', tone: 'orange' }],
+  },
+  {
+    who: 'Noah Fischer', subject: 'Shared notebook won’t open on iPhone', preview: 'It just spins after the update. Other notebooks open fine.',
+    time: 'now', status: 'open', priority: 'normal', ai: true, unread: true, chat: 'chat', wait: { ollie: true }, fresh: 1,
+    tags: [{ name: 'ios', tone: 'blue' }], arrive: true,
+  },
+  {
+    who: 'Katrin Vogel', subject: 'Sync between iPad and Mac', preview: 'Seit dem letzten Update synchronisieren meine Notizen nicht mehr zwischen iPad und Mac.',
+    time: '48m', status: 'open', priority: 'normal', ai: true, unread: true, sla: { label: '18m' },
+  },
+  {
+    who: 'Elena Rossi', subject: 'Can’t export notebook to PDF', preview: 'When I export our “Client brief” notebook, the images are missing from the PDF.',
+    time: '1h', status: 'open', priority: 'high', unread: true, severity: '3', sla: { label: '25m over', breached: true }, active: true,
+  },
+  {
+    who: 'Paula Martins', subject: 'Keyboard shortcuts on Windows', preview: 'On Windows every shortcut uses Ctrl where the Mac uses Cmd, so Ctrl K opens search.',
+    time: '2h', status: 'pending', priority: 'low',
+  },
+  {
+    who: 'Tom Becker', subject: 'Invoice address for Germany', preview: 'We moved offices, so the next invoice needs our new address in Berlin.',
+    time: '3h', status: 'on_hold', priority: 'low',
+  },
+  {
+    who: 'Chloé Dubois', subject: 'Feature request: nested tags', preview: 'We have about 200 tags now and the sidebar is getting wild.',
+    time: '4h', status: 'open', priority: 'low', chat: 'chat',
+  },
+  {
+    who: 'Ana Souza', subject: 'Change billing email', preview: 'Could invoices go to finance@ instead of my own address?',
+    time: '5h', status: 'open', priority: 'normal',
+  },
+  {
+    who: 'Kenji Mori', subject: 'SSO with Okta?', preview: 'Does the Business plan support SAML sign-in through Okta?',
+    time: '6h', status: 'open', priority: 'normal',
+  },
+];
+
+const hugoWait = 192;
+---
+<AppWindow active="unassigned" crumbs={['Inbox', 'Unassigned', '#2472']} counts={{ unassigned: ['17', '18'], open: ['36', '37'] }} waiting={hugoWait}>
+  <section class="dm-list">
+    <div class="dm-list-head">
+      <Fragment set:html={ic('circleDashed', 16, 'dm-fg3')} />
+      <span class="dm-list-title">Unassigned</span>
+      <span class="dm-mono dm-list-count"><span data-step="0" data-until="1" data-wait="0">17</span><span class="s-swap" data-step="1" data-wait="1400">18</span></span>
+      <span class="dm-list-tools">
+        <span class="dm-iconbtn"><Fragment set:html={ic('search', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('funnel', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('sort', 14)} /></span>
+      </span>
+    </div>
+
+    <!-- WaitingBanner -->
+    <div class="dm-banner dm-wash">
+      <span class="dm-edge"></span>
+      <span class="dm-banner-main">
+        <span class="dm-ping dm-ping-8"><i></i><i></i></span>
+        <span class="dm-banner-text">1 customer waiting in live chat</span>
+        <span class="dm-mono dm-banner-time" data-clock={hugoWait}>{clock(hugoWait)}</span>
+        <span class="dm-banner-reply">Reply now<Fragment set:html={ic('arrowRight', 12)} /></span>
+      </span>
+      <span class="dm-banner-sound"><Fragment set:html={ic('volume', 14)} /></span>
+    </div>
+
+    <div class="dm-rows-list">
+      {rows.map((r) => {
+        const urgent = !!r.wait && 'since' in r.wait;
+        const row = (
+          <div class={`dm-row ${urgent ? 'dm-wash' : ''} ${r.active ? 'dm-row-on' : ''}`}>
+            {urgent && <span class="dm-edge"></span>}
+            <div class="dm-row-icons">
+              <span class="dm-slot"><Fragment set:html={statusIcon(r.status)} /></span>
+              <span class="dm-slot">
+                <Fragment set:html={prioIcon(r.priority)} />
+                {r.ai && <span class="dm-setby"><Ollie size={10} eyes={false} /></span>}
+              </span>
+            </div>
+            <div class="dm-row-main">
+              <div class="dm-row-line">
+                <span class={`dm-row-who ${r.unread ? 'dm-unread' : ''}`}>{r.who}</span>
+                {r.chat && (
+                  <span class={`dm-chatbadge ${urgent ? 'dm-t-red' : 'dm-t-blue'}`}>
+                    <Fragment set:html={ic(r.chat === 'handoff' ? 'hand' : 'messageCircle', 12, '', 2.2)} />
+                    {r.chat === 'handoff' ? 'Wants a person' : 'Live chat'}
+                  </span>
+                )}
+                <span class="dm-grow"></span>
+                <span class="dm-row-end"><span class="dm-mono dm-row-time">{r.time}</span></span>
+              </div>
+              <div class="dm-row-line dm-row-l2">
+                {r.severity && <span class={`dm-mono dm-sev dm-chip dm-t-amber`}>S{r.severity}</span>}
+                <span class={`dm-row-subject ${r.unread ? 'dm-unread' : ''}`}>{r.subject}</span>
+                {r.wait && r.tags && (
+                  <span class="dm-labels">
+                    {r.tags.map((t) => <span class={`dm-label dm-chip dm-t-${t.tone}`}><i></i>{t.name}</span>)}
+                  </span>
+                )}
+              </div>
+              <div class="dm-row-line dm-row-l3">
+                <span class={`dm-row-preview ${urgent ? 'dm-fg2' : 'dm-fg3'}`}>{r.preview}</span>
+                {r.fresh ? <span class={`dm-newcount ${urgent ? 'dm-t-red' : 'dm-t-blue'}`}>{r.fresh} new</span> : null}
+                {r.wait && 'since' in r.wait && (
+                  <span class="dm-waitpill">
+                    <span class="dm-ping dm-ping-white dm-ping-6"><i></i><i></i></span>
+                    <span class="dm-mono" data-clock={r.wait.since}>{clock(r.wait.since)}</span>
+                  </span>
+                )}
+                {r.wait && 'ollie' in r.wait && (
+                  <span class="dm-olliepill dm-t-violet"><span class="dm-ping dm-ping-violet dm-ping-6"><i></i><i></i></span>Ollie is replying</span>
+                )}
+                {r.sla && (
+                  <span class={`dm-mono dm-sla dm-chip ${r.sla.breached ? 'dm-t-red' : 'dm-t-amber'}`}><i class={r.sla.breached ? 'dm-pulse' : ''}></i>{r.sla.label}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+        return r.arrive ? (
+          <div class="dm-arrive" data-step="1" data-wait="1400"><div>{row}</div></div>
+        ) : row;
+      })}
+    </div>
+  </section>
+
+  <!-- The ticket -->
+  <div class="dm-detail">
+    <header class="dm-thead">
+      <span class="dm-iconbtn"><Fragment set:html={ic('x', 16)} /></span>
+      <span class="dm-thead-nav">
+        <span class="dm-iconbtn"><Fragment set:html={ic('chevronUp', 16)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('chevronDown', 16)} /></span>
+      </span>
+      <span class="dm-mono dm-thead-pos"><span data-step="0" data-until="1" data-wait="0">3 / 17</span><span class="s-swap" data-step="1" data-wait="1400">4 / 18</span></span>
+      <span class="dm-thead-sep"></span>
+      <span class="dm-thead-title">
+        <span class="dm-mono dm-thead-num">#2472</span>
+        <span class="dm-thead-h">Can’t export notebook to PDF</span>
+        <span class="dm-thead-pills">
+          <span class="dm-pill dm-chip dm-t-blue"><Fragment set:html={statusIcon('open', 12)} />Open</span>
+          <span class="dm-pill dm-chip dm-t-orange"><Fragment set:html={prioIcon('high', 12)} />High</span>
+          <span class="dm-mono dm-pill dm-pill-sev dm-chip dm-t-amber">S3</span>
+        </span>
+      </span>
+      <span class="dm-btn dm-solve"><Fragment set:html={ic('circleCheck', 14, 'dm-green')} />Solve</span>
+      <span class="dm-thead-acts">
+        <span class="dm-iconbtn"><Fragment set:html={ic('alarm', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('ellipsis', 16)} /></span>
+      </span>
+      <span class="dm-iconbtn dm-fg"><Fragment set:html={ic('panelRight', 16)} /></span>
+    </header>
+
+    <div class="dm-dbody">
+      <div class="dm-thread">
+        <article class="dm-msg">
+          <span class="dm-initials dm-t-indigo">ER</span>
+          <div class="dm-msg-head">
+            <span class="dm-msg-who">Elena Rossi</span>
+            <span class="dm-msg-mail">elena@halcyon.studio</span>
+            <span class="dm-mono dm-msg-time">8:39 AM</span>
+          </div>
+          <div class="dm-msg-body">
+            <p>Hello,</p>
+            <p>When I export our “Client brief” notebook to PDF the download starts, then fails with “Export failed, try again later”. Smaller notebooks export fine. This one has about 60 pages and a lot of images.</p>
+            <p>I attached what I get when I export a single page from it, the images are missing. We need this for a client presentation tomorrow morning.</p>
+            <p>Elena</p>
+          </div>
+        </article>
+
+        <!-- Ollie's suggested reply, held above the composer -->
+        <section class="dm-draft">
+          <header class="dm-draft-head">
+            <Ollie size={16} />
+            <span class="dm-draft-title">Ollie suggested a reply</span>
+            <span class="dm-draft-note">Nothing is sent until you send it</span>
+          </header>
+          <div class="dm-draft-body">
+            <p>Hi Elena,</p>
+            <p>Thanks for the details, and sorry this is getting in the way of your presentation.</p>
+            <p class="dm-clamp">Large notebooks with many high-resolution images can time out while the PDF is built, which leaves the images blank. Until the fix ships, export it in parts: choose Export selection, pick a range of pages and export each range on its own. Every image comes through that way, and you can join the files afterwards.</p>
+          </div>
+          <div class="dm-draft-based">
+            <span>Based on</span>
+            <span class="dm-draft-kb">PDF export fails for large notebooks<Fragment set:html={ic('externalLink', 12)} /></span>
+          </div>
+          <footer class="dm-draft-foot">
+            <span class="dm-btn dm-btn-ink"><Fragment set:html={ic('send', 14)} />Send</span>
+            <span class="dm-btn"><Fragment set:html={ic('penLine', 14)} />Edit</span>
+            <span class="dm-btn dm-btn-ghost"><Fragment set:html={ic('x', 14)} />Discard</span>
+          </footer>
+        </section>
+
+        <!-- Composer -->
+        <div class="dm-composer">
+          <div class="dm-composer-top">
+            <span class="dm-seg"><span class="dm-seg-on">Reply</span><span>Note</span></span>
+            <span class="dm-composer-to">To <span class="dm-mono">elena@halcyon.studio</span></span>
+            <span class="dm-composer-cc">Cc / Bcc</span>
+          </div>
+          <div class="dm-composer-ph">Write a reply. Type / for saved replies.</div>
+          <div class="dm-composer-bar">
+            <span class="dm-fmt"><Fragment set:html={ic('bold', 15)} /></span>
+            <span class="dm-fmt"><Fragment set:html={ic('italic', 15)} /></span>
+            <span class="dm-fmt"><Fragment set:html={ic('link', 15)} /></span>
+            <span class="dm-fmt"><Fragment set:html={ic('list', 15)} /></span>
+            <span class="dm-fmt"><Fragment set:html={ic('listOrdered', 15)} /></span>
+            <span class="dm-composer-ai"><Fragment set:html={ic('sparkles', 14, 'dm-violet', 1.75)} />AI</span>
+            <span class="dm-iconbtn"><Fragment set:html={ic('paperclip', 15)} /></span>
+            <span class="dm-iconbtn"><Fragment set:html={ic('savedReplies', 15)} /></span>
+            <span class="dm-composer-sep"></span>
+            <span class="dm-send"><span>Send</span><span><Fragment set:html={ic('chevronDown', 14)} /></span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Properties -->
+      <aside class="dm-props">
+        <section class="dm-props-main">
+          <div class="dm-prop"><span class="dm-prop-k">Status</span><span class="dm-prop-v"><Fragment set:html={statusIcon('open')} />Open</span></div>
+          <div class="dm-prop"><span class="dm-prop-k">Priority</span><span class="dm-prop-v"><Fragment set:html={prioIcon('high')} />High</span></div>
+          <div class="dm-prop"><span class="dm-prop-k">Severity</span><span class="dm-prop-v"><span class="dm-mono dm-sev dm-chip dm-t-amber">S3</span>Sev 3<span class="dm-setby-inline"><Ollie size={12} eyes={false} /></span></span></div>
+          <div class="dm-prop"><span class="dm-prop-k">Assignee</span><span class="dm-prop-v"><i class="dm-nobody"></i><span class="dm-fg4">Unassigned</span></span></div>
+          <div class="dm-prop"><span class="dm-prop-k">Team</span><span class="dm-prop-v"><Fragment set:html={ic('users', 14, 'dm-fg3')} />Support</span></div>
+          <div class="dm-prop dm-prop-labels"><span class="dm-prop-k">Labels</span><span class="dm-prop-tags">
+            <span class="dm-label dm-chip dm-t-violet"><i></i>export<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg></span>
+            <span class="dm-label dm-chip dm-t-red"><i></i>bug<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg></span>
+            <span class="dm-add">Add</span>
+          </span></div>
+        </section>
+        <section class="dm-props-fields">
+          <div class="dm-caps">Fields</div>
+          <div class="dm-field dm-field-2"><span class="dm-field-k">Product area</span><span class="dm-field-v"><span class="dm-opt dm-chip dm-t-lime">Export</span></span></div>
+          <div class="dm-field"><span class="dm-field-k">Resolution<i class="dm-req"></i></span><span class="dm-field-v dm-fg4">Empty</span></div>
+          <div class="dm-field"><span class="dm-field-k">Platforms</span><span class="dm-field-v"><span class="dm-opt dm-chip dm-t-gray">macOS</span></span></div>
+          <div class="dm-field"><span class="dm-field-k">App version</span><span class="dm-field-v">4.8.0</span></div>
+          <div class="dm-field dm-field-2"><span class="dm-field-k">Affected users</span><span class="dm-field-v dm-mono">1</span></div>
+          <div class="dm-field"><span class="dm-field-k">Regression</span><span class="dm-field-v"><span class="dm-checkbox"><Fragment set:html={ic('check', 10, '', 3.5)} /></span></span></div>
+          <div class="dm-field"><span class="dm-field-k">Issue link</span><span class="dm-field-v"><span class="dm-truncate">https://linear.app/margin/issue/MAR-1820</span></span></div>
+          <div class="dm-field-more">Show 2 empty fields</div>
+        </section>
+        <section class="dm-props-ollie">
+          <div class="dm-po-head">
+            <Ollie size={22} />
+            <span><span class="dm-po-name">Ollie</span><span class="dm-po-sub">Here to help with this ticket</span></span>
+          </div>
+          <div class="dm-po-acts"><span class="dm-btn dm-btn-sm">Summarize</span><span class="dm-btn dm-btn-sm">Suggest changes</span></div>
+          <div class="dm-po-tools-label">In your tools</div>
+          <div class="dm-po-tools"><span>Create a Linear issue</span><span>Find related Linear issues</span></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+</AppWindow>
+
+<style is:global>
+  /* InboxPage and the ticket view; the window and shared pieces are in app/app.css. */
+
+  /* Ticket list */
+  .dm-list { display: flex; width: 380px; flex-shrink: 0; flex-direction: column; border-right: 1px solid var(--dm-line); }
+  .dm-list-head { display: flex; height: 49px; flex-shrink: 0; align-items: center; border-bottom: 1px solid var(--dm-line); padding: 0 10px 0 16px; }
+  .dm-list-head > .dm-ic { margin-right: 10px; }
+  .dm-list-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .dm-list-count { margin-left: 8px; font-size: 11.5px; }
+  .dm-list-tools { margin-left: auto; display: flex; gap: 6px; }
+  .dm-banner { position: relative; display: flex; height: 40px; flex-shrink: 0; align-items: center; overflow: hidden; border-bottom: 1px solid color-mix(in oklab, var(--dm-red) 18%, transparent); }
+  .dm-banner-main { display: flex; height: 100%; min-width: 0; flex: 1; align-items: center; gap: 10px; padding: 0 8px 0 14px; color: color-mix(in oklab, var(--dm-red) 82%, var(--dm-fg)); }
+  .dm-banner-text { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }
+  .dm-banner-time { flex-shrink: 0; font-size: 11.5px; font-weight: 600; }
+  .dm-banner-reply { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; border-radius: 5px; background: var(--dm-red); padding: 4px 8px; font-size: 11.5px; font-weight: 600; color: #fff; }
+  .dm-banner-sound { margin-right: 8px; display: flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; color: color-mix(in oklab, var(--dm-red) 82%, var(--dm-fg)); }
+  .dm-rows-list { position: relative; min-height: 0; flex: 1; overflow: hidden; }
+  .dm-row { position: relative; display: flex; gap: 10px; overflow: hidden; border-bottom: 1px solid var(--dm-line-soft); padding: 10px 12px 10px 14px; }
+  .dm-row-on { background: var(--dm-active); }
+  .dm-row-icons { display: flex; width: 16px; flex-shrink: 0; flex-direction: column; align-items: center; gap: 7px; padding-top: 1px; }
+  .dm-slot { position: relative; display: flex; width: 16px; height: 16px; flex-shrink: 0; align-items: center; justify-content: center; }
+  .dm-setby { position: absolute; right: -6px; top: -6px; display: flex; border-radius: 9999px; box-shadow: 0 0 0 1px var(--dm-surface); }
+  .dm-setby .ollie *, .dm-setby-inline .ollie * { animation: none !important; }
+  .dm-row-main { min-width: 0; flex: 1; }
+  .dm-row-line { display: flex; align-items: center; gap: 6px; }
+  .dm-row-l2 { margin-top: 2px; min-width: 0; }
+  .dm-row-l3 { margin-top: 4px; }
+  .dm-row-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dm-fg-2); }
+  .dm-row-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dm-fg); }
+  .dm-unread { font-weight: 500; color: var(--dm-fg); }
+  .dm-row-end { display: flex; height: 16px; width: 60px; flex-shrink: 0; align-items: center; justify-content: flex-end; }
+  .dm-row-time { white-space: nowrap; font-size: 10.5px; color: var(--dm-fg-4); }
+  .dm-row-preview { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; }
+  .dm-chatbadge { display: inline-flex; height: 18px; flex-shrink: 0; align-items: center; gap: 4px; border-radius: 5px; padding: 0 6px; font-size: 10.5px; font-weight: 500; }
+  .dm-labels { margin-left: auto; display: flex; min-width: 0; align-items: center; gap: 4px; padding-left: 4px; }
+  .dm-newcount { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; border-radius: 9999px; padding: 0 6px; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dm-waitpill {
+    display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px;
+    background: var(--dm-red); box-shadow: 0 0 0 1px color-mix(in oklab, var(--dm-red) 18%, transparent);
+    font-size: 10.5px; font-weight: 600; color: #fff;
+  }
+  .dm-olliepill { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px; font-size: 11px; font-weight: 500; }
+
+  /* A new chat arrives on the timeline: the row opens, then its tint fades. */
+  .dm-arrive { display: grid; grid-template-rows: 1fr; }
+  .dm-arrive > div { min-height: 0; overflow: hidden; }
+  .seq-js [data-step].dm-arrive { transition: grid-template-rows 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 360ms ease 80ms; }
+  .seq-js [data-step]:not(.on).dm-arrive { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js [data-step].on.dm-arrive .dm-row { animation: dm-fresh 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.2s backwards; }
+
+  /* Ticket view */
+  .dm-detail { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  .dm-thead { display: flex; height: 48px; flex-shrink: 0; align-items: center; border-bottom: 1px solid var(--dm-line); padding: 0 12px; }
+  .dm-thead-nav { margin-left: 8px; display: flex; }
+  .dm-thead-pos { margin-left: 4px; font-size: 11px; color: var(--dm-fg-4); white-space: nowrap; }
+  .dm-thead-sep { margin: 0 12px; width: 1px; height: 20px; flex-shrink: 0; background: var(--dm-line); }
+  .dm-thead-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; }
+  .dm-thead-num { flex-shrink: 0; font-size: 11.5px; color: var(--dm-fg-3); }
+  .dm-thead-h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .dm-thead-pills { margin-left: 4px; display: flex; flex-shrink: 0; gap: 6px; }
+  .dm-solve { margin-left: 8px; }
+  .dm-thead-acts { margin: 0 8px 0 4px; display: flex; gap: 4px; }
+  .dm-dbody { display: flex; min-height: 0; flex: 1; }
+
+  /* Thread, scrolled to its end with Ollie's draft above the composer */
+  .dm-thread { position: relative; width: 350px; flex-shrink: 0; overflow: hidden; }
+  .dm-msg { position: absolute; left: 20px; top: -83px; width: 310px; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); padding: 12px 16px 16px 50px; }
+  .dm-initials { position: absolute; left: 16px; top: 12px; display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 9999px; font-size: 9.5px; font-weight: 600; letter-spacing: -0.02em; }
+  .dm-msg-head { display: flex; height: 20px; align-items: center; gap: 8px; margin-top: 2px; }
+  .dm-msg-who { font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .dm-msg-mail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--dm-fg-3); }
+  .dm-msg-time { margin-left: auto; flex-shrink: 0; font-size: 11px; color: var(--dm-fg-4); }
+  .dm-msg-body { margin-top: 6px; font-size: 13.5px; line-height: 21.6px; }
+  .dm-msg-body p + p { margin-top: 8.7px; }
+  .dm-draft {
+    position: absolute; left: 20px; top: 217px; width: 310px; height: 337px; overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--dm-violet) 18%, transparent); border-radius: 7px;
+    background: var(--dm-surface); box-shadow: var(--dm-shadow-xs);
+  }
+  .dm-draft-head {
+    display: flex; height: 37px; align-items: center; gap: 8px; padding: 0 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--dm-violet) 18%, transparent);
+    background: color-mix(in oklab, var(--dm-violet) 10%, transparent);
+  }
+  .dm-draft-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: color-mix(in oklab, var(--dm-violet) 82%, var(--dm-fg)); }
+  .dm-draft-note { flex-shrink: 0; font-size: 11.5px; color: var(--dm-fg-3); }
+  .dm-draft-body { height: 224px; overflow: hidden; padding: 10px 12px 0; font-size: 13px; line-height: 20.8px; }
+  .dm-draft-body p + p { margin-top: 8.4px; }
+  .dm-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
+  .dm-draft-based { display: flex; height: 33px; align-items: center; gap: 6px; border-top: 1px solid var(--dm-line-soft); padding: 0 12px; font-size: 11.5px; color: var(--dm-fg-3); }
+  .dm-draft-kb { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; background: var(--dm-hover); padding: 0 6px; color: var(--dm-fg-2); }
+  .dm-draft-foot { display: flex; height: 41px; align-items: center; gap: 6px; border-top: 1px solid var(--dm-line-soft); background: var(--dm-sunken); padding: 0 8px; }
+  .dm-composer {
+    position: absolute; left: 20px; top: 562px; width: 310px; height: 120px;
+    border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs);
+  }
+  .dm-composer-top { display: flex; height: 40px; align-items: center; gap: 8px; border-bottom: 1px solid var(--dm-line-soft); padding: 0 8px; font-size: 12px; line-height: 16px; }
+  .dm-seg { display: flex; height: 28px; flex-shrink: 0; align-items: center; border-radius: 5px; background: var(--dm-hover); padding: 2px; font-weight: 500; color: var(--dm-fg-3); }
+  .dm-seg span { display: flex; height: 24px; align-items: center; border-radius: 5px; padding: 0 8px; }
+  .dm-seg .dm-seg-on { background: var(--dm-surface); color: var(--dm-fg); box-shadow: 0 0 0 1px var(--dm-line), 0 1px 2px rgb(0 0 0 / 0.06); }
+  .dm-composer-to { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dm-fg-3); }
+  .dm-composer-to .dm-mono { color: var(--dm-fg-2); letter-spacing: -0.01em; }
+  .dm-composer-cc { flex-shrink: 0; padding: 0 6px; color: var(--dm-fg-3); }
+  .dm-composer-ph { height: 44px; padding: 10px 12px 0; font-size: 13px; color: var(--dm-fg-4); white-space: nowrap; overflow: hidden; }
+  .dm-composer-bar { display: flex; height: 28px; align-items: center; padding: 0 6px; color: var(--dm-fg-3); }
+  .dm-fmt { display: flex; width: 16px; height: 28px; align-items: center; justify-content: center; margin-right: 2px; }
+  .dm-composer-ai { margin: 0 2px; display: flex; height: 28px; align-items: center; gap: 6px; padding: 0 8px; font-size: 12px; }
+  .dm-composer-bar .dm-iconbtn { color: var(--dm-fg-3); }
+  .dm-composer-sep { margin: 0 8px; width: 1px; height: 16px; background: var(--dm-line); }
+  .dm-send { display: flex; opacity: 0.4; }
+  .dm-send span { display: flex; height: 28px; align-items: center; background: var(--dm-inverse); color: var(--dm-inverse-fg); }
+  .dm-send span:first-child { border-radius: 5px 0 0 5px; padding: 0 10px; font-size: 12.5px; font-weight: 500; }
+  .dm-send span:last-child { width: 28px; justify-content: center; border-radius: 0 5px 5px 0; border-left: 1px solid color-mix(in oklab, var(--dm-inverse-fg) 15%, transparent); }
+
+  /* Properties */
+  .dm-props { min-width: 0; flex: 1; overflow: hidden; border-left: 1px solid var(--dm-line); }
+  .dm-props-main { height: 217.5px; border-bottom: 1px solid var(--dm-line-soft); padding: 10px 10px 0; }
+  .dm-prop { display: flex; height: 32px; align-items: center; gap: 4px; }
+  .dm-prop-labels { height: 38px; }
+  .dm-prop-k { width: 76px; flex-shrink: 0; font-size: 12px; color: var(--dm-fg-3); }
+  .dm-prop-v { display: flex; height: 28px; width: 200px; min-width: 0; align-items: center; gap: 8px; border-radius: 5px; padding: 0 8px; font-size: 12.5px; }
+  .dm-prop-tags { display: flex; align-items: center; gap: 4px; padding-left: 4px; }
+  .dm-setby-inline { display: flex; margin-left: 2px; }
+  .dm-nobody { width: 16px; height: 16px; flex-shrink: 0; border: 1px dashed var(--dm-line-strong); border-radius: 2px; }
+  .dm-add { display: inline-flex; height: 18px; align-items: center; border: 1px dashed var(--dm-line-strong); border-radius: 4px; padding: 0 6px; font-size: 11px; color: var(--dm-fg-3); }
+  .dm-props-fields { height: 299px; border-bottom: 1px solid var(--dm-line-soft); padding: 10px 10px 0; }
+  .dm-field { display: flex; height: 28px; align-items: flex-start; gap: 4px; padding-left: 6px; }
+  .dm-field-2 { height: 44px; }
+  .dm-field-k { display: flex; width: 70px; flex-shrink: 0; align-items: center; gap: 4px; padding-top: 6px; font-size: 12px; line-height: 16px; color: var(--dm-fg-3); }
+  .dm-field-v { display: flex; height: 28px; width: 200px; min-width: 0; align-items: center; padding: 0 8px; font-size: 12.5px; }
+  .dm-req { width: 4px; height: 4px; flex-shrink: 0; border-radius: 9999px; background: var(--dm-amber); }
+  .dm-field-more { margin-top: 2px; display: flex; height: 24px; align-items: center; padding: 0 10px; font-size: 11.5px; color: var(--dm-fg-4); }
+  .dm-props-ollie { padding: 12px 16px 0; }
+  .dm-po-head { display: flex; height: 32px; align-items: center; gap: 10px; }
+  .dm-po-name { display: block; font-size: 12.5px; line-height: 16px; font-weight: 500; }
+  .dm-po-sub { display: block; font-size: 11.5px; line-height: 16px; color: var(--dm-fg-4); }
+  .dm-po-acts { margin-top: 12px; display: flex; gap: 6px; }
+  .dm-po-tools-label { margin-top: 12px; font-size: 11px; color: var(--dm-fg-4); }
+  .dm-po-tools { margin-top: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .dm-po-tools span { display: inline-flex; height: 24px; align-items: center; border: 1px solid var(--dm-line); border-radius: 5px; background: var(--dm-surface); padding: 0 8px; font-size: 11.5px; color: var(--dm-fg-2); }
+</style>

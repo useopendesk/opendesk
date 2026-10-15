@@ -1,0 +1,267 @@
+---
+title: AI features
+description: Draft and rewrite replies, summarize and triage tickets, and let the AI agent answer chat and email from your knowledge, with metered costs and your own provider key.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+opendesk's AI helps agents write and understand faster, and can answer customers in chat and email from your knowledge. Everything the AI does shows up as **Ollie**. It is optional: an admin can turn it off for the workspace, and a self-hosted instance only has it when its operator configures a provider.
+
+Admins set it up in **Settings, AI**.
+
+<Screenshot src="/guides/ai/settings" alt="Settings, AI: Use AI in this workspace ringed as 1, Let teammates ask Ollie as 2, the automatic features (triage, summaries and chat answers) as 3, and a cost estimate pill as 4" />
+
+<Legend>
+
+1. **Use AI in this workspace**: turns every AI feature on or off for everyone. Nothing is sent to the provider while it is off.
+2. **Let teammates ask Ollie**: the [assistant](/guides/ollie/) in the top bar.
+3. **Automatic**: features that run without anyone asking. **Triage new tickets**, **Keep summaries up to date** (tickets with five or more messages) and **Let Ollie answer chats**. All three are off by default.
+4. **Cost pills**: about what one call costs on the models you chose. See [AI usage on Cloud](#ai-usage-on-cloud).
+
+</Legend>
+
+## Turn on AI
+
+<Steps>
+<Step title="Open Settings, AI">
+
+Click **Settings** at the bottom of the sidebar, then **AI**.
+
+<Screenshot src="/guides/ai/open-settings" alt="The sidebar with Settings ringed as 1 and the AI page in the settings menu ringed as 2" />
+
+</Step>
+<Step title="Switch on what you want">
+
+Turn on **Use AI in this workspace**, then choose which features run on their own. Changes save as you make them.
+
+</Step>
+<Step title="Set how drafts sound">
+
+Under **Writing**, pick the **Tone** (friendly, professional, concise, or your own words), the **Reply language** (the customer's, or the workspace's), and any **Instructions** drafts should follow, such as policies.
+
+<Screenshot src="/guides/ai/writing" alt="The Writing section: Tone ringed as 1, Reply language as 2 and Instructions as 3" />
+
+</Step>
+<Step title="Choose the models">
+
+The **Main model** writes drafts, summaries, answers, articles and Ollie's replies. The **Fast model** handles rewrites, translation and decisions. Every model is available on every plan; on Cloud a pricier model uses more of the AI balance.
+
+<Screenshot src="/guides/ai/models" alt="The Model section: the main model picker set to Claude Sonnet 5.5 ringed as 1, the fast model picker set to Claude Haiku 5.5 ringed as 2, each with its price per million tokens" />
+
+</Step>
+</Steps>
+
+## Write with AI
+
+In the reply box of a ticket, click **AI** to draft or rework a reply. Nothing is sent until you send it.
+
+<Screenshot src="/guides/ai/composer" alt="The reply box with the AI button ringed as 1, and its menu open: Draft a reply and Draft with instructions ringed as 2, the rewrite options from Friendlier to Simpler ringed as 3" />
+
+<Legend>
+
+1. **AI**: opens the menu.
+2. **Draft a reply** writes one from the conversation, the contact, your saved replies and the most relevant help articles, citing its sources. **Draft with instructions** lets you say what to write.
+3. **Rewrite** your draft: friendlier, more formal, shorter, longer, fix spelling and grammar, or simpler. **Translate** turns it into another language.
+
+</Legend>
+
+On any message, **Translate** shows it in your language. Ollie's section on the ticket summarizes it and answers questions about it; see [Ollie on a ticket](/guides/ollie/#ollie-on-a-ticket).
+
+## The AI agent for chat and email
+
+The AI agent answers customers for you: chat visitors in the widget and, if you choose, emails to a mailbox. It answers from your help center and the knowledge you add, can use your own tools, and hands the conversation to your team when it should. It answers as a bot: Ollie by default, or [bots you build](/guides/bots/) with their own name, face and personality, one per widget or address if you like.
+
+It has its own section in settings, under **AI agent**.
+
+<Screenshot src="/guides/ai/agent-overview" alt="Settings, AI agent, Overview: the Overview page ringed as 1, the Behaviour to Tests pages as 2, the setup checklist as 3, the conversations, resolved, handoffs, rated helpful and spent tiles as 4, and the Needs review list as 5" />
+
+<Legend>
+
+1. **Overview**: how the agent did over a date range.
+2. **Bots**, **Behaviour**, **Knowledge**, **Tools**, **Playground** and **Tests**: who answers, and everything that shapes its answers.
+3. **Setup checklist**: the steps left before the agent is ready. It collapses once they are done.
+4. **Numbers**: conversations, how many were resolved without a person, handoffs, how visitors rated answers, and what it spent.
+5. **Needs review**: answers visitors rated not helpful, and conversations it handed off, from the last 30 days. **Improve answer** writes the better answer, which the agent uses from then on.
+
+</Legend>
+
+### Set up the agent
+
+<Steps>
+<Step title="Turn it on and tell it who it is">
+
+In **AI agent, Behaviour**, turn on **Let the agent answer chats**. Under **Bots**, open a bot to give it a name, a face and a personality, and write its **Instructions** like a note to a new teammate: your products, plans, policies, opening hours and useful links. See [Bots](/guides/bots/).
+
+<Screenshot src="/guides/ai/agent-behaviour" alt="The Behaviour page: Let the agent answer chats ringed as 1, the list of bots and where each answers as 2, Manage bots as 3, and Run tests and Open playground as 4" />
+
+</Step>
+<Step title="Set its limits">
+
+Further down, choose the **Agent model**, how many **Replies per conversation** it gives before handing off, **Topics to decline**, a **Monthly spending cap**, and whether to **Ask for an email before handing off**.
+
+<Screenshot src="/guides/ai/agent-guardrails" alt="Model and limits and Guardrails: the agent model and replies per conversation ringed as 1, Topics to decline as 2, Monthly spending cap as 3, and Ask for an email before handing off as 4" />
+
+</Step>
+<Step title="Add knowledge">
+
+Published help center articles are always part of its knowledge. In **AI agent, Knowledge**, **Add knowledge** adds more: a website it crawls, a file, or a short Q&A snippet.
+
+<Screenshot src="/guides/ai/agent-knowledge" alt="The Knowledge page: Add knowledge ringed as 1, its menu with Add a website, Upload a file and Write a Q&A snippet ringed as 2, and the Margin docs website source with its status and switch ringed as 3" />
+
+</Step>
+<Step title="Connect tools, if you have them">
+
+In **AI agent, Tools**, **Connect a server** adds your own MCP server, so the agent can look up an order or update an address for a visitor. Choose which tools it may use. A tool that changes something asks the visitor to confirm first.
+
+<Screenshot src="/guides/ai/agent-tools" alt="The Tools page: Connect a server ringed as 1, a connected Shop server ringed as 2, and a Linear server that needs sign-in with its Connect button ringed as 3" />
+
+</Step>
+<Step title="Try it in the playground">
+
+**AI agent, Playground** lets you chat with the agent as a visitor would. Nothing reaches a customer or creates a ticket. On the side, pick which bot answers and try other settings without saving them.
+
+<Screenshot src="/guides/ai/agent-playground" alt="The playground: a visitor question ringed as 1, the cited articles under the answer ringed as 2, Try different settings ringed as 3, and the Visitor card ringed as 4" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+**Tests** keeps saved conversations and what each answer must do, such as mention something, hand off, or use a tool. Run them after you change instructions, knowledge or tools to see what broke. A run costs what its answers cost, like the playground.
+
+</Callout>
+
+### Chat answers
+
+With chat answers on, the agent replies to every visitor message in a conversation it is handling, labelled as AI, citing the articles and pages it used. A visitor can always choose **Talk to a person**.
+
+<Screenshot src="/guides/ai/chat-answer" alt="A chat ticket: an action the visitor confirmed ringed as 1, Improve answer on one of Ollie's replies ringed as 2, and Ollie handed this to the team ringed as 3" />
+
+<Legend>
+
+1. **Actions**: when a tool would change something, the visitor sees what will happen and confirms or declines. An action not answered in 15 minutes lapses.
+2. **Improve answer** (admins): write the answer it should have given. It is saved as a Q&A snippet and used at once.
+3. **Handoff**: the agent hands off when the visitor asks for a person, when it cannot help, or after its reply limit. The assignee or team is notified.
+
+</Legend>
+
+The agent stops answering a conversation as soon as a teammate replies or it is assigned. It stays silent, leaving the conversation to your team, when AI is off, the AI balance is used up, or its monthly cap is reached.
+
+### Email answers
+
+Each mailbox can let the agent answer its email. It is off by default. Open **Settings, Mailboxes**, choose a mailbox, and turn on **Ollie answers emails to this mailbox**. **Bot** picks which bot writes and signs the emails.
+
+<Screenshot src="/guides/ai/mailbox-email" alt="A mailbox's Ollie section: Ollie answers emails to this mailbox ringed as 1, the Bot picker ringed as 2, the Draft for review and Send automatically modes ringed as 3, and Only outside business hours ringed as 4" />
+
+- **Draft for review** leaves a suggested reply on the ticket. A teammate sends it with one click, edits it, or discards it.
+- **Send automatically** replies by email on its own.
+- **Only outside business hours** leaves the email to your team while you are open.
+
+<Screenshot src="/guides/ai/suggested-reply" alt="A suggested reply on an email ticket: Nothing is sent until you send it ringed as 1, the article it was based on ringed as 2, Send and Edit ringed as 3, and Discard ringed as 4" />
+
+<Callout type="note">
+
+Spam, auto-replies, mailing lists, no-reply senders and mail from your own team are never answered. The agent sends at most 5 emails or suggestions per customer an hour, and marks its email as automatic so autoresponders don't answer it. When it can't help, nothing is sent and the ticket waits for your team, unassigned.
+
+</Callout>
+
+## Triage
+
+Triage reads a new ticket and decides its priority, severity, labels, team, the customer's sentiment (`positive`, `neutral`, `negative` or `frustrated`), the language and a category. When the instance has the decision model, each decision comes with a confidence, such as "92% sure": what is above the workspace's threshold is applied and shows in the ticket's activity as Ollie, and the rest becomes a suggestion on the ticket that an agent can **Apply** or **Skip**. Without it, your AI model makes the same decisions and they apply directly. Triage only ever raises a priority or severity.
+
+Automations can run triage with the `ai_triage` action, match its result with `sentiment` and `severity` conditions, and ask Ollie a yes or no question with an `ai_decide` condition. See [Triage and assignment](/guides/triage-and-assignment/) and [Automations](/guides/automations/).
+
+## Your own provider key
+
+Owners and admins can run the workspace's AI on their own key instead of the AI balance, in **Settings, AI, Provider**: choose **Your own key**, then an OpenRouter key, an Anthropic key, or any OpenAI-compatible endpoint (base URL and key).
+
+<Screenshot src="/guides/ai/own-key" alt="The Provider section with Your own key ringed as 1, the OpenRouter, OpenAI-compatible and Anthropic choices, the API key field, and Test connection and Save key" />
+
+- The key is checked with a small test call before it is saved, stored encrypted, and never shown again except its last 4 characters. An endpoint's base URL must use HTTPS on a public address.
+- Every AI request of the workspace then goes to your provider, and the model pickers list your provider's models.
+- Requests on your key cost $0 on opendesk and are never refused for the AI balance. They still appear in the usage report, marked as on your key.
+- Search embeddings stay on opendesk at no charge. The decision model (triage and automation questions) stays on opendesk and costs a little from the AI balance.
+- If your provider rejects the key or the account runs out of funds, AI features stop (they never fall back to the AI balance), admins get a notification, and the Provider section shows what happened. Replace the key, or remove it to go back to the AI balance.
+
+## AI usage on Cloud
+
+On opendesk Cloud, AI is paid from the workspace's AI balance, in US dollars: a monthly allowance, then any [AI top-ups](/guides/billing/#the-ai-balance). **Settings, AI** shows what a typical call costs on the models you chose.
+
+<Screenshot src="/guides/ai/costs" alt="The What AI costs list in Settings, AI: about $0.0135 to summarize a ticket, $0.00042 to rewrite a draft, $0.0195 to draft a reply, $0.021 for a chat answer and $0.024 for an assistant message" />
+
+- Each call is charged on its real cost: what the provider charged for it, at the model's list price, times 1.5.
+- A pricier model, a longer thread or a longer answer costs more; a short one costs less.
+- A call starts only when the balance covers its estimate: the prompt at the model's input price plus the longest answer it may write (counted up to 4,000 tokens) at the output price, times 1.5, and at least $0.01.
+- A failed request costs nothing. Search indexing is free.
+
+<Fold>
+
+## Typical costs with the default models
+
+With Claude Sonnet 5.5 as the main model and Claude Haiku 5.5 as the fast one:
+
+| Feature | Model | Typical cost |
+| --- | --- | --- |
+| Rewrite | fast | $0.0004 |
+| Translate | fast | $0.0005 |
+| Triage (every question in one call) | fast | $0.00075 |
+| Summarize | main | $0.0135 |
+| Ask about a ticket | main | $0.018 |
+| Draft a reply | main | $0.0195 |
+| Chat answer, each model turn | main | $0.021 |
+| Email answer, each model turn | main | $0.0225 |
+| Ollie, each model turn | main | $0.024 |
+| Draft an article | main | $0.0465 |
+
+The agent's playground and test runs cost what their answers cost, about $0.021 a reply.
+
+</Fold>
+
+<Fold>
+
+## Model prices
+
+What the default models cost as a Cloud workspace pays for them, per 1 million tokens (input / output), and for a typical draft reply (4,000 input and 500 output tokens). These follow the provider's list price; **Settings, AI** shows the current prices.
+
+| Model | Per 1M tokens (in / out) | Typical draft reply |
+| --- | --- | --- |
+| Claude Haiku 5.5 (default fast model) | $0.15 / $0.75 | $0.001 |
+| DeepSeek V4.1 Flash | $0.225 / $0.90 | $0.0014 |
+| GPT-5.6 Luna | $0.30 / $1.80 | $0.0021 |
+| Gemini 3.8 Flash | $1.125 / $5.625 | $0.0073 |
+| Claude Sonnet 5.5 (default model) | $3 / $15 | $0.0195 |
+| GPT-5.6 Sol | $3 / $15 | $0.0195 |
+| Claude Opus 5.5 | $6 / $30 | $0.039 |
+
+</Fold>
+
+<Fold>
+
+## How your data is handled
+
+- Each request sends the model only the data that feature needs.
+- Customer content goes only to the provider the instance (or your own key) is configured with. Prompts and completions are not logged; usage records store counts only.
+- Customer messages, articles and tool results are passed to the model as data, never as instructions, and model output is sanitized before it is shown or stored.
+
+</Fold>
+
+<Fold>
+
+## Self-hosting
+
+Self-hosted instances have no AI balance: they use their own provider key. Set `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` with `OPENAI_BASE_URL` for any OpenAI-compatible endpoint, including local models through Ollama, vLLM or LM Studio. Add `TYPESAFE_API_KEY` to make triage decisions with the decision model, with calibrated confidence. See [Self-hosting AI](/self-hosting/ai/) and the [configuration reference](/self-hosting/configuration/#ai).
+
+</Fold>
+
+## Related
+
+- [Ollie, the assistant](/guides/ollie/)
+- [Bots](/guides/bots/)
+- [Cloud plans and billing](/guides/billing/)
+- [Knowledge base and help center](/guides/knowledge-base/)
+- [AI API](/api/resources/ai/)

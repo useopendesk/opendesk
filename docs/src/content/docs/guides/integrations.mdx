@@ -1,0 +1,123 @@
+---
+title: Integrations
+description: Connect Linear, GitHub, Jira, Sentry, Slack, Stripe and any MCP server so Ollie can look things up and act there, with your approval.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+Integrations connect the tools your team already works in. Once one is connected, Ollie can look things up there and, after someone approves, create and update things for you: "open a Linear issue for this ticket", "is this error in Sentry?", "check this customer's invoices in Stripe".
+
+Every integration is the product's own **MCP server** (Model Context Protocol). Products not in the list connect by URL, including internal tools that run an MCP server. Admins manage them in **Settings, Integrations**.
+
+<Screenshot src="/guides/integrations/overview" alt="Settings, Integrations: Add by URL ringed as 1, the connected Linear integration ringed as 2, the category filter ringed as 3, and the GitHub card with its Connect button ringed as 4" />
+
+<Legend>
+
+1. **Add by URL**: connect any MCP server that is not in the list.
+2. **Connected**: what Ollie uses for everyone in the workspace, with how many tools it has and how many ask before acting.
+3. **Categories**: issues, docs, chat, CRM, payments, files and automation.
+4. **Catalog**: each card says how it signs in (account sign-in or access token) and has **Connect**.
+
+</Legend>
+
+## Connect a product
+
+<Steps>
+<Step title="Click Connect on its card">
+
+The connection is shared by the workspace, so an admin signs in once and everyone's Ollie can use it.
+
+- **Account sign-in** (Linear, Jira and Confluence, Sentry, Notion, Slack and most others) opens the product's own sign-in page and brings you back to opendesk.
+- **Access token** (GitHub, Stripe) asks for a token you create in that product. Give it only the access Ollie needs, for example a fine-grained GitHub token for the repositories it may use, or a Stripe restricted key with read access.
+
+<Screenshot src="/guides/integrations/token" alt="The Connect GitHub dialog: the Access token field with its Create one link ringed as 1, and the note that Ollie only looks things up on its own ringed as 2" />
+
+</Step>
+<Step title="Choose its tools">
+
+Open a connected integration to see its tools. Each one is marked **Looks up** (runs on its own) or **Asks first** (waits for approval). Switch off any tool you don't want Ollie to use, or switch the whole integration off.
+
+<Screenshot src="/guides/integrations/tools" alt="The Linear integration opened: a Looks up tool ringed as 1, an Asks first tool ringed as 2, a tool's switch ringed as 3, and the integration's own switch and actions menu ringed as 4" />
+
+</Step>
+<Step title="Keep it up to date">
+
+The **⋯** menu has **Check for new tools**, to fetch the list again after the product adds tools, **Sign in again** (for account sign-in), and **Disconnect**. Disconnecting deletes the sign-in; links already on tickets stay.
+
+<Screenshot src="/guides/integrations/menu" alt="The actions menu of an integration ringed as 1: Check for new tools, Sign in again and Disconnect" />
+
+</Step>
+</Steps>
+
+### Connect any MCP server
+
+Click **Add by URL**, paste the server's URL (it usually ends in `/mcp` or `/sse`), optionally name it, and choose how it signs in: **Sign in** with an account, an **Access token**, or **No sign-in**. Servers that speak Streamable HTTP or the older HTTP and SSE transport both work.
+
+<Screenshot src="/guides/integrations/url" alt="The Connect an MCP server dialog: the Server URL ringed as 1, the Sign in, Access token and No sign-in choices ringed as 2, and Continue to the server ringed as 3" />
+
+## Use it on a ticket
+
+<Steps>
+<Step title="Pick a shortcut, or ask">
+
+On a ticket, Ollie's section shows shortcuts for your connected tools under **In your tools**, such as "Create a Linear issue" or "Find related Linear issues". You can also just ask Ollie in your own words.
+
+</Step>
+<Step title="Approve the change">
+
+Anything that creates or changes something shows an approval card first, marked **Runs in Linear** (or the product it runs in), with the exact title, fields and text. Nothing happens until the person who asked approves it.
+
+<Screenshot src="/guides/integrations/approval" alt="Ollie's approval card for a Linear issue: Runs in Linear ringed as 1, the title, team and priority ringed as 2, and Deny and Approve ringed as 3" />
+
+</Step>
+<Step title="Find it on the ticket">
+
+When Ollie creates something from a ticket, it links it back. The ticket's **Linked** section lists what the ticket points to in other tools, and the timeline records "Ollie linked ...". Removing a link leaves the item in the other product as it is.
+
+<Screenshot src="/guides/integrations/linked" alt="A ticket's details: the In your tools shortcuts ringed as 1, and the Linked section with a Linear issue created by Ollie ringed as 2" />
+
+</Step>
+</Steps>
+
+<Callout>
+
+Integrations are for your team's Ollie. To let the [AI agent](/guides/ai/#the-ai-agent-for-chat-and-email) use your own tools when it answers customers, connect them in **Settings, AI agent, Tools** instead.
+
+</Callout>
+
+<Fold>
+
+## Security
+
+- Sign-ins and tokens are stored encrypted and are never shown again, in the app, the API, events or logs.
+- opendesk only talks to public https servers, and checks every address a server names (its sign-in pages included) the same way.
+- Account sign-in uses OAuth with PKCE. The sign-in is bound to the browser that started it.
+- Connecting, changing and disconnecting an integration is recorded in the audit log.
+- What a connected product returns is treated as data: it cannot approve changes or change Ollie's instructions.
+
+</Fold>
+
+<Fold>
+
+## Self-hosting
+
+Integrations work the same on a self-host. Most products register opendesk on their own the first time an admin signs in. For a product that only accepts apps registered in advance, register an OAuth app there with the redirect URL `https://<your API URL>/v1/integrations/oauth/callback`, then set:
+
+```bash
+MCP_<KEY>_CLIENT_ID=...
+MCP_<KEY>_CLIENT_SECRET=...   # if the product issued one
+```
+
+`<KEY>` is the integration's key in capitals, for example `MCP_SLACK_CLIENT_ID` (Slack only accepts apps registered in advance; the compose file passes its two variables). For another product, add its two variables to the `opendesk` service's `environment` in `docker-compose.yml`. The API for integrations and ticket links is in [the contract](https://github.com/useopendesk/opendesk/blob/main/contracts/integrations.md).
+
+</Fold>
+
+## Related
+
+- [Ollie, the assistant](/guides/ollie/)
+- [AI features](/guides/ai/)

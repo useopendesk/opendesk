@@ -3,6 +3,8 @@
 // per-tool switches.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { continueInBrowser, InBrowserNote } from "@/components/desktop/InBrowser";
+import { isDesktop } from "@/lib/desktop";
 import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
@@ -76,6 +78,7 @@ type Auth = "oauth" | "token" | "none";
  */
 export function ConnectDialog({ provider, onClose, onConnected }: { provider: IntegrationProvider | null; onClose: () => void; onConnected: (x: Integration) => void }) {
   const { t } = useTranslation("settingsDev");
+  const { t: tShell } = useTranslation("shell");
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
@@ -106,6 +109,12 @@ export function ConnectDialog({ provider, onClose, onConnected }: { provider: In
 
   const submit = () => {
     setError(null);
+    // The desktop app connects OAuth services from the browser (contracts/native.md).
+    if (isDesktop && auth === "oauth") {
+      continueInBrowser("/settings/integrations");
+      onClose();
+      return;
+    }
     if (custom) {
       const ue = validServer(url);
       setUrlError(ue);
@@ -130,7 +139,11 @@ export function ConnectDialog({ provider, onClose, onConnected }: { provider: In
             {t("cancel")}
           </Button>
           <Button variant="primary" loading={connect.isPending} onClick={submit}>
-            {auth === "oauth" ? t("integrations.connect.signIn", { name: custom ? t("integrations.custom.server") : label }) : t("integrations.connect.connect")}
+            {auth === "oauth"
+              ? isDesktop
+                ? tShell("desktop.continueInBrowser")
+                : t("integrations.connect.signIn", { name: custom ? t("integrations.custom.server") : label })
+              : t("integrations.connect.connect")}
           </Button>
         </>
       }
@@ -202,7 +215,8 @@ export function ConnectDialog({ provider, onClose, onConnected }: { provider: In
             )}
           </Field>
         )}
-        {auth === "oauth" && (
+        {auth === "oauth" && isDesktop && <InBrowserNote name={custom ? t("integrations.custom.server") : label} />}
+        {auth === "oauth" && !isDesktop && (
           <p className="rounded-lg border border-line bg-sunken px-3 py-2.5 text-[12.5px] leading-[18px] text-fg-2">
             {leaving ? t("integrations.connect.leaving", { name: label }) : t("integrations.connect.oauthHint", { name: custom ? t("integrations.custom.server") : label })}
           </p>

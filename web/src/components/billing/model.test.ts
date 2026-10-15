@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
 import type { Billing, BillingUsage } from "@/lib/api/types";
 import type { AutoRecharge } from "@/lib/api/types";
-import { creditBreakdown, creditsAlert, creditsBanner, daysBetween, formatMoney, limitState, rechargeQuote, stackDays, withPatch, yearlySavings } from "./model";
+import {
+  balanceAlert,
+  balanceBanner,
+  balanceBreakdown,
+  daysBetween,
+  defaultLowAt,
+  dollarForDollar,
+  expiresSoon,
+  formatMoney,
+  limitState,
+  parseUsd,
+  paymentMethodExpiry,
+  paymentMethodLabel,
+  rechargeTooSmall,
+  roundUsd,
+  stackDays,
+  topUpQuote,
+  validTopUp,
+  withPatch,
+  yearlySavings,
+} from "./model";
 
 const price = (unit_amount: number, interval: "month" | "year" | null, currency = "usd") => ({ id: "p", unit_amount, currency, interval });
 
@@ -32,8 +52,8 @@ const billing = (over: Partial<Billing> = {}): Billing => ({
   cancel_at_period_end: false,
   limits: { max_mailboxes: 1, max_members: 1 },
   usage: { mailboxes: 1, members: 2 },
-  credits: { unlimited: false, monthly: 50, used: 38, purchased: 0, remaining: 12, period_end: "2026-11-01T00:00:00Z" },
-  prices: { pro_month: null, pro_year: null, credit_pack: null },
+  ai: { unlimited: false, monthly_usd: 0.5, used_usd: 0.38, purchased_usd: 0, remaining_usd: 0.12, period_end: "2026-11-01T00:00:00Z" },
+  prices: { pro_month: null, pro_year: null, ai_top_up: null },
   ...over,
 });
 
@@ -48,12 +68,21 @@ describe("limits", () => {
   });
 });
 
-describe("credits", () => {
-  it("splits the allowance from purchased credits", () => {
-    const c = creditBreakdown({ unlimited: false, monthly: 1000, used: 1200, purchased: 1800, remaining: 1800, period_end: "" });
-    expect(c).toMatchObject({ monthlyUsed: 1000, monthlyLeft: 0, ratio: 1, purchased: 1800, low: false });
-    expect(creditBreakdown(billing().credits).low).toBe(false);
-    expect(creditBreakdown({ ...billing().credits, remaining: 4 }).low).toBe(true);
+describe("AI balance", () => {
+  it("splits the allowance from top-ups", () => {
+    const c = balanceBreakdown({ unlimited: false, monthly_usd: 10, used_usd: 12, purchased_usd: 18, remaining_usd: 18, period_end: "" });
+    expect(c).toMatchObject({ monthlyUsed: 10, monthlyLeft: 0, ratio: 1, purchased: 18, low: false });
+    expect(balanceBreakdown(billing().ai).low).toBe(false);
+    // Free: low below a fifth of the $0.50 allowance.
+    expect(balanceBreakdown({ ...billing().ai, remaining_usd: 0.09 }).low).toBe(true);
+  });
+
+  it("keeps micro-dollar sums exact", () => {
+    expect(balanceBreakdown({ unlimited: false, monthly_usd: 0.5, used_usd: 0.3, purchased_usd: 0, remaining_usd: 0.2, period_end: "" }).monthlyLeft).toBe(0.2);
+    expect(roundUsd(0.1 + 0.2)).toBe(0.3);
+    expect(defaultLowAt(0.5)).toBe(0.1);
+    expect(defaultLowAt(30)).toBe(5);
+    expect(defaultLowAt(0)).toBe(0.05);
   });
 });
 
@@ -62,24 +91,24 @@ describe("usage series", () => {
     const u: BillingUsage = {
       from: "2026-10-01T00:00:00Z",
       to: "2026-10-04T00:00:00Z",
-      total_credits: 20,
+      total_usd: 0.2,
       total_calls: 9,
       by_feature: [
-        { feature: "draft_reply", credits: 9, calls: 3 },
-        { feature: "summarize", credits: 5, calls: 5 },
-        { feature: "copilot", credits: 4, calls: 2 },
-        { feature: "rewrite", credits: 2, calls: 2 },
+        { feature: "draft_reply", usd: 0.09, calls: 3 },
+        { feature: "summarize", usd: 0.05, calls: 5 },
+        { feature: "copilot", usd: 0.04, calls: 2 },
+        { feature: "rewrite", usd: 0.02, calls: 2 },
       ],
       by_day: [
-        { date: "2026-10-01", credits: 12, calls: 5, by_feature: { draft_reply: 6, summarize: 3, copilot: 2, rewrite: 1 } },
-        { date: "2026-10-03", credits: 8, calls: 4, by_feature: { draft_reply: 3, summarize: 2, copilot: 2, rewrite: 1 } },
+        { date: "2026-10-01", usd: 0.12, calls: 5, by_feature: { draft_reply: 0.06, summarize: 0.03, copilot: 0.02, rewrite: 0.01 } },
+        { date: "2026-10-03", usd: 0.08, calls: 4, by_feature: { draft_reply: 0.03, summarize: 0.02, copilot: 0.02, rewrite: 0.01 } },
       ],
       by_member: [],
     };
     const { series, days } = stackDays(u, { from: "2026-10-01", to: "2026-10-03" });
     expect(series).toEqual(["draft_reply", "summarize", "copilot", "other"]);
     expect(days.map((d) => d.date)).toEqual(["2026-10-01", "2026-10-02", "2026-10-03"]);
-    expect(days[0].stacks.map((s) => s.credits)).toEqual([6, 3, 2, 1]);
+    expect(days[0].stacks.map((s) => s.usd)).toEqual([0.06, 0.03, 0.02, 0.01]);
     expect(days[1].total).toBe(0);
   });
 
@@ -90,49 +119,83 @@ describe("usage series", () => {
 
 const ar = (over: Partial<AutoRecharge> = {}): AutoRecharge => ({
   enabled: false,
-  threshold: 200,
-  packs: 1,
-  monthly_limit: 5,
+  threshold_usd: 2,
+  amount_usd: 25,
+  monthly_limit_usd: 100,
+  charged_this_month_usd: 0,
   recharges_this_month: 0,
-  low_at: 10,
+  low_at_usd: 0.1,
   last_recharge: null,
+  retry: null,
   failure: null,
   ...over,
 });
-const pack = { id: "price_credits", unit_amount: 2000, currency: "usd", interval: null, credits: 2000 };
+const topUp = { id: "price_ai_top_up", unit_amount: 1000, currency: "usd", interval: null, usd: 10 };
 
 describe("running low", () => {
-  const credits = (remaining: number) => ({ ...billing().credits, remaining });
+  const ai = (remaining_usd: number) => ({ ...billing().ai, remaining_usd });
 
-  it("reads out below 3 credits and low below low_at", () => {
-    expect(creditsAlert(billing({ credits: credits(2.9), auto_recharge: ar() }))).toBe("out");
-    expect(creditsAlert(billing({ credits: credits(9), auto_recharge: ar() }))).toBe("low");
-    expect(creditsAlert(billing({ credits: credits(10), auto_recharge: ar() }))).toBeNull();
-    // Older servers without auto_recharge: a tenth of the allowance, at least 5.
-    expect(creditsAlert(billing({ credits: credits(5) }))).toBe("low");
-    expect(creditsAlert(billing({ credits: { ...credits(0), unlimited: true } }))).toBeNull();
-    expect(creditsAlert(billing({ billing_enabled: false, credits: credits(0) }))).toBeNull();
-    expect(creditBreakdown(credits(150), 200).low).toBe(true);
+  it("reads out below $0.01 and low below low_at_usd", () => {
+    expect(balanceAlert(billing({ ai: ai(0.009), auto_recharge: ar() }))).toBe("out");
+    expect(balanceAlert(billing({ ai: ai(0.09), auto_recharge: ar() }))).toBe("low");
+    expect(balanceAlert(billing({ ai: ai(0.1), auto_recharge: ar() }))).toBeNull();
+    // Without auto_recharge: $2, at most a fifth of the allowance.
+    expect(balanceAlert(billing({ ai: ai(0.05) }))).toBe("low");
+    expect(balanceAlert(billing({ ai: { ...ai(0), unlimited: true } }))).toBeNull();
+    expect(balanceAlert(billing({ billing_enabled: false, ai: ai(0) }))).toBeNull();
+    expect(balanceBreakdown(ai(1.5), 2).low).toBe(true);
   });
 
   it("stays quiet while auto-recharge will refill", () => {
-    const low = { credits: credits(150) };
-    expect(creditsBanner(billing({ ...low, auto_recharge: ar({ enabled: true, low_at: 200 }) }))).toBeNull();
-    expect(creditsBanner(billing({ ...low, auto_recharge: ar({ enabled: true, low_at: 200, recharges_this_month: 5 }) }))).toBe("low");
-    expect(creditsBanner(billing({ credits: credits(1), auto_recharge: ar({ failure: { code: "card_declined", at: "" } }) }))).toBe("out");
+    const low = { ai: ai(1.5) };
+    expect(balanceBanner(billing({ ...low, auto_recharge: ar({ enabled: true, low_at_usd: 2 }) }))).toBeNull();
+    // Less than $5 left under the monthly limit: no recharge can come.
+    expect(balanceBanner(billing({ ...low, auto_recharge: ar({ enabled: true, low_at_usd: 2, charged_this_month_usd: 95.01 }) }))).toBe("low");
+    expect(balanceBanner(billing({ ...low, auto_recharge: ar({ enabled: true, low_at_usd: 2, charged_this_month_usd: 95 }) }))).toBeNull();
+    expect(balanceBanner(billing({ ai: ai(0.001), auto_recharge: ar({ failure: { code: "card_declined", at: "" } }) }))).toBe("out");
   });
 });
 
 describe("auto-recharge", () => {
-  it("quotes packs × the pack price", () => {
-    expect(rechargeQuote(pack, 3)).toEqual({ credits: 6000, price: "$60", amount: 6000 });
-    expect(rechargeQuote(null, 2)).toEqual({ credits: 4000, price: null, amount: null });
+  it("quotes any amount at the top-up price", () => {
+    expect(topUpQuote(topUp, 30)).toEqual({ usd: 30, price: "$30", amount: 3000 });
+    expect(topUpQuote(topUp, 42.5)).toEqual({ usd: 42.5, price: "$42.50", amount: 4250 });
+    expect(topUpQuote({ ...topUp, currency: "eur", unit_amount: 920 }, 50)).toMatchObject({ amount: 4600 });
+    expect(topUpQuote(null, 20)).toEqual({ usd: 20, price: null, amount: null });
+    expect(dollarForDollar(topUp)).toBe(true);
+    expect(dollarForDollar({ ...topUp, currency: "eur" })).toBe(false);
+  });
+
+  it("reads typed amounts", () => {
+    expect(parseUsd("40")).toBe(40);
+    expect(parseUsd(" $1,250.5 ")).toBe(1250.5);
+    expect(parseUsd("12.345")).toBeNull();
+    expect(parseUsd("ten")).toBeNull();
+    expect(parseUsd("")).toBeNull();
+    expect(validTopUp(4.99)).toBe(false);
+    expect(validTopUp(5)).toBe(true);
+    expect(validTopUp(5000)).toBe(true);
+    expect(validTopUp(5000.01)).toBe(false);
+    expect(validTopUp(null)).toBe(false);
+  });
+
+  it("names the card", () => {
+    expect(paymentMethodLabel({ brand: "visa", last4: "4242" })).toBe("Visa •••• 4242");
+    expect(paymentMethodLabel({ brand: "link", last4: "" })).toBe("Link");
+    expect(paymentMethodExpiry({ brand: "visa", last4: "4242", exp_month: 8, exp_year: 2030 })).toBe("08/30");
+    expect(expiresSoon({ brand: "visa", last4: "1", exp_month: 11, exp_year: 2026 }, new Date("2026-10-14T00:00:00Z"))).toBe(true);
+    expect(expiresSoon({ brand: "visa", last4: "1", exp_month: 12, exp_year: 2026 }, new Date("2026-10-14T00:00:00Z"))).toBe(false);
+  });
+
+  it("refuses a recharge that would not clear the threshold", () => {
+    expect(rechargeTooSmall(10, 10)).toBe(true);
+    expect(rechargeTooSmall(10, 9.99)).toBe(false);
   });
 
   it("applies a pending patch the way the server will", () => {
     const failed = ar({ failure: { code: "card_declined", at: "2026-10-01T00:00:00Z" } });
-    expect(withPatch(failed, { enabled: true })).toMatchObject({ enabled: true, failure: null, low_at: 200 });
-    expect(withPatch(ar({ enabled: true, low_at: 200 }), { threshold: 400 }).low_at).toBe(400);
-    expect(withPatch(ar(), { threshold: 400 }).low_at).toBe(10);
+    expect(withPatch(failed, { enabled: true })).toMatchObject({ enabled: true, failure: null, low_at_usd: 2 });
+    expect(withPatch(ar({ enabled: true, low_at_usd: 2 }), { threshold_usd: 4 }).low_at_usd).toBe(4);
+    expect(withPatch(ar(), { threshold_usd: 4 }).low_at_usd).toBe(0.1);
   });
 });

@@ -1,0 +1,81 @@
+---
+/**
+ * An app screenshot in both themes, from scripts/docs/shots.mjs:
+ *
+ *   <Screenshot src="/guides/mailboxes/overview" alt="The Mailboxes page..." caption="Optional" />
+ *
+ * `src` is the shot's path under public/ without the extension; the light picture is
+ * `<src>.webp` and the dark one `<src>.dark.webp`, swapped by the docs theme. A crop
+ * shows at its own size (never stretched past it), a full window across the column.
+ * Click to zoom; Escape or a click anywhere closes it.
+ */
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import sharp from 'sharp';
+
+interface Props {
+  src: string;
+  alt: string;
+  caption?: string;
+  /** Widest it shows, in CSS px (default: its natural size, at most the column). */
+  width?: number;
+}
+
+const { src, alt, caption, width } = Astro.props;
+const base = src.replace(/(\.dark)?\.webp$/, '');
+const light = `${base}.webp`;
+const dark = `${base}.dark.webp`;
+
+const pub = path.join(process.cwd(), 'public');
+for (const file of [light, dark]) {
+  if (!existsSync(path.join(pub, file))) {
+    throw new Error(`Screenshot ${file} is missing. Take it with: node scripts/docs/shots.mjs ${base.replace(/^\/guides\//, '')}`);
+  }
+}
+const meta = await sharp(path.join(pub, light)).metadata();
+// Shots are taken at 2x: half the pixels is the size they were on screen.
+const w = Math.round((meta.width ?? 1600) / 2);
+const h = Math.round((meta.height ?? 1000) / 2);
+const max = width ?? w;
+---
+
+<figure class="od-shot not-content" style={`--od-shot-max: ${max}px`}>
+  <button type="button" class="od-shot-frame" data-od-zoom aria-label={`Enlarge: ${alt}`}>
+    <img class="od-shot-light" src={light} alt={alt} width={w} height={h} loading="lazy" decoding="async" />
+    <img class="od-shot-dark" src={dark} alt={alt} width={w} height={h} loading="lazy" decoding="async" />
+  </button>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  // One lightbox for the page: the picture at full size on a soft scrim.
+  let box: HTMLDialogElement | null = null;
+  const lightbox = () => {
+    if (box) return box;
+    box = document.createElement('dialog');
+    box.className = 'od-zoom';
+    box.setAttribute('aria-label', 'Enlarged screenshot');
+    box.innerHTML = '<img alt="" /><p class="od-zoom-caption"></p>';
+    // Any click closes it: on the picture, the caption or the scrim around them.
+    box.addEventListener('click', () => box!.close());
+    box.addEventListener('close', () => document.documentElement.classList.remove('od-zoom-open'));
+    document.body.appendChild(box);
+    return box;
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('[data-od-zoom]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const dark = document.documentElement.dataset.theme === 'dark';
+      const img = button.querySelector<HTMLImageElement>(dark ? '.od-shot-dark' : '.od-shot-light')!;
+      const d = lightbox();
+      const big = d.querySelector('img')!;
+      big.src = img.currentSrc || img.src;
+      big.alt = img.alt;
+      big.width = Number(img.getAttribute('width'));
+      big.height = Number(img.getAttribute('height'));
+      d.querySelector('.od-zoom-caption')!.textContent = button.closest('figure')?.querySelector('figcaption')?.textContent ?? '';
+      document.documentElement.classList.add('od-zoom-open');
+      d.showModal();
+    });
+  });
+</script>

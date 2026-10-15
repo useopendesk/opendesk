@@ -2,14 +2,13 @@
 /*
  * DRAFT FOR LEGAL REVIEW. This policy has not been reviewed by a lawyer.
  * Placeholders to confirm before launch:
- *   - COMPANY.legalName, COMPANY.address (src/lib/site.ts)
  *   - backup and request log retention (30 days here), audit log retention (life of the workspace)
  *   - whether an EU/UK representative is required
  * It must stay consistent with the Google OAuth consent screen and the scopes the
  * app actually requests, because Google reviews this page during verification.
  */
 import Legal from '../layouts/Legal.astro';
-import { COMPANY, EMAILS, LINKS } from '../lib/site';
+import { COMPANY, EMAIL, LINKS } from '../lib/site';
 
 const toc = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -21,7 +20,6 @@ const toc = [
   { id: 'microsoft', label: 'Microsoft user data' },
   { id: 'legal-bases', label: 'Legal bases' },
   { id: 'sharing', label: 'Sharing' },
-  { id: 'subprocessors', label: 'Subprocessors' },
   { id: 'transfers', label: 'International transfers' },
   { id: 'retention', label: 'Retention' },
   { id: 'deletion', label: 'Deleting your data' },
@@ -33,11 +31,12 @@ const toc = [
   { id: 'contact', label: 'Contact' },
 ];
 ---
-<Legal title="Privacy policy" description="How opendesk collects, uses, shares, keeps and deletes personal data, including data from Google and Microsoft accounts you connect, and the rights you have." updated="October 11, 2026" toc={toc}>
-  <p>This policy explains what personal data opendesk collects, why, who we share it with, how long we keep it and how to have it deleted. We have tried to write it plainly. If anything is unclear, write to <a href={`mailto:${EMAILS.privacy}`}>{EMAILS.privacy}</a>.</p>
+<Legal title="Privacy policy" description="How opendesk collects, uses, shares, keeps and deletes personal data, including data from Google and Microsoft accounts you connect, and the rights you have." updated="October 14, 2026" toc={toc} email={EMAIL}>
+  <p>This policy explains what personal data opendesk collects, why, who we share it with, how long we keep it and how to have it deleted. We have tried to write it plainly. If anything is unclear, write to <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
 
   <h2 id="who-we-are">Who we are</h2>
-  <p>opendesk is operated by {COMPANY.legalName}, {COMPANY.address} ("opendesk", "we", "us"). For the data described in this policy about our own customers and website visitors, we are the controller. For data our customers put into their workspaces, see the next section.</p>
+  <p>opendesk is operated by {COMPANY.legalName} ("opendesk", "we", "us"), a company registered in {COMPANY.registeredIn} with company number {COMPANY.number}. Our registered office is at {COMPANY.address}. We are registered with the Information Commissioner's Office as a data protection fee payer, registration reference {COMPANY.ico}.</p>
+  <p>For the data described in this policy about our own customers and website visitors, we are the controller. For data our customers put into their workspaces, see the next section.</p>
 
   <h2 id="scope">Scope</h2>
   <p>This policy covers:</p>
@@ -62,7 +61,7 @@ const toc = [
   <h3>Website analytics</h3>
   <p>On this website we may use PostHog to count page views. It runs without cookies or other storage in your browser, does not create a profile of you, and does not record your session. In the app, we use PostHog to understand which features are used and to find errors. Analytics events never contain message content, secrets or credentials.</p>
   <h3>Billing</h3>
-  <p>For paid plans we keep the plan, number of agents, billing contact and invoices. Payments are handled by Stripe, which collects and stores card details; we never see or store full card numbers.</p>
+  <p>For paid plans we keep the plan, number of agents, billing contact and invoices. At checkout we collect your company's legal name, billing address and, where you give one, its VAT or other tax number, so they appear on your invoices. Payments are handled by Stripe, which collects and stores card details; we never see or store full card numbers.</p>
   <h3>Communications</h3>
   <p>If you email us, we keep the conversation so we can help you.</p>
 
@@ -84,8 +83,8 @@ const toc = [
     <li><strong>What is sent.</strong> When someone uses an AI feature, or an admin turns on an automatic one such as auto-triage or the answer bot, we send the AI provider only the content that feature needs, for example the messages in a ticket, relevant knowledge base articles and your workspace's tone settings.</li>
     <li><strong>Why.</strong> Customer content is sent to the AI provider only to perform the feature that was requested, and the result is returned to your workspace.</li>
     <li><strong>No training.</strong> Customer content and AI outputs are not used to train AI models, by us or by our AI providers.</li>
-    <li><strong>No logging of content.</strong> We do not log prompt or completion text. We record only usage counts, such as which feature ran and how many credits it used.</li>
-    <li><strong>Providers.</strong> On opendesk Cloud, language features run on Anthropic and search embeddings are created by Voyage AI. Both are listed under <a href="#subprocessors">Subprocessors</a>.</li>
+    <li><strong>No logging of content.</strong> We do not log prompt or completion text. We record only usage data, such as which feature ran, on which model, how many tokens it used and what it cost.</li>
+    <li><strong>Providers.</strong> On opendesk Cloud, AI features run on AI providers we contract with, under terms that forbid training on your content and limit them to providing the feature.</li>
     <li><strong>The answer bot</strong> replies only from a workspace's published help center articles, is labelled as AI, and offers a way to reach a person.</li>
   </ul>
   <p>Self-hosted opendesk uses whichever AI provider its operator configures, or none.</p>
@@ -97,7 +96,7 @@ const toc = [
     <li><strong>Connect a Gmail or Google Workspace mailbox.</strong> An admin of a workspace can connect a mailbox so its email appears in opendesk. With your permission, opendesk reads the email in that mailbox to create and update tickets, and sends replies that agents write, from that mailbox. We access only the mailbox you connect, and only to provide these features.</li>
   </ul>
   <p><strong>How we store it.</strong> Email we fetch is stored as tickets and messages in the workspace that connected the mailbox. OAuth tokens are encrypted with AES-GCM before they are stored, and are used only by the opendesk service to talk to Google on behalf of that mailbox.</p>
-  <p><strong>Who sees it.</strong> Email from a connected mailbox is visible only to members of the workspace that connected it. We do not share Google user data with anyone except the subprocessors that host the Service, under contracts that limit them to providing it to us. We do not transfer it to advertising platforms, data brokers or information resellers.</p>
+  <p><strong>Who sees it.</strong> Email from a connected mailbox is visible only to members of the workspace that connected it. We do not share Google user data with anyone except the service providers that host the Service, under contracts that limit them to providing it to us. We do not transfer it to advertising platforms, data brokers or information resellers.</p>
   <p><strong>People at opendesk.</strong> Nobody at opendesk reads your Google user data unless you ask us to for support and give us permission, it is needed for security purposes such as investigating abuse, it is required to comply with the law, or the data is aggregated and anonymized for internal operations.</p>
   <p><strong>Limited Use.</strong> opendesk's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. We use Google user data only to provide and improve the user-facing features described above, never to serve advertisements, and never to train generalized AI or machine learning models.</p>
   <p><strong>Revoking access.</strong> Disconnect the mailbox in opendesk under Settings, Mailboxes, which deletes the stored tokens. You can also remove opendesk's access at any time from your Google account at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Email already imported stays in the workspace until it is deleted as described under <a href="#deletion">Deleting your data</a>.</p>
@@ -117,27 +116,13 @@ const toc = [
   <h2 id="sharing">Sharing</h2>
   <p>We share personal data only:</p>
   <ul>
-    <li>with the subprocessors listed below, who host and run parts of the Service for us;</li>
+    <li>with service providers who host and run parts of the Service for us, under contracts that limit them to doing so;</li>
     <li>within your workspace, as you and your workspace's admins configure it, including with integrations and webhooks your workspace sets up;</li>
     <li>when the law requires it, after checking the request is valid, and telling the affected customer when we are allowed to;</li>
     <li>to protect the rights, safety and security of our users, the public or us;</li>
     <li>with a successor if opendesk is involved in a merger or acquisition, under this policy, with notice to you.</li>
   </ul>
 
-  <h2 id="subprocessors">Subprocessors</h2>
-  <table>
-    <thead><tr><th>Provider</th><th>What they do for us</th><th>Location</th></tr></thead>
-    <tbody>
-      <tr><td>Amazon Web Services</td><td>Hosting for the API, workers and realtime service; attachment storage; email delivery</td><td>United States</td></tr>
-      <tr><td>Cloudflare</td><td>Hosting for the web app and website, content delivery, DNS, inbound email routing, bot protection (Turnstile)</td><td>Global network</td></tr>
-      <tr><td>Neon</td><td>Managed Postgres database</td><td>United States</td></tr>
-      <tr><td>PostHog</td><td>Product analytics and error tracking</td><td>United States</td></tr>
-      <tr><td>Anthropic</td><td>AI language features: drafts, rewriting, summaries, copilot, triage, translation and the answer bot</td><td>United States</td></tr>
-      <tr><td>Voyage AI</td><td>Embeddings for semantic search and answer retrieval</td><td>United States</td></tr>
-      <tr><td>Stripe</td><td>Payments, card storage and invoices for paid plans</td><td>United States</td></tr>
-    </tbody>
-  </table>
-  <p>We will update this list before adding a subprocessor that handles customer data.</p>
 
   <h2 id="transfers">International transfers</h2>
   <p>Our providers may process data outside your country, including in the United States. Where data from the European Economic Area, the United Kingdom or Switzerland is transferred, we rely on the European Commission's Standard Contractual Clauses, the UK addendum, or another lawful transfer mechanism.</p>
@@ -160,14 +145,14 @@ const toc = [
     <li><strong>A mailbox connection:</strong> an admin can disconnect it at any time, which deletes its stored credentials.</li>
     <li><strong>Individual records:</strong> agents can delete tickets, contacts and articles in the app, subject to their role.</li>
   </ul>
-  <p>Deleted data is removed, not hidden. It disappears from backups when they expire. You can also ask us to delete your data by writing to <a href={`mailto:${EMAILS.privacy}`}>{EMAILS.privacy}</a>. If your data is in someone else's workspace, we will pass your request to them.</p>
+  <p>Deleted data is removed, not hidden. It disappears from backups when they expire. You can also ask us to delete your data by writing to <a href={`mailto:${EMAIL}`}>{EMAIL}</a>. If your data is in someone else's workspace, we will pass your request to them.</p>
 
   <h2 id="security">Security</h2>
   <p>We encrypt data in transit with TLS, rely on our providers' encryption at rest, and additionally encrypt credentials and secrets with AES-GCM. Passwords are hashed with Argon2id. Access inside a workspace is controlled by roles, and every request is limited to the caller's workspace. Our controls are described on the <a href="/security/">security page</a>, and the code is public at <a href={LINKS.github}>github.com/useopendesk/opendesk</a>.</p>
 
   <h2 id="rights">Your rights</h2>
   <p>Depending on where you live, you may have the right to access the personal data we hold about you, correct it, delete it, restrict or object to how we use it, receive a copy in a portable format, and withdraw consent. California residents have the right to know, delete and correct, and not to be discriminated against for using these rights; we do not sell or share personal information for cross-context behavioral advertising.</p>
-  <p>To use any of these rights, write to <a href={`mailto:${EMAILS.privacy}`}>{EMAILS.privacy}</a>. We will answer within one month, and may need to confirm your identity first. You can also complain to your local data protection authority.</p>
+  <p>To use any of these rights, write to <a href={`mailto:${EMAIL}`}>{EMAIL}</a>. We will answer within one month, and may need to confirm your identity first. You can also complain to your local data protection authority.</p>
 
   <h2 id="cookies">Cookies</h2>
   <p>This website sets no cookies. The app sets one essential cookie when you sign in, an HttpOnly refresh token scoped to the sign-in path, which keeps you signed in and is removed when you sign out. The chat widget stores a visitor token in the visitor's browser so conversations continue between visits. Cloudflare Turnstile, which protects sign-in and sign-up, may process device signals to tell people from bots. We use no advertising cookies.</p>
@@ -179,6 +164,7 @@ const toc = [
   <p>We will post any change to this policy on this page and update the date at the top. If a change is significant, we will tell account owners by email before it takes effect.</p>
 
   <h2 id="contact">Contact</h2>
-  <p>{COMPANY.legalName}<br />{COMPANY.address}<br />Email: <a href={`mailto:${EMAILS.privacy}`}>{EMAILS.privacy}</a></p>
-  <p>For security reports, write to <a href={`mailto:${EMAILS.security}`}>{EMAILS.security}</a>.</p>
+  <p>{COMPANY.legalName}<br />{COMPANY.address}<br />Company number {COMPANY.number}, registered in {COMPANY.registeredIn}<br />ICO registration reference {COMPANY.ico}<br />Email: <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+  <p>You also have the right to complain to the Information Commissioner's Office at <a href="https://ico.org.uk/make-a-complaint/">ico.org.uk</a>.</p>
+  <p>For security reports, write to <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
 </Legal>

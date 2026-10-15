@@ -5,7 +5,8 @@ import { contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
-import { addActivity, addMessage, applyPatch, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
+import { canSeeTicket, defaultBrand, teamRole } from "../teams";
+import { addActivity, addMessage, applyPatch, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
@@ -28,6 +29,8 @@ function filtersFrom(ctx: Ctx): ListFilters {
     assignee: q.get("assignee") ?? undefined,
     team_id: q.get("team_id") ?? undefined,
     mailbox_id: q.get("mailbox_id") ?? undefined,
+    brand_id: q.get("brand_id") ?? undefined,
+    widget_id: q.get("widget_id") ?? undefined,
     tag: q.get("tag") ?? undefined,
     channel: (q.get("channel") as Channel | null) ?? undefined,
     contact_id: q.get("contact_id") ?? undefined,
@@ -45,8 +48,30 @@ function personOpts(ws: WsData) {
 
 function ticket(ctx: Ctx): Ticket {
   const t = findTicket(ctx.ws, ctx.params.id);
-  if (!t) throw notFound("Ticket");
+  // A private team's ticket doesn't exist for anyone outside it (contracts/teams.md "Visibility").
+  if (!t || !canSeeTicket(ctx.ws, t)) throw notFound("Ticket");
   return t;
+}
+
+/** Team, brand and reply address checks for a patch (contracts/teams.md). */
+function checkPatch(ws: WsData, t: Ticket, p: TicketPatch) {
+  if (p.team_id && !ws.teams.some((x) => x.id === p.team_id)) throw invalid("Unknown team");
+  if (p.brand_id !== undefined && !ws.brands.some((b) => b.id === p.brand_id)) throw invalid("Unknown brand");
+  if (p.mailbox_id) {
+    const m = ws.mailboxes.find((x) => x.id === p.mailbox_id);
+    if (!m) throw invalid("Unknown address");
+    if (m.brand_id !== (p.brand_id ?? t.brand_id)) throw invalid("That address belongs to another brand");
+    if (m.status === "disabled" || !canSendFrom(ws, m, db.meId)) throw invalid("You can't send from that address");
+  }
+  const teamId = p.team_id !== undefined ? p.team_id : t.team_id;
+  const team = teamId ? ws.teams.find((x) => x.id === teamId) : undefined;
+  if (team?.private && p.assignee_id && !teamRole(team, p.assignee_id)) throw new HttpError(422, "not_on_team", "Only members of this team can be assigned its tickets");
+}
+
+/** Moving a ticket into a private team tells everyone else to drop it. */
+function hideIfPrivate(ws: WsData, t: Ticket, fromTeam: string | null) {
+  if (t.team_id === fromTeam || !t.team_id) return;
+  if (ws.teams.find((x) => x.id === t.team_id)?.private) publish(ws, "ticket.hidden", { ticket_id: t.id, team_id: t.team_id });
 }
 
 function readPatch(body: Record<string, unknown>): TicketPatch {
@@ -75,6 +100,8 @@ function readPatch(body: Record<string, unknown>): TicketPatch {
     p.assignee_id = v;
   }
   if ("team_id" in body) p.team_id = typeof body.team_id === "string" ? body.team_id : null;
+  if (typeof body.mailbox_id === "string") p.mailbox_id = body.mailbox_id;
+  if (typeof body.brand_id === "string") p.brand_id = body.brand_id;
   if ("snoozed_until" in body) p.snoozed_until = typeof body.snoozed_until === "string" ? body.snoozed_until : null;
   if (typeof body.spam === "boolean") p.spam = body.spam;
   const tags = strArr(body.tags);
@@ -131,17 +158,32 @@ export function registerTickets() {
     const p = readPatch(ctx.body);
     const fields = p.fields ? mergeFields(ws, "ticket", {}, p.fields).next : {};
     if (p.status === "solved" || p.status === "closed") checkRequiredOnSolve(ws, fields);
+    const channel = (s(ctx, "channel") as Channel | undefined) ?? "email";
+    const teamId = s(ctx, "team_id") ?? null;
+    if (teamId && !ws.teams.some((x) => x.id === teamId)) throw invalid("Unknown team");
+    // From: the given address, else the default brand's address for the team, else its default.
+    const brand = defaultBrand(ws);
+    const fallback =
+      ws.mailboxes.find((m) => m.brand_id === brand?.id && !!teamId && m.team_id === teamId && m.status !== "disabled" && canSendFrom(ws, m, db.meId)) ??
+      ws.mailboxes.find((m) => m.brand_id === brand?.id && m.status !== "disabled" && canSendFrom(ws, m, db.meId));
+    const mailboxId = s(ctx, "mailbox_id") ?? (channel === "chat" ? null : (fallback?.id ?? null));
+    const box = mailboxId ? ws.mailboxes.find((m) => m.id === mailboxId) : undefined;
+    if (mailboxId && (!box || !canSendFrom(ws, box, db.meId))) throw invalid("You can't send from that address");
     const t = newTicket(ws, {
       subject,
       contact: contact ? contactRef(contact) : null,
-      channel: (s(ctx, "channel") as Channel | undefined) ?? "email",
+      channel,
       priority: p.priority,
       severity: p.severity ?? null,
-      mailbox_id: s(ctx, "mailbox_id") ?? ws.mailboxes[0]?.id ?? null,
+      mailbox_id: mailboxId,
       assignee: userRef(s(ctx, "assignee_id")),
-      team_id: s(ctx, "team_id") ?? null,
+      team_id: teamId,
+      brand_id: box?.brand_id,
+      // Started by an agent: it wasn't received anywhere.
+      received_at: "",
       fields,
     });
+    t.origin_mailbox_id = null;
     if (p.tags || p.add_tags) applyPatch(ws, t, { tags: p.tags, add_tags: p.add_tags }, userRef(db.meId), false, personOpts(ws));
     if (contact) contact.ticket_count++;
     publish(ws, "ticket.created", { ticket: t });
@@ -159,7 +201,11 @@ export function registerTickets() {
   get("/v1/tickets/:id", (ctx) => ticket(ctx));
   patch("/v1/tickets/:id", (ctx) => {
     const t = ticket(ctx);
-    applyPatch(ctx.ws, t, readPatch(ctx.body), userRef(db.meId), true, personOpts(ctx.ws));
+    const p = readPatch(ctx.body);
+    checkPatch(ctx.ws, t, p);
+    const from = t.team_id;
+    applyPatch(ctx.ws, t, p, userRef(db.meId), true, personOpts(ctx.ws));
+    hideIfPrivate(ctx.ws, t, from);
     return t;
   });
   del("/v1/tickets/:id/ai/suggestions/:field", (ctx) => {
@@ -188,12 +234,15 @@ export function registerTickets() {
     if (!doDelete && !p) throw invalid("patch or delete is required");
     for (const id of ids) {
       const t = findTicket(ctx.ws, id);
-      if (!t) continue;
+      if (!t || !canSeeTicket(ctx.ws, t)) continue;
       if (doDelete) {
         ctx.ws.deletedTickets.add(t.id);
         publish(ctx.ws, "ticket.deleted", { ticket_id: t.id });
       } else if (p) {
+        checkPatch(ctx.ws, t, p);
+        const from = t.team_id;
         applyPatch(ctx.ws, t, p, userRef(db.meId), true, personOpts(ctx.ws));
+        hideIfPrivate(ctx.ws, t, from);
       }
     }
     return respond(204);
@@ -201,7 +250,7 @@ export function registerTickets() {
   post("/v1/tickets/:id/merge", (ctx) => {
     const src = ticket(ctx);
     const into = findTicket(ctx.ws, required(ctx, "into_id"));
-    if (!into) throw notFound("Target ticket");
+    if (!into || !canSeeTicket(ctx.ws, into)) throw notFound("Target ticket");
     if (into.id === src.id) throw invalid("A ticket can't be merged into itself");
     for (const m of ctx.ws.messages.filter((x) => x.ticket_id === src.id)) {
       ctx.ws.messages.push({ ...m, id: uuid(), ticket_id: into.id });
@@ -231,6 +280,12 @@ export function registerTickets() {
     if (status && !STATUSES.includes(status)) throw invalid("Unknown status");
     if ((status === "solved" || status === "closed") && t.status !== "solved" && t.status !== "closed") checkRequiredOnSolve(ctx.ws, t.fields);
     const myRef = userRef(db.meId);
+    // A reply from another address makes it the ticket's reply address.
+    const from = kind === "reply" ? s(ctx, "mailbox_id") : undefined;
+    if (from && from !== t.mailbox_id) {
+      checkPatch(ctx.ws, t, { mailbox_id: from });
+      applyPatch(ctx.ws, t, { mailbox_id: from }, myRef);
+    }
     const msg = addMessage(
       ctx.ws,
       t,
@@ -247,7 +302,8 @@ export function registerTickets() {
   });
   get("/v1/messages/:id/original", (ctx) => {
     const m = ctx.ws.messages.find((x) => x.id === ctx.params.id);
-    if (!m) throw notFound("Message");
+    const t = m && findTicket(ctx.ws, m.ticket_id);
+    if (!m || !t || !canSeeTicket(ctx.ws, t)) throw notFound("Message");
     return { full_html: ctx.ws.originals[m.id] ?? m.body_html };
   });
 
@@ -284,12 +340,38 @@ function hash(s: string): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** A group's stable share of the workspace's volume: weights normalised to 1. */
+function shares<K extends string | null>(keys: K[], weight: (k: K) => number): Map<K, number> {
+  const w = keys.map((k) => Math.max(0.05, weight(k)));
+  const sum = w.reduce((a, b) => a + b, 0) || 1;
+  return new Map(keys.map((k, i) => [k, w[i] / sum]));
+}
+
 function reports(ctx: Ctx): ReportsOverview {
+  const ws = ctx.ws;
   const toRaw = ctx.query.get("to");
   const fromRaw = ctx.query.get("from");
   const to = toRaw ? new Date(toRaw) : new Date();
   const from = fromRaw ? new Date(fromRaw) : new Date(to.getTime() - 29 * DAY);
   if (Number.isNaN(to.getTime()) || Number.isNaN(from.getTime()) || from > to) throw invalid("from must be before to");
+  // team_id (a team, or "none") and brand_id narrow every figure. Private teams count too.
+  const teamF = (ctx.query.get("team_id") ?? "").trim();
+  const brandF = (ctx.query.get("brand_id") ?? "").trim();
+  if (teamF && teamF !== "none" && !ws.teams.some((t) => t.id === teamF)) throw invalid("team_id must be a team of the workspace or none");
+  if (brandF && !ws.brands.some((b) => b.id === brandF)) throw invalid("brand_id must be a brand of the workspace");
+  const teamKeys: (string | null)[] = [...ws.teams.map((t) => t.id), null];
+  const teamShare = shares(teamKeys, (k) => (k === null ? 0.55 : 0.35 + hash(k)));
+  const brandShare = shares(
+    ws.brands.map((b) => b.id),
+    (id) => (ws.brands.find((b) => b.id === id)?.is_default ? 3 : 0.4 + hash(id) * 0.4),
+  );
+  const factor = (teamF ? (teamShare.get(teamF === "none" ? null : teamF) ?? 0) : 1) * (brandF ? (brandShare.get(brandF) ?? 0) : 1);
+  const live = ws.tickets.filter((t) => !t.spam && !ws.deletedTickets.has(t.id) && OPENISH_REPORT.includes(t.status));
+  const openOf = (team: string | null | undefined, brand: string | undefined) =>
+    live.filter((t) => (team === undefined || (t.team_id ?? null) === team) && (brand === undefined || t.brand_id === brand)).length;
+  const teamArg = teamF ? (teamF === "none" ? null : teamF) : undefined;
+  const brandArg = brandF || undefined;
+
   const by_day: ReportsOverview["by_day"] = [];
   const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
   const end = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
@@ -299,21 +381,44 @@ function reports(ctx: Ctx): ReportsOverview {
     const weekend = dow === 0 || dow === 6;
     const trend = 1 + ((d - start) / DAY) * 0.004;
     const base = (weekend ? 9 : 34) * trend;
-    const created = Math.round(base * (0.75 + hash(date) * 0.5));
+    const created = Math.round(base * (0.75 + hash(date) * 0.5) * factor);
     const solved = Math.max(0, Math.round(created * (0.8 + hash(date + "s") * 0.3)));
     by_day.push({ date, created, solved });
   }
   const created = by_day.reduce((a, b) => a + b.created, 0);
   const solved = by_day.reduce((a, b) => a + b.solved, 0);
-  const key = `${by_day[0]?.date}-${by_day.length}`;
-  const shares = [0.27, 0.22, 0.21, 0.18, 0.12];
+  const key = `${by_day[0]?.date}-${by_day.length}-${teamF}-${brandF}`;
+  const agentShares = [0.27, 0.22, 0.21, 0.18, 0.12];
+  const frp = (k: string) => Math.round(22 + hash(key + k) * 50);
+  const group = (share: number, k: string, open: number) => ({
+    created: Math.round(created * share),
+    solved: Math.round(solved * share),
+    open_now: open,
+    first_response_p50_minutes: created * share >= 1 ? frp(k) : null,
+  });
+  const teamRows = teamKeys
+    .filter((k) => teamArg === undefined || k === teamArg)
+    .map((k) => {
+      const share = teamArg === undefined ? (teamShare.get(k) ?? 0) : 1;
+      return { team_id: k, ...group(share, `team${k}`, openOf(k, brandArg)) };
+    })
+    .filter((r) => r.created || r.solved || r.open_now)
+    .sort((a, b) => b.created - a.created || b.open_now - a.open_now);
+  const brandRows = ws.brands
+    .filter((b) => brandArg === undefined || b.id === brandArg)
+    .map((b) => {
+      const share = brandArg === undefined ? (brandShare.get(b.id) ?? 0) : 1;
+      return { brand_id: b.id, ...group(share, `brand${b.id}`, openOf(teamArg, b.id)) };
+    })
+    .filter((r) => r.created || r.solved || r.open_now)
+    .sort((a, b) => b.created - a.created || b.open_now - a.open_now);
   return {
     created,
     solved,
-    open_now: counts(ctx.ws, db.meId).open,
-    first_response_p50_minutes: Math.round(38 + hash(key) * 30),
-    resolution_p50_minutes: Math.round(6 * 60 + hash(key + "r") * 240),
-    csat_avg: Math.round((4.3 + hash(key + "c") * 0.5) * 100) / 100,
+    open_now: openOf(teamArg, brandArg),
+    first_response_p50_minutes: created ? Math.round(38 + hash(key) * 30) : null,
+    resolution_p50_minutes: solved ? Math.round(6 * 60 + hash(key + "r") * 240) : null,
+    csat_avg: solved ? Math.round((4.3 + hash(key + "c") * 0.5) * 100) / 100 : null,
     csat_count: Math.round(solved * 0.31),
     sla_breached: Math.round(created * (0.03 + hash(key + "b") * 0.03)),
     by_day,
@@ -330,16 +435,22 @@ function reports(ctx: Ctx): ReportsOverview {
       sev4: Math.round(created * 0.21),
       none: created - Math.round(created * 0.02) - Math.round(created * 0.07) - Math.round(created * 0.16) - Math.round(created * 0.21),
     },
-    by_agent: shares.map((share, i) => {
-      const u = db.users[i];
-      return {
-        user: { id: u.id, name: u.name, email: u.email, avatar_url: u.avatar_url },
-        solved: Math.round(solved * share),
-        first_response_p50_minutes: Math.round(22 + hash(key + u.id) * 50),
-      };
-    }),
+    by_agent: solved
+      ? agentShares.map((share, i) => {
+          const u = db.users[i];
+          return {
+            user: { id: u.id, name: u.name, email: u.email, avatar_url: u.avatar_url },
+            solved: Math.round(solved * share),
+            first_response_p50_minutes: frp(u.id),
+          };
+        })
+      : [],
+    by_team: teamRows,
+    by_brand: brandRows,
   };
 }
+
+const OPENISH_REPORT: TicketStatus[] = ["open", "pending", "on_hold"];
 
 /** Used by the live simulator. */
 export function customerReply(ws: WsData, t: Ticket, html: string) {

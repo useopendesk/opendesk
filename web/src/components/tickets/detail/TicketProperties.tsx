@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Clock, Hash, Inbox, Star, Users } from "lucide-react";
+import { ChevronDown, Clock, CornerDownRight, Hash, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Priority, Severity, Ticket, TicketStatus } from "@/lib/api/types";
@@ -23,6 +23,7 @@ import { FieldsSection } from "./FieldsSection";
 import { TicketLinks } from "./TicketLinks";
 import { useDisplay, type FieldPatch, type TicketWithFields } from "../fields";
 import { useUpdateTicket } from "../useTicketActions";
+import { addressLabel, BrandChip, replyAddresses, sendingAddress, TeamDot, TeamMove, useRoutedText, useTeamsCtx } from "../teams";
 
 const PropButton = forwardRef<HTMLButtonElement, { children: ReactNode; disabled?: boolean; placeholder?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>>(
   function PropButton({ children, disabled, placeholder, className, ...rest }, ref) {
@@ -118,7 +119,17 @@ function SlaTimers({ t }: { t: Ticket }) {
   );
 }
 
-export type PropPicker = "status" | "priority" | "severity" | "assignee" | null;
+/** A page address without its scheme, for a narrow column. */
+function pageLabel(url: string) {
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team" | null;
 
 const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
 
@@ -128,15 +139,36 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
   const role = useRole();
   const canEdit = atLeast(role, "agent");
   const { data: members } = useQuery(q.members());
-  const { data: teams } = useQuery(q.teams());
+  const ctx = useTeamsCtx();
   const display = useDisplay();
   const aiSet = useAISet(t.id);
   const note = useOllieNote();
   const decided = aiDecisions(t)?.fields;
   const { data: mailboxes } = useQuery(q.mailboxes());
   const patch = (p: Parameters<typeof update.mutate>[0]["patch"]) => update.mutate({ id: t.id, patch: p });
-  const team = teams?.find((x) => x.id === t.team_id);
+  const team = ctx.team(t.team_id);
   const mailbox = mailboxes?.find((m) => m.id === t.mailbox_id);
+  const brand = ctx.brand(t.brand_id);
+  const routed = useRoutedText(t, ctx);
+  const origin = ctx.mailbox(t.origin_mailbox_id);
+  const receivedAt = t.received_at || origin?.email || "";
+  const addresses = replyAddresses(ctx, t);
+  // The ticket's team first; a private team's tickets go to its members only.
+  const teamMembers = new Set(team ? (team.members?.length ? team.members.map((m) => m.user_id) : team.member_ids) : []);
+  const agents = (members ?? []).filter((m) => m.role !== "viewer");
+  const assigneeItems = [
+    { value: "__none", label: tr("props.unassigned"), icon: unassignedIcon },
+    ...agents
+      .filter((m) => !team || teamMembers.has(m.user.id) || !team.private)
+      .sort((a, b) => Number(teamMembers.has(b.user.id)) - Number(teamMembers.has(a.user.id)))
+      .map((m) => ({
+        value: m.user.id,
+        label: m.user.name,
+        keywords: [m.user.email],
+        group: team ? (teamMembers.has(m.user.id) ? tr("teams.membersOf", { team: team.name }) : tr("teams.others")) : undefined,
+        icon: <Avatar name={m.user.name} src={m.user.avatar_url} size="xs" presence={m.presence} />,
+      })),
+  ];
   const tagNames = t.tags.map((x) => x.name);
   const openFor = (k: Exclude<PropPicker, null>) => ({ open: picker === k, onOpenChange: (o: boolean) => onPicker(o ? k : null) });
 
@@ -199,12 +231,7 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
             {...openFor("assignee")}
             value={t.assignee?.id ?? "__none"}
             placeholder={tr("props.assignTo")}
-            items={[
-              { value: "__none", label: tr("props.unassigned"), icon: unassignedIcon },
-              ...(members ?? [])
-                .filter((m) => m.role !== "viewer")
-                .map((m) => ({ value: m.user.id, label: m.user.name, keywords: [m.user.email], icon: <Avatar name={m.user.name} src={m.user.avatar_url} size="xs" presence={m.presence} /> })),
-            ]}
+            items={assigneeItems}
             onSelect={(v) => patch({ assignee_id: v === "__none" ? null : v })}
             trigger={
               <PropButton disabled={!canEdit} placeholder={!t.assignee}>
@@ -214,21 +241,65 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
             }
           />
         </Prop>
-        <Prop label={tr("props.team")}>
-          <Picker
-            value={t.team_id ?? "__none"}
-            placeholder={tr("props.chooseTeam")}
-            items={[{ value: "__none", label: tr("props.noTeam") }, ...(teams ?? []).map((x) => ({ value: x.id, label: x.name, icon: <Users className="size-3.5 text-fg-3" /> }))]}
-            onSelect={(v) => patch({ team_id: v === "__none" ? null : v })}
-            trigger={
-              <PropButton disabled={!canEdit} placeholder={!team}>
-                <Users className="size-3.5 text-fg-3" />
-                <span className="truncate">{team?.name ?? tr("props.noTeam")}</span>
-                {aiSet.team && team && <SetByOllie note={decided?.team?.applied ? note(t, "team") : undefined} />}
-              </PropButton>
-            }
-          />
-        </Prop>
+        {ctx.hasTeams && (
+          <Prop label={tr("props.team")} shortcut="t">
+            <TeamMove
+              tickets={[t]}
+              {...openFor("team")}
+              onMove={(id) => patch({ team_id: id })}
+              trigger={
+                <PropButton disabled={!canEdit} placeholder={!team}>
+                  {team ? <TeamDot team={team} /> : <Users className="size-3.5 text-fg-3" />}
+                  <span className="truncate">{team?.name ?? tr("props.noTeam")}</span>
+                  {team?.private && <Lock className="size-3 text-fg-4" aria-label={tr("teams.private")} />}
+                  {aiSet.team && team && <SetByOllie note={decided?.team?.applied ? note(t, "team") : undefined} />}
+                </PropButton>
+              }
+            />
+          </Prop>
+        )}
+        {ctx.multiBrand && (
+          <Prop label={tr("props.brand")}>
+            <Picker
+              value={t.brand_id}
+              placeholder={tr("props.chooseBrand")}
+              items={ctx.brands.map((b) => ({
+                value: b.id,
+                label: b.name,
+                icon: <span className="size-2 rounded-[2px] bg-fg-4" style={b.color ? { backgroundColor: b.color } : undefined} />,
+              }))}
+              onSelect={(v) => v !== t.brand_id && patch({ brand_id: v })}
+              trigger={
+                <PropButton disabled={!canEdit}>
+                  {brand ? <BrandChip brand={brand} className="max-w-full" /> : <span className="text-fg-4">{tr("props.chooseBrand")}</span>}
+                </PropButton>
+              }
+            />
+          </Prop>
+        )}
+        {(t.channel === "email" || t.mailbox_id) && addresses.length > 0 && (
+          <Prop label={tr("props.replyFrom")}>
+            <Picker
+              width={300}
+              value={t.mailbox_id}
+              placeholder={tr("props.searchAddresses")}
+              items={addresses.map((m) => ({
+                value: m.id,
+                label: addressLabel(m),
+                keywords: [m.email, ...(m.aliases ?? [])],
+                icon: m.team_id ? <TeamDot team={ctx.team(m.team_id)} /> : <Mail className="text-fg-3" />,
+                hint: m.private ? <Lock className="size-3" /> : undefined,
+              }))}
+              onSelect={(v) => v !== t.mailbox_id && patch({ mailbox_id: v })}
+              trigger={
+                <PropButton disabled={!canEdit} placeholder={!mailbox}>
+                  <Mail className="size-3.5 text-fg-3" />
+                  <span className="mono truncate text-[11.5px]">{mailbox ? sendingAddress(mailbox, t) : tr("props.noAddress")}</span>
+                </PropButton>
+              }
+            />
+          </Prop>
+        )}
         <div className="flex items-start gap-1 py-1">
           <span className="w-[76px] shrink-0 pt-1.5 text-[12px] text-fg-3">{tr("props.tags")}</span>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 px-1 py-1">
@@ -321,11 +392,28 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
           <span className="flex-1">{tr("props.channel")}</span>
           <span className="text-fg-2">{channelLabel[t.channel]}</span>
         </div>
-        {mailbox && (
+        {receivedAt ? (
           <div className="flex items-center gap-2 text-fg-3">
-            <Inbox className="size-3.5" />
-            <span className="flex-1">{tr("props.mailbox")}</span>
-            <span className="mono truncate text-fg-2">{mailbox.email}</span>
+            <Inbox className="size-3.5 shrink-0" />
+            <span className="flex-1">{tr("props.receivedAt")}</span>
+            <Tooltip content={origin && origin.email !== receivedAt ? tr("props.aliasOf", { address: origin.email }) : receivedAt}>
+              <span className="mono min-w-0 truncate text-fg-2">{receivedAt}</span>
+            </Tooltip>
+          </div>
+        ) : null}
+        {t.page_url && (
+          <div className="flex items-center gap-2 text-fg-3">
+            <CornerDownRight className="size-3.5 shrink-0" />
+            <span className="flex-1">{tr("props.startedOn")}</span>
+            <Tooltip content={t.page_url}>
+              <span className="mono min-w-0 max-w-[150px] truncate text-fg-2">{pageLabel(t.page_url)}</span>
+            </Tooltip>
+          </div>
+        )}
+        {ctx.hasTeams && routed && (
+          <div className="flex items-start gap-2 text-fg-3">
+            <Route className="mt-px size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 text-fg-2">{routed}</span>
           </div>
         )}
         <div className="flex items-center gap-2 text-fg-3">

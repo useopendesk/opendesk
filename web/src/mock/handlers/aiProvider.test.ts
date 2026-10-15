@@ -43,7 +43,7 @@ describe("mock AI provider (own key)", () => {
     expect((await call("GET", "/v1/ai/provider")).body.key).toBeNull();
   });
 
-  it("saves a key, shows only its last 4 characters, runs AI without credits and removes it", async () => {
+  it("saves a key, shows only its last 4 characters, runs AI at $0 on the key and removes it", async () => {
     const saved = await call("PUT", "/v1/ai/provider", { kind: "openrouter", api_key: OR_KEY });
     expect(saved.status).toBe(200);
     expect(JSON.stringify(saved.body)).not.toContain("0123456789abcdef");
@@ -55,20 +55,24 @@ describe("mock AI provider (own key)", () => {
     expect(cfg).toMatchObject({ own_key: true, provider: "openrouter" });
     const models = (await call("GET", "/v1/ai/models")).body;
     expect(models.data.some((m: { id: string }) => m.id === "mistralai/mistral-large-3")).toBe(true);
-    expect(models.data.every((m: { credits_per_mtok: unknown }) => m.credits_per_mtok === null)).toBe(true);
+    expect(models.data.every((m: { usd_per_mtok: unknown; typical_reply_usd: unknown }) => m.usd_per_mtok === null && m.typical_reply_usd === null)).toBe(true);
+    // Only Jev decisions are priced on the key.
+    expect(Object.keys(cfg.costs).sort()).toEqual(["answer_check", "decide", "triage"]);
     expect((await call("PATCH", "/v1/ai/settings", { model: "claude-sonnet-5-5" })).status).toBe(422);
     expect((await call("PATCH", "/v1/ai/settings", { model: "mistralai/mistral-large-3" })).status).toBe(200);
 
-    // No credits left: calls on the key still run, recorded with 0 credits.
-    const used = ws.billing.credits.used;
-    ws.billing.credits.remaining = 0;
+    // No AI balance left: calls on the key still run, recorded at $0.
+    const used = ws.billing.ai.used_usd;
+    const spent = ws.billing.ai.monthly_usd + ws.billing.ai.purchased_usd;
+    ws.billing.ai.used_usd = spent;
     const before = ws.aiUsage.length;
     const r = await call("POST", "/v1/ai/rewrite", { html: "<p>thanks for waiting</p>", mode: "friendlier" });
     expect(r.status).toBeLessThan(300);
     const row = ws.aiUsage[ws.aiUsage.length - 1];
     expect(ws.aiUsage.length).toBe(before + 1);
-    expect(row).toMatchObject({ source: "own_key", credits: 0 });
-    expect(ws.billing.credits.used).toBe(used);
+    expect(row).toMatchObject({ source: "own_key", micro_usd: 0 });
+    expect(ws.billing.ai.used_usd).toBe(spent);
+    ws.billing.ai.used_usd = used;
     const usage = (await call("GET", "/v1/billing/usage")).body;
     if (usage.by_model) {
       expect(usage.own_key_calls).toBeGreaterThan(0);
@@ -76,7 +80,7 @@ describe("mock AI provider (own key)", () => {
     }
     await call("PATCH", "/v1/ai/settings", { model: "" });
 
-    // Replace, then remove: back to credits.
+    // Replace, then remove: back to the AI balance.
     expect((await call("PUT", "/v1/ai/provider", { kind: "anthropic", api_key: "sk-ant-api03-abcd9876" })).body.key.last4).toBe("9876");
     expect(ws.audit[0].action).toBe("ai.provider_key_replaced");
     expect((await call("DELETE", "/v1/ai/provider")).status).toBe(204);

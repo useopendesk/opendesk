@@ -116,17 +116,26 @@ var (
 )
 
 type Ticket struct {
-	ID                    uuid.UUID      `json:"id"`
-	Number                int64          `json:"number"`
-	Subject               string         `json:"subject"`
-	Status                string         `json:"status" enum:"open,pending,on_hold,solved,closed"`
-	Priority              string         `json:"priority" enum:"low,normal,high,urgent"`
-	Severity              *string        `json:"severity" enum:"sev1,sev2,sev3,sev4" nullable:"true"`
-	Channel               string         `json:"channel" enum:"email,chat,api,portal"`
-	MailboxID             *uuid.UUID     `json:"mailbox_id"`
-	Contact               *ContactRef    `json:"contact"`
-	Assignee              *UserRef       `json:"assignee"`
-	TeamID                *uuid.UUID     `json:"team_id"`
+	ID        uuid.UUID   `json:"id"`
+	Number    int64       `json:"number"`
+	Subject   string      `json:"subject"`
+	Status    string      `json:"status" enum:"open,pending,on_hold,solved,closed"`
+	Priority  string      `json:"priority" enum:"low,normal,high,urgent"`
+	Severity  *string     `json:"severity" enum:"sev1,sev2,sev3,sev4" nullable:"true"`
+	Channel   string      `json:"channel" enum:"email,chat,api,portal"`
+	MailboxID *uuid.UUID  `json:"mailbox_id"`
+	Contact   *ContactRef `json:"contact"`
+	Assignee  *UserRef    `json:"assignee"`
+	TeamID    *uuid.UUID  `json:"team_id"`
+	// BrandID is the brand the customer reached; WidgetID the chat widget a chat started in.
+	BrandID  uuid.UUID  `json:"brand_id"`
+	WidgetID *uuid.UUID `json:"widget_id"`
+	// OriginMailboxID and ReceivedAt are where the first message arrived (ReceivedAt is the
+	// exact address, which may be an alias). MailboxID is the address replies go out from.
+	OriginMailboxID       *uuid.UUID     `json:"origin_mailbox_id"`
+	ReceivedAt            string         `json:"received_at"`
+	PageURL               string         `json:"page_url"`
+	Routed                *TicketRouted  `json:"routed"`
 	Tags                  []TagRef       `json:"tags"`
 	Fields                map[string]any `json:"fields"`
 	SLA                   *TicketSLA     `json:"sla"`
@@ -136,7 +145,9 @@ type Ticket struct {
 	LastMessageAt         time.Time      `json:"last_message_at"`
 	LastCustomerMessageAt *time.Time     `json:"last_customer_message_at"`
 	// WaitingSince is when the customer's unanswered messages began; nil once replied to.
-	WaitingSince       *time.Time     `json:"waiting_since"`
+	WaitingSince *time.Time `json:"waiting_since"`
+	// UnansweredCount is how many public messages the customer sent since the last reply.
+	UnansweredCount    int            `json:"unanswered_count"`
 	LastMessagePreview string         `json:"last_message_preview"`
 	MessageCount       int            `json:"message_count"`
 	Spam               bool           `json:"spam"`
@@ -144,6 +155,17 @@ type Ticket struct {
 	Custom             map[string]any `json:"custom"`
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
+// TicketRouted records why a ticket is in its team (contracts/teams.md "Routing").
+type TicketRouted struct {
+	Via      string     `json:"via" enum:"address,widget,topic,rule,triage,automation,agent,api"`
+	RuleID   *uuid.UUID `json:"rule_id,omitempty"`
+	RuleName string     `json:"rule_name,omitempty"`
+	By       *UserRef   `json:"by,omitempty"`
+	// TopicID and TopicLabel are the widget topic the visitor picked, when it decided the team.
+	TopicID    string `json:"topic_id,omitempty"`
+	TopicLabel string `json:"topic_label,omitempty"`
 }
 
 type Attachment struct {
@@ -159,6 +181,8 @@ type MessageAuthor struct {
 	Type    string      `json:"type" enum:"contact,user,system,api"`
 	User    *UserRef    `json:"user"`
 	Contact *ContactRef `json:"contact"`
+	// Bot is the bot an AI reply was sent as (contracts/bots.md); null otherwise.
+	Bot *BotRef `json:"bot"`
 }
 
 type Message struct {
@@ -184,8 +208,17 @@ type Message struct {
 	// AIAction is an action the agent asks the visitor to confirm (contracts/agent.md).
 	AIAction *AIAction `json:"ai_action"`
 	// AIRating is the visitor's rating of an agent reply.
-	AIRating  *string   `json:"ai_rating" enum:"up,down"`
-	CreatedAt time.Time `json:"created_at"`
+	AIRating *string `json:"ai_rating" enum:"up,down"`
+	// MailboxID is the address the message was sent from (outbound) or received at (inbound).
+	MailboxID *uuid.UUID `json:"mailbox_id"`
+	// ReplyTo is the Reply-To an inbound email named when it differs from FromEmail, else "".
+	ReplyTo string `json:"reply_to"`
+	// AuthFailed marks an inbound email whose From failed DMARC at a trusted receiving server.
+	AuthFailed bool `json:"auth_failed"`
+	// FormSender is the trusted contact form address an inbound email came through; FromEmail
+	// is then the visitor its Reply-To named. "" otherwise.
+	FormSender string    `json:"form_sender"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // AIAction is the card on an agent message that asks the visitor to confirm a tool call.
@@ -234,3 +267,12 @@ const (
 	CustomAIDecisions   = "ai_decisions"
 	CustomAISuggestions = "ai_suggestions"
 )
+
+// EventTicketID scopes events carrying a ticket to its private team (events.TicketRef).
+func (t Ticket) EventTicketID() *uuid.UUID { id := t.ID; return &id }
+
+// EventTicketID scopes events carrying a message to its ticket's private team.
+func (m Message) EventTicketID() *uuid.UUID { id := m.TicketID; return &id }
+
+// EventTicketID scopes events carrying an activity to its ticket's private team.
+func (a Activity) EventTicketID() *uuid.UUID { id := a.TicketID; return &id }

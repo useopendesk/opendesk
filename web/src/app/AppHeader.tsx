@@ -14,6 +14,7 @@ import { OllieButton } from "@/components/assistant/OllieButton";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { desktop } from "@/lib/desktop";
 import { atLeast, useRole } from "@/lib/session";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 import { NotificationsButton } from "./Notifications";
@@ -28,7 +29,9 @@ export function AppHeader() {
   const { t } = useTranslation("shell");
 
   return (
-    <header className="flex h-12 shrink-0 items-center">
+    // In the desktop app the header is the window's title bar: it drags the
+    // window, and keeps clear of the window controls.
+    <header className="window-drag flex h-12 shrink-0 items-center pr-(--window-inset-right)">
       <button
         type="button"
         aria-label={t("nav.open")}
@@ -37,6 +40,10 @@ export function AppHeader() {
       >
         <MenuIcon className="size-4" />
       </button>
+      {desktop?.platform === "darwin" && (
+        // The traffic lights sit here, over the sidebar column; full screen hides them.
+        <div aria-hidden className={cn("hidden h-full shrink-0 md:block md:transition-[width] md:duration-200 md:ease-out window-full:hidden!", collapsed ? "w-[max(3.5rem,var(--window-inset-left))]" : "w-60")} />
+      )}
       <Link
         to="/inbox/$folder/{-$ticketId}"
         params={{ folder: "unassigned", ticketId: undefined }}
@@ -44,9 +51,10 @@ export function AppHeader() {
         className={cn(
           "group flex h-full shrink-0 items-center gap-2 pl-2 pr-3 outline-none md:transition-[width,padding] md:duration-200 md:ease-out",
           collapsed ? "md:w-14 md:justify-center md:px-0" : "md:w-60 md:px-[18px]",
+          desktop?.platform === "darwin" && "hidden window-full:flex!",
         )}
       >
-        <Mark className="size-[18px] text-fg transition-transform duration-300 ease-out group-hover:rotate-90" />
+        <Mark turn className="size-[18px] text-fg" />
         <span className={cn("text-[15px] font-semibold tracking-[-0.035em] text-fg", collapsed ? "hidden" : "hidden md:inline")}>opendesk</span>
       </Link>
 

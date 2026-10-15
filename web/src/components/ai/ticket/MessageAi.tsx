@@ -14,7 +14,7 @@ import { AI_TONE, tone } from "@/lib/tones";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AiIcon, AiTooltip } from "../bits";
-import { creditsSpent, reportAiError } from "./errors";
+import { balanceSpent, reportAiError } from "./errors";
 import { isAiMessage, isForeign, languageName, messageLanguage, streamTextToHtml } from "./text";
 
 const OURS = "en";
@@ -46,7 +46,7 @@ export function useMessageTranslation(m: Message): MessageTranslation {
     queryFn: async () => {
       try {
         const r = await api.ai.translate({ html: m.body_html || undefined, text: m.body_html ? undefined : m.body_text, target: OURS });
-        creditsSpent(qc);
+        balanceSpent(qc);
         return r.html ?? streamTextToHtml(r.text ?? "");
       } catch (e) {
         reportAiError(e, t("message.failed"));

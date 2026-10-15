@@ -47,6 +47,33 @@ func newRichPolicy() *bluemonday.Policy {
 	return p
 }
 
+// emailPolicy is the policy of every stored email body, and of signatures and auto-replies,
+// which are sent as part of email bodies: no scripts, styles, event handlers, forms or
+// frames; links get rel="nofollow noopener" and open in a new tab; images are allowed
+// (http, https and data: images).
+var emailPolicy = func() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	p.AllowRelativeURLs(false)
+	p.RequireNoFollowOnLinks(true)
+	p.AddTargetBlankToFullyQualifiedLinks(true)
+	p.AllowDataURIImages()
+	p.AllowAttrs("align").Matching(regexp.MustCompile(`(?i)^(left|right|center|justify)$`)).OnElements("p", "div", "td", "th", "table", "img")
+	return p
+}()
+
+// SanitizeEmailHTML is the only way email HTML reaches the database.
+func SanitizeEmailHTML(raw string) string {
+	return strings.TrimSpace(emailPolicy.Sanitize(raw))
+}
+
+// SanitizeSignature cleans a signature or auto-reply written by an admin or team lead.
+func SanitizeSignature(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	return SanitizeEmailHTML(raw)
+}
+
 // SanitizeRich returns agent HTML reduced to the rich-text allowlist.
 func SanitizeRich(raw string) string {
 	if strings.TrimSpace(raw) == "" {

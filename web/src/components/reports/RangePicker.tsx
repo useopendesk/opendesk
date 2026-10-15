@@ -3,9 +3,9 @@ import { CalendarDays, Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { TextInput } from "@/components/ui/input";
 import type { ReportsRange } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { DateField } from "@/components/ui/date-picker";
 
 const day = (d: Date) => format(d, "yyyy-MM-dd");
 
@@ -89,11 +89,11 @@ export function RangePicker({ value, onChange }: { value: ReportsRange; onChange
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 text-xs text-fg-3">
             From
-            <TextInput type="date" inputSize="sm" className="mono" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+            <DateField size="sm" aria-label="From" value={from} max={to} onChange={setFrom} />
           </label>
           <label className="flex flex-col gap-1 text-xs text-fg-3">
             To
-            <TextInput type="date" inputSize="sm" className="mono" value={to} min={from} max={day(new Date())} onChange={(e) => setTo(e.target.value)} />
+            <DateField size="sm" aria-label="To" value={to} min={from} max={day(new Date())} onChange={setTo} />
           </label>
         </div>
         <Button type="submit" variant="primary" size="sm" className="mt-2.5 w-full" disabled={invalid}>

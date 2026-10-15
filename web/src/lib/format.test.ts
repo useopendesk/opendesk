@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { i18n, resetLocale, setLocale } from "@/i18n";
-import { bytes, clock, compact, currency, dayLabel, fullDate, minutes, number, percent, relLong, relShort, shortDate } from "./format";
+import { bytes, clock, compact, currency, dayLabel, formatUsd, fullDate, minutes, number, percent, relLong, relShort, shortDate } from "./format";
 
 const NOW = Date.parse("2026-10-11T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -49,6 +49,25 @@ describe("format, English", () => {
     expect(currency(1900, "usd", { exact: true })).toBe("$19.00");
     expect(currency(1900, "jpy")).toBe("¥1,900");
   });
+  it("formats US dollars of AI usage", () => {
+    expect(formatUsd(0.5)).toBe("$0.50");
+    expect(formatUsd(10)).toBe("$10.00");
+    expect(formatUsd(1234.567)).toBe("$1,234.57");
+    expect(formatUsd(0)).toBe("$0.00");
+    expect(formatUsd(0.0195, { precise: true })).toBe("$0.0195");
+    expect(formatUsd(0.0042, { precise: true })).toBe("$0.0042");
+    expect(formatUsd(0.000975, { precise: true })).toBe("$0.000975");
+    expect(formatUsd(0.007313, { precise: true })).toBe("$0.00731");
+    expect(formatUsd(0.5, { precise: true })).toBe("$0.50");
+    expect(formatUsd(0.00003, { precise: true })).toBe("<$0.0001");
+    expect(formatUsd(12.3456, { precise: true })).toBe("$12.35");
+    expect(formatUsd(0.983, { tiny: true })).toBe("$0.98");
+    expect(formatUsd(0.0042, { tiny: true })).toBe("$0.0042");
+    expect(formatUsd(3, { trim: true })).toBe("$3");
+    expect(formatUsd(0.15, { trim: true })).toBe("$0.15");
+    expect(formatUsd(1.125, { trim: true })).toBe("$1.125");
+    expect(formatUsd(0.3, { trim: true })).toBe("$0.30");
+  });
   it("formats dates", () => {
     expect(shortDate("2020-03-04T12:00:00Z")).toMatch(/Mar 4, 2020/);
     expect(fullDate("2026-10-11T12:00:00Z")).toMatch(/Oct 11, 2026/);
@@ -60,6 +79,7 @@ describe("format, German page", () => {
     await setLocale("de", ["common"]);
     expect(number(12345.6)).toBe("12.345,6");
     expect(sp(currency(1950, "eur"))).toBe("19,50 €");
+    expect(sp(formatUsd(0.5))).toBe("0,50 $");
     expect(sp(percent(0.5))).toBe("50 %");
     expect(relLong(ago(2 * DAY), NOW)).toBe("vor 2 Tagen");
     expect(dayLabel(ago(DAY), NOW)).toBe("Gestern");

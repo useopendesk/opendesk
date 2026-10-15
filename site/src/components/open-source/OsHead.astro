@@ -1,0 +1,24 @@
+---
+/**
+ * A section heading the way a README renders one: the mono "## 01" marker, the
+ * title, a hairline under it, and the paragraph below.
+ */
+interface Props {
+  n: string;
+  title: string;
+  lede?: string;
+}
+const { n, title, lede } = Astro.props;
+---
+<div>
+  <h2 class="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-b border-line pb-5 text-[32px] font-semibold leading-[1.05] tracking-[-0.04em] text-fg md:text-[48px]">
+    <span class="font-mono text-[15px] font-normal tracking-normal text-subtle md:text-[17px]">## {n}</span>
+    <span class="max-w-[22ch] text-balance" set:html={title} />
+  </h2>
+  {(lede || Astro.slots.has('default')) && (
+    <div class="mt-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      {lede && <p class="max-w-[640px] text-[16px] leading-relaxed text-muted md:text-[17px]">{lede}</p>}
+      <slot />
+    </div>
+  )}
+</div>

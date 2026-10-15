@@ -3,7 +3,7 @@ import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, Git
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type { Activity, Member, Message, Priority, Tag, Team, TicketStatus, UserRef } from "@/lib/api/types";
+import type { Activity, Mailbox, Member, Message, Priority, Tag, Team, TicketStatus, UserRef } from "@/lib/api/types";
 import { dayLabel, fullDate, relShort, shortDate } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { useRealtime, isCustomerTyping } from "@/lib/realtime/store";
@@ -16,6 +16,7 @@ import { PriorityIcon, priorityLabel, SeverityChip, severityLabel, StatusIcon, s
 import { isSeverity, pct } from "@/lib/decisions";
 import { MessageItem } from "./MessageItem";
 import { LiveAgentReply } from "./AgentReply";
+import { BotFace } from "@/components/bots/BotFace";
 import { isAIActor, OllieAvatar, useAssistantName } from "../ollie";
 import { fieldText, useDisplay, useTicketFields, type CustomField } from "../fields";
 
@@ -41,7 +42,7 @@ function actorName(a: Activity, t: TFunction<"inbox">, ollie: string) {
 const B = <span className="font-medium text-fg-2" />;
 const M = <span className="mono text-fg-2" />;
 
-type Line = { icon: ReactNode; text: ReactNode; hue?: "red" | "ai" };
+type Line = { icon: ReactNode; text: ReactNode; hue?: "red" | "amber" | "ai" };
 
 /** Only https links from other tools are opened. */
 function safeLink(v: unknown): string | null {
@@ -54,9 +55,25 @@ function safeLink(v: unknown): string | null {
   }
 }
 
-type Ctx = { teams?: Team[]; members?: Member[]; tags?: Tag[]; fields?: CustomField[]; display: ReturnType<typeof useDisplay>; ollie: string };
+type Ctx = { teams?: Team[]; members?: Member[]; tags?: Tag[]; fields?: CustomField[]; mailboxes?: Mailbox[]; display: ReturnType<typeof useDisplay>; ollie: string };
 
-function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fields, display, ollie }: Ctx): Line {
+/** A team in activity data: an id, a name (older activities) or an object with one. */
+function teamLabel(v: unknown, teams: Team[] | undefined): string | null {
+  if (!v) return null;
+  if (typeof v === "object" && "name" in (v as object)) return String((v as { name: unknown }).name);
+  if (typeof v === "string") return teams?.find((x) => x.id === v)?.name ?? (/^[0-9a-f-]{36}$/i.test(v) ? null : v);
+  return null;
+}
+
+/** An address in activity data: a mailbox id, an email or an object with one. */
+function addressOf(v: unknown, mailboxes: Mailbox[] | undefined): string | null {
+  if (!v) return null;
+  if (typeof v === "object" && "email" in (v as object)) return String((v as { email: unknown }).email);
+  if (typeof v === "string") return v.includes("@") ? v : (mailboxes?.find((m) => m.id === v)?.email ?? null);
+  return null;
+}
+
+function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fields, mailboxes, display, ollie }: Ctx): Line {
   const who = actorName(a, t, ollie);
   const d = a.data;
   const line = (key: Parameters<TFunction<"inbox">>[0], values: Record<string, unknown> = {}) => (
@@ -65,6 +82,14 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
   switch (a.type) {
     case "status_changed": {
       const to = d.to as TicketStatus;
+      if (d.reason === "sender_unverified") {
+        // A reply that failed sender checks did not reopen the ticket.
+        return {
+          icon: <ShieldAlert />,
+          hue: "amber",
+          text: line("activity.statusKept", { status: statusLabel[to] ? display.status(to) : String(d.to) }),
+        };
+      }
       return {
         icon: statusLabel[to] ? <StatusIcon status={to} className="size-3" /> : <CircleDot />,
         text: line("activity.status", { status: (statusLabel[to] ? display.status(to) : String(d.to)).toLowerCase() }),
@@ -91,8 +116,29 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
       };
     }
     case "team_changed": {
-      const name = typeof d.to === "string" ? (teams?.find((x) => x.id === d.to)?.name ?? d.to) : null;
-      return { icon: <Users />, text: name ? line("activity.team", { team: name }) : line("activity.teamRemoved") };
+      const to = teamLabel(d.to, teams);
+      const from = teamLabel(d.from, teams);
+      const rule = typeof d.rule_name === "string" ? d.rule_name : null;
+      const main = !to
+        ? line("activity.teamRemoved")
+        : d.via === "rule" && rule
+          ? line("activity.teamRule", { team: to, rule })
+          : from
+            ? line("activity.teamFrom", { from, team: to })
+            : line("activity.team", { team: to });
+      const replyTo = addressOf(d.mailbox_to, mailboxes);
+      return {
+        icon: <Users />,
+        text: replyTo ? (
+          <>
+            {main}
+            <span className="text-fg-4"> · </span>
+            {line("activity.replyAddress", { address: replyTo })}
+          </>
+        ) : (
+          main
+        ),
+      };
     }
     case "tagged":
     case "untagged": {
@@ -132,7 +178,10 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     case "merged": {
       const into = typeof d.into_number === "number" ? { number: d.into_number } : typeof d.into === "object" ? (d.into as { number?: number }) : undefined;
       const from = typeof d.from_number === "number" ? { number: d.from_number } : (d.from as { number?: number } | undefined);
-      return { icon: <GitMerge />, text: into ? line("activity.mergedInto", { number: into.number }) : line("activity.mergedFrom", { number: from?.number }) };
+      if (into?.number) return { icon: <GitMerge />, text: line("activity.mergedInto", { number: into.number }) };
+      if (from?.number) return { icon: <GitMerge />, text: line("activity.mergedFrom", { number: from.number }) };
+      // The target is in a private team the viewer may not see: it is not named.
+      return { icon: <GitMerge />, text: line("activity.mergedIntoHidden") };
     }
     case "linked":
     case "unlinked": {
@@ -177,7 +226,9 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     case "ai_suggested_reply_sent":
       return { icon: <Sparkles />, text: line("activity.aiSuggestedSent", { ollie }) };
     case "ai_handoff":
-      return { icon: <Hand />, text: line(a.actor.type === "contact" ? "activity.handoffCustomer" : "activity.handoffAi") };
+      if (a.actor.type === "contact") return { icon: <Hand />, text: line("activity.handoffCustomer") };
+      // The bot that handed over, by the name it had then.
+      return { icon: <Hand />, text: line("activity.handoffAi", typeof d.bot === "string" && d.bot ? { who: d.bot } : {}) };
     default:
       return { icon: <ArrowRightLeft />, text: line("activity.other", { type: a.type }) };
   }
@@ -188,20 +239,25 @@ function ActivityLine({ a }: { a: Activity }) {
   const { data: teams } = useQuery(q.teams());
   const { data: members } = useQuery(q.members());
   const { data: tags } = useQuery(q.tags());
+  const { data: mailboxes } = useQuery(q.mailboxes());
   const { data: fields } = useTicketFields();
   const display = useDisplay();
   const ollie = useAssistantName();
-  const line = describe(a, t, { teams, members, tags, fields, display, ollie });
+  const line = describe(a, t, { teams, members, tags, fields, mailboxes, display, ollie });
+  // A handoff shows the face of the bot that handed over.
+  const botId = a.type === "ai_handoff" && typeof a.data.bot_id === "string" ? a.data.bot_id : null;
+  const { data: bots } = useQuery({ ...q.bots(), enabled: !!botId });
+  const bot = botId ? bots?.find((b) => b.id === botId) : undefined;
   // Anything the AI did carries its violet mark as the actor.
   const ai = isAIActor(a.actor) || line.hue === "ai";
   const { text, hue } = line;
-  const icon = ai ? <OllieAvatar size={20} className="rounded-sm" /> : line.icon;
+  const icon = bot ? <BotFace look={bot.look} image={bot.image_url} size={20} /> : ai ? <OllieAvatar size={20} className="rounded-sm" /> : line.icon;
   return (
     <div className="flex items-center gap-2.5 py-1 pl-[18px] text-[12px] text-fg-3">
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-sm [&_svg]:size-3",
-          ai ? "" : hue === "red" ? tone.red.chip : hue === "ai" ? tone[AI_TONE].chip : "bg-sunken text-fg-3",
+          ai ? "" : hue === "red" ? tone.red.chip : hue === "amber" ? tone.amber.chip : hue === "ai" ? tone[AI_TONE].chip : "bg-sunken text-fg-3",
         )}
       >
         {icon}
@@ -266,6 +322,7 @@ export function Timeline({
   loading,
   onRetry,
   contactName,
+  receivedAt,
 }: {
   ticketId: string;
   messages: Message[] | undefined;
@@ -273,6 +330,8 @@ export function Timeline({
   loading: boolean;
   onRetry: (m: Message) => void;
   contactName?: string;
+  /** The address the customer first wrote to, for inbound messages that don't say. */
+  receivedAt?: string | null;
 }) {
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [
@@ -362,7 +421,7 @@ export function Timeline({
                   className={cn((fresh || intro < 6) && "animate-rise-in motion-reduce:animate-none [animation-fill-mode:both]")}
                   style={intro < 6 && !fresh ? { animationDelay: `${Math.max(0, Math.min(5, items.length - 1) - intro) * 35}ms` } : undefined}
                 >
-                  {it.kind === "message" ? <MessageItem m={it.m} onRetry={onRetry} /> : <ActivityLine a={it.a} />}
+                  {it.kind === "message" ? <MessageItem m={it.m} onRetry={onRetry} receivedAt={receivedAt} /> : <ActivityLine a={it.a} />}
                 </div>
               </Fragment>
             );

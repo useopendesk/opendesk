@@ -41,7 +41,7 @@ function prng(seed: string) {
 }
 
 const DOC_TOPICS = [
-  "Getting started with Fieldnote", "Create your first notebook", "Invite your team", "Share a note with a link", "Password-protect shared links",
+  "Getting started with Margin", "Create your first notebook", "Invite your team", "Share a note with a link", "Password-protect shared links",
   "Export a notebook to PDF", "Export to Markdown", "Import from Evernote", "Import from Notion", "Sync across devices", "Work offline",
   "Fix sync paused on iPad", "Search inside images (OCR)", "Tags and filters", "Templates", "Keyboard shortcuts", "Version history",
   "Restore a deleted note", "Set up SSO with Okta", "Set up SSO with Google Workspace", "SCIM provisioning", "Audit logs", "Roles and permissions",
@@ -50,8 +50,8 @@ const DOC_TOPICS = [
   "Attachments and file limits", "Embed a note on your site", "Dark mode", "Accessibility", "Mobile widgets", "Apple Pencil support",
 ];
 const BLOG_TOPICS = [
-  "What's new in Fieldnote 6.2", "How architects use Fieldnote on site", "Faster sync, explained", "Our approach to privacy", "Offline mode, rebuilt",
-  "A better PDF export", "Five templates for field research", "Fieldnote for classrooms", "Meet the new search", "Behind the scenes of OCR",
+  "What's new in Margin 6.2", "How architects use Margin on site", "Faster sync, explained", "Our approach to privacy", "Offline mode, rebuilt",
+  "A better PDF export", "Five templates for field research", "Margin for classrooms", "Meet the new search", "Behind the scenes of OCR",
   "Planning a renovation with shared notebooks", "Release notes: September", "Release notes: August", "Notes from our team retreat",
 ];
 
@@ -71,7 +71,7 @@ function makeDocs(s: KnowledgeSource, count: number, at = nowIso()): KnowledgeDo
     const round = Math.floor(i / topics.length);
     const title = round ? `${topic} (${["advanced", "reference", "FAQ", "examples", "admins"][(round - 1) % 5]})` : topic;
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    return { id: uuid(), title: blog ? title : `${title} | Fieldnote Docs`, url: `${site}${prefix}/${slug}`, chars: 900 + Math.floor(r() * 7400), updated_at: at };
+    return { id: uuid(), title: blog ? title : `${title} | Margin Docs`, url: `${site}${prefix}/${slug}`, chars: 900 + Math.floor(r() * 7400), updated_at: at };
   });
 }
 
@@ -283,15 +283,15 @@ function seedSources(ws: WsData) {
     recount(ws, row);
     return row;
   };
-  const docsSite = src({ kind: "website", name: "Fieldnote docs", website: { url: "https://docs.fieldnote.app", max_pages: 200, include: ["/guides"], exclude: [], recrawl: "weekly" } }, 121, 2 * DAY + 3 * HOUR);
-  const blog = src({ kind: "website", name: "Fieldnote blog", status: "syncing", website: { url: "https://fieldnote.app/blog", max_pages: 100, include: [], exclude: ["/blog/tag"], recrawl: "weekly" } }, 23, null);
+  const docsSite = src({ kind: "website", name: "Margin docs", website: { url: "https://docs.margin.app", max_pages: 200, include: ["/guides"], exclude: [], recrawl: "weekly" } }, 121, 2 * DAY + 3 * HOUR);
+  const blog = src({ kind: "website", name: "Margin blog", status: "syncing", website: { url: "https://margin.app/blog", max_pages: 100, include: [], exclude: ["/blog/tag"], recrawl: "weekly" } }, 23, null);
   const refund = src({ kind: "file", name: "Refund policy 2026.pdf", file: { filename: "Refund policy 2026.pdf", content_type: "application/pdf", size_bytes: 184_320 } }, 2, 9 * DAY);
   const prices = src({ kind: "file", name: "price-list.csv", status: "error", error: NO_TEXT, file: { filename: "price-list.csv", content_type: "text/csv", size_bytes: 2_048 } }, 0, 6 * DAY);
   const student = src(
     {
       kind: "snippet",
       name: "Do you offer student discounts?",
-      snippet: { question: "Do you offer student discounts?", answer: "Yes. Students and teachers get **50% off** the Team plan with a school email address. Apply at [fieldnote.app/education](https://fieldnote.app/education); approval takes about a day." },
+      snippet: { question: "Do you offer student discounts?", answer: "Yes. Students and teachers get **50% off** the Team plan with a school email address. Apply at [margin.app/education](https://margin.app/education); approval takes about a day." },
     },
     1,
     12 * DAY,
@@ -305,7 +305,7 @@ function seedSources(ws: WsData) {
     1,
     4 * DAY,
   );
-  const legacy = src({ kind: "website", name: "Old help center", enabled: false, website: { url: "https://help-legacy.fieldnote.app", max_pages: 100, include: [], exclude: [], recrawl: "off" } }, 41, 64 * DAY);
+  const legacy = src({ kind: "website", name: "Old help center", enabled: false, website: { url: "https://help-legacy.margin.app", max_pages: 100, include: [], exclude: [], recrawl: "off" } }, 41, 64 * DAY);
   ws.knowledge = [docsSite, blog, refund, prices, student, refundTime, legacy];
   // The blog crawl is still running: it finishes a few seconds after load.
   runSync(ws, blog, { from: 23, startMs: 2700 });
@@ -327,8 +327,8 @@ export function addSnippet(ws: WsData, question: string, answer: string): Knowle
 }
 
 export function registerKnowledge() {
-  const fieldnote = db.workspaces[0];
-  if (fieldnote && !fieldnote.knowledge.length) seedSources(fieldnote);
+  const margin = db.workspaces[0];
+  if (margin && !margin.knowledge.length) seedSources(margin);
 
   get("/v1/ai/knowledge", (ctx) => {
     assertAiInstance();

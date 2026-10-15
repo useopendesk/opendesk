@@ -1,0 +1,186 @@
+---
+title: Routing
+description: How a new ticket finds its team, how to write routing rules and test them, and how customers see which address they wrote to.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+**Routing** decides which team a new ticket goes to. Most of it needs no setup: email goes to its address's team, and a chat goes to its widget's team or the topic the visitor picked. **Routing rules** go further and send tickets by what they say or who sent them, say every invoice question to Billing whatever address it came in on.
+
+<Screenshot src="/guides/routing/overview" alt="The Routing settings page: the three step flow ringed as 1, the drag handles ringed as 2, the first rule ringed as 3, the on and off switches ringed as 4, the Test routing panel ringed as 5, and New rule ringed as 6" />
+
+<Legend>
+
+1. **How a new ticket gets its team**: the address or widget first, then the rules, then the team's assignment.
+2. **Drag handles**: rules are checked from the top, so drag to change the order.
+3. **A rule**: its name, a summary of its conditions, how many tickets it has routed, and its team. Click it to edit.
+4. **On or off**: a rule that is off is skipped.
+5. **Test routing**: try a sample email or chat and see where it would go.
+6. **New rule**: add a rule.
+
+</Legend>
+
+## The order
+
+A new ticket gets its team in this order:
+
+1. **Where it arrived.** An email gets the team of the address it was sent to. A chat gets the team of the topic the visitor picked, else the widget's team. A ticket created through the API gets the team it names.
+2. **Routing rules**, from the top. The first rule that is on and matches moves the ticket to its team, whatever step 1 chose. The rules after it are not checked.
+3. **Triage**, when the ticket still has no team and triage sorts tickets into teams. See [Triage and assignment](/guides/triage-and-assignment/).
+4. **Automations** run next and can still move the ticket to a team. See [Automations](/guides/automations/).
+
+Then the team's assignment method picks a person. A reply on an existing ticket joins that ticket wherever it was sent, and is never routed again.
+
+## Write a rule
+
+<Steps>
+<Step title="Open Settings, then Routing">
+
+<Screenshot src="/guides/routing/open-settings" alt="The app with Settings in the sidebar ringed as 1 and Routing in the settings menu ringed as 2" />
+
+</Step>
+<Step title="Click New rule, or a rule to edit it">
+
+Give the rule a name and leave it **On**. Choose whether **Any matches** or **All match**, then add up to 20 conditions.
+
+<Screenshot src="/guides/routing/rule" alt="The Invoices to Billing rule: the name and On switch ringed as 1, Any matches or All match ringed as 2, the three conditions ringed as 3, Add a condition ringed as 4, and the team it sends to, Billing, ringed as 5" />
+
+<Legend>
+
+1. **Name** and **On**: a rule that is off is skipped until you turn it on.
+2. **Any matches** or **All match**: whether one condition is enough, or every one must hold.
+3. **Conditions**: a field, a test such as **contains** or **is**, and a value. Text is compared without regard to case.
+4. **Add a condition**: up to 20 in a rule.
+5. **Send to team**: where matching tickets go. The team's assignment method then picks a person.
+
+</Legend>
+
+</Step>
+<Step title="Pick what to check">
+
+Click a condition's field to choose what it checks, grouped by where the ticket arrived, who sent it and what it says.
+
+<Screenshot src="/guides/routing/fields" alt="The field picker of a condition, open, listing Address received at, Mailbox, Brand, Chat widget, Channel, Page URL and Topic under Where it arrived, then Who sent it" />
+
+| Field | Checks |
+| --- | --- |
+| **Address received at** | The exact address the customer wrote to, an alias included. |
+| **Mailbox**, **Brand**, **Chat widget** | Where the ticket came in. **Brand** shows once you have a second brand. |
+| **Channel** | Email, chat, API or portal. |
+| **Page URL**, **Topic** | For chats: the page the visitor started on, and the topic they picked. |
+| **From email**, **From domain** | The sender, such as everyone at `northwind.io`. |
+| **Contact** fields | Your [custom fields](/guides/labels-and-custom-fields/) on the contact. |
+| **Subject**, **Message** | What the ticket says. |
+| **Ollie decides** | A question for Ollie. See the note below. |
+
+</Step>
+<Step title="Save, and put it in order">
+
+Save the rule. Back on the routing page, drag it above or below the others: the first match wins, so put specific rules above general ones.
+
+</Step>
+</Steps>
+
+<Callout type="note" title="Routing on Ollie's answer">
+
+Ollie can't answer while a ticket is being routed, so an **Ollie decides** condition never matches in a rule, and the test shows it as unknown. To send tickets to a team on Ollie's answer, use a new ticket [automation](/guides/automations/) that sets the team.
+
+</Callout>
+
+## Test routing
+
+The **Test routing** panel on the routing page shows where a message would go, without creating a ticket or counting a run on any rule.
+
+<Steps>
+<Step title="Write a sample email">
+
+Choose **Email**, pick the address it is **Sent to**, and fill in **From**, **Subject** and **Message**. Click **Test**.
+
+<Screenshot src="/guides/routing/test-email" alt="The Test routing panel: Email or Chat ringed as 1, the Test button ringed as 2, the steps showing that Invoices to Billing matched ringed as 3, and the result, team Billing, brand Margin, replies from support@margin.app, load balanced, decided by the rule, ringed as 4" />
+
+**Steps** shows what was checked in order: the address's team, then each rule, matched or not. Rules below the one that matched are not checked. The result gives the team, brand, the address replies go from, the assignment method, and what decided it.
+
+</Step>
+<Step title="Or a sample chat">
+
+Choose **Chat**, then the **Widget**, the **Topic** the visitor would pick, the **Page** they start on and their **First message**.
+
+<Screenshot src="/guides/routing/test-chat" alt="A chat test: the Docs widget and the Report a vulnerability topic ringed as 1, the steps showing Vulnerability reports to Security matched ringed as 2, and the result, team Security, replies from security@margin.app, ringed as 3" />
+
+</Step>
+</Steps>
+
+## See why a ticket went where it did
+
+Every ticket shows its team, brand and reply address in its details, and how it was routed under **Details**.
+
+<Screenshot src="/guides/routing/ticket-details" alt="A ticket's details with its Team, Brand and Reply from rows ringed: Billing, Pressroom and hello@pressroom.app" />
+
+<Screenshot src="/guides/routing/ticket-facts" alt="The Details section of a ticket: Received at hello@pressroom.app ringed as 1, and Routed to Billing by rule Invoices to Billing ringed as 2" />
+
+<Legend>
+
+1. **Received at**: the exact address the customer wrote to. When it was an alias, hover it to see which address it belongs to. Chats show the page they **Started on** instead.
+2. **How it was routed**: such as **Arrived at** an address, **From the** widget and topic, **Routed to** a team **by rule**, **Sorted into** a team by Ollie, or **Moved by** a teammate.
+
+</Legend>
+
+## Which address customers see
+
+Customers see the address they wrote to. Each message in the timeline shows which address it was sent to.
+
+<Screenshot src="/guides/routing/message-to" alt="A customer's email in the timeline with to hello@pressroom.app ringed next to the sender" />
+
+<Steps>
+<Step title="Replies go out from the ticket's address">
+
+A new email ticket replies from the address it arrived at. When the customer wrote to an alias, replies go out as the alias where the mailbox allows it: SMTP mailboxes send from the alias, and Google, Microsoft and opendesk's own sending use the mailbox's address with the alias as the reply-to address. A chat or API ticket replies from the brand's address for the ticket's team, else the brand's default reply address.
+
+</Step>
+<Step title="Change it for a reply">
+
+Above the reply box, **Replying as** shows the name and address the customer will see. Click it to pick another address of the ticket's brand. This reply and the next ones go from the address you pick. Addresses of a private team are only for its members.
+
+<Screenshot src="/guides/routing/replying-as" alt="The reply box with Replying as Maya from Billing billing@margin.app ringed as 1, and the address picker open with the brand's addresses ringed as 2" />
+
+</Step>
+<Step title="Moving to another team can switch it">
+
+When you move a ticket to another team, and its address belonged to the old team, replies switch to the new team's address of the same brand. The move dialog tells you before you confirm, and the reply box notes the switch. The customer's thread stays together. See [Move a ticket to another team](/guides/teams-and-roles/#move-a-ticket-to-another-team).
+
+</Step>
+</Steps>
+
+<Fold>
+
+## From name and signature
+
+What customers see on every email, replies, auto-replies and satisfaction surveys alike:
+
+- **From name**: each address's sender name format, set in [Mailboxes](/guides/mailboxes/). It can use `{agent}`, `{agent_first}`, `{team}`, `{brand}` and `{mailbox}`, such as `{agent_first} from {team}`. On emails without a person, such as auto-replies, the agent part is left out.
+- **Signature**: the team's signature when it has one, else the address's. See [Signature](/guides/teams-and-roles/#signature).
+- **Satisfaction surveys** ask "How did Billing do?" with the ticket's team, or the brand when it has none.
+- In chat, the widget header shows the team's name once the conversation has one, and its hours when it is closed.
+
+</Fold>
+
+<Fold>
+
+## Limits
+
+A workspace can have up to 200 routing rules, each with 1 to 20 conditions and at most 3 **Ollie decides** conditions. Deleting a team can move its rules to another team. See [Delete a team](/guides/teams-and-roles/#delete-a-team).
+
+</Fold>
+
+## Related
+
+- [Teams and roles](/guides/teams-and-roles/)
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Connect a mailbox](/guides/mailboxes/)
+- [Triage and assignment](/guides/triage-and-assignment/)
+- [Automations](/guides/automations/)

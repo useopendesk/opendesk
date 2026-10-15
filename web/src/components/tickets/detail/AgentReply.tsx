@@ -12,6 +12,7 @@ import { AI_TONE, tone, type Tone } from "@/lib/tones";
 import { cn } from "@/lib/cn";
 import { Tooltip } from "@/components/ui/tooltip";
 import { OllieAvatar } from "../ollie";
+import { BotFace } from "@/components/bots/BotFace";
 
 const ACTION_TONE: Record<AIActionStatus, Tone> = { pending: "amber", confirmed: "green", declined: "gray", expired: "gray", failed: "red" };
 
@@ -87,7 +88,7 @@ export function LiveAgentReply({ ticketId, messages }: { ticketId: string; messa
           className={cn("rounded-lg border", tone[AI_TONE].soft, tone[AI_TONE].line)}
         >
           <header className="flex items-center gap-2.5 px-4 pt-3">
-            <OllieAvatar size={24} />
+            {live.botLook ? <BotFace look={live.botLook} image={live.botAvatar} size={24} state={live.ended ? "idle" : "thinking"} /> : <OllieAvatar size={24} />}
             <span className="truncate text-[13px] font-medium">{live.bot}</span>
             <span className={cn("text-[11.5px]", tone[AI_TONE].text)}>{live.ended ? t("agent.posting") : t("agent.writingShort")}</span>
           </header>

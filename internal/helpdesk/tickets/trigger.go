@@ -52,9 +52,12 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 		if err != nil {
 			return err
 		}
-		run := &triggerRun{d: d, tx: tx, wid: a.WorkspaceID, tid: a.TicketID, fired: map[uuid.UUID]bool{}}
+		run := &triggerRun{d: d, tx: tx, wid: a.WorkspaceID, tid: a.TicketID, fired: map[uuid.UUID]bool{}, messageID: a.MessageID}
 
-		if a.Trigger == jobs.TriggerTicketCreated || (a.Trigger == jobs.TriggerTicketUpdated && slices.Contains(a.Changes, "priority")) {
+		updated := func(field string) bool {
+			return a.Trigger == jobs.TriggerTicketUpdated && slices.Contains(a.Changes, field)
+		}
+		if a.Trigger == jobs.TriggerTicketCreated || updated("priority") || updated("team_id") {
 			if err := applySLA(ctx, tx, a.WorkspaceID, a.TicketID, a.Trigger == jobs.TriggerTicketCreated); err != nil {
 				return err
 			}
@@ -64,7 +67,8 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 				return err
 			}
 		}
-		if a.Trigger == jobs.TriggerTicketCreated || a.Trigger == jobs.TriggerCustomerReplied {
+		// A ticket that moved to another team unassigned is assigned in the new team's pool.
+		if a.Trigger == jobs.TriggerTicketCreated || a.Trigger == jobs.TriggerCustomerReplied || updated("team_id") || run.teamMoved {
 			if err := autoAssign(ctx, tx, d, a.WorkspaceID, a.TicketID, a.Trigger); err != nil {
 				return err
 			}
@@ -78,22 +82,23 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 	})
 }
 
-// applySLA picks the first enabled policy for the ticket's priority (or any priority)
-// by position and sets the due dates from the ticket's creation.
+// applySLA picks the first enabled policy, by position, for the ticket's priority (or any
+// priority) and its team (or any team), and sets the due dates from the ticket's creation.
+// Business hours are the team's own, else the workspace's.
 func applySLA(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, created bool) error {
 	var priority string
 	var createdAt time.Time
-	var current *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT priority, created_at, sla_policy_id FROM tickets WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
-		wid, tid).Scan(&priority, &createdAt, &current); err != nil {
+	var current, team *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT priority, created_at, sla_policy_id, team_id FROM tickets WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+		wid, tid).Scan(&priority, &createdAt, &current, &team); err != nil {
 		return err
 	}
 	var policyID *uuid.UUID
 	var frMin, resMin int
 	var inHours bool
 	err := tx.QueryRow(ctx, `SELECT id, first_response_minutes, resolution_minutes, business_hours FROM sla_policies
-		WHERE workspace_id = $1 AND enabled AND (priority = $2 OR priority IS NULL)
-		ORDER BY position, (priority IS NULL), created_at LIMIT 1`, wid, priority).Scan(&policyID, &frMin, &resMin, &inHours)
+		WHERE workspace_id = $1 AND enabled AND (priority = $2 OR priority IS NULL) AND (team_id = $3 OR team_id IS NULL)
+		ORDER BY position, (priority IS NULL), (team_id IS NULL), created_at LIMIT 1`, wid, priority, team).Scan(&policyID, &frMin, &resMin, &inHours)
 	if err != nil && !db.IsNotFound(err) {
 		return err
 	}
@@ -108,11 +113,10 @@ func applySLA(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, created bool) 
 		fr := createdAt.Add(time.Duration(frMin) * time.Minute)
 		res := createdAt.Add(time.Duration(resMin) * time.Minute)
 		if inHours {
-			st, err := hd.LoadSettings(ctx, tx, wid)
+			bh, loc, err := hd.HoursFor(ctx, tx, wid, team)
 			if err != nil {
 				return err
 			}
-			bh, loc := st.Hours(), st.Location()
 			fr, res = bh.AddBusinessMinutes(createdAt, frMin, loc), bh.AddBusinessMinutes(createdAt, resMin, loc)
 		}
 		_, err = tx.Exec(ctx, `UPDATE tickets SET sla_policy_id = $3, first_response_due_at = $4, resolution_due_at = $5,
@@ -143,6 +147,10 @@ type triggerRun struct {
 	// decided caches ai_decide answers by question for the whole run (one call per run).
 	decided map[string]float64
 	asked   map[string]bool
+	// teamMoved is set when an automation changed the ticket's team.
+	teamMoved bool
+	// messageID is the message the run is about, if any.
+	messageID *uuid.UUID
 }
 
 // automations evaluates the enabled automations for trigger in position order.
@@ -197,7 +205,10 @@ func (r *triggerRun) automations(ctx context.Context, trigger string, messageID 
 	if len(changed) == 0 {
 		return nil
 	}
-	if slices.Contains(changed, "priority") {
+	if slices.Contains(changed, "team_id") {
+		r.teamMoved = true
+	}
+	if slices.Contains(changed, "priority") || slices.Contains(changed, "team_id") {
 		if err := applySLA(ctx, r.tx, r.wid, r.tid, false); err != nil {
 			return err
 		}
@@ -209,6 +220,7 @@ func (r *triggerRun) automations(ctx context.Context, trigger string, messageID 
 type facts struct {
 	subject, body, fromEmail, channel, mailboxID, priority, status string
 	sentiment, severity                                            string
+	teamID, brandID, widgetID, receivedAt                          string
 	decided                                                        map[string]float64
 	tags                                                           []string
 	spam                                                           bool
@@ -223,11 +235,12 @@ func (r *triggerRun) facts(ctx context.Context, messageID *uuid.UUID) (facts, er
 	err := r.tx.QueryRow(ctx, `SELECT t.subject, t.channel, t.mailbox_id, t.priority, COALESCE(t.severity, 'none'), t.status, t.spam, c.email,
 		COALESCE(t.custom->>'ai_sentiment', ''),
 		COALESCE((SELECT array_agg(g.name) FROM ticket_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.ticket_id = t.id), '{}'),
-		t.fields, COALESCE(c.fields, '{}')
+		t.fields, COALESCE(c.fields, '{}'),
+		COALESCE(t.team_id::text, 'none'), t.brand_id::text, COALESCE(t.widget_id::text, 'none'), t.received_at
 		FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2`, r.wid, r.tid).
 		Scan(&f.subject, &f.channel, &mailbox, &f.priority, &f.severity, &f.status, &f.spam, &f.contactEmail, &f.sentiment, &f.tags,
-			&f.fields, &f.contactFields)
+			&f.fields, &f.contactFields, &f.teamID, &f.brandID, &f.widgetID, &f.receivedAt)
 	if err != nil {
 		return f, err
 	}
@@ -331,6 +344,14 @@ func match(c hd.Condition, f facts) bool {
 		v = f.status
 	case "sentiment":
 		v = f.sentiment
+	case "team_id":
+		v = f.teamID
+	case "brand_id":
+		v = f.brandID
+	case "widget_id":
+		v = f.widgetID
+	case "received_at":
+		v = f.receivedAt
 	default:
 		return false
 	}
@@ -384,6 +405,14 @@ func (r *triggerRun) apply(ctx context.Context, a automation, f facts) ([]string
 				continue
 			}
 			patch.Team = Opt[uuid.UUID]{Set: true, Value: id}
+		case "set_reply_address":
+			// An address removed since the automation was saved is skipped, and so is one
+			// of another brand (applyPatch is lenient for automations).
+			id, err := uuid.Parse(act.Value)
+			if err != nil || hd.CheckRef(ctx, r.tx, r.wid, "mailbox", id) != nil {
+				continue
+			}
+			patch.Mailbox = &id
 		case "add_tag":
 			patch.AddTags = append(patch.AddTags, act.Value)
 			patch.CreateLabels = true
@@ -411,7 +440,7 @@ func (r *triggerRun) apply(ctx context.Context, a automation, f facts) ([]string
 			}
 			changed = append(changed, "messages")
 		case "ai_triage":
-			// The hook skips (nil, nil) when AI is off, out of credits or unavailable; an
+			// The hook skips (nil, nil) when AI is off, out of AI balance or unavailable; an
 			// error is a database failure of this transaction.
 			if h := hd.GetAIHooks(); h != nil && h.Triage != nil {
 				c, err := h.Triage(ctx, r.tx, r.wid, r.tid)
@@ -458,12 +487,59 @@ func (r *triggerRun) addMessage(ctx context.Context, act hd.Action, f facts) err
 		var mbEmail, mbName *string
 		_ = r.tx.QueryRow(ctx, `SELECT mb.email, mb.display_name FROM tickets t JOIN mailboxes mb ON mb.id = t.mailbox_id
 			WHERE t.workspace_id = $1 AND t.id = $2`, r.wid, r.tid).Scan(&mbEmail, &mbName)
+		ok, err := r.mayAutoReply(ctx)
+		if err != nil || !ok {
+			return err
+		}
 		nm.To = []string{*f.contactEmail}
 		nm.FromEmail, nm.FromName = str(mbEmail), str(mbName)
 		nm.DeliveryStatus = "pending"
 	}
 	_, err := domain.AddMessage(ctx, r.tx, r.d.Jobs, nm)
 	return err
+}
+
+// Automation replies by email are automatic mail (Auto-Submitted: auto-generated). They
+// never answer mail nothing automatic may answer (messages.no_auto_reply: automatic, bulk
+// or list mail, a workspace's own address, a sender that failed authentication), and at
+// most automationRepliesPerTicket go to one ticket, and automationRepliesPerContact to one
+// contact's tickets, per automationReplyWindow, so two automatic systems cannot keep
+// answering each other.
+const (
+	automationRepliesPerTicket  = 3
+	automationRepliesPerContact = 10
+	automationReplyWindow       = time.Hour
+)
+
+// mayAutoReply decides whether an automation may send an email reply on the run's ticket,
+// judged by the message the run is about, else the ticket's latest inbound message.
+func (r *triggerRun) mayAutoReply(ctx context.Context) (bool, error) {
+	var noAuto bool
+	err := r.tx.QueryRow(ctx, `SELECT no_auto_reply OR auth_failed FROM messages
+		WHERE workspace_id = $1 AND ticket_id = $2 AND direction = 'inbound' AND kind = 'reply'
+		ORDER BY COALESCE(id = $3, false) DESC, created_at DESC LIMIT 1`, r.wid, r.tid, r.messageID).Scan(&noAuto)
+	if err != nil && !db.IsNotFound(err) {
+		return false, err
+	}
+	if noAuto {
+		r.d.Log.Info("automation reply skipped", "ticket_id", r.tid, "reason", "automatic_mail")
+		return false, nil
+	}
+	var perTicket, perContact int
+	err = r.tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE m.ticket_id = $2), count(*)
+		FROM messages m JOIN tickets t ON t.id = m.ticket_id AND t.workspace_id = m.workspace_id
+		WHERE m.workspace_id = $1 AND m.author_type = 'system' AND m.kind = 'reply' AND m.direction = 'outbound'
+		AND m.created_at > now() - $3::interval
+		AND (m.ticket_id = $2 OR t.contact_id = (SELECT contact_id FROM tickets WHERE workspace_id = $1 AND id = $2))`,
+		r.wid, r.tid, fmt.Sprintf("%d seconds", int(automationReplyWindow.Seconds()))).Scan(&perTicket, &perContact)
+	if err != nil {
+		return false, err
+	}
+	if perTicket >= automationRepliesPerTicket || perContact >= automationRepliesPerContact {
+		r.d.Log.Info("automation reply skipped", "ticket_id", r.tid, "reason", "rate_limited")
+		return false, nil
+	}
+	return true, nil
 }
 
 // Assignment modes (settings.auto_assign and assignment_rules.mode).
@@ -564,8 +640,9 @@ func PickAssignee(ctx context.Context, tx pgx.Tx, wid uuid.UUID, team *uuid.UUID
 	args := []any{wid}
 	if team != nil {
 		key = "team:" + team.String()
+		// Observers see the team's tickets but are never auto-assigned.
 		q += ` AND EXISTS (SELECT 1 FROM team_members tm JOIN teams tt ON tt.id = tm.team_id
-			WHERE tm.user_id = m.user_id AND tm.team_id = $2 AND tt.workspace_id = $1)`
+			WHERE tm.user_id = m.user_id AND tm.team_id = $2 AND tt.workspace_id = $1 AND tm.role IN ('lead', 'member'))`
 		args = append(args, *team)
 	}
 	rows, err := tx.Query(ctx, q+` ORDER BY m.user_id`, args...)

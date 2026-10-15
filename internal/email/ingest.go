@@ -78,17 +78,25 @@ func msgIDList(vals ...string) []string {
 	return out
 }
 
-// ingest stores a raw message, records it in inbound_emails (deduped by mailbox and
-// Message-ID) and queues processing. It returns dup=true for a message seen before.
-func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt string) (uuid.UUID, bool, error) {
+// ingest stores a raw message, records it in inbound_emails and queues processing. A
+// message is a duplicate only when its Message-ID and its content both match one seen
+// before at this mailbox, so a redelivery dedupes and a different message reusing the id
+// does not. envFrom is the SMTP envelope sender when the transport reports it, else nil.
+// It returns dup=true for a message seen before.
+func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string) (uuid.UUID, bool, error) {
 	msgID := headerMessageID(raw)
+	hash := contentHash(raw)
 	var exists bool
-	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM inbound_emails WHERE mailbox_id = $1 AND message_id_hdr = $2)`,
-		m.ID, msgID).Scan(&exists); err != nil {
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM inbound_emails WHERE mailbox_id = $1 AND message_id_hdr = $2 AND content_hash = $3)`,
+		m.ID, msgID, hash).Scan(&exists); err != nil {
 		return uuid.Nil, false, err
 	}
 	if exists {
 		return uuid.Nil, true, nil
+	}
+	if envFrom != nil {
+		v := truncate(strings.ToLower(strings.Trim(strings.TrimSpace(*envFrom), "<>")), 320)
+		envFrom = &v
 	}
 	id := ids.New()
 	key := "workspaces/" + m.WorkspaceID.String() + "/inbound/" + id.String() + ".eml"
@@ -97,9 +105,9 @@ func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt st
 	}
 	inserted := false
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to)
-			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (mailbox_id, message_id_hdr) DO NOTHING`,
-			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320))
+		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to, content_hash, envelope_from)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (mailbox_id, message_id_hdr, content_hash) DO NOTHING`,
+			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320), hash, envFrom)
 		if err != nil {
 			return err
 		}

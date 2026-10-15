@@ -1,0 +1,176 @@
+[
+  {
+    "code": "google_app_password_required",
+    "title": "Google needs an app password",
+    "fix": "Google does not accept the account password over IMAP and SMTP. Turn on 2-Step Verification, create an app password at https://myaccount.google.com/apppasswords while signed in to this address, and paste the 16 letters it shows. On Google Workspace, your admin must allow 2-Step Verification and app passwords.",
+    "retryable": true
+  },
+  {
+    "code": "google_bad_credentials",
+    "title": "Google did not accept the app password",
+    "fix": "Google refused this address and app password. Create a new app password at https://myaccount.google.com/apppasswords while signed in to this exact address (not an alias or a group) and use it. A deleted app password stops working at once.",
+    "retryable": true
+  },
+  {
+    "code": "google_imap_disabled",
+    "title": "IMAP is turned off in Google",
+    "fix": "Turn IMAP on for this mailbox: in Gmail open Settings, See all settings, Forwarding and POP/IMAP, and enable IMAP. On Google Workspace an admin must also allow it in the Admin console under Apps, Google Workspace, Gmail, End User Access, POP and IMAP access.",
+    "retryable": true
+  },
+  {
+    "code": "google_web_login_required",
+    "title": "Google wants a browser sign-in first",
+    "fix": "Google blocked this sign-in as unusual. Sign in to this mailbox once at https://mail.google.com in a browser, confirm any security prompt, then try again.",
+    "retryable": true
+  },
+  {
+    "code": "microsoft_smtp_auth_disabled",
+    "title": "SMTP sign-in is turned off in Microsoft 365",
+    "fix": "Microsoft 365 refused password sign-in over SMTP AUTH for this mailbox. Microsoft is phasing out password sign-in for SMTP AUTH, so send replies through opendesk instead. While Microsoft still allows it, an admin can turn on Authenticated SMTP for this mailbox in the Microsoft 365 admin center (Active users, Mail, Manage email apps).",
+    "retryable": true
+  },
+  {
+    "code": "microsoft_security_defaults",
+    "title": "Microsoft security defaults block passwords",
+    "fix": "Microsoft Entra security defaults block password sign-in over SMTP and IMAP for this organization. Connect the mailbox with Microsoft sign-in, or forward its mail into opendesk and send replies through opendesk. Microsoft is phasing out password sign-in for SMTP AUTH, so sending through opendesk is the lasting fix.",
+    "retryable": true
+  },
+  {
+    "code": "microsoft_conditional_access",
+    "title": "A Microsoft sign-in policy blocked this",
+    "fix": "A Conditional Access policy in your Microsoft organization refused this password sign-in. Connect the mailbox with Microsoft sign-in, or forward its mail into opendesk and send replies through opendesk. Microsoft is phasing out password sign-in for SMTP AUTH, so an exception for it may not last.",
+    "retryable": true
+  },
+  {
+    "code": "microsoft_basic_auth_disabled",
+    "title": "Microsoft needs Microsoft sign-in",
+    "fix": "Exchange Online no longer accepts a password over IMAP. Connect the mailbox with Microsoft sign-in, or forward its mail into opendesk and send replies through opendesk. Microsoft is also phasing out password sign-in for SMTP AUTH, so its SMTP server is not a lasting way to send.",
+    "retryable": false
+  },
+  {
+    "code": "microsoft_bad_credentials",
+    "title": "Microsoft did not accept the password",
+    "fix": "Microsoft refused this address and password. Check both, including the sign-in address if it differs from the mailbox address. A password does not work on an account with multi-factor sign-in. Microsoft is phasing out password sign-in for SMTP AUTH: if it is refused, send replies through opendesk instead.",
+    "retryable": true
+  },
+  {
+    "code": "yahoo_app_password_required",
+    "title": "Yahoo needs an app password",
+    "fix": "Yahoo only accepts an app password over IMAP and SMTP. Sign in to Yahoo, open Account security at https://login.yahoo.com/account/security, choose Generate app password, and use the password it shows.",
+    "retryable": true
+  },
+  {
+    "code": "aol_app_password_required",
+    "title": "AOL needs an app password",
+    "fix": "AOL only accepts an app password over IMAP and SMTP. Sign in to AOL, open Account security at https://login.aol.com/account/security, choose Generate app password, and use the password it shows.",
+    "retryable": true
+  },
+  {
+    "code": "icloud_app_password_required",
+    "title": "iCloud needs an app-specific password",
+    "fix": "iCloud Mail only accepts an app-specific password. Sign in at https://account.apple.com, open Sign-In and Security, App-Specific Passwords, create one, and use it. The username is the full iCloud address, not an alias.",
+    "retryable": true
+  },
+  {
+    "code": "zoho_app_password_required",
+    "title": "Zoho refused the password",
+    "fix": "Zoho refused this sign-in. If two-factor authentication is on, create an app password in Zoho Accounts under Security, App Passwords, and use it. Also check that IMAP access is on in Zoho Mail settings under Mail Accounts, IMAP.",
+    "retryable": true
+  },
+  {
+    "code": "fastmail_app_password_required",
+    "title": "Fastmail needs an app password",
+    "fix": "Fastmail only accepts an app password over IMAP and SMTP. In Fastmail open Settings, Privacy and Security, Manage app passwords, create one with IMAP and SMTP access, and use it.",
+    "retryable": true
+  },
+  {
+    "code": "yandex_app_password_required",
+    "title": "Yandex needs an app password",
+    "fix": "Yandex only accepts an app password over IMAP and SMTP. Create one for Mail at https://id.yandex.com/security/app-passwords, and check that IMAP is allowed in Yandex Mail settings under Email clients.",
+    "retryable": true
+  },
+  {
+    "code": "imap_disabled",
+    "title": "IMAP is turned off for this mailbox",
+    "fix": "The server says IMAP access is off for this account. Turn IMAP on in the provider's mail settings, or ask your email admin to, then try again.",
+    "retryable": true
+  },
+  {
+    "code": "account_locked",
+    "title": "The account is locked or disabled",
+    "fix": "The provider says this account is locked, suspended or disabled. Sign in to it in a browser to see why and restore access, or ask your email admin, then try again.",
+    "retryable": false
+  },
+  {
+    "code": "too_many_logins",
+    "title": "Too many sign-in attempts",
+    "fix": "The provider is limiting sign-ins for this account. Wait 15 to 60 minutes before trying again, and avoid retrying a password that keeps failing.",
+    "retryable": true
+  },
+  {
+    "code": "auth_unavailable",
+    "title": "The server does not take a password here",
+    "fix": "The server did not offer password sign-in on this port. Check the host and port: use the provider's submission server (usually port 587 or 465), not the MX server or port 25.",
+    "retryable": false
+  },
+  {
+    "code": "auth_refused",
+    "title": "The server refused the sign-in",
+    "fix": "The server refused this username and password. Check both, and whether the provider needs an app password or a username other than the email address.",
+    "retryable": true
+  },
+  {
+    "code": "host_not_found",
+    "title": "The server name does not exist",
+    "fix": "The server name could not be found in DNS. Check the spelling of the IMAP and SMTP server.",
+    "retryable": false
+  },
+  {
+    "code": "host_unreachable",
+    "title": "The server could not be reached",
+    "fix": "No connection could be made to the server. Check the server and port, and that the server accepts connections from the internet.",
+    "retryable": false
+  },
+  {
+    "code": "port_blocked",
+    "title": "The mail port did not answer",
+    "fix": "The SMTP port did not answer, which usually means it is blocked on the way. Try port 587 with STARTTLS instead of 465 or 25, or check the provider's documented SMTP port.",
+    "retryable": false
+  },
+  {
+    "code": "tls_failed",
+    "title": "The secure connection failed",
+    "fix": "The server did not complete a secure connection. Check the security setting for the port: 465 and 993 use TLS, 587 and 143 use STARTTLS. Also check that the server name matches its certificate.",
+    "retryable": false
+  },
+  {
+    "code": "cleartext_refused",
+    "title": "Encryption is required",
+    "fix": "The server wants an encrypted connection first. Use TLS on 465 or 993, or STARTTLS on 587 or 143.",
+    "retryable": false
+  },
+  {
+    "code": "timeout",
+    "title": "The server did not answer in time",
+    "fix": "The server did not answer before the time ran out. It may be slow or busy; try again later, and check the server and port if it keeps happening.",
+    "retryable": true
+  },
+  {
+    "code": "temporary",
+    "title": "The server asked to try again later",
+    "fix": "The server declined the sign-in for now. Try again in a few minutes.",
+    "retryable": true
+  },
+  {
+    "code": "server_declined",
+    "title": "The server did not accept the connection",
+    "fix": "The server answered but did not accept the sign-in. Check the server, port, security setting and password, then try again.",
+    "retryable": true
+  },
+  {
+    "code": "host_not_allowed",
+    "title": "The server must be a public address",
+    "fix": "opendesk connects only to mail servers on the public internet. Use the provider's public server name.",
+    "retryable": false
+  }
+]

@@ -54,6 +54,32 @@ export function logoMark(name: string): string {
   );
 }
 
+const BRAND_GLYPHS: Record<string, (c: string) => string> = {
+  // A page with a margin rule and two lines of text.
+  margin: (c) =>
+    `<rect x="70" y="52" width="116" height="152" rx="16" fill="${c}"/><rect x="98" y="52" width="12" height="152" fill="currentColor" opacity="0.28"/>` +
+    `<rect x="124" y="88" width="42" height="12" rx="6" fill="currentColor" opacity="0.5"/><rect x="124" y="116" width="34" height="12" rx="6" fill="currentColor" opacity="0.5"/>`,
+  // A press sheet: a headline bar over columns.
+  pressroom: (c) =>
+    `<rect x="60" y="64" width="136" height="128" rx="14" fill="${c}"/><rect x="80" y="84" width="96" height="20" rx="5" fill="currentColor" opacity="0.5"/>` +
+    `<rect x="80" y="116" width="42" height="56" rx="5" fill="currentColor" opacity="0.35"/><rect x="134" y="116" width="42" height="10" rx="5" fill="currentColor" opacity="0.35"/>` +
+    `<rect x="134" y="139" width="42" height="10" rx="5" fill="currentColor" opacity="0.35"/><rect x="134" y="162" width="30" height="10" rx="5" fill="currentColor" opacity="0.35"/>`,
+};
+
+/**
+ * A brand's logo: its mark in white on the brand colour. `inverse` draws the mark in
+ * the brand colour on white, as an uploaded help center logo might be.
+ */
+export function brandLogo(slug: string, color: string, inverse = false): string {
+  const glyph = BRAND_GLYPHS[slug];
+  if (!glyph) return logoMark(slug);
+  const bg = inverse ? "#ffffff" : color;
+  const fg = inverse ? color : "#ffffff";
+  return data(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" color="${bg}"><rect width="256" height="256" rx="56" fill="${bg}"/>${glyph(fg)}</svg>`,
+  );
+}
+
 /** Reads an uploaded image into a data URL, as the API would store and serve it. */
 export async function fileToUrl(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());

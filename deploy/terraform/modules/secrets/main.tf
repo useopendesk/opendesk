@@ -6,7 +6,7 @@
 # credential unreadable, and a new AUTH_SECRET signs everyone out.
 #
 # Operator-supplied secrets (OAuth client secrets, Turnstile, PostHog, Stripe
-# keys and price ids, the Anthropic and Voyage API keys) are
+# keys and price ids, the Anthropic and Voyage API keys, the APNs key) are
 # created empty. Set them with
 #   aws secretsmanager put-secret-value --secret-id <name>/<env>/<KEY> --secret-string '...'
 # and then list the key in `optional_secrets` in the environment so the task
@@ -24,9 +24,13 @@ locals {
     SECRET_KEY_BASE = random_password.secret_key_base.result
   }
 
+  # Listed apart from the values so for_each never sees sensitive data.
+  database_keys = ["DATABASE_URL", "DATABASE_URL_DIRECT", "DATABASE_URL_MIGRATE"]
+
   database = {
-    DATABASE_URL        = var.database_url
-    DATABASE_URL_DIRECT = var.database_url_direct
+    DATABASE_URL         = var.database_url
+    DATABASE_URL_DIRECT  = var.database_url_direct
+    DATABASE_URL_MIGRATE = var.database_url_migrate
   }
 
   manual = toset([
@@ -42,11 +46,12 @@ locals {
     "STRIPE_PRICE_CREDITS",
     "ANTHROPIC_API_KEY",
     "VOYAGE_API_KEY",
+    "APNS_KEY",
   ])
 
   all_keys = setunion(
     toset(["AUTH_SECRET", "CREDENTIALS_KEY", "INBOUND_SECRET", "NATS_TOKEN", "SECRET_KEY_BASE"]),
-    toset(["DATABASE_URL", "DATABASE_URL_DIRECT"]),
+    toset(local.database_keys),
     local.manual,
   )
 }
@@ -92,7 +97,7 @@ resource "aws_secretsmanager_secret_version" "generated" {
 }
 
 resource "aws_secretsmanager_secret_version" "database" {
-  for_each = toset(["DATABASE_URL", "DATABASE_URL_DIRECT"])
+  for_each = toset(local.database_keys)
 
   secret_id     = aws_secretsmanager_secret.this[each.key].id
   secret_string = local.database[each.key]

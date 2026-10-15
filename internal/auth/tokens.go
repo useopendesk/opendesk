@@ -25,6 +25,9 @@ const (
 	// PurposeMCPAccess is an OAuth access token for the MCP server: aud is the MCP
 	// resource URL, gid the grant it was issued under, scope the granted scopes.
 	PurposeMCPAccess = "mcp_access"
+	// PurposeNotificationUnsubscribe turns off notification emails from one workspace (wid)
+	// for one user (sub); it rides in every notification email.
+	PurposeNotificationUnsubscribe = "notification_unsubscribe"
 )
 
 const (
@@ -35,6 +38,8 @@ const (
 	OAuthStateTTL = 10 * time.Minute
 	PasskeyTTL    = 5 * time.Minute
 	MCPAccessTTL  = time.Hour
+	// UnsubscribeTTL keeps an email's unsubscribe link working for a while after it arrives.
+	UnsubscribeTTL = 90 * 24 * time.Hour
 )
 
 // Claims is the union of fields used across purposes.
@@ -47,6 +52,10 @@ type Claims struct {
 	Role      string `json:"role,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Avatar    string `json:"avatar,omitempty"`
+	// Teams are the private teams a ws token may join (contracts/teams.md).
+	Teams []string `json:"teams,omitempty"`
+	// Brand binds a widget_ws token to the brand of the widget it was issued for.
+	Brand string `json:"bid,omitempty"`
 	// Free-form payload for oauth_state (provider, redirect, mailbox flow).
 	Data map[string]string `json:"data,omitempty"`
 	// mcp_access: the OAuth grant and its space-separated scopes.

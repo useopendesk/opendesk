@@ -14,6 +14,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -96,7 +97,7 @@ func (s *Service) registerAgentReview(api huma.API, read, write func(context.Con
 			if err != nil {
 				return nil, err
 			}
-			items, err := s.reviewQueue(ctx, p.WorkspaceID)
+			items, err := s.reviewQueue(ctx, p)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -127,11 +128,25 @@ func reviewErr(err error) error {
 	return httpx.Wrap(err)
 }
 
+// reviewTicket returns the ticket of an agent reply of the workspace that p may see; a
+// reply on a ticket p may not see is not found.
+func reviewTicket(ctx context.Context, q db.Querier, p *auth.Principal, messageID uuid.UUID) (uuid.UUID, error) {
+	hidden, err := domain.HiddenTeams(ctx, q, p)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	var tid uuid.UUID
+	err = q.QueryRow(ctx, `SELECT t.id FROM messages m
+		JOIN tickets t ON t.workspace_id = m.workspace_id AND t.id = m.ticket_id AND t.deleted_at IS NULL
+		WHERE m.workspace_id = $1 AND m.id = $2 AND m.ai AND m.kind = 'reply' AND `+domain.VisibleSQLUser("t", 3, 4),
+		p.WorkspaceID, messageID, hidden, p.UserID).Scan(&tid)
+	return tid, err
+}
+
 // markReviewed takes an agent reply of the workspace off the review queue.
 func markReviewed(ctx context.Context, tx pgx.Tx, p *auth.Principal, messageID uuid.UUID, outcome string) error {
-	var ok bool
-	if err := tx.QueryRow(ctx, `SELECT true FROM messages WHERE workspace_id = $1 AND id = $2 AND ai AND kind = 'reply'`,
-		p.WorkspaceID, messageID).Scan(&ok); err != nil {
+	tid, err := reviewTicket(ctx, tx, p, messageID)
+	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO ai_agent_reviews (message_id, workspace_id, outcome, user_id) VALUES ($1, $2, $3, $4)
@@ -139,8 +154,8 @@ func markReviewed(ctx context.Context, tx pgx.Tx, p *auth.Principal, messageID u
 		messageID, p.WorkspaceID, outcome, p.ActorUserID()); err != nil {
 		return err
 	}
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_agent_review.updated",
-		Data: map[string]any{"message_id": messageID, "outcome": outcome}})
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_agent_review.updated", TicketID: &tid,
+		Data: map[string]any{"message_id": messageID, "ticket_id": tid, "outcome": outcome}})
 	return err
 }
 
@@ -179,10 +194,7 @@ func (s *Service) improve(ctx context.Context, p *auth.Principal, in ImproveInpu
 		}
 	}
 	if in.MessageID != nil {
-		var ok bool
-		err := s.d.DB.Pool.QueryRow(ctx, `SELECT true FROM messages WHERE workspace_id = $1 AND id = $2 AND ai AND kind = 'reply'`,
-			p.WorkspaceID, *in.MessageID).Scan(&ok)
-		if err != nil {
+		if _, err := reviewTicket(ctx, s.d.DB.Pool, p, *in.MessageID); err != nil {
 			return out, reviewErr(err)
 		}
 	}
@@ -227,8 +239,12 @@ func clipWords(s string, n int) string {
 }
 
 // reviewQueue lists recent agent replies rated not helpful or followed by the agent's
-// handoff, not yet dismissed or improved.
-func (s *Service) reviewQueue(ctx context.Context, wid uuid.UUID) ([]AgentReviewItem, error) {
+// handoff, not yet dismissed or improved, on tickets p may see.
+func (s *Service) reviewQueue(ctx context.Context, p *auth.Principal) ([]AgentReviewItem, error) {
+	hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT m.id, m.ticket_id, t.number,
 			CASE WHEN m.ai_rating = 'down' THEN 'rated_down' ELSE 'handoff' END,
 			COALESCE(left(btrim(regexp_replace(q.body_text, '\s+', ' ', 'g')), 500), ''),
@@ -243,7 +259,8 @@ func (s *Service) reviewQueue(ctx context.Context, wid uuid.UUID) ([]AgentReview
 		WHERE m.workspace_id = $1 AND m.ai AND m.kind = 'reply' AND m.created_at > now() - make_interval(days => $2)
 			AND (m.ai_rating = 'down' OR COALESCE(a.handoff, false))
 			AND NOT EXISTS (SELECT 1 FROM ai_agent_reviews r WHERE r.message_id = m.id)
-		ORDER BY m.created_at DESC LIMIT $3`, wid, reviewDays, reviewLimit)
+			AND `+domain.VisibleSQLUser("t", 4, 5)+`
+		ORDER BY m.created_at DESC LIMIT $3`, p.WorkspaceID, reviewDays, reviewLimit, hidden, p.UserID)
 	if err != nil {
 		return nil, err
 	}

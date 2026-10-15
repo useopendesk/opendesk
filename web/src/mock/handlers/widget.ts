@@ -1,10 +1,13 @@
 // Widget settings (admin) and the public widget config (contracts/api.md "Widget").
 
-import type { WidgetConfig, WidgetSettings } from "@/lib/api/types";
+import type { Widget, WidgetConfig, WidgetSettings } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
+import { publish } from "../gateway";
 import { HttpError, forbidden, get, invalid, patch } from "../router";
+import { defaultBrand, legacyWidget, syncLegacyWidget, widgetOut } from "../teams";
 import { hasControl, isRecord, nowIso, oneLine, uuid } from "../util";
 import { aiOff } from "./ai";
+import { widgetBot } from "../bots";
 
 type Check = (v: unknown) => unknown;
 
@@ -64,7 +67,6 @@ const CHECKS: Partial<Record<keyof WidgetSettings, Check>> = {
   radius: oneOf("radius", ["square", "soft", "round"] as const),
   title: text("title", 40),
   subtitle: text("subtitle", 80),
-  bot_name: text("bot_name", 30),
   suggestions: (v) => {
     if (!Array.isArray(v)) throw invalid("suggestions must be a list");
     const list = v.map((x) => cleanText("Each suggestion", x, 60)).filter(Boolean);
@@ -89,13 +91,33 @@ export function widgetPatch(body: Record<string, unknown>): Partial<WidgetSettin
   return out as Partial<WidgetSettings>;
 }
 
-export function widgetConfig(ws: WsData): WidgetConfig {
-  const w = ws.widget;
+/** Whether hours allow chat now: the team's own hours, else the workspace's; always open without hours. */
+function openNow(ws: WsData, teamId: string | null): boolean {
+  const team = teamId ? ws.teams.find((t) => t.id === teamId) : undefined;
+  const h = team?.business_hours ?? { ...ws.routing.hours, timezone: ws.workspace.settings.timezone ?? "UTC" };
+  if (!h.enabled) return true;
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: h.timezone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+    const get = (k: string) => parts.find((p) => p.type === k)?.value ?? "";
+    const day = get("weekday").slice(0, 3).toLowerCase() as keyof typeof h.schedule;
+    const at = Number(get("hour")) * 60 + Number(get("minute"));
+    const m = (v: string) => Number(v.slice(0, 2)) * 60 + Number(v.slice(3));
+    return (h.schedule[day] ?? []).some((r) => at >= m(r.start) && at < m(r.end));
+  } catch {
+    return true;
+  }
+}
+
+export function widgetConfig(ws: WsData, widget?: Widget): WidgetConfig {
+  const row = widget ?? legacyWidget(ws);
+  const w = row?.settings ?? ws.widget;
+  const brand = ws.brands.find((b) => b.id === row?.brand_id) ?? defaultBrand(ws);
   const wsSettings = ws.workspace.settings;
   const rank = { online: 0, away: 1, offline: 2 } as const;
+  const teamMembers = row?.team_id ? new Set(ws.teams.find((t) => t.id === row.team_id)?.members.filter((m) => m.role !== "observer").map((m) => m.user_id)) : null;
   const team = w.show_team
     ? ws.members
-        .filter((m) => m.role !== "viewer")
+        .filter((m) => m.role !== "viewer" && (!teamMembers || teamMembers.has(m.user_id)))
         .sort((a, b) => rank[a.availability ?? "online"] - rank[b.availability ?? "online"])
         .slice(0, 3)
         .map((m) => {
@@ -103,15 +125,16 @@ export function widgetConfig(ws: WsData): WidgetConfig {
           return { name: (u?.name ?? "").split(" ")[0], avatar_url: u?.avatar_url ?? null };
         })
     : [];
+  const helpOn = brand ? brand.help_center.enabled : !!wsSettings.help_center_enabled;
   return {
-    workspace_name: ws.workspace.name,
-    brand_color: w.color || wsSettings.brand_color || null,
+    workspace_name: brand?.name ?? ws.workspace.name,
+    brand_color: w.color || brand?.color || wsSettings.brand_color || null,
     greeting: w.greeting,
-    help_center_url: wsSettings.help_center_enabled ? `/help/${ws.workspace.slug}` : null,
+    help_center_url: helpOn ? `/help/${brand?.slug ?? ws.workspace.slug}` : null,
     require_email: w.require_email,
-    locale: wsSettings.locale || null,
-    avatar_url: ws.workspace.images.widget_avatar ?? ws.workspace.avatar_url,
-    launcher_icon_url: ws.workspace.images.widget_launcher,
+    locale: brand?.locale || wsSettings.locale || null,
+    avatar_url: row?.images.avatar ?? ws.workspace.images.widget_avatar ?? brand?.images.logo ?? ws.workspace.avatar_url,
+    launcher_icon_url: row?.images.launcher ?? ws.workspace.images.widget_launcher,
     theme: w.theme,
     position: w.position,
     offset_x: w.offset_x,
@@ -125,18 +148,29 @@ export function widgetConfig(ws: WsData): WidgetConfig {
     sound: w.sound,
     team,
     ai_answers: !aiOff() && ws.ai.enabled && ws.ai.widget_answers,
-    bot: { name: w.bot_name || "Ollie", avatar_url: ws.workspace.images.widget_bot },
+    bot: widgetBot(ws, row?.id),
+    topics: (w.topics ?? []).map((t) => ({ id: t.id, label: t.label })),
+    open: openNow(ws, row?.team_id ?? null),
+    offline_message: w.offline_message ?? "",
+    brand: { name: brand?.name ?? ws.workspace.name, color: brand?.color || wsSettings.brand_color || null },
   };
 }
 
 export function registerWidget() {
-  get("/v1/widget/settings", (ctx) => ctx.ws.widget);
+  // Kept: the default brand's first widget (contracts/teams.md).
+  get("/v1/widget/settings", (ctx) => legacyWidget(ctx.ws)?.settings ?? ctx.ws.widget);
 
   patch("/v1/widget/settings", (ctx) => {
     requireAdmin(ctx.ws);
     if (!isRecord(ctx.body)) throw invalid("Body must be an object");
     const changes = widgetPatch(ctx.body);
-    ctx.ws.widget = { ...ctx.ws.widget, ...changes };
+    const row = legacyWidget(ctx.ws);
+    if (row) {
+      row.settings = { ...row.settings, ...changes };
+      row.updated_at = nowIso();
+      syncLegacyWidget(ctx.ws);
+      publish(ctx.ws, "widget.updated", { widget: widgetOut(ctx.ws, row) });
+    } else ctx.ws.widget = { ...ctx.ws.widget, ...changes };
     ctx.ws.audit.unshift({
       id: uuid(),
       actor: { type: "user", user: userRef(db.meId), api_key_id: null },
@@ -150,11 +184,15 @@ export function registerWidget() {
     return ctx.ws.widget;
   });
 
-  // Public: the widget asks with its key, so any workspace may answer.
+  // Public: the widget asks with any widget's key, so any workspace may answer.
   get("/v1/widget/config", (ctx) => {
     const key = ctx.query.get("key");
-    const ws = key ? db.workspaces.find((w) => w.workspace.widget_key === key) : ctx.ws;
-    if (!ws) throw new HttpError(404, "not_found", "No widget uses this key");
-    return widgetConfig(ws);
+    if (!key) return widgetConfig(ctx.ws);
+    for (const ws of db.workspaces) {
+      const w = ws.widgets.find((x) => x.key === key);
+      if (w) return widgetConfig(ws, w);
+      if (ws.workspace.widget_key === key) return widgetConfig(ws);
+    }
+    throw new HttpError(404, "not_found", "No widget uses this key");
   });
 }

@@ -1,0 +1,218 @@
+---
+/**
+ * Ollie at work, in four parts: tabs on the left advance on their own while the
+ * section is on screen (a click takes over), and the scene on the painting
+ * plays that part. Each part replays its entrance when it becomes active.
+ */
+import Stage from '../Stage.astro';
+import Icon from '../Icon.astro';
+import Backdrop from './Backdrop.astro';
+import Ollie from './Ollie.astro';
+import type { IconName } from '../../lib/icons';
+
+const tabs: { icon: IconName; title: string; body: string }[] = [
+  { icon: 'chat', title: 'Answers chats in any language', body: 'From your published articles only, in the language the customer writes, with the source one tap away.' },
+  { icon: 'squarePen', title: 'Drafts replies in your voice', body: 'From the thread, your saved replies and your articles. You edit, shorten or send.' },
+  { icon: 'wrench', title: 'Works in your connected tools', body: 'Looks up orders and accounts over MCP, and asks before anything that changes them.' },
+  { icon: 'hand', title: 'Hands off with the whole story', body: 'When a person is needed, the ticket arrives summarised, tagged and with the next step.' },
+];
+
+/** Words with a per-word delay, so a reply streams in without a script. */
+const words = (text: string) => text.split(' ').map((w, i) => `<span class="wd" style="--i:${i}">${w}</span>`).join(' ');
+---
+<div class="ollie-show grid gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]" data-ollie-show>
+  <ol class="flex flex-col gap-1" role="tablist" aria-label="What Ollie does">
+    {tabs.map((t, i) => (
+      <li>
+        <button type="button" role="tab" id={`ollie-tab-${i}`} aria-controls={`ollie-panel-${i}`} aria-selected={i === 0 ? 'true' : 'false'} class="ollie-tab group relative w-full overflow-hidden rounded-[14px] px-5 py-4 text-left transition-colors hover:bg-surface-2 aria-selected:bg-bg aria-selected:ring-1 aria-selected:ring-line aria-selected:shadow-card" data-tab={i}>
+          <span class="flex items-center gap-2.5 text-[15.5px] font-semibold tracking-[-0.015em] text-muted transition-colors group-aria-selected:text-fg">
+            <span class="flex size-7 items-center justify-center rounded-[8px] bg-surface text-muted transition-colors group-aria-selected:bg-[color-mix(in_oklab,var(--c-violet)_12%,transparent)] group-aria-selected:text-[var(--c-violet)]"><Icon name={t.icon} size={15} /></span>
+            {t.title}
+          </span>
+          <span class="tab-body grid grid-rows-[0fr] transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-aria-selected:grid-rows-[1fr]">
+            <span class="overflow-hidden"><span class="block pl-[38px] pt-2 text-[14px] leading-relaxed text-muted">{t.body}</span></span>
+          </span>
+          <span class="tab-progress absolute inset-x-5 bottom-0 h-[2px] origin-left scale-x-0 rounded-full bg-[var(--c-violet)] opacity-0 group-aria-selected:opacity-100"></span>
+        </button>
+      </li>
+    ))}
+  </ol>
+
+  <div class="relative overflow-hidden rounded-[18px] ring-1 ring-line">
+    <Backdrop name="pink-valley" sizes="(min-width: 1024px) 66vw, 100vw" class="absolute inset-0 h-full w-full" />
+    <Stage w={980} h={620} tone="none" mobileW={600} mobileX={190} label="Ollie answering a chat in German, drafting a reply, working in a connected shop, and handing a ticket to the team with a summary.">
+      <!-- 1. Answers chats -->
+      <div id="ollie-panel-0" role="tabpanel" aria-labelledby="ollie-tab-0" class="ollie-panel is-active absolute inset-0">
+        <div class="float-card pa left-[290px] top-[100px] flex h-[420px] w-[400px] flex-col !rounded-[18px] text-left">
+          <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
+            <img src="/demo/margin.svg" alt="" width="32" height="32" class="size-8 shrink-0 rounded-[9px]" />
+            <div class="leading-tight"><div class="text-[13px] font-semibold text-fg">Margin</div><div class="mt-0.5 text-[10.5px] text-muted">Wir antworten in wenigen Minuten</div></div>
+            <span class="pill t-grey ml-auto font-mono">DE</span>
+          </div>
+          <div class="flex-1 space-y-2.5 px-4 py-4 text-[12.5px] leading-[1.5]">
+            <div class="pa ml-auto w-fit max-w-[80%] rounded-[12px] rounded-br-[4px] bg-[#0f766e] px-3 py-2 text-white" style="--d:300ms">Synchronisiert Margin zwischen iPad und Mac?</div>
+            <div class="pa flex items-end gap-2" style="--d:1100ms">
+              <Ollie size={22} />
+              <div class="max-w-[86%] rounded-[12px] rounded-bl-[4px] bg-surface px-3 py-2 text-fg" style="--d0:1300ms">
+                <span set:html={words('Ja. Melde dich auf beiden Geräten mit demselben Konto an, dann erscheinen Änderungen innerhalb weniger Sekunden überall.')} />
+                <span class="pa mt-2 flex items-center gap-1.5 rounded-[7px] bg-bg px-2 py-1.5 text-[11px] text-muted ring-1 ring-line" style="--d:4200ms"><Icon name="book" size={11} />Sync between devices<Icon name="arrowUpRight" size={10} class="ml-auto" /></span>
+              </div>
+            </div>
+            <div class="pa flex items-center gap-1.5 pl-[30px] text-[10.5px] text-[var(--c-violet)]" style="--d:4600ms"><Icon name="languages" size={11} />Your team reads this thread in English</div>
+          </div>
+          <div class="m-3 mt-0 flex h-10 items-center rounded-[10px] px-3 text-[11.5px] text-subtle ring-1 ring-line">Nachricht schreiben…</div>
+        </div>
+      </div>
+
+      <!-- 2. Drafts -->
+      <div id="ollie-panel-1" role="tabpanel" aria-labelledby="ollie-tab-1" class="ollie-panel absolute inset-0">
+        <div class="float-card pa left-[180px] top-[90px] w-[620px] !rounded-[18px] text-left">
+          <div class="flex items-center gap-2 border-b border-line px-5 py-3"><span class="font-mono text-[11px] text-muted">#1081</span><span class="text-[13.5px] font-semibold text-fg">Charged twice for my upgrade</span><span class="pill pill-dot t-green ml-auto">Billing</span></div>
+          <div class="px-5 py-4 text-[12.5px] leading-relaxed text-body"><b class="font-medium text-fg">Hugo Moreau:</b> I upgraded to the team plan this morning and my card was charged twice. Can you fix it?</div>
+          <div class="mx-4 mb-4 rounded-[12px] ring-1 ring-[color-mix(in_oklab,var(--c-violet)_35%,var(--line))]">
+            <div class="flex items-center gap-2 px-4 pt-3 text-[11.5px] font-medium text-[var(--c-violet)]"><Ollie size={16} thinking />Ollie’s draft</div>
+            <p class="px-4 pb-3 pt-2 text-[12.5px] leading-relaxed text-fg" style="--d0:700ms" set:html={words('Hi Hugo, sorry about the double charge. I can see both payments from this morning, and I have refunded the second one in full. It will be back on your card within 5 to 10 business days. Your team plan is active and nothing else changes.')} />
+            <div class="pa flex items-center gap-2 border-t border-line px-3 py-2.5" style="--d:4300ms">
+              <span class="flex h-7 items-center gap-1.5 rounded-[7px] bg-fg px-2.5 text-[11.5px] font-medium text-bg"><Icon name="send" size={12} />Send</span>
+              {['Shorter', 'Friendlier', 'Translate'].map((b) => <span class="flex h-7 items-center rounded-[7px] px-2.5 text-[11.5px] text-muted ring-1 ring-line">{b}</span>)}
+              <span class="ml-auto text-[10.5px] text-muted">Based on 2 saved replies</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Tools -->
+      <div id="ollie-panel-2" role="tabpanel" aria-labelledby="ollie-tab-2" class="ollie-panel absolute inset-0">
+        <div class="float-card pa left-[230px] top-[70px] w-[520px] !rounded-[18px] text-left">
+          <div class="flex items-center gap-2.5 border-b border-line px-5 py-3.5"><Ollie size={22} thinking /><span class="text-[13.5px] font-semibold text-fg">Working on Freya’s order</span><span class="ml-auto flex gap-1.5">{['Shop', 'Billing'].map((t) => <span class="pill t-grey"><Icon name="plug" size={10} />{t}</span>)}</span></div>
+          <ol class="space-y-0.5 px-3 py-3 text-[12.5px]">
+            {[
+              ['Looked up freya@fjord.ai in Shop', 'search'],
+              ['Found order #4821: notebook bundle, $48.00, not shipped', 'fileText'],
+              ['Read the refund policy article', 'book'],
+            ].map(([t, i], k) => (
+              <li class="pa flex items-center gap-3 rounded-[9px] px-2.5 py-2" style={`--d:${400 + k * 700}ms`}>
+                <span class="flex size-6 items-center justify-center rounded-[7px] bg-surface text-muted"><Icon name={i as 'search'} size={13} /></span>
+                <span class="text-fg">{t}</span>
+                <span class="ml-auto flex size-4 items-center justify-center rounded-full bg-ok text-white"><Icon name="check" size={10} stroke={3} /></span>
+              </li>
+            ))}
+            <li class="pa mt-1.5 rounded-[12px] bg-[color-mix(in_oklab,var(--c-amber)_9%,var(--bg))] p-3 ring-1 ring-[color-mix(in_oklab,var(--c-amber)_30%,transparent)]" style="--d:2600ms">
+              <div class="flex items-center gap-2 font-medium text-fg"><Icon name="shield" size={14} class="text-[var(--c-amber)]" />Cancel order #4821 and refund $48.00</div>
+              <div class="mt-1 pl-[22px] text-[11.5px] text-muted">This changes the order, so Ollie asks first.</div>
+              <div class="mt-2.5 flex gap-2 pl-[22px]">
+                <span class="approve flex h-7 items-center gap-1.5 rounded-[7px] bg-fg px-2.5 text-[11.5px] font-medium text-bg"><Icon name="check" size={12} />Approve</span>
+                <span class="flex h-7 items-center rounded-[7px] px-2.5 text-[11.5px] text-muted ring-1 ring-line">Decline</span>
+              </div>
+            </li>
+            <li class="pa flex items-center gap-3 rounded-[9px] px-2.5 py-2" style="--d:4200ms">
+              <span class="flex size-6 items-center justify-center rounded-[7px] bg-[color-mix(in_oklab,var(--c-green)_14%,transparent)] text-[var(--c-green)]"><Icon name="checkCircle" size={13} /></span>
+              <span class="text-fg">Cancelled and refunded. Freya has been told.</span>
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- 4. Handoff -->
+      <div id="ollie-panel-3" role="tabpanel" aria-labelledby="ollie-tab-3" class="ollie-panel absolute inset-0">
+        <div class="float-card pa left-[220px] top-[110px] w-[540px] !rounded-[18px] text-left">
+          <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+            <span class="text-[13.5px] font-semibold text-fg">Delivery before Friday?</span>
+            <span class="pill t-red ml-auto"><Icon name="hand" size={10} />Wants a person</span>
+          </div>
+          <div class="px-5 py-4">
+            <div class="pa flex items-center gap-2 text-[12px] text-muted" style="--d:300ms"><Ollie size={18} />Ollie handed this to the team · 35m ago</div>
+            <div class="pa mt-3 rounded-[12px] bg-surface-2 p-4 ring-1 ring-line" style="--d:900ms">
+              <div class="font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">Summary</div>
+              <ul class="mt-2 space-y-1.5 text-[12.5px] leading-relaxed text-fg">
+                <li class="pa flex gap-2" style="--d:1300ms"><span class="mt-[7px] size-1 shrink-0 rounded-full bg-fg"></span>Freya needs order #4822 for a workshop on Friday.</li>
+                <li class="pa flex gap-2" style="--d:1700ms"><span class="mt-[7px] size-1 shrink-0 rounded-full bg-fg"></span>Shop shows it leaves the warehouse Thursday.</li>
+                <li class="pa flex gap-2" style="--d:2100ms"><span class="mt-[7px] size-1 shrink-0 rounded-full bg-fg"></span>Ollie can’t promise a delivery date, so it asked for a person.</li>
+              </ul>
+            </div>
+            <div class="pa mt-3 flex flex-wrap items-center gap-2" style="--d:2700ms">
+              <span class="pill pill-dot t-amber">Shipping</span><span class="pill t-grey">Positive</span><span class="pill t-grey">English</span>
+              <span class="ml-auto flex items-center gap-2 text-[11.5px] text-muted">Suggested<span class="flex items-center gap-1.5 rounded-full bg-bg py-0.5 pl-0.5 pr-2 text-fg ring-1 ring-line"><span class="flex size-5 items-center justify-center rounded-full bg-[#e9d5c4] text-[8px] font-semibold text-[#6b4a2f]">MC</span>Maya</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Stage>
+  </div>
+</div>
+
+<style is:global>
+  .ollie-panel { opacity: 0; visibility: hidden; transition: opacity 400ms ease, visibility 0s 400ms; }
+  .ollie-panel.is-active { opacity: 1; visibility: visible; transition: opacity 400ms ease 120ms; }
+  .ollie-panel.is-active .pa { animation: pa-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: var(--d, 0ms); }
+  .ollie-panel.is-active .wd { animation: wd-in 220ms ease both; animation-delay: calc(var(--d0, 0ms) + var(--i) * 55ms); }
+  .ollie-panel.is-active .approve { animation: approve 600ms ease 3700ms both; }
+  @keyframes pa-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+  @keyframes wd-in { from { opacity: 0; } }
+  @keyframes approve { 40% { transform: scale(0.94); } 100% { transform: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--c-green) 40%, transparent); } }
+  .ollie-tab[aria-selected='true'] .tab-progress { animation: tab-progress var(--tab-ms, 7000ms) linear forwards; animation-play-state: var(--tab-play, paused); }
+  @keyframes tab-progress { to { transform: scaleX(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    .ollie-panel.is-active .pa, .ollie-panel.is-active .wd, .ollie-panel.is-active .approve { animation: none; }
+    .ollie-tab .tab-progress { display: none; }
+  }
+</style>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-ollie-show]');
+  if (root) {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[data-tab]')];
+    const panels = [...root.querySelectorAll<HTMLElement>('.ollie-panel')];
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const MS = 7000;
+    let current = 0;
+    let auto = !reduced;
+    let visible = false;
+    let timer = 0;
+    let started = 0;
+    let left = MS;
+
+    const show = (i: number) => {
+      current = i;
+      tabs.forEach((t, k) => t.setAttribute('aria-selected', String(k === i)));
+      panels.forEach((p, k) => p.classList.toggle('is-active', k === i));
+      left = MS;
+      schedule();
+    };
+    const schedule = () => {
+      clearTimeout(timer);
+      root.style.setProperty('--tab-play', auto && visible ? 'running' : 'paused');
+      if (!auto || !visible) return;
+      started = performance.now();
+      timer = window.setTimeout(() => show((current + 1) % tabs.length), left);
+    };
+    tabs.forEach((t, i) =>
+      t.addEventListener('click', () => {
+        auto = false;
+        show(i);
+      }),
+    );
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      auto = false;
+      const next = (current + (e.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length;
+      show(next);
+      tabs[next].focus();
+    });
+    root.style.setProperty('--tab-ms', `${MS}ms`);
+    // The first part plays when the section first comes into view, not on load.
+    let seen = reduced;
+    if (!reduced) panels[0].classList.remove('is-active');
+    new IntersectionObserver(([e]) => {
+      if (visible && !e.isIntersecting) left = Math.max(400, left - (performance.now() - started));
+      visible = e.isIntersecting;
+      if (visible && !seen) {
+        seen = true;
+        show(current);
+        return;
+      }
+      schedule();
+    }, { threshold: 0.35 }).observe(root);
+  }
+</script>

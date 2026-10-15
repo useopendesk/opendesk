@@ -23,6 +23,8 @@ import (
 	sestypes "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
+
+	"github.com/useopendesk/opendesk/internal/email/mailcause"
 )
 
 // sendError is a delivery failure with a message that is safe to store and show.
@@ -30,6 +32,10 @@ import (
 type sendError struct {
 	msg       string
 	permanent bool
+	// reason (mailcause.Reason*) and detail, the server's own words, explain a
+	// failed connection check; detail is scrubbed before anyone sees it.
+	reason string
+	detail string
 }
 
 func (e *sendError) Error() string { return e.msg }
@@ -78,7 +84,7 @@ func (s *service) sendSMTP(ctx context.Context, ep smtpEndpoint, env *envelope) 
 
 func (s *service) dialSMTP(ctx context.Context, ep smtpEndpoint) (*smtp.Client, func(), error) {
 	if ep.mode == TLSNone && !ep.allowNoTLS {
-		return nil, nil, permanent("The SMTP connection must use TLS.")
+		return nil, nil, &sendError{msg: "The SMTP connection must use TLS.", permanent: true, reason: mailcause.ReasonCleartext}
 	}
 	var raw net.Conn
 	var err error
@@ -91,10 +97,7 @@ func (s *service) dialSMTP(ctx context.Context, ep smtpEndpoint) (*smtp.Client, 
 	if err != nil {
 		var ie *imapError
 		if errors.As(dialError("SMTP", err), &ie) {
-			if errors.Is(err, errBlockedAddress) {
-				return nil, nil, permanent(ie.msg)
-			}
-			return nil, nil, transient(ie.msg)
+			return nil, nil, &sendError{msg: ie.msg, permanent: errors.Is(err, errBlockedAddress), reason: ie.reason, detail: ie.detail}
 		}
 		return nil, nil, transient("Could not connect to the SMTP server.")
 	}
@@ -109,6 +112,10 @@ func (s *service) dialSMTP(ctx context.Context, ep smtpEndpoint) (*smtp.Client, 
 		if err != nil {
 			_ = conn.Close()
 			stop()
+			if se := smtpFailure("starting TLS", err).(*sendError); se.reason == mailcause.ReasonProtocol {
+				se.reason = mailcause.ReasonTLS
+				return nil, nil, se
+			}
 			return nil, nil, smtpFailure("starting TLS", err)
 		}
 	default:
@@ -116,7 +123,7 @@ func (s *service) dialSMTP(ctx context.Context, ep smtpEndpoint) (*smtp.Client, 
 		if err := tc.HandshakeContext(ctx); err != nil {
 			_ = conn.Close()
 			stop()
-			return nil, nil, transient("Could not establish TLS with the SMTP server: " + tlsReason(err))
+			return nil, nil, &sendError{msg: "Could not establish TLS with the SMTP server: " + tlsReason(err), reason: mailcause.ReasonTLS, detail: tlsReason(err)}
 		}
 		c = smtp.NewClient(tc)
 	}
@@ -139,7 +146,8 @@ func (s *service) smtpAuth(c *smtp.Client, ep smtpEndpoint) error {
 	}
 	if ok, _ := c.Extension("AUTH"); !ok {
 		if ep.authRequired {
-			return permanent("The SMTP server does not offer login on this connection.")
+			return &sendError{msg: "The SMTP server does not offer login on this connection.", permanent: true,
+				reason: mailcause.ReasonAuthUnavailable, detail: "server doesn't support AUTH"}
 		}
 		return nil
 	}
@@ -150,12 +158,18 @@ func (s *service) smtpAuth(c *smtp.Client, ep smtpEndpoint) error {
 	case c.SupportsAuth(sasl.Login):
 		mech = sasl.NewLoginClient(ep.user, ep.pass)
 	default:
-		return permanent("The SMTP server offers no supported login method (PLAIN or LOGIN).")
+		return &sendError{msg: "The SMTP server offers no supported login method (PLAIN or LOGIN).", permanent: true,
+			reason: mailcause.ReasonAuthUnavailable, detail: "authentication mechanism not supported"}
 	}
 	if err := c.Auth(mech); err != nil {
 		var se *smtp.SMTPError
 		if errors.As(err, &se) && se.Code >= 500 {
-			return permanent("The SMTP server refused the login: " + truncate(cleanLine(se.Message, 200), 200))
+			reason := mailcause.ReasonAuthRefused
+			if se.Code == 504 || se.Code == 502 || se.Code == 503 {
+				reason = mailcause.ReasonProtocol // the mechanism, not the password
+			}
+			return &sendError{msg: "The SMTP server refused the login: " + truncate(cleanLine(se.Message, 200), 200), permanent: true,
+				reason: reason, detail: smtpDetail(se)}
 		}
 		return smtpFailure("login", err)
 	}
@@ -168,18 +182,28 @@ func smtpFailure(stage string, err error) error {
 	if errors.As(err, &se) {
 		msg := fmt.Sprintf("The SMTP server refused the message during %s: %d %s", stage, se.Code, cleanLine(se.Message, 200))
 		if se.Code >= 500 {
-			return permanent(msg)
+			return &sendError{msg: msg, permanent: true, reason: mailcause.ReasonProtocol, detail: smtpDetail(se)}
 		}
-		return transient(msg)
+		return &sendError{msg: msg, reason: mailcause.ReasonTemporary, detail: smtpDetail(se)}
 	}
 	if isTimeout(err) {
-		return transient("The SMTP server stopped answering during " + stage + ".")
+		return &sendError{msg: "The SMTP server stopped answering during " + stage + ".", reason: mailcause.ReasonTimeout}
 	}
 	var cv *tls.CertificateVerificationError
 	if errors.As(err, &cv) {
-		return permanent("The SMTP server's certificate is not valid for its host name.")
+		return &sendError{msg: "The SMTP server's certificate is not valid for its host name.", permanent: true,
+			reason: mailcause.ReasonTLS, detail: "the certificate is not valid for this host"}
 	}
-	return transient("The SMTP connection dropped during " + stage + ".")
+	return &sendError{msg: "The SMTP connection dropped during " + stage + ".", reason: mailcause.ReasonProtocol}
+}
+
+// smtpDetail is a server reply as the server said it: "535 5.7.8 text".
+func smtpDetail(se *smtp.SMTPError) string {
+	out := strconv.Itoa(se.Code)
+	if e := se.EnhancedCode; e != smtp.NoEnhancedCode && e != (smtp.EnhancedCode{}) {
+		out += fmt.Sprintf(" %d.%d.%d", e[0], e[1], e[2])
+	}
+	return truncate(out+" "+cleanLine(se.Message, 400), 400)
 }
 
 // apiCall runs one provider HTTPS request, refreshing the token once on 401.

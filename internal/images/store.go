@@ -12,6 +12,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/storage"
 )
 
@@ -21,13 +22,24 @@ const (
 	OwnerContact   = "contact"
 	OwnerCompany   = "company"
 	OwnerWorkspace = "workspace"
+	OwnerBrand     = "brand"
+	OwnerWidget    = "widget"
+	OwnerBot       = "bot"
 
 	SlotAvatar = "avatar"
 	SlotLogo   = "logo"
 )
 
 // WorkspaceSlots are the workspace images besides the logo (workspaces.brand_images).
-var WorkspaceSlots = []string{"help_center_logo", "help_center_favicon", "widget_avatar", "widget_launcher", "widget_bot"}
+// help_center_* belong to the default brand and widget_avatar/widget_launcher to the
+// default brand's first widget: writes to them go there (see ownerOf).
+var WorkspaceSlots = []string{"help_center_logo", "help_center_favicon", "widget_avatar", "widget_launcher"}
+
+// BrandSlots are a brand's images (brands.images).
+var BrandSlots = []string{"logo", "help_center_logo", "help_center_favicon"}
+
+// WidgetSlots are a chat widget's images (widgets.images).
+var WidgetSlots = []string{"avatar", "launcher"}
 
 // Owner identifies what a picture belongs to.
 type Owner struct {
@@ -44,6 +56,9 @@ type Hooks struct {
 	Contact   func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error
 	Company   func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error
 	Workspace func(ctx context.Context, tx pgx.Tx, wid uuid.UUID) error
+	Brand     func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error
+	Widget    func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error
+	Bot       func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error
 }
 
 var hooks atomic.Pointer[Hooks]
@@ -65,6 +80,15 @@ func SetHooks(h Hooks) {
 	}
 	if h.Workspace != nil {
 		cur.Workspace = h.Workspace
+	}
+	if h.Brand != nil {
+		cur.Brand = h.Brand
+	}
+	if h.Widget != nil {
+		cur.Widget = h.Widget
+	}
+	if h.Bot != nil {
+		cur.Bot = h.Bot
 	}
 	hooks.Store(&cur)
 }
@@ -92,8 +116,58 @@ func Changed(ctx context.Context, tx pgx.Tx, o Owner) error {
 		if h.Workspace != nil {
 			return h.Workspace(ctx, tx, o.ID)
 		}
+	case OwnerBrand:
+		if h.Brand != nil && o.WorkspaceID != nil {
+			return h.Brand(ctx, tx, *o.WorkspaceID, o.ID)
+		}
+	case OwnerWidget:
+		if h.Widget != nil && o.WorkspaceID != nil {
+			return h.Widget(ctx, tx, *o.WorkspaceID, o.ID)
+		}
+	case OwnerBot:
+		if h.Bot != nil && o.WorkspaceID != nil {
+			return h.Bot(ctx, tx, *o.WorkspaceID, o.ID)
+		}
 	}
 	return nil
+}
+
+// legacySlots maps the workspace slots that now live on the default brand or its first
+// widget to that owner's slot.
+var legacySlots = map[string]struct{ owner, slot string }{
+	"help_center_logo":    {OwnerBrand, "help_center_logo"},
+	"help_center_favicon": {OwnerBrand, "help_center_favicon"},
+	"widget_avatar":       {OwnerWidget, "avatar"},
+	"widget_launcher":     {OwnerWidget, "launcher"},
+}
+
+// ownerOf returns the owner a picture is stored on. A workspace slot kept for older
+// clients resolves to the default brand or the default brand's first widget; moved
+// reports that, so the workspace's change hook runs too.
+func ownerOf(ctx context.Context, q db.Querier, o Owner) (Owner, bool, error) {
+	m, ok := legacySlots[o.Slot]
+	if o.Type != OwnerWorkspace || !ok {
+		return o, false, nil
+	}
+	var id uuid.UUID
+	var err error
+	if m.owner == OwnerBrand {
+		err = q.QueryRow(ctx, `SELECT id FROM brands WHERE workspace_id = $1 AND is_default`, o.ID).Scan(&id)
+	} else {
+		err = q.QueryRow(ctx, `SELECT g.id FROM widgets g JOIN brands b ON b.id = g.brand_id AND b.is_default
+			WHERE g.workspace_id = $1 ORDER BY g.position, g.created_at, g.id LIMIT 1`, o.ID).Scan(&id)
+	}
+	if db.IsNotFound(err) {
+		if m.owner == OwnerBrand {
+			return o, false, httpx.NotFound("Brand")
+		}
+		return o, false, httpx.NotFound("Widget")
+	}
+	if err != nil {
+		return o, false, err
+	}
+	wid := o.ID
+	return Owner{Type: m.owner, ID: id, WorkspaceID: &wid, Slot: m.slot}, true, nil
 }
 
 func keyPrefix(o Owner, id uuid.UUID) string {

@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { errorMessage, isApiError } from "@/lib/api/client";
-import { signOut } from "@/lib/session";
+import { signOut, useSession } from "@/lib/session";
 
 /** Owner-level operations need a session that passed 2FA and is less than 12 hours old. */
 export function isReauthError(e: unknown) {
@@ -23,8 +23,10 @@ export function ReauthNotice({ error }: { error: unknown }) {
         variant="secondary"
         onClick={async () => {
           const next = location.pathname + location.search;
+          const email = useSession.getState().user?.email;
+          // Only this account signs out; others in this browser stay signed in.
           await signOut();
-          void navigate({ to: "/login", search: { next } });
+          void navigate({ to: "/login", search: { next, email, add: "1" } });
         }}
       >
         Sign in again

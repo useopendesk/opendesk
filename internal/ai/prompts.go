@@ -72,7 +72,7 @@ const triageSystem = `You triage new customer support tickets in opendesk, a hel
   - "sev3": a non-critical feature is impaired, or one user is affected, and a workaround exists.
   - "sev4": a question, a request or a cosmetic issue; nothing stops working.
   - "none": not an issue at all (thanks, spam, an empty message).
-- team: the name copied exactly from <teams> of the team that should own this ticket, or "none" when no team clearly fits.
+- team: the name attribute, copied exactly, of the <team> in <teams> that should own this ticket, judging by each team's name and description (what it handles), or "none" when no team clearly fits.
 - sentiment: "positive", "neutral", "negative" or "frustrated" (angry, repeated contact, threatening to leave).
 - language: the BCP 47 tag of the language the customer wrote in, like "en", "de", "es", "pt-BR", "zh-Hans". Use "und" if there is no customer text.
 - category: exactly one of question, problem, bug, billing, account, feature_request, feedback, sales, shipping, refund, cancellation, spam, other.
@@ -123,6 +123,8 @@ var toneText = map[string]string{
 	"friendly":     "Warm and approachable, like a helpful colleague: light and positive, never gushing.",
 	"professional": "Polished and courteous: complete sentences, no slang, no emoji, no exclamation marks.",
 	"concise":      "Brief and direct: lead with the answer, keep pleasantries to a one-line greeting.",
+	"playful":      "Light and upbeat, with a little humour where it fits: never at the customer's expense, never when they are frustrated.",
+	"warm":         "Gentle and reassuring: acknowledge how the customer feels, then help, without over-apologising.",
 }
 
 // guidance renders the workspace's tone, language and instructions. Admin-written text

@@ -129,11 +129,11 @@ func TestOwnKeyOpenRouter(t *testing.T) {
 		t.Fatalf("audit %d", n)
 	}
 
-	// No credits left: calls on the workspace key still run and charge nothing.
+	// No AI balance left: calls on the workspace key still run and charge nothing.
 	if err := plan.Ensure(e.Ctx, e.D.DB.Pool, e.WS.ID); err != nil {
 		t.Fatal(err)
 	}
-	e.Exec(`UPDATE ai_credits SET included_used_milli = 1000000, purchased_milli = 0 WHERE workspace_id = $1`, e.WS.ID)
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = 10000000, purchased_micro_usd = 0 WHERE workspace_id = $1`, e.WS.ID)
 	tk := e.ticket("Charged twice", "I was charged twice for order 1234")
 	e.Do("POST", fmt.Sprintf("/v1/tickets/%s/ai/summary", tk.ID), e.agent(), map[string]any{}).Want(t, 200)
 	if e.F.calls() != 0 {
@@ -146,17 +146,17 @@ func TestOwnKeyOpenRouter(t *testing.T) {
 	if m := own.last()["model"]; m != "anthropic/claude-sonnet-5.5" {
 		t.Fatalf("model %v", m)
 	}
-	var milli int64
+	var usd int64
 	var source string
-	e.Scalar(`SELECT millicredits FROM ai_usage WHERE workspace_id = $1 AND feature = 'summarize'`, &milli, e.WS.ID)
+	e.Scalar(`SELECT micro_usd FROM ai_usage WHERE workspace_id = $1 AND feature = 'summarize'`, &usd, e.WS.ID)
 	e.Scalar(`SELECT source FROM ai_usage WHERE workspace_id = $1 AND feature = 'summarize'`, &source, e.WS.ID)
-	if milli != 0 || source != "own_key" {
-		t.Fatalf("usage %d %s", milli, source)
+	if usd != 0 || source != "own_key" {
+		t.Fatalf("usage %d %s", usd, source)
 	}
 	var used int64
-	e.Scalar(`SELECT included_used_milli FROM ai_credits WHERE workspace_id = $1`, &used, e.WS.ID)
-	if used != 1000000 {
-		t.Fatalf("credits changed: %d", used)
+	e.Scalar(`SELECT included_used_micro_usd FROM ai_balances WHERE workspace_id = $1`, &used, e.WS.ID)
+	if used != 10000000 {
+		t.Fatalf("balance changed: %d", used)
 	}
 
 	// Streaming draft and the assistant-style tool turn go to the key too.
@@ -170,14 +170,14 @@ func TestOwnKeyOpenRouter(t *testing.T) {
 	if err := e.S.Reserve(e.Ctx, e.WS.ID, "assistant"); err != nil {
 		t.Fatalf("reserve on own key: %v", err)
 	}
-	if e.F.calls() != 0 || e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND (source <> 'own_key' OR millicredits <> 0)`, e.WS.ID) != 0 {
+	if e.F.calls() != 0 || e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND (source <> 'own_key' OR micro_usd <> 0)`, e.WS.ID) != 0 {
 		t.Fatal("charged on own key")
 	}
 
 	// Models are the provider's; choices must be valid for it.
 	var models ModelList
 	e.Do("GET", "/v1/ai/models", e.viewer(), nil).Want(t, 200).JSON(t, &models)
-	if models.Default != "anthropic/claude-sonnet-5.5" || len(models.Data) != 4 || models.Data[0].CreditsPerMTok != nil {
+	if models.Default != "anthropic/claude-sonnet-5.5" || len(models.Data) != 4 || models.Data[0].USDPerMTok != nil {
 		t.Fatalf("%+v", models)
 	}
 	e.Do("PATCH", "/v1/ai/settings", e.admin(), map[string]any{"model": "claude-sonnet-5-5"}).Want(t, 422)
@@ -191,7 +191,7 @@ func TestOwnKeyOpenRouter(t *testing.T) {
 		t.Fatalf("%v", cfg)
 	}
 
-	// Remove: back to credits, audited.
+	// Remove: back to the AI balance, audited.
 	e.Do("DELETE", "/v1/ai/provider", e.agent(), nil).Want(t, 403)
 	e.Do("DELETE", "/v1/ai/provider", e.admin(), nil).Want(t, 204)
 	if n := e.count(`SELECT count(*) FROM audit_logs WHERE workspace_id = $1 AND action = 'ai.provider_key_removed'`, e.WS.ID); n != 1 {
@@ -199,14 +199,14 @@ func TestOwnKeyOpenRouter(t *testing.T) {
 	}
 	r := e.Do("POST", fmt.Sprintf("/v1/tickets/%s/ai/summary", tk.ID), e.agent(), map[string]any{})
 	if r.Status != 402 {
-		t.Fatalf("after removal on no credits: %d %s", r.Status, r.Body)
+		t.Fatalf("after removal with no balance: %d %s", r.Status, r.Body)
 	}
-	e.Exec(`UPDATE ai_credits SET included_used_milli = 0 WHERE workspace_id = $1`, e.WS.ID)
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = 0 WHERE workspace_id = $1`, e.WS.ID)
 	e.Do("POST", fmt.Sprintf("/v1/tickets/%s/ai/summary", tk.ID), e.agent(), map[string]any{}).Want(t, 200)
 	if e.F.calls() != 1 {
 		t.Fatalf("instance calls %d", e.F.calls())
 	}
-	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND source = 'credits' AND millicredits > 0`, e.WS.ID); n != 1 {
+	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND source = 'instance' AND micro_usd > 0`, e.WS.ID); n != 1 {
 		t.Fatalf("charged usage %d", n)
 	}
 }
@@ -259,7 +259,7 @@ func TestOwnKeyCompatibleEndpoint(t *testing.T) {
 	if e.F.calls() != 0 || own.last()["model"] != "local-small" {
 		t.Fatal("triage not on the key")
 	}
-	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND source = 'own_key' AND millicredits = 0`, e.WS.ID); n != 3 {
+	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND source = 'own_key' AND micro_usd = 0`, e.WS.ID); n != 3 {
 		t.Fatalf("usage %d", n)
 	}
 }
@@ -333,7 +333,7 @@ func TestOwnKeyRejected(t *testing.T) {
 	e.useOpenRouterKey(own)
 
 	// The key is revoked at the provider: the feature fails like an outage, with no
-	// fallback to credits, and owners and admins are told once.
+	// fallback to the AI balance, and owners and admins are told once.
 	tk := e.ticket("Charged twice", "Help")
 	own.fail(401)
 	r = e.Do("POST", fmt.Sprintf("/v1/tickets/%s/ai/summary", tk.ID), e.agent(), map[string]any{})
@@ -393,11 +393,11 @@ func TestOwnKeyWidgetPlayground(t *testing.T) {
 	if err := plan.Ensure(e.Ctx, e.D.DB.Pool, e.WS.ID); err != nil {
 		t.Fatal(err)
 	}
-	e.Exec(`UPDATE ai_credits SET included_used_milli = 1000000 WHERE workspace_id = $1`, e.WS.ID)
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = 10000000 WHERE workspace_id = $1`, e.WS.ID)
 	body := map[string]any{"messages": []any{map[string]any{"role": "visitor", "text": "How do I reset my password?"}}}
 	var out PlaygroundOutput
 	e.Do("POST", "/v1/ai/agent/playground", e.admin(), body).Want(t, 200).JSON(t, &out)
-	if out.Credits != 0 || e.F.calls() != 0 || own.calls() == 0 {
+	if out.USD != 0 || e.F.calls() != 0 || own.calls() == 0 {
 		t.Fatalf("%+v instance=%d own=%d", out, e.F.calls(), own.calls())
 	}
 	if auth, _ := own.lastAuth(); auth != "Bearer "+orKey {

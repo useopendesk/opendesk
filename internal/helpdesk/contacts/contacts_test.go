@@ -188,8 +188,8 @@ func TestContactTickets(t *testing.T) {
 	var c contact
 	e.Do("POST", "/v1/contacts", a, map[string]any{"email": "t@example.com"}).Want(t, 201).JSON(t, &c)
 	for i := 1; i <= 3; i++ {
-		e.Exec(`INSERT INTO tickets (id, workspace_id, number, subject, channel, contact_id, last_message_at)
-			VALUES ($1, $2, $3, $4, 'api', $5, now() - make_interval(hours => $6))`, ids.New(), ws.ID, i, hdtest.Fmt("T%d", i), c.ID, i)
+		e.Exec(`INSERT INTO tickets (id, workspace_id, number, subject, channel, contact_id, last_message_at, brand_id)
+			VALUES ($1, $2, $3, $4, 'api', $5, now() - make_interval(hours => $6), $7)`, ids.New(), ws.ID, i, hdtest.Fmt("T%d", i), c.ID, i, ws.BrandID)
 	}
 	e.Exec(`UPDATE tickets SET deleted_at = now() WHERE workspace_id = $1 AND number = 3`, ws.ID)
 	var p page[struct {

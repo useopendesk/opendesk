@@ -11,8 +11,11 @@ export type TicketListQuery = ListQuery & {
   /** "none": tickets without a severity. */
   severity?: (T.Severity | "none")[];
   assignee?: string;
+  /** A team id, "mine" or "none". */
   team_id?: string;
   mailbox_id?: string;
+  brand_id?: string;
+  widget_id?: string;
   tag?: string;
   channel?: T.Channel;
   contact_id?: string;
@@ -71,6 +74,8 @@ export type SendMessageBody = {
   bcc?: string[];
   attachment_ids?: string[];
   status?: T.TicketStatus;
+  /** Send from another address; it becomes the ticket's reply address. */
+  mailbox_id?: string;
 };
 
 export type CreateMailboxBody = {
@@ -83,6 +88,30 @@ export type CreateMailboxBody = {
   password?: string;
   smtp_password?: string;
   team_id?: string | null;
+  brand_id?: string;
+  aliases?: string[];
+  from_name_format?: string;
+  /** Sign in to the servers first; a refusal is 422 mailbox_connection_failed and nothing is saved. */
+  verify?: boolean;
+};
+
+export type TeamBody = Partial<
+  Pick<T.Team, "name" | "description" | "color" | "private" | "members" | "member_ids" | "signature_html" | "business_hours" | "assign_mode">
+>;
+export type BrandBody = Partial<Pick<T.Brand, "name" | "slug" | "color" | "locale">> & {
+  help_center?: Partial<Pick<T.Brand["help_center"], "enabled" | "title">>;
+};
+export type WidgetBody = { brand_id?: string; name?: string; team_id?: string | null; bot_id?: string | null; settings?: Partial<T.WidgetSettings> };
+export type RoutingRuleBody = Partial<Pick<T.RoutingRule, "name" | "enabled" | "match" | "conditions" | "team_id">>;
+export type RoutingTestBody = {
+  channel: "email" | "chat";
+  to?: string;
+  from?: string;
+  subject?: string;
+  body?: string;
+  widget_id?: string;
+  topic?: string;
+  page_url?: string;
 };
 
 const pub = { auth: false, workspace: false } as const;
@@ -112,13 +141,18 @@ export const api = {
     login: (b: { email: string; password: string; turnstile_token?: string }) =>
       http.post<T.LoginResponse>("/v1/auth/login", b, pub),
     mfa: (b: { mfa_token: string; code: string }) => http.post<T.TokenResponse>("/v1/auth/mfa", b, pub),
-    logout: () => http.post<void>("/v1/auth/logout", undefined, { workspace: false }),
+    /** Sign out of one account in this browser (the active one by default), or of every account. */
+    logout: (b: { user_id?: string; all?: boolean } = {}) => http.post<void>("/v1/auth/logout", b, { workspace: false }),
+    /** The accounts this browser is signed in to. Rotates nothing. */
+    accounts: () => http.post<{ accounts: T.Account[] }>("/v1/auth/accounts", undefined, pub),
     forgot: (email: string, turnstile_token?: string) =>
       http.post<void>("/v1/auth/password/forgot", { email, turnstile_token }, pub),
     reset: (token: string, password: string) => http.post<void>("/v1/auth/password/reset", { token, password }, pub),
     verifyEmail: (token: string) => http.post<void>("/v1/auth/email/verify", { token }, { workspace: false }),
     resendVerification: () => http.post<void>("/v1/auth/email/resend", undefined, { workspace: false }),
-    oauthExchange: (code: string) => http.post<T.ExchangeResponse>("/v1/auth/oauth/exchange", { code }, pub),
+    /** `code_verifier`: the PKCE verifier of a native (desktop app) flow. */
+    oauthExchange: (code: string, code_verifier?: string) =>
+      http.post<T.ExchangeResponse>("/v1/auth/oauth/exchange", code_verifier ? { code, code_verifier } : { code }, pub),
     oauthLink: (link_token: string, password: string) =>
       http.post<T.LoginResponse>("/v1/auth/oauth/link", { link_token, password }, pub),
     totpSetup: () => http.post<{ secret: string; otpauth_url: string }>("/v1/auth/totp/setup", undefined, { workspace: false }),
@@ -133,8 +167,8 @@ export const api = {
     /** PNG, JPEG, GIF or WebP, at most 5 MB. */
     uploadAvatar: (file: File | Blob) => http.put<T.User>("/v1/me/avatar", imageForm(file), { workspace: false }),
     removeAvatar: () => http.del<T.User>("/v1/me/avatar", undefined, { workspace: false }),
-    /** Marks you as seen, for auto-away. */
-    heartbeat: () => http.post<void>("/v1/me/heartbeat", undefined, { workspace: false }),
+    /** Marks you as seen, for auto-away, in the active workspace (notification emails wait while you are active there). */
+    heartbeat: () => http.post<void>("/v1/me/heartbeat"),
     password: (current_password: string, new_password: string) =>
       http.post<void>("/v1/me/password", { current_password, new_password }, { workspace: false }),
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
@@ -187,10 +221,53 @@ export const api = {
     lookup: (token: string) =>
       http.get<{ workspace_name: string; email: string; role: T.Role }>("/v1/invitations/lookup", { ...pub, query: { token } }),
   },
-  teams: crud<T.Team, { name: string; member_ids: string[] }>("/v1/teams"),
+  teams: {
+    ...crud<T.Team, TeamBody>("/v1/teams"),
+    /** Moves its open tickets, addresses, widgets and routing rules to another team. */
+    removeTo: (id: string, moveTo?: string) => http.del(`/v1/teams/${id}`, undefined, { query: { move_to: moveTo } }),
+    /** An admin joins a private team as an observer (audit-logged, the leads are told). */
+    join: (id: string) => http.post<T.Team>(`/v1/teams/${id}/join`),
+    leave: (id: string) => http.post<void>(`/v1/teams/${id}/leave`),
+  },
+  brands: {
+    ...crud<T.Brand, BrandBody>("/v1/brands"),
+    makeDefault: (id: string) => http.post<T.Brand>(`/v1/brands/${id}/default`),
+    uploadImage: (id: string, slot: "logo" | "help_center_logo" | "help_center_favicon", file: File | Blob) =>
+      http.put<T.Brand>(`/v1/brands/${id}/images/${slot}`, imageForm(file)),
+    removeImage: (id: string, slot: "logo" | "help_center_logo" | "help_center_favicon") =>
+      http.del<T.Brand>(`/v1/brands/${id}/images/${slot}`),
+  },
+  widgets: {
+    ...crud<T.Widget, WidgetBody>("/v1/widgets"),
+    /** The first secret comes back once, with the new widget, when the caller passes the owner-level gate (secret_available). */
+    create: (b: WidgetBody & { brand_id: string; name: string }) => http.create<T.Widget & { secret?: string; secret_available: boolean }>("/v1/widgets", b),
+    rotateSecret: (id: string) => http.post<{ secret: string }>(`/v1/widgets/${id}/secret/rotate`),
+    uploadImage: (id: string, slot: "avatar" | "launcher", file: File | Blob) =>
+      http.put<T.Widget>(`/v1/widgets/${id}/images/${slot}`, imageForm(file)),
+    removeImage: (id: string, slot: "avatar" | "launcher") => http.del<T.Widget>(`/v1/widgets/${id}/images/${slot}`),
+  },
+  /** The AI agent's customer-facing bots (contracts/bots.md). */
+  bots: {
+    list: () => http.get<T.Page<T.Bot>>("/v1/bots"),
+    get: (id: string) => http.get<T.Bot>(`/v1/bots/${id}`),
+    create: (b: T.BotBody) => http.create<T.Bot>("/v1/bots", b),
+    update: (id: string, b: Partial<T.BotBody>) => http.patch<T.Bot>(`/v1/bots/${id}`, b),
+    remove: (id: string) => http.del(`/v1/bots/${id}`),
+    duplicate: (id: string) => http.post<T.Bot>(`/v1/bots/${id}/duplicate`),
+    makeDefault: (id: string) => http.post<T.Bot>(`/v1/bots/${id}/default`),
+    reorder: (ids: string[]) => http.post<T.Page<T.Bot>>("/v1/bots/reorder", { ids }),
+    uploadImage: (id: string, file: File | Blob) => http.put<T.Bot>(`/v1/bots/${id}/image`, imageForm(file)),
+    removeImage: (id: string) => http.del<T.Bot>(`/v1/bots/${id}/image`),
+  },
+  routingRules: {
+    ...crud<T.RoutingRule, RoutingRuleBody>("/v1/routing-rules"),
+    reorder: (ids: string[]) => http.post<void>("/v1/routing-rules/reorder", { ids }),
+    /** Where a message like this would go, without creating anything. */
+    test: (b: RoutingTestBody) => http.post<T.RoutingTest>("/v1/routing/test", b),
+  },
   apiKeys: {
-    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null }>("/v1/api-keys"),
-    create: (b: { name: string; scopes: string[]; expires_at?: string | null }) =>
+    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }>("/v1/api-keys"),
+    create: (b: { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }) =>
       http.create<T.ApiKey & { secret: string }>("/v1/api-keys", b),
   },
   /** Settings > AI clients: opendesk's MCP server and the clients connected with OAuth. */
@@ -207,8 +284,8 @@ export const api = {
     deny: (id: string) => http.post<T.OAuthDecision>(`/v1/oauth/requests/${id}/deny`, undefined, { workspace: false }),
   },
   webhooks: {
-    ...crud<T.Webhook, { url: string; description: string; events: string[]; enabled: boolean }>("/v1/webhooks"),
-    create: (b: { url: string; description: string; events: string[]; enabled: boolean }) =>
+    ...crud<T.Webhook, { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }>("/v1/webhooks"),
+    create: (b: { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }) =>
       http.create<T.Webhook & { secret: string }>("/v1/webhooks", b),
     deliveries: (id: string, q?: ListQuery) =>
       http.get<T.Page<T.WebhookDelivery>>(`/v1/webhooks/${id}/deliveries`, { query: q }),
@@ -232,6 +309,16 @@ export const api = {
   notifications: {
     list: (q?: ListQuery & { unread?: boolean }) => http.get<T.Page<T.Notification>>("/v1/notifications", { query: q }),
     read: (b: { ids?: string[]; all?: boolean }) => http.post<void>("/v1/notifications/read", b),
+    /** The caller's preferences in the current workspace (contracts/api.md "Notification preferences and emails"). */
+    preferences: () => http.get<T.NotificationPreferences>("/v1/me/notification-preferences"),
+    updatePreferences: (b: T.NotificationPreferencesPatch) => http.patch<T.NotificationPreferences>("/v1/me/notification-preferences", b),
+    /** Restores each type's email choice from before the unsubscribe link was used here. */
+    resubscribe: () => http.post<T.NotificationPreferences>("/v1/me/notification-preferences/resubscribe"),
+    /** Sends a sample notification email to the caller now. */
+    testEmail: () => http.post<void>("/v1/me/notification-preferences/test"),
+    /** Public: the token from a notification email turns off every notification email from its workspace. */
+    unsubscribe: (token: string) =>
+      http.post<{ workspace: { id: string; name: string }; email: string }>("/v1/notifications/unsubscribe", { token }, pub),
   },
 
   tickets: {
@@ -285,21 +372,22 @@ export const api = {
     remove: (id: string) => http.del(`/v1/custom-fields/${id}`),
     reorder: (entity: T.FieldEntity, ids: string[]) => http.post<T.Page<T.CustomField>>("/v1/custom-fields/reorder", { entity, ids }),
   },
-  savedReplies: crud<T.SavedReply, { title: string; shortcut: string; body_html: string }>("/v1/saved-replies"),
-  views: crud<T.View, { name: string; filters: T.TicketFilters; shared: boolean; position?: number }>("/v1/views"),
+  savedReplies: crud<T.SavedReply, { title: string; shortcut: string; body_html: string; team_id?: string | null }>("/v1/saved-replies"),
+  views: crud<T.View, { name: string; filters: T.TicketFilters; shared: boolean; position?: number; team_id?: string | null }>("/v1/views"),
   slaPolicies: crud<T.SlaPolicy, Omit<T.SlaPolicy, "id" | "business_hours"> & { business_hours?: boolean }>("/v1/sla-policies"),
   automations: crud<T.Automation, Omit<T.Automation, "id" | "run_count">>("/v1/automations"),
   kb: {
-    collections: crud<T.KbCollection, { name: string; slug?: string; description: string; position?: number }>("/v1/kb/collections"),
+    collections: crud<T.KbCollection, { name: string; slug?: string; description: string; position?: number; brand_id?: string | null }>("/v1/kb/collections"),
     articles: {
-      ...crud<T.KbArticle, { title: string; slug?: string; collection_id: string | null; body_html: string; excerpt?: string; status: T.KbArticle["status"] }>("/v1/kb/articles"),
-      search: (q: ListQuery & { collection_id?: string; status?: T.KbArticle["status"]; q?: string }) =>
+      ...crud<T.KbArticle, { title: string; slug?: string; collection_id: string | null; body_html: string; excerpt?: string; status: T.KbArticle["status"]; brand_id?: string | null }>("/v1/kb/articles"),
+      /** `for_brand_id`: what that brand's help center shows, its own articles and those of every brand. */
+      search: (q: ListQuery & { collection_id?: string; status?: T.KbArticle["status"]; q?: string; for_brand_id?: string }) =>
         http.get<T.Page<T.KbArticle>>("/v1/kb/articles", { query: q }),
     },
   },
   search: (q: string) => http.get<T.SearchResults>("/v1/search", { query: { q } }),
   reports: {
-    overview: (r: T.ReportsRange) => http.get<T.ReportsOverview>("/v1/reports/overview", { query: r }),
+    overview: (r: T.ReportsQuery) => http.get<T.ReportsOverview>("/v1/reports/overview", { query: r }),
   },
   attachments: {
     upload: (file: File) => {
@@ -313,17 +401,23 @@ export const api = {
     update: (b: Partial<T.WidgetSettings>) => http.patch<T.WidgetSettings>("/v1/widget/settings", b),
   },
   mailboxes: {
-    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours">>>("/v1/mailboxes"),
+    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders">> & { bot_id?: string | null }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
     oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string }) =>
       http.post<{ url: string }>(`/v1/mailboxes/oauth/${provider}/start`, b),
+    connectOptions: () => http.get<T.MailboxConnectOptions>("/v1/mailboxes/connect-options"),
+    detect: (email: string) => http.get<T.MailDetection>("/v1/mailboxes/detect", { query: { email } }),
   },
   billing: {
     get: () => http.get<T.Billing>("/v1/billing"),
     checkout: (interval: "month" | "year") => http.post<{ url: string }>("/v1/billing/checkout", { interval }),
     portal: () => http.post<{ url: string }>("/v1/billing/portal"),
-    creditsCheckout: (packs: number) => http.post<{ url: string }>("/v1/billing/credits/checkout", { packs }),
+    /** Stripe Checkout for `usd` of AI usage. */
+    topUpCheckout: (usd: number) => http.post<{ url: string }>("/v1/billing/top-up/checkout", { amount_usd: usd }),
+    /** Buys `usd` of AI usage with the saved payment method, right away. */
+    topUp: (usd: number) => http.post<T.TopUpResult>("/v1/billing/top-up", { amount_usd: usd }),
+    invoices: () => http.get<{ data: T.BillingInvoice[] }>("/v1/billing/invoices"),
     autoRecharge: (patch: T.AutoRechargePatch) => http.patch<T.Billing>("/v1/billing/auto-recharge", patch),
     paymentMethod: () => http.post<{ url: string }>("/v1/billing/payment-method"),
     usage: (r: { from: string; to: string }) => http.get<T.BillingUsage>("/v1/billing/usage", { query: r }),
@@ -351,7 +445,7 @@ export const api = {
     search: (q: string) => http.get<T.SearchResults>("/v1/ai/search", { query: { q } }),
     /** The models a workspace may choose from, with the instance defaults. */
     models: () => http.get<T.AIModels>("/v1/ai/models"),
-    /** The workspace's provider: the instance's (credits) or its own key. */
+    /** The workspace's provider: the instance's (charged to the AI balance) or its own key. */
     provider: {
       get: () => http.get<T.AIProvider>("/v1/ai/provider"),
       test: (b: T.AIProviderKeyInput) => http.post<T.AIProviderTest>("/v1/ai/provider/test", b),

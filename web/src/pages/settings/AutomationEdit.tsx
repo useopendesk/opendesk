@@ -30,8 +30,10 @@ import {
   useTeamItems,
 } from "@/components/settings2/pickers";
 import { rowSpring } from "@/components/settings2/motion";
-import { actionLabel, actionNeedsValue, aiActions, aiFields, fieldLabel, offered, opLabel, opsFor, validProbability, validQuestion } from "@/components/settings2/automation";
-import { AiIcon, useCreditsText } from "@/components/ai/bits";
+import { actionLabel, actionNeedsValue, aiActions, aiFields, brandFields, fieldLabel, offered, opLabel, opsFor, teamFields, validProbability, validQuestion } from "@/components/settings2/automation";
+import { brandItems, teamItems, useBrands, useTeams } from "@/components/settings2/teams";
+import { AiIcon, useCostText } from "@/components/ai/bits";
+import { formatUsd } from "@/lib/format";
 import { useAI } from "@/lib/ai";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/endpoints";
@@ -82,7 +84,11 @@ function useFieldItems(current: string) {
   const { enabled } = useAI();
   const { t } = useTranslation("settingsInbox");
   const custom = useFieldConditionItems(current);
-  const builtIn = offered(allFields, aiFields, enabled, isFieldRef(current) ? undefined : (current as ConditionField)).map((f) => ({
+  const { teams } = useTeams();
+  const { multi } = useBrands();
+  const builtIn = offered(allFields, aiFields, enabled, isFieldRef(current) ? undefined : (current as ConditionField))
+    .filter((f) => f === current || ((teams.length > 0 || !teamFields.has(f)) && (multi || !brandFields.has(f))))
+    .map((f) => ({
     value: f as string,
     label: fieldLabel[f],
     icon: aiFields.has(f) ? <AiIcon /> : undefined,
@@ -92,7 +98,7 @@ function useFieldItems(current: string) {
 }
 function useActionItems(current: ActionType) {
   const { enabled, cost } = useAI();
-  const creditsText = useCreditsText();
+  const costText = useCostText();
   const { all } = useAutomationFields();
   const hasTicketFields = all.some((f) => f.entity === "ticket" && !f.archived);
   return offered(allActions, aiActions, enabled, current)
@@ -103,7 +109,7 @@ function useActionItems(current: ActionType) {
         value: a,
         label: actionLabel[a],
         icon: aiActions.has(a) ? <AiIcon /> : undefined,
-        hint: n !== null ? creditsText(n) : undefined,
+        hint: n !== null ? costText(n) : undefined,
       };
     });
 }
@@ -570,7 +576,7 @@ function DecideQuestion({ c, invalid, onChange }: { c: Condition; invalid: boole
       />
       <p className="mt-1 text-[11.5px] text-fg-3">
         {t("automation.ai_decide_hint")}
-        {n !== null && <span className="mono ml-1.5 whitespace-nowrap text-[11px] text-fg-4">{t("automation.per_run", { count: n })}</span>}
+        {n !== null && <span className="mono ml-1.5 whitespace-nowrap text-[11px] text-fg-4">{t("automation.per_run", { cost: formatUsd(n, { precise: true }) })}</span>}
       </p>
     </div>
   );
@@ -579,7 +585,11 @@ function DecideQuestion({ c, invalid, onChange }: { c: Condition; invalid: boole
 function ConditionValue({ c, invalid, onChange }: { c: Condition; invalid: boolean; onChange: (v: string) => void }) {
   const { t } = useTranslation("ai");
   const { t: ts } = useTranslation("settingsInbox");
+  const { t: tt } = useTranslation("settingsTeams");
   const mailboxes = useMailboxItems();
+  const { teams } = useTeams();
+  const { brands } = useBrands();
+  const { data: widgets } = useQuery({ ...q.widgets(), enabled: c.field === "widget_id" });
   switch (c.field) {
     case "status":
       return <SinglePick items={statusItems} value={c.value} onChange={onChange} placeholder={ts("edit.chooseStatus")} invalid={invalid} className="w-full" />;
@@ -625,6 +635,30 @@ function ConditionValue({ c, invalid, onChange }: { c: Condition; invalid: boole
           className="w-full"
         />
       );
+    case "team_id":
+      return (
+        <SinglePick
+          items={[{ value: "none", label: tt("scoped.noTeam") }, ...teamItems(teams)]}
+          value={c.value}
+          onChange={onChange}
+          placeholder={tt("common.chooseTeam")}
+          invalid={invalid}
+          className="w-full"
+        />
+      );
+    case "brand_id":
+      return <SinglePick items={brandItems(brands)} value={c.value} onChange={onChange} placeholder={tt("common.chooseBrand")} invalid={invalid} className="w-full" />;
+    case "widget_id":
+      return (
+        <SinglePick
+          items={[{ value: "none", label: tt("scoped.noWidget") }, ...(widgets ?? []).map((w) => ({ value: w.id, label: w.name, hint: brands.length > 1 ? brands.find((b) => b.id === w.brand_id)?.name : undefined }))]}
+          value={c.value}
+          onChange={onChange}
+          placeholder={tt("scoped.chooseWidget")}
+          invalid={invalid}
+          className="w-full"
+        />
+      );
     case "tag":
       return <TagPick value={c.value} onChange={onChange} placeholder={ts("edit.chooseTag")} invalid={invalid} onCreate={onChange} className="w-full" />;
     case "sentiment":
@@ -645,9 +679,9 @@ function ConditionValue({ c, invalid, onChange }: { c: Condition; invalid: boole
           value={c.value}
           invalid={invalid}
           aria-label={ts("edit.valueLabel", { field: fieldLabel[c.field] })}
-          placeholder={c.field === "from_email" ? "@acme.com" : c.field === "subject" ? "refund" : "invoice"}
+          placeholder={c.field === "from_email" ? "@acme.com" : c.field === "received_at" ? "legal@acme.com" : c.field === "subject" ? "refund" : "invoice"}
           onChange={(e) => onChange(e.target.value)}
-          className={c.field === "from_email" ? "mono" : undefined}
+          className={c.field === "from_email" || c.field === "received_at" ? "mono" : undefined}
         />
       );
   }
@@ -660,6 +694,8 @@ function ActionRow({ a, invalid, onChange, onRemove }: { a: Action; invalid: boo
   const actionItems = useActionItems(a.type);
   const members = useMemberItems();
   const teams = useTeamItems();
+  const mailboxes = useMailboxItems();
+  const { t: tt } = useTranslation("settingsTeams");
   const rich = a.type === "send_reply" || a.type === "add_note";
   const set = (value: string) => onChange({ ...a, value });
 
@@ -695,6 +731,14 @@ function ActionRow({ a, invalid, onChange, onRemove }: { a: Action; invalid: boo
     case "assign_team":
       control = <SinglePick items={teams} value={a.value} onChange={set} placeholder={ts("edit.chooseTeam")} invalid={invalid} className="w-full" />;
       break;
+    case "set_reply_address":
+      control = (
+        <div className="flex flex-col gap-1">
+          <SinglePick items={mailboxes} value={a.value} onChange={set} placeholder={ts("edit.chooseMailbox")} invalid={invalid} width={300} className="w-full" />
+          <span className="text-[11.5px] text-fg-4">{tt("scoped.replyAddressHint")}</span>
+        </div>
+      );
+      break;
     case "add_tag":
     case "remove_tag":
       control = (
@@ -719,7 +763,7 @@ function ActionRow({ a, invalid, onChange, onRemove }: { a: Action; invalid: boo
       control = (
         <span className="text-[12px] text-fg-3">
           {t("automation.ai_triage_hint")}
-          {n !== null && <span className="mono ml-1.5 whitespace-nowrap text-[11px] text-fg-4">{t("automation.per_run", { count: n })}</span>}
+          {n !== null && <span className="mono ml-1.5 whitespace-nowrap text-[11px] text-fg-4">{t("automation.per_run", { cost: formatUsd(n, { precise: true }) })}</span>}
         </span>
       );
       break;

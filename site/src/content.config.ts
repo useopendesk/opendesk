@@ -16,15 +16,4 @@ const blog = defineCollection({
   }),
 });
 
-// Changelog: one file per release, newest version first by date.
-const changelog = defineCollection({
-  loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/changelog' }),
-  schema: z.object({
-    version: z.string(),
-    title: z.string(),
-    date: z.coerce.date(),
-    summary: z.string(),
-  }),
-});
-
-export const collections = { blog, changelog };
+export const collections = { blog };

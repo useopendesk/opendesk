@@ -15,10 +15,12 @@ import { registerAgentQuality } from "./handlers/agentQuality";
 import { registerEmailAnswers } from "./handlers/emailAnswers";
 import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
+import { registerBots } from "./handlers/bots";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerIntegrations } from "./handlers/integrations";
 import { registerLabels } from "./handlers/labels";
 import { registerMcp } from "./handlers/mcp";
+import { registerNotificationPrefs } from "./handlers/notificationPrefs";
 import { registerResources } from "./handlers/resources";
 import { registerTickets } from "./handlers/tickets";
 import { registerWorkspace } from "./handlers/workspace";
@@ -52,6 +54,8 @@ export function installMock(): void {
   if (params.get("mock") === "anon") setSignedIn(false);
 
   seed();
+  const gate = params.get("mock_gate");
+  if (gate === "mfa" || gate === "reauth") db.stepUp = gate === "mfa" ? "mfa_required" : "reauth_required";
   registerAuth();
   registerWorkspace();
   registerTickets();
@@ -68,6 +72,8 @@ export function installMock(): void {
   registerKnowledge();
   registerIntegrations();
   registerAiClients();
+  registerBots();
+  registerNotificationPrefs();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);

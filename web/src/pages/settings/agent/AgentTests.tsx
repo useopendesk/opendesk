@@ -27,7 +27,7 @@ import { api } from "@/lib/api/endpoints";
 import type { AgentTest, AgentTestRun } from "@/lib/api/types";
 import { activeRun, MAX_TESTS, newlyFailing, passRate, runProgress, testState, type TestState } from "@/lib/agentTests";
 import { useAI } from "@/lib/ai";
-import { credits, number, percent, relShort } from "@/lib/format";
+import { formatUsd, number, percent, relShort } from "@/lib/format";
 import { dur, springs } from "@/lib/motion";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -183,7 +183,7 @@ export default function AgentTests() {
                 hint: last ? (last.draft ? t("summary.againstDraft") : t("summary.againstSaved")) : t("summary.noRuns"),
               },
               { label: t("summary.tests"), value: number(list.length), hint: t("summary.testsHint", { n: MAX_TESTS }) },
-              { label: t("summary.credits"), value: last ? credits(last.credits) : "–", hint: t("summary.creditsHint") },
+              { label: t("summary.spent"), value: last ? formatUsd(last.usd, { precise: true }) : "–", hint: t("summary.spentHint") },
             ]}
           />
           <AnimatePresence initial={false}>{run && <RunBanner key={run.id} run={run} />}</AnimatePresence>
@@ -254,7 +254,7 @@ export default function AgentTests() {
               </MotionList>
             )}
           </Section>
-          <p className="-mt-3 text-[12px] leading-[18px] text-fg-3">{t("note", { n: ai.cost("playground") ?? 3 })}</p>
+          <p className="-mt-3 text-[12px] leading-[18px] text-fg-3">{t("note", { cost: formatUsd(ai.cost("playground") ?? 0.03, { precise: true }) })}</p>
         </>
       )}
       {editing && <TestEditor test={editing.test} onClose={() => setEditing(null)} />}
@@ -288,7 +288,7 @@ function RunBanner({ run }: { run: AgentTestRun }) {
             <span className={cn("size-1.5 rounded-full", tone.red.solid)} aria-hidden />
             {t("run.failed", { n: number(run.failed + run.errored) })}
           </span>
-          <span className="mono tabular-nums">{credits(run.credits)}</span>
+          <span className="mono tabular-nums">{formatUsd(run.usd, { precise: true })}</span>
         </span>
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-surface" role="progressbar" aria-valuemin={0} aria-valuemax={run.total} aria-valuenow={done} aria-label={t("run.progress")}>
@@ -431,7 +431,7 @@ function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string)
         <div className="flex items-center gap-2">
           <span className="label-caps flex-1">{t("detail.latest")}</span>
           {r?.draft && <span className={cn("inline-flex h-[18px] items-center rounded-sm px-1.5 text-[10.5px] font-medium", tone[AI_TONE].chip)}>{t("run.draft")}</span>}
-          {r && <span className="mono text-[10.5px] tabular-nums text-fg-4">{credits(r.credits)}</span>}
+          {r && <span className="mono text-[10.5px] tabular-nums text-fg-4">{formatUsd(r.usd, { precise: true })}</span>}
         </div>
         {!r ? (
           <p className="text-[12.5px] text-fg-3">{t("detail.notRun")}</p>

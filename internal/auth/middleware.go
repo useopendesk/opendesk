@@ -100,11 +100,15 @@ func (rv *Resolver) resolveAPIKey(ctx context.Context, key string, p *Principal)
 }
 
 func (rv *Resolver) resolveVisitor(ctx context.Context, token string, p *Principal) bool {
-	err := rv.Pool.QueryRow(ctx, `SELECT s.id, s.workspace_id, s.contact_id, s.verified FROM widget_sessions s
+	var widgetID *uuid.UUID
+	err := rv.Pool.QueryRow(ctx, `SELECT s.id, s.workspace_id, s.contact_id, s.verified, s.widget_id FROM widget_sessions s
 		JOIN contacts c ON c.id = s.contact_id AND NOT c.blocked
-		WHERE s.token_hash = $1`, crypto.HashToken(token)).Scan(&p.VisitorID, &p.WorkspaceID, &p.ContactID, &p.Verified)
+		WHERE s.token_hash = $1`, crypto.HashToken(token)).Scan(&p.VisitorID, &p.WorkspaceID, &p.ContactID, &p.Verified, &widgetID)
 	if err != nil {
 		return false
+	}
+	if widgetID != nil {
+		p.WidgetID = *widgetID
 	}
 	p.Kind = KindVisitor
 	if rv.shouldTouch(p.VisitorID) {
@@ -200,6 +204,32 @@ func RequireMFA(ctx context.Context, q db.Querier, p *Principal) error {
 		return ErrMFARequired
 	}
 	return nil
+}
+
+// RecentLoginWindow bounds how old a session may be for owner-level operations.
+const RecentLoginWindow = 12 * time.Hour
+
+// PassesStepUp reports whether p passes the owner-level gate without asking for anything:
+// a user whose session verified a second factor when they have one, signed in within
+// RecentLoginWindow. API keys never do.
+func PassesStepUp(ctx context.Context, q db.Querier, p *Principal) (bool, error) {
+	if p.Kind != KindUser {
+		return false, nil
+	}
+	var created time.Time
+	var verified, totp bool
+	err := q.QueryRow(ctx, `SELECT s.created_at, s.mfa_verified, u.totp_enabled FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.id = $1 AND s.user_id = $2 AND s.revoked_at IS NULL`, p.SessionID, p.UserID).Scan(&created, &verified, &totp)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if totp && !verified && !p.MFAVerified {
+		return false, nil
+	}
+	return time.Since(created) <= RecentLoginWindow, nil
 }
 
 func truncate(s string, n int) string {

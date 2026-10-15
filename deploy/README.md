@@ -3,7 +3,7 @@
 opendesk ships two ways from the same code and the same images:
 
 - **Self-hosted**: one machine, one domain, `curl -fsSL https://opendesk.sh/install.sh | sh`.
-- **Hosted** (opendesk.sh): AWS ECS Fargate, Neon Postgres, Cloudflare in front.
+- **Hosted** (opendesk.sh): AWS ECS Fargate, PlanetScale Postgres over AWS PrivateLink, Cloudflare in front.
 
 ```
 deploy/
@@ -20,10 +20,11 @@ deploy/
     stage-assets.sh            packages what the installer downloads from a release
   cloudflare/
     email-worker/              in.opendesk.sh mail -> POST /v1/inbound/email
-    pages/                     _headers, runtime config and notes for the three Pages projects
-  terraform/                   AWS + Cloudflare + Neon, see terraform/README.md
+    pages/                     _headers, runtime config (config.js, config.json, apple-app-site-association)
+                               and notes for the three Pages projects
+  terraform/                   AWS + Cloudflare + PlanetScale, see terraform/README.md
 docker-compose.yml             (repo root) the self-host stack the installer runs
-.github/workflows/             ci, release, deploy, security, neon-cleanup
+.github/workflows/             ci, release, deploy, security
 ```
 
 ## Architecture (hosted)
@@ -43,27 +44,30 @@ docker-compose.yml             (repo root) the self-host stack the installer run
         │                                                 │      │ host api.*          │ host gateway.*     │
         ▼                                                 │      ▼                     ▼                    │
   Email Worker ── POST /v1/inbound/email?to=… ──────────► │   ECS opendesk-api      ECS opendesk-gateway   │
-  (OD-Inbound-Secret)                                     │   (Go, role=api) ×2-6   (Elixir) ×2-4          │
+  (OD-Inbound-Secret)                                     │   (Go, role=api) ×1-3   (Elixir) ×1-2          │
                                                           │      │                     │  Erlang dist,      │
                                                           │      │   ECS opendesk-worker  Presence across  │
                                                           │      │   (Go, role=worker:   nodes (Cloud Map)  │
                                                           │      │    River jobs, outbox relay)             │
                                                           │      │          │          │                    │
                                                           │      ▼          ▼          ▼                    │
-                                                          │   NATS JetStream cluster: nats-1/2/3            │
+                                                          │   NATS: nats-1, or a cluster of three           │
                                                           │   (ECS + Cloud Map, opendesk.internal)          │
                                                           │                                                 │
                                                           │   S3 attachments · SES (DKIM, MAIL FROM)        │
-                                                          │   Secrets Manager · KMS · ECR · CloudWatch      │
+                                                          │   PrivateLink endpoint (5432, 6432) · KMS · ECR │
                                                           └──────────────────────┬──────────────────────────┘
-                                                                                 │ TLS, same region
+                                                                                 │ AWS PrivateLink, TLS,
+                                                                                 │ never the public internet
                                                                                  ▼
-                                                          Neon Postgres (project "opendesk")
-                                                            production branch, no autosuspend
-                                                            DATABASE_URL         = -pooler host (requests)
-                                                            DATABASE_URL_DIRECT  = direct host (migrations,
-                                                                                   River, relay: LISTEN/NOTIFY)
-                                                            preview/pr-<n> branches from CI
+                                                          PlanetScale Postgres (us-east-1, branch "main")
+                                                            single node, or HA: one setting in its dashboard
+                                                            DATABASE_URL          = app role, PgBouncer 6432
+                                                            DATABASE_URL_DIRECT   = app role, direct 5432
+                                                                                    (River, relay: LISTEN/NOTIFY)
+                                                            DATABASE_URL_MIGRATE  = migrate role (DDL), direct;
+                                                                                    the migration task only
+                                                          Secrets Manager, CloudWatch alongside
 ```
 
 Events: a write commits its row and an `events` outbox row in one transaction;
@@ -79,13 +83,14 @@ only the app tasks, the worker and migrate tasks nothing at all. The ALB itself
 accepts only Cloudflare's published IP ranges.
 
 The alternative, private subnets, needs a path out, and opendesk needs the
-internet, not only AWS: Neon, Google and Microsoft OAuth, Gmail and Graph for
+internet, not only AWS: Google and Microsoft OAuth, Gmail and Graph for
 mailbox sync, IMAP and SMTP servers, customers' webhook endpoints and PostHog.
 VPC interface endpoints (about $7 a month each, per AZ) would cover ECR, Secrets
 Manager, SES and CloudWatch but none of those. A NAT Gateway costs about $33 a
 month per AZ plus $0.045 per GB, which is most of what the compute costs at this
 size, for no reduction in what can reach the tasks. S3 traffic uses the free
-gateway endpoint.
+gateway endpoint, and Postgres goes through the PlanetScale PrivateLink
+endpoint, so database traffic never leaves the AWS network either.
 
 Move to private subnets with a NAT Gateway when a customer requires fixed
 egress IPs (allow-listed webhook sources or IMAP servers): that is a change to
@@ -100,7 +105,12 @@ Do these once, in order. Values in `<angle brackets>` are yours.
 - An AWS account with an admin role for Terraform (SSO recommended), the AWS
   CLI, Terraform >= 1.10, Node 24 and pnpm 12.
 - A Cloudflare account with the `opendesk.sh` zone active.
-- A Neon account and an API key (Account settings > API keys).
+- A PlanetScale account. Create the database in its dashboard: **Postgres**,
+  region **AWS us-east-1** (the same as `aws_region`; PrivateLink is per
+  region), the size you want and single node or high availability (see
+  [Sizing and cost](#sizing-and-cost)). Note the organization and database
+  names for `terraform.tfvars`. Then create a service token (Settings >
+  Service tokens) with access to that database's roles for Terraform.
 - A GitHub repository `opendesk/opendesk` with an environment named
   `production` (Settings > Environments). Restrict it to the `main` branch and,
   if you like, add required reviewers: every deploy runs in it.
@@ -134,18 +144,26 @@ Its `INBOUND_SECRET` is set in step 6, once Terraform has generated it.
 
 Follow `deploy/terraform/README.md`: create the state bucket, copy
 `environments/production/terraform.tfvars.example` to `terraform.tfvars`, set
-the Cloudflare account id and anything else you change, then:
+the Cloudflare account id, the `planetscale` organization and database, and
+anything else you change, then:
 
 ```sh
 cd deploy/terraform/environments/production
+export PLANETSCALE_SERVICE_TOKEN_ID=<id> PLANETSCALE_SERVICE_TOKEN=<token>
 terraform init -backend-config="bucket=opendesk-terraform-state-<account id>" -backend-config="region=us-east-1"
 terraform apply
 ```
 
 This creates the VPC, ALB and certificate, ECR, the ECS cluster and services
 (their tasks fail until the first deploy pushes images; that is expected), the
-NATS cluster, S3, SES, every secret, the Neon project with its production
-branch, and the Cloudflare DNS, Pages projects, Email Routing and zone settings.
+NATS, S3, SES, every secret, the two PlanetScale roles (app and migrate) with
+the PrivateLink endpoint that reaches them, and the Cloudflare DNS, Pages
+projects, Email Routing and zone settings.
+
+Then close the database's public path. The endpoint adds a private route but
+does not remove the public one: in the database's IP restrictions in
+PlanetScale, allow only `10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`.
+From your own machine, a connection to the public host must now be refused.
 
 ### 5. SES production access
 
@@ -226,6 +244,18 @@ The client ids are not secret: set `google_client_id`, `microsoft_client_id`
 `optional_secrets`, and `terraform apply`. The same goes for `TURNSTILE_SECRET`
 (Cloudflare Turnstile, with `turnstile_site_key`) and `POSTHOG_KEY`.
 
+**Mailbox sign-in while a provider's review is pending.** Each provider's
+mailbox sign-in has its own switch, separate from user sign-in: the API reads
+`GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` (Terraform
+`google_mailbox_oauth`, default `false`, and `microsoft_mailbox_oauth`, default
+`true`), and the web app reads the GitHub variable `MAILBOX_OAUTH` (step 11,
+default `microsoft`). With a provider off, the mailbox wizard does not offer its
+sign-in and the API refuses new connections with `403 mailbox_oauth_disabled`;
+mailboxes already connected that way keep syncing and can reconnect. People
+connect Gmail and Google Workspace with an app password over IMAP and SMTP, or
+with forwarding. When Google verifies the app, set `google_mailbox_oauth = true`,
+`terraform apply`, set `MAILBOX_OAUTH` to `google,microsoft` and redeploy Pages.
+
 ### 8. Stripe billing
 
 Billing exists only on opendesk Cloud and is on when `STRIPE_SECRET_KEY` is set
@@ -233,13 +263,16 @@ Billing exists only on opendesk Cloud and is on when `STRIPE_SECRET_KEY` is set
 dashboard (test mode first, then the same in live mode):
 
 1. **Products and prices.** A "Pro" product with a recurring per-seat price in
-   USD, $19 per month (`STRIPE_PRICE_PRO`), optionally a yearly price on the same
-   product (`STRIPE_PRICE_PRO_YEARLY`), and an "AI credits" product with a
-   one-time price for a pack of 2,000 credits (`STRIPE_PRICE_CREDITS`). Note the
-   `price_...` ids. The app reads amounts from Stripe, so changing a price is a
+   USD, $18 per month (`STRIPE_PRICE_PRO`), optionally a yearly price on the same
+   product (`STRIPE_PRICE_PRO_YEARLY`), and an "AI top-up" product with a
+   one-time $10 price: each top-up adds $10 of AI usage
+   (`STRIPE_PRICE_AI_TOPUP`, or the older name `STRIPE_PRICE_CREDITS`, which is
+   the name of its Secrets Manager secret). Note the `price_...` ids. The app reads amounts from Stripe, so changing a price is a
    new price id, never a code change.
-2. **Stripe Tax** (optional, `stripe_tax = true` by default): activate it and add
-   your registrations, or set `stripe_tax = false`.
+2. **Tax**: nothing to set up. Checkout is a business purchase: it requires the
+   company's legal name and billing address and collects its tax ID, and prices
+   exclude taxes (`contracts/billing.md` "Tax"). Create the prices with tax
+   behavior "exclusive"; Stripe Tax stays off.
 3. **Customer portal** (Settings > Billing > Customer portal): allow updating
    payment methods, changing the seat quantity, cancelling at period end, and
    viewing invoices.
@@ -247,7 +280,8 @@ dashboard (test mode first, then the same in live mode):
    - URL: `https://api.opendesk.sh/v1/billing/stripe/webhook`
    - Events: `checkout.session.completed`, `customer.subscription.created`,
      `customer.subscription.updated`, `customer.subscription.deleted`,
-     `invoice.paid`, `invoice.payment_failed`
+     `invoice.paid`, `invoice.payment_failed`, `payment_intent.succeeded`,
+     `payment_intent.payment_failed` (auto-recharge)
    - Copy the signing secret (`whsec_...`). The API checks every delivery's
      signature with it and records event ids, so Stripe's retries are harmless.
    Cloudflare proxies `api.opendesk.sh`. If the endpoint's delivery log in Stripe
@@ -256,10 +290,12 @@ dashboard (test mode first, then the same in live mode):
    the path `/v1/billing/stripe/webhook` (the signature check is the real gate).
    Stripe retries failed deliveries for three days, which covers a deploy.
 5. **API key**: a restricted key is enough (write on Checkout Sessions, Customers,
-   Customer portal sessions and Subscriptions; read on Prices, Products and
-   Invoices). `sk_live_...` or `rk_live_...`.
+   Customer portal sessions, Subscriptions and PaymentIntents (auto-recharge);
+   read on Prices, Products, Invoices and PaymentMethods). `sk_live_...` or `rk_live_...`.
 
-Store them and switch billing on:
+Store them and switch billing on. The AI top-up price id goes in the secret
+`STRIPE_PRICE_CREDITS`, which the app still reads when `STRIPE_PRICE_AI_TOPUP`
+is unset:
 
 ```sh
 for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PRICE_PRO STRIPE_PRICE_PRO_YEARLY STRIPE_PRICE_CREDITS; do
@@ -290,9 +326,51 @@ Add `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` to `optional_secrets` and apply.
 Each one switches its part on (`AI_PROVIDER=anthropic`,
 `EMBEDDINGS_DRIVER=voyage`) only when it is listed, so a task never starts with
 a provider and no key. Without Voyage, search falls back to Postgres full-text
-search. Neon supports the `vector` extension that semantic search uses.
+search. PlanetScale Postgres supports the `vector` extension that semantic
+search uses; the first migration creates it.
 
-### 10. GitHub configuration
+### 10. Native apps
+
+The desktop app needs nothing from the Cloud: it loads app.opendesk.sh and
+finds the API in `https://app.opendesk.sh/config.json`, which
+`write-config.mjs` writes next to `config.js` on every Pages deploy. The iPhone
+app (`sh.opendesk.app`) needs three things (`contracts/native.md`):
+
+1. **Push (APNs).** In the Apple Developer account that signs the App Store
+   app: Certificates, Identifiers & Profiles > Keys > create a key with Apple
+   Push Notifications service enabled, and download its `.p8` (once only). Store
+   it and switch push on:
+
+   ```sh
+   aws secretsmanager put-secret-value --secret-id opendesk/production/APNS_KEY --secret-string file://AuthKey_<key id>.p8
+   ```
+
+   In `terraform.tfvars` set `apns_key_id`, `apns_team_id` (and `apns_topic` if
+   the bundle id is not `sh.opendesk.app`), add `APNS_KEY` to
+   `optional_secrets`, and apply. The api and worker then get `APNS_KEY`,
+   `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` and `PUSH_RELAY_SERVE=true`: the
+   Cloud sends its own pushes directly and serves the relay
+   (`/v1/push/relay/*`) for self-hosted instances that set
+   `PUSH_RELAY_URL=https://api.opendesk.sh`. Set `push_relay_serve = false` to
+   send only the Cloud's own. Create the key for both Sandbox and Production:
+   each device registers with its environment, and debug builds use Sandbox.
+2. **App Attest** (the app's stand-in for Turnstile): set
+   `app_attest_app_ids = "<team id>.sh.opendesk.app"` in `terraform.tfvars`
+   and apply. Without it, the iPhone app cannot pass the human check on login,
+   registration and password reset while Turnstile is on.
+3. **Associated domains** (passkeys and ticket links): set the `production`
+   environment variable `APPLE_APP_IDS` to `<team id>.sh.opendesk.app`. The
+   next Pages deploy writes
+   `https://app.opendesk.sh/.well-known/apple-app-site-association` with
+   `webcredentials` and `applinks` for that id (served as `application/json`
+   by `_headers`). Check it with
+   `curl -sI https://app.opendesk.sh/.well-known/apple-app-site-association`;
+   Apple's CDN fetches it when the app is installed and caches it for a while.
+
+Then run the Deploy workflow (target `all`), so the api and worker pick up the
+new task definitions and the app project gets the association file.
+
+### 11. GitHub configuration
 
 In the `production` environment, from `terraform output`:
 
@@ -303,23 +381,18 @@ In the `production` environment, from `terraform output`:
 | variable | `ECS_MIGRATE_NETWORK` | `migrate_network_configuration` |
 | variable | `CLOUDFLARE_ACCOUNT_ID` | your account id |
 | variable | `WEB_POSTHOG_KEY`, `WEB_POSTHOG_HOST`, `TURNSTILE_SITE_KEY` | browser-side keys (optional) |
+| variable | `APPLE_APP_IDS` | `<team id>.sh.opendesk.app` for the apple-app-site-association (optional, step 10) |
+| variable | `MAILBOX_OAUTH` | mailbox sign-in the wizard offers: `google`, `microsoft`, `google,microsoft` or `none` (default `microsoft`, step 7) |
 | secret | `CLOUDFLARE_API_TOKEN` | the token from step 2 |
-
-At repository level (CI runs on PRs, outside the environment):
-
-| kind | name | value |
-| --- | --- | --- |
-| variable | `NEON_PROJECT_ID` | `neon_project_id` |
-| secret | `NEON_API_KEY` | a Neon API key |
 
 Branch protection on `main`: require the **CI status** check and "require
 branches to be up to date" (the migration duplicate check depends on it).
 
-### 11. First deploy
+### 12. First deploy
 
 Run the Deploy workflow (Actions > Deploy > Run workflow, target `all`), or
 push to `main`. It builds arm64 images into ECR tagged with the commit SHA, runs
-`opendesk migrate` as a one-off task on the direct Neon URL, rolls the api,
+`opendesk migrate` as a one-off task with the migrate role, rolls the api,
 worker and gateway services, and deploys the three Pages projects and the email
 worker. Check:
 
@@ -328,7 +401,7 @@ curl -fsS https://api.opendesk.sh/healthz
 curl -fsS https://api.opendesk.sh/readyz     # database and NATS connected
 ```
 
-### 12. First release
+### 13. First release
 
 Tag `v0.1.0` and push the tag. Release builds multi-arch images to
 `ghcr.io/useopendesk/{opendesk,realtime}` (make the packages public in the org's
@@ -345,10 +418,12 @@ installer and the self-host files, and redeploys opendesk.sh so
   both images built and scanned by Trivy (HIGH and CRITICAL with a fix fail
   the build) and then the root compose brought up and checked through Caddy
   (`scripts/selfhost-smoke.sh`), the installer checks, Terraform fmt and
-  validate, the email worker's tests, and a Neon branch per PR
-  (`preview/pr-<n>`, from production) with the migrations applied twice.
-  `neon-cleanup.yml` deletes the branch when the PR closes.
-- **deploy.yml** (main): images, migrate, services, Pages, email worker.
+  validate, and the email worker's tests. Migrations are applied to a fresh
+  stock Postgres twice (the second run must be a no-op); production runs
+  the same Postgres.
+- **deploy.yml** (main): images, migrate, services, Pages (with the runtime
+  config and, when `APPLE_APP_IDS` is set, the apple-app-site-association),
+  email worker.
   Migrations run before any service moves, so a migration must work with both
   the old and the new code (add, backfill, then remove in a later deploy).
 - **release.yml** (tags `v*`): GHCR images with SBOM and provenance,
@@ -528,7 +603,7 @@ deliver to `https://<domain>/v1/inbound/email?to=<rcpt>` with the
 `OD-Inbound-Secret` header set to `INBOUND_SECRET`.
 
 **AI.** Optional, and off without a provider. Self-hosted instances have no
-plans, limits or credits; nothing about Stripe applies. Three ways:
+plans, limits or AI balance; nothing about Stripe applies. Three ways:
 
 - **Anthropic:** `OPENDESK_AI_KEY=sk-ant-... sh install.sh`, or in `.env`
   `AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`. Pass keys as variables rather
@@ -556,6 +631,18 @@ plans, limits or credits; nothing about Stripe applies. Three ways:
 Semantic search uses pgvector, which the bundled `pgvector/pgvector:pg17`
 image has. With an external Postgres without the extension, search falls back
 to full-text search.
+
+**Push notifications to the iPhone app.** Off by default; the app works
+without them. `PUSH_RELAY_URL=https://api.opendesk.sh` opts in to the opendesk
+relay, which sees the instance's address, the notification type and the ticket
+number, never ticket text, names or email addresses. Relay requests are signed
+with a key derived from `AUTH_SECRET` and checked against
+`https://<domain>/v1/push/instance-key`, so the instance must be reachable on
+a public https address. An own APNs key (`APNS_KEY`, `APNS_KEY_ID`,
+`APNS_TEAM_ID`, `APNS_TOPIC`) sends directly instead, and only reaches an app
+built and signed by that key's team. With Turnstile on, `APP_ATTEST_APP_IDS`
+lets the iPhone app pass the human check with App Attest. The docs page
+"Push notifications" (self-hosting) has the details.
 
 **Behind another proxy.** Set `OPENDESK_DOMAIN=:80`, `HTTP_PORT` to a free
 port, and `OPENDESK_URL` / `OPENDESK_GATEWAY_URL` to the public https / wss
@@ -587,32 +674,55 @@ open https://localhost          # Caddy's local CA; the browser asks once
 make selfhost-smoke             # the CI check: throwaway project, checks through Caddy, torn down
 ```
 
-## Cost notes (hosted, us-east-1, monthly, before traffic)
+## Sizing and cost
 
-| item | sizing | about |
+Two shapes, the same Terraform. Moving between them is a change to
+`terraform.tfvars` and one setting in PlanetScale, never a migration.
+
+| | launch (the defaults) | no single point of failure |
 | --- | --- | --- |
-| Fargate ARM64, api ×2, worker ×1, gateway ×2 | 0.5 vCPU, 1 GB each | $72 |
-| Fargate ARM64, NATS ×3 | 0.25 vCPU, 0.5 GB, 30 GB ephemeral each | $25 |
-| Public IPv4 addresses | ~8 tasks + the ALB's 2 | $36 |
-| Application Load Balancer | 1, low LCU | $20 |
-| Neon | production branch at 0.5 CU always on, scales to 4 | $40 to $60, plus storage |
-| Secrets Manager | ~13 secrets | $5 |
-| KMS, CloudWatch Logs (30-day retention), ECR | | $5 to $10 |
-| S3 attachments, SES | $0.023 per GB stored; $0.10 per 1,000 emails | usage |
-| Anthropic, Voyage | per token; bounded by plan credits (`contracts/billing.md`) | usage |
-| Stripe | per charge, plus Billing and Tax fees (see Stripe's pricing page) | usage |
+| api | 1 task, autoscales to 3 | `api = { min = 2, max = 6 }` |
+| gateway | 1 task, autoscales to 2 | `gateway = { min = 2, max = 4 }` |
+| worker | 1 task on Fargate Spot | `worker = { spot = false }` |
+| NATS | 1 standalone server | `nats_nodes = 3` |
+| Postgres | PlanetScale single node | high availability (primary and two replicas), in the cluster's settings |
+| when | until customers depend on it during their day | from the first customer who would notice a few minutes down |
+
+With one of each, a crashed task is replaced by ECS within a minute or two and
+a deploy still rolls without downtime (the new task starts before the old one
+stops). A failed database node is replaced by PlanetScale; recent writes are
+covered by its backups, not by a replica.
+
+Scale further on what the services report:
+
+- **api CPU** above about 60% most of the day: raise `api.max`, then the task size.
+- **Postgres** CPU or memory near the cluster size's limit, or slow queries in
+  PlanetScale Insights: the next cluster size (a setting, online).
+- **Jobs waiting** (late emails, late AI replies): `worker.min`.
+- **Realtime lag** or many sockets per task: `gateway.min`.
+
+Monthly, us-east-1, before traffic:
+
+| item | launch | no single point of failure |
+| --- | --- | --- |
+| Fargate ARM64 api, worker, gateway (0.5 vCPU, 1 GB each) | $33 (worker on Spot) | $72 |
+| Fargate ARM64 NATS (0.25 vCPU, 0.5 GB) | $7 | $22 |
+| Public IPv4 addresses (tasks and the ALB's) | $22 | $36 |
+| Application Load Balancer, low LCU | $20 | $20 |
+| PrivateLink endpoint, 2 subnets | $15 | $15 |
+| PlanetScale Postgres, PS-40 (1/2 vCPU, 4 GB) | $28 single node | $83 HA |
+| Secrets Manager, KMS, CloudWatch Logs (30 days), ECR | $10 to $15 | $10 to $15 |
+| S3, SES, private traffic ($0.01 per GB each side) | usage | usage |
+| Anthropic, Voyage | per token; each call is charged to the workspace's AI balance at cost × `AI_USAGE_MARKUP` (`contracts/billing.md`) | usage |
+| Stripe | per charge, plus Billing and Tax fees | usage |
 | Cloudflare Pages, Email Routing, DNS, proxy | free plan; Workers free tier covers the email worker | $0 |
-| **Total** | | **about $200 to $230** |
+| **Total** | **about $135 to $145** | **about $260 to $270** |
 
-Where it goes from there:
+Other levers:
 
-- **Autoscaling** adds api tasks at $14 a month each; the gateway scales on CPU
-  too. One gateway task holds tens of thousands of idle sockets.
-- **NATS** on Synadia Cloud (`nats_mode = "external"`) removes the three tasks
-  and their IPs. That needs NATS credentials-file support in the Go client,
-  which takes only a token today.
-- **Fargate Spot** for the worker cuts its cost by about 70%; River retries
-  interrupted jobs.
+- **NATS** on Synadia Cloud (`nats_mode = "external"`) removes the NATS tasks.
+  That needs NATS credentials-file support in the Go client, which takes only
+  a token today.
 - A NAT Gateway, if fixed egress IPs are ever required, adds about $33 per AZ
   plus $0.045 per GB, and removes most of the IPv4 charge.
 - Compute Savings Plans take about 20% to 50% off Fargate once the size is stable.

@@ -3,7 +3,9 @@ title: Self-hosting
 description: Run opendesk on your own server. Free forever, the same code as the hosted service.
 ---
 
-import { LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+import Callout from '../../../components/Callout.astro';
+import Diagram from '../../../components/Diagram.astro';
 
 Self-hosted opendesk is free forever and runs exactly the same code as [opendesk.sh](https://opendesk.sh). You own the server, the database and every email in it.
 
@@ -11,9 +13,13 @@ Self-hosted opendesk is free forever and runs exactly the same code as [opendesk
 curl -fsSL https://opendesk.sh/install.sh | sh
 ```
 
+New here? The [self-host quickstart](/getting-started/quickstart-self-host/) walks through it from an empty server.
+
 ## What runs
 
 A self-hosted install is four containers on one machine, behind one domain:
+
+<Diagram name="self-host" />
 
 | Service | Role |
 | --- | --- |
@@ -21,13 +27,6 @@ A self-hosted install is four containers on one machine, behind one domain:
 | `opendesk` | The Go API, background workers, the web app (`SERVE_WEB=true`), and NATS, embedded. |
 | `realtime` | The Elixir realtime gateway for live events, presence and typing. It holds no database connection. |
 | `postgres` | The only datastore. |
-
-```
-                 ┌──────────────────────── desk.example.com ───────────────────────┐
- browser ──443──▶│ caddy ──/socket──▶ realtime ◀──NATS── opendesk ──▶ postgres     │
-                 │       └──── everything else ──────▶ opendesk                     │
-                 └──────────────────────────────────────────────────────────────────┘
-```
 
 There is no Redis and no message broker to run: background jobs live in Postgres, and NATS is built into the opendesk binary.
 
@@ -42,9 +41,11 @@ The installer puts an `opendesk-ctl` helper next to your `docker-compose.yml` (d
 /opt/opendesk/opendesk-ctl upgrade           # back up, then move to the newest release
 ```
 
-<Aside type="caution" title="Back up your .env">
+<Callout type="warning" title="Back up your .env">
+
 `.env` holds the only copy of `CREDENTIALS_KEY`. A database backup without it cannot decrypt stored mailbox credentials.
-</Aside>
+
+</Callout>
 
 ## Guides
 
@@ -56,6 +57,7 @@ The installer puts an `opendesk-ctl` helper next to your `docker-compose.yml` (d
   <LinkCard title="Email setup" href="/self-hosting/email/" />
   <LinkCard title="Google and Microsoft OAuth" href="/self-hosting/oauth-apps/" />
   <LinkCard title="Storage" href="/self-hosting/storage/" />
+  <LinkCard title="Push notifications" href="/self-hosting/push-notifications/" />
   <LinkCard title="Scaling" href="/self-hosting/scaling/" />
   <LinkCard title="Backups and upgrades" href="/self-hosting/backups-and-upgrades/" />
   <LinkCard title="Security hardening" href="/self-hosting/hardening/" />

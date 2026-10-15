@@ -24,20 +24,22 @@ import (
 
 // Billing is the GET /v1/billing body and the billing.updated event data.
 type Billing struct {
-	Plan              string       `json:"plan" enum:"free,pro,self_hosted"`
-	BillingEnabled    bool         `json:"billing_enabled"`
-	Status            string       `json:"status" enum:"none,trialing,active,past_due,unpaid,canceled,incomplete,incomplete_expired,paused"`
-	Interval          string       `json:"interval" enum:"month,year"`
-	Seats             int          `json:"seats" doc:"Billed seats in Stripe"`
-	BilledSeats       int          `json:"billed_seats" doc:"Current owners, admins and agents: what the next sync sets"`
-	CurrentPeriodEnd  *time.Time   `json:"current_period_end"`
-	CancelAtPeriodEnd bool         `json:"cancel_at_period_end"`
-	Limits            Limits       `json:"limits"`
-	Usage             UsageCounts  `json:"usage"`
-	Credits           CreditsState `json:"credits"`
-	Prices            Prices       `json:"prices"`
+	Plan              string      `json:"plan" enum:"free,pro,self_hosted"`
+	BillingEnabled    bool        `json:"billing_enabled"`
+	Status            string      `json:"status" enum:"none,trialing,active,past_due,unpaid,canceled,incomplete,incomplete_expired,paused"`
+	Interval          string      `json:"interval" enum:"month,year"`
+	Seats             int         `json:"seats" doc:"Billed seats in Stripe"`
+	BilledSeats       int         `json:"billed_seats" doc:"Current owners, admins and agents: what the next sync sets"`
+	CurrentPeriodEnd  *time.Time  `json:"current_period_end"`
+	CancelAtPeriodEnd bool        `json:"cancel_at_period_end"`
+	Limits            Limits      `json:"limits"`
+	Usage             UsageCounts `json:"usage"`
+	AI                AIBalance   `json:"ai" doc:"The AI balance, in US dollars (up to 6 decimals)"`
+	Prices            Prices      `json:"prices"`
 	// AutoRecharge is null when billing is disabled.
 	AutoRecharge *AutoRecharge `json:"auto_recharge"`
+	// PaymentMethod is what top-ups and auto-recharge charge; null when none is saved.
+	PaymentMethod *PaymentMethod `json:"payment_method"`
 }
 
 // Limits are the plan limits; zero means unlimited.
@@ -52,19 +54,20 @@ type UsageCounts struct {
 	Members   int `json:"members"`
 }
 
-type CreditsState struct {
-	Unlimited bool      `json:"unlimited"`
-	Monthly   float64   `json:"monthly"`
-	Used      float64   `json:"used"`
-	Purchased float64   `json:"purchased"`
-	Remaining float64   `json:"remaining"`
-	PeriodEnd time.Time `json:"period_end"`
+// AIBalance is Billing.ai: the monthly allowance and what is left, in US dollars.
+type AIBalance struct {
+	Unlimited    bool      `json:"unlimited"`
+	MonthlyUSD   float64   `json:"monthly_usd" doc:"The monthly AI usage allowance"`
+	UsedUSD      float64   `json:"used_usd" doc:"Used of the monthly allowance this period (with unlimited AI: all usage this period)"`
+	PurchasedUSD float64   `json:"purchased_usd" doc:"Top-ups left; they never expire and are spent after the allowance"`
+	RemainingUSD float64   `json:"remaining_usd"`
+	PeriodEnd    time.Time `json:"period_end"`
 }
 
 type Prices struct {
-	ProMonth   *Price `json:"pro_month"`
-	ProYear    *Price `json:"pro_year"`
-	CreditPack *Price `json:"credit_pack"`
+	ProMonth *Price `json:"pro_month"`
+	ProYear  *Price `json:"pro_year"`
+	AITopUp  *Price `json:"ai_top_up"`
 }
 
 type Price struct {
@@ -72,7 +75,9 @@ type Price struct {
 	UnitAmount int64   `json:"unit_amount"`
 	Currency   string  `json:"currency"`
 	Interval   *string `json:"interval" enum:"month,year"`
-	Credits    int     `json:"credits,omitempty"`
+	USD        float64 `json:"usd,omitempty" doc:"ai_top_up: the AI usage unit_amount buys, in US dollars"`
+	// Product is the price's Stripe product: top-ups of any amount are priced on it.
+	Product string `json:"-"`
 }
 
 // stripeBackendURL points the Stripe client somewhere else (tests use a local fake).
@@ -136,7 +141,7 @@ func (s *svc) pricesFor(ctx context.Context) Prices {
 	cfg := s.d.Cfg
 	var out Prices
 	var failed bool
-	get := func(id string, credits int) *Price {
+	get := func(id string, usage plan.Micro) *Price {
 		if id == "" {
 			return nil
 		}
@@ -146,7 +151,10 @@ func (s *svc) pricesFor(ctx context.Context) Prices {
 			s.d.Log.Warn("stripe price", "price", id, "err", stripeErr(err))
 			return nil
 		}
-		out := &Price{ID: p.ID, UnitAmount: p.UnitAmount, Currency: string(p.Currency), Credits: credits}
+		out := &Price{ID: p.ID, UnitAmount: p.UnitAmount, Currency: string(p.Currency), USD: usage.USD()}
+		if p.Product != nil {
+			out.Product = p.Product.ID
+		}
 		if p.Recurring != nil {
 			iv := string(p.Recurring.Interval)
 			out.Interval = &iv
@@ -155,7 +163,7 @@ func (s *svc) pricesFor(ctx context.Context) Prices {
 	}
 	out.ProMonth = get(cfg.StripePricePro, 0)
 	out.ProYear = get(cfg.StripePriceProYear, 0)
-	out.CreditPack = get(cfg.StripePriceCredits, plan.CreditPackSize)
+	out.AITopUp = get(cfg.StripePriceTopUp, plan.TopUpUSD)
 	s.prices.at = time.Now()
 	if failed {
 		if s.prices.fetched {
@@ -217,19 +225,22 @@ func (s *svc) load(ctx context.Context, q db.Querier, wid uuid.UUID, prices Pric
 	if err != nil {
 		return b, err
 	}
-	b.Credits = CreditsState{Unlimited: c.Unlimited, Monthly: c.Monthly.Credits(), Used: c.IncludedUsed.Credits(),
-		Purchased: c.Purchased.Credits(), Remaining: c.Remaining.Credits(), PeriodEnd: c.PeriodEnd}
+	b.AI = AIBalance{Unlimited: c.Unlimited, MonthlyUSD: c.Monthly.USD(), UsedUSD: c.IncludedUsed.USD(),
+		PurchasedUSD: c.Purchased.USD(), RemainingUSD: c.Remaining.USD(), PeriodEnd: c.PeriodEnd}
 	if c.Unlimited {
 		// Unlimited workspaces do not draw on the allowance; report what was used.
-		var used plan.Milli
-		if err := q.QueryRow(ctx, `SELECT COALESCE(sum(millicredits), 0)::bigint FROM ai_usage WHERE workspace_id = $1 AND created_at >= $2`,
+		var used plan.Micro
+		if err := q.QueryRow(ctx, `SELECT COALESCE(sum(micro_usd), 0)::bigint FROM ai_usage WHERE workspace_id = $1 AND created_at >= $2`,
 			wid, c.PeriodStart).Scan(&used); err != nil {
 			return b, err
 		}
-		b.Credits.Used = used.Credits()
+		b.AI.UsedUSD = used.USD()
 	}
 	if e.BillingEnabled {
-		if b.AutoRecharge, err = loadAutoRecharge(ctx, q, wid, e.MonthlyCredits); err != nil {
+		if b.AutoRecharge, err = loadAutoRecharge(ctx, q, wid, e.MonthlyUSD); err != nil {
+			return b, err
+		}
+		if b.PaymentMethod, err = loadPaymentMethod(ctx, q, wid); err != nil {
 			return b, err
 		}
 	}

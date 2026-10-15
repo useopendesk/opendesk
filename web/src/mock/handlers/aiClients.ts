@@ -11,6 +11,7 @@ import { db, userRef, type WsData } from "../db";
 import { HttpError, del, forbidden, get, invalid, notFound, post, respond } from "../router";
 import { isRecord, nowIso, uuid } from "../util";
 import { aiOff, assertAiInstance, requireAiAdmin } from "./ai";
+import { botsOf } from "../bots";
 
 // ─── Setup ──────────────────────────────────────────────────────────────────
 
@@ -21,11 +22,11 @@ export function agentSetup(ws: WsData): AgentSetup {
     { id: "ai_on", title: "Turn on AI", description: "Ollie needs AI switched on for the workspace before it can answer anyone.", done: available && ws.ai.enabled, optional: false, href: "/settings/ai" },
     {
       id: "identity",
-      title: "Name your agent and tell it how to help",
-      description: "A name, a picture and instructions make answers sound like your team.",
-      done: !!ws.ai.widget_instructions?.trim() || !!ws.widget.bot_name || !!ws.workspace.images.widget_bot,
+      title: "Build your bot and tell it how to help",
+      description: "A name, a look and instructions make answers sound like your team.",
+      done: botsOf(ws).some((b) => !b.is_default || b.name !== "Ollie" || !!b.image_url || !!b.personality.instructions.trim() || b.updated_at > b.created_at),
       optional: false,
-      href: "/settings/ai/behaviour",
+      href: "/settings/ai/bots",
     },
     {
       id: "knowledge",

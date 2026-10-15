@@ -1,0 +1,13 @@
+---
+/**
+ * The desktop app on its own, for the top of /download: the same window the
+ * home page shows beside the phone, on the same timeline (a chat arrives).
+ */
+import Stage from '../Stage.astro';
+import DesktopMock from '../home/DesktopMock.astro';
+---
+<Stage w={860} h={576} tone="none" mobileW={600} mobileX={0} label="The opendesk desktop app with a translucent sidebar, showing the Unassigned inbox and an open ticket.">
+  <div class="absolute inset-0" data-seq data-hold="4600">
+    <div class="absolute left-0 top-[36px] h-[540px] w-[860px]"><DesktopMock /></div>
+  </div>
+</Stage>

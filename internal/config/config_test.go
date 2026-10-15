@@ -30,3 +30,110 @@ func TestStripeAPIURLIsDevelopmentOnly(t *testing.T) {
 		t.Fatalf("StripeAPIURL = %q", c.StripeAPIURL)
 	}
 }
+
+func TestPushMode(t *testing.T) {
+	productionEnv(t)
+	c, err := Load()
+	if err != nil || c.PushMode() != "off" || c.APNsTopic != "sh.opendesk.app" {
+		t.Fatalf("default: %v %q %q", err, c.PushMode(), c.APNsTopic)
+	}
+	t.Setenv("PUSH_RELAY_URL", "https://api.opendesk.sh/")
+	if c, err = Load(); err != nil || c.PushMode() != "relay" || c.PushRelayURL != "https://api.opendesk.sh" {
+		t.Fatalf("relay: %v %q", err, c.PushRelayURL)
+	}
+	t.Setenv("PUSH_RELAY_URL", "http://relay.example.com")
+	if _, err := Load(); err == nil {
+		t.Fatal("http relay accepted in production")
+	}
+	t.Setenv("PUSH_RELAY_URL", "")
+	t.Setenv("APNS_KEY_ID", "KEY1234567")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "APNS_KEY") {
+		t.Fatalf("partial APNs config: %v", err)
+	}
+	t.Setenv("APNS_KEY", "-----BEGIN PRIVATE KEY-----")
+	t.Setenv("APNS_TEAM_ID", "TEAM123456")
+	if c, err = Load(); err != nil || c.PushMode() != "direct" {
+		t.Fatalf("direct: %v", err)
+	}
+	t.Setenv("APNS_KEY", "")
+	t.Setenv("APNS_KEY_ID", "")
+	t.Setenv("APNS_TEAM_ID", "")
+	t.Setenv("PUSH_RELAY_SERVE", "true")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PUSH_RELAY_SERVE") {
+		t.Fatalf("relay without a key: %v", err)
+	}
+	t.Setenv("PUSH_RELAY_SERVE", "")
+	t.Setenv("APP_ATTEST_APP_IDS", "TEAM123456.sh.opendesk.app, ")
+	if c, err = Load(); err != nil || len(c.AppAttestAppIDs) != 1 || c.AppAttestDevelopment {
+		t.Fatalf("app attest: %v %v", err, c.AppAttestAppIDs)
+	}
+}
+
+func TestAIUsageNamesFallBack(t *testing.T) {
+	productionEnv(t)
+	t.Setenv("AI_CREDIT_MARKUP", "2")
+	t.Setenv("STRIPE_PRICE_CREDITS", "price_old")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AIUsageMarkup != 2 || c.StripePriceTopUp != "price_old" {
+		t.Fatalf("fallbacks: %v %q", c.AIUsageMarkup, c.StripePriceTopUp)
+	}
+	t.Setenv("AI_USAGE_MARKUP", "1.25")
+	t.Setenv("STRIPE_PRICE_AI_TOPUP", "price_new")
+	if c, err = Load(); err != nil || c.AIUsageMarkup != 1.25 || c.StripePriceTopUp != "price_new" {
+		t.Fatalf("new names: %v %q %v", c.AIUsageMarkup, c.StripePriceTopUp, err)
+	}
+	t.Setenv("AI_USAGE_MARKUP", "0.5")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AI_USAGE_MARKUP") {
+		t.Fatalf("markup below 1: %v", err)
+	}
+}
+
+func TestMailboxOAuthSwitch(t *testing.T) {
+	productionEnv(t)
+	c, err := Load()
+	if err != nil || c.GoogleMailboxOAuth || c.MicrosoftMailboxOAuth {
+		t.Fatalf("without clients: %v %v %v", err, c.GoogleMailboxOAuth, c.MicrosoftMailboxOAuth)
+	}
+	t.Setenv("GOOGLE_MAILBOX_OAUTH", "true")
+	if c, _ = Load(); c.GoogleMailboxOAuth {
+		t.Fatal("on without a Google client")
+	}
+	t.Setenv("GOOGLE_MAILBOX_OAUTH", "")
+	t.Setenv("GOOGLE_CLIENT_ID", "gid")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "gsecret")
+	t.Setenv("MICROSOFT_CLIENT_ID", "mid")
+	t.Setenv("MICROSOFT_CLIENT_SECRET", "msecret")
+	if c, _ = Load(); !c.GoogleMailboxOAuth || !c.MicrosoftMailboxOAuth {
+		t.Fatal("configured clients default on")
+	}
+	for v, want := range map[string]bool{"false": false, "0": false, "off": false, "nope": false, "true": true, "1": true} {
+		t.Setenv("GOOGLE_MAILBOX_OAUTH", v)
+		if c, _ = Load(); c.GoogleMailboxOAuth != want || !c.MicrosoftMailboxOAuth {
+			t.Errorf("GOOGLE_MAILBOX_OAUTH=%q: google %v microsoft %v", v, c.GoogleMailboxOAuth, c.MicrosoftMailboxOAuth)
+		}
+	}
+	t.Setenv("MICROSOFT_MAILBOX_OAUTH", "false")
+	if c, _ = Load(); c.MicrosoftMailboxOAuth {
+		t.Fatal("MICROSOFT_MAILBOX_OAUTH=false")
+	}
+}
+
+func TestMailhostISPDBDefault(t *testing.T) {
+	productionEnv(t)
+	if c, _ := Load(); c.MailhostISPDB {
+		t.Fatal("self-host default must be off")
+	}
+	t.Setenv("STRIPE_SECRET_KEY", "sk_test_x")
+	t.Setenv("STRIPE_WEBHOOK_SECRET", "whsec_x")
+	t.Setenv("STRIPE_PRICE_PRO", "price_x")
+	if c, err := Load(); err != nil || !c.MailhostISPDB {
+		t.Fatalf("billing default must be on: %v", err)
+	}
+	t.Setenv("MAILHOST_ISPDB", "false")
+	if c, _ := Load(); c.MailhostISPDB {
+		t.Fatal("MAILHOST_ISPDB=false")
+	}
+}

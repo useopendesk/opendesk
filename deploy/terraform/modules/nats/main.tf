@@ -1,4 +1,8 @@
-# NATS: a three-node JetStream cluster on Fargate, or an external NATS.
+# NATS: one server or a JetStream cluster on Fargate, or an external NATS.
+#
+# One node (node_count = 1) runs standalone, with no cluster routes: if it is
+# replaced, publishers reconnect and browsers resync from the outbox (below).
+# Three or five nodes form a cluster that rides out losing one.
 #
 # Each node is its own ECS service with one task and its own Cloud Map name
 # (nats-1.<namespace>, ...), so routes and client URLs are stable DNS names
@@ -24,7 +28,13 @@ locals {
   cluster = var.mode == "cluster"
   nodes   = local.cluster ? toset([for i in range(1, var.node_count + 1) : tostring(i)]) : toset([])
   routes  = join(",", [for i in range(1, var.node_count + 1) : "nats://nats-${i}.${var.namespace_name}:6222"])
-  url     = local.cluster ? join(",", [for i in range(1, var.node_count + 1) : "nats://nats-${i}.${var.namespace_name}:4222"]) : var.external_url
+  # Cluster flags only with peers to route to.
+  cluster_flags = var.node_count > 1 ? [
+    "--cluster_name ${var.cluster_name_nats}",
+    "--cluster nats://0.0.0.0:6222",
+    "--routes ${local.routes}",
+  ] : []
+  url = local.cluster ? join(",", [for i in range(1, var.node_count + 1) : "nats://nats-${i}.${var.namespace_name}:4222"]) : var.external_url
 }
 
 resource "aws_security_group" "nats" {
@@ -79,17 +89,15 @@ module "node" {
   entry_point = ["sh", "-c"]
   # max_payload has no CLI flag, so it goes in a one-line config file; the
   # flags after -c override everything else. 4MB matches the embedded server.
-  command = [join(" ", [
+  command = [join(" ", concat([
     "printf 'max_payload: 4MB\\n' > /data/nats.conf &&",
     "exec nats-server -c /data/nats.conf",
     "--name nats-${each.key}",
     "--jetstream --store_dir /data/jetstream",
-    "--cluster_name ${var.cluster_name_nats}",
-    "--cluster nats://0.0.0.0:6222",
-    "--routes ${local.routes}",
+    ], local.cluster_flags, [
     "--auth \"$NATS_TOKEN\"",
     "--http_port 8222",
-  ])]
+  ]))]
   secrets = { NATS_TOKEN = var.token_secret_arn }
 
   port_mappings = [

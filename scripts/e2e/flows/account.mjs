@@ -23,7 +23,7 @@ export async function login(page, email, password = PASSWORD) {
 
 export async function logout(page) {
   await page.getByRole("button", { name: "Account menu" }).click();
-  await page.getByRole("menuitem", { name: "Log out" }).click();
+  await page.getByRole("menuitem", { name: "Log out", exact: true }).click();
   await page.waitForURL(/\/login/);
 }
 
@@ -89,11 +89,12 @@ export async function run(t) {
   });
 
   await t.step("reload keeps the session (refresh rotation)", async () => {
-    const before = (await ctx.cookies()).find((c) => c.name === "od_refresh")?.value;
+    // One refresh cookie per signed-in account: od_rt_<user id hex>.
+    const before = (await ctx.cookies()).find((c) => c.name.startsWith("od_rt_"))?.value;
     await page.reload();
     await page.waitForURL(/\/inbox\//);
     await page.getByRole("button", { name: "Account menu" }).waitFor();
-    const after = (await ctx.cookies()).find((c) => c.name === "od_refresh")?.value;
+    const after = (await ctx.cookies()).find((c) => c.name.startsWith("od_rt_"))?.value;
     assert(before && after && before !== after, "refresh cookie rotated");
     t.ownerToken = await accessToken(page);
   });

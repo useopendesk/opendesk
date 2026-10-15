@@ -14,6 +14,7 @@ import { IconTile, ListSkeleton, MonoChip, StatePill, SummaryStrip } from "@/com
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { useListMutation } from "@/components/settings2/optimistic";
 import { SecretDialog, WebhookDialog, isAllEvents } from "@/components/settings2/webhooks";
+import { GrantedTeams } from "@/components/settings2/teams";
 import { api } from "@/lib/api/endpoints";
 import type { Webhook, WebhookDelivery } from "@/lib/api/types";
 import { fullDate, relShort } from "@/lib/format";
@@ -150,6 +151,7 @@ export default function Webhooks() {
                         <div className={cn("min-w-0", !h.enabled && "opacity-60")}>
                           <div className="mono truncate text-[12.5px] text-fg">{h.url}</div>
                           <div className="truncate text-[12px] text-fg-3">{h.description || t("webhooks.noDescription")}</div>
+                          <GrantedTeams grants={h.private_teams} className="mt-1" />
                         </div>
                       </div>
                       <div className="hidden min-w-0 items-center gap-1 md:flex">

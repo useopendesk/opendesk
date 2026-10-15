@@ -18,9 +18,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/ids"
 )
 
-// RefreshCookie is the refresh token cookie, scoped to the auth routes.
-const RefreshCookie = "od_refresh"
-
 const (
 	// SessionMaxAge caps a session regardless of refresh activity.
 	SessionMaxAge = 90 * 24 * time.Hour
@@ -40,16 +37,19 @@ type CoreAuthResult struct {
 	LinkToken    string    `json:"link_token,omitempty"`
 	Email        string    `json:"email,omitempty"`
 	RedirectTo   string    `json:"redirect_to,omitempty" doc:"App path to continue to (OAuth sign-in)"`
+	RefreshToken string    `json:"refresh_token,omitempty" doc:"Native requests only (contracts/native.md): the refresh token, which browsers get as the account's od_rt_ cookie instead"`
 }
 
 type authOut struct {
-	SetCookie    string `header:"Set-Cookie"`
-	CacheControl string `header:"Cache-Control"`
+	SetCookie    []string `header:"Set-Cookie"`
+	CacheControl string   `header:"Cache-Control"`
 	Body         CoreAuthResult
 }
 
-func (s *svc) refreshCookie(value string, maxAge int) string {
-	c := http.Cookie{Name: RefreshCookie, Value: value, Path: "/v1/auth", Domain: s.d.Cfg.CookieDomain,
+// refreshCookie is a refresh cookie (one per account, contracts/tokens.md), scoped to the
+// auth routes.
+func (s *svc) refreshCookie(name, value string, maxAge int) string {
+	c := http.Cookie{Name: name, Value: value, Path: "/v1/auth", Domain: s.d.Cfg.CookieDomain,
 		HttpOnly: true, Secure: s.d.Cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
 	if maxAge < 0 {
 		c.Expires = time.Unix(0, 0)
@@ -57,25 +57,49 @@ func (s *svc) refreshCookie(value string, maxAge int) string {
 	return c.String()
 }
 
-func (s *svc) clearRefreshCookie() http.Header {
+func (s *svc) clearCookie(name string) string {
+	return s.refreshCookie(name, "", -1)
+}
+
+func (s *svc) clearCookieHeader(names ...string) http.Header {
 	h := http.Header{}
-	h.Set("Set-Cookie", s.refreshCookie("", -1))
+	for _, n := range names {
+		h.Add("Set-Cookie", s.clearCookie(n))
+	}
 	return h
 }
 
-// issueSession creates a session and answers with an access token and refresh cookie.
+// issueSession creates a session and answers with an access token and the refresh token:
+// in the account's refresh cookie, or in the body for a native request. A browser keeps
+// its other accounts; the session it held for this account, if any, is replaced.
 func (s *svc) issueSession(ctx context.Context, q db.Querier, uid uuid.UUID, mfa bool, ri reqInfo) (*authOut, error) {
+	var tidy []string
+	if !ri.Native {
+		var err error
+		if tidy, err = s.adoptCookies(ctx, q, uid, ri); err != nil {
+			return nil, err
+		}
+	}
 	refresh := crypto.RandomToken(32)
 	sid := ids.New()
-	if _, err := q.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, user_agent, ip, mfa_verified, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`, sid, uid, crypto.HashToken(refresh), ri.UserAgent, ri.IP, mfa,
-		time.Now().Add(auth.RefreshTTL)); err != nil {
+	client := ri.Client
+	if client == "" {
+		client = "web"
+	}
+	if _, err := q.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, user_agent, ip, mfa_verified, expires_at, client)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, sid, uid, crypto.HashToken(refresh), ri.UserAgent, ri.IP, mfa,
+		time.Now().Add(auth.RefreshTTL), client); err != nil {
 		return nil, err
 	}
-	return s.tokenResponse(ctx, q, uid, sid, mfa, refresh)
+	out, err := s.tokenResponse(ctx, q, uid, sid, mfa, refresh, ri)
+	if err != nil {
+		return nil, err
+	}
+	out.SetCookie = append(out.SetCookie, tidy...)
+	return out, nil
 }
 
-func (s *svc) tokenResponse(ctx context.Context, q db.Querier, uid, sid uuid.UUID, mfa bool, refresh string) (*authOut, error) {
+func (s *svc) tokenResponse(ctx context.Context, q db.Querier, uid, sid uuid.UUID, mfa bool, refresh string, ri reqInfo) (*authOut, error) {
 	access, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: sid.String(), MFA: mfa},
 		uid.String(), auth.AccessTTL)
 	if err != nil {
@@ -88,8 +112,13 @@ func (s *svc) tokenResponse(ctx context.Context, q db.Querier, uid, sid uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	return &authOut{SetCookie: s.refreshCookie(refresh, int(auth.RefreshTTL.Seconds())), CacheControl: "no-store",
-		Body: CoreAuthResult{AccessToken: access, ExpiresIn: int(auth.AccessTTL.Seconds()), User: &u}}, nil
+	out := &authOut{CacheControl: "no-store", Body: CoreAuthResult{AccessToken: access, ExpiresIn: int(auth.AccessTTL.Seconds()), User: &u}}
+	if ri.Native {
+		out.Body.RefreshToken = refresh
+	} else {
+		out.SetCookie = []string{s.refreshCookie(RefreshCookieName(uid), refresh, int(auth.RefreshTTL.Seconds()))}
+	}
+	return out, nil
 }
 
 func errRefreshInvalid() *httpx.Error {
@@ -97,15 +126,17 @@ func errRefreshInvalid() *httpx.Error {
 }
 
 // rotateRefresh trades a refresh token for a new one. A token that was already rotated
-// (outside a short grace window) is treated as stolen and ends its session.
-func (s *svc) rotateRefresh(ctx context.Context, token string, ri reqInfo) (*authOut, error) {
+// (outside a short grace window) is treated as stolen and ends its session. With expect
+// set, the token must belong to that account. keep reports a refusal that must leave the
+// browser's cookie alone: a replay inside the grace window (another tab already holds the
+// new token) or a token of another account.
+func (s *svc) rotateRefresh(ctx context.Context, token string, expect uuid.UUID, ri reqInfo) (out *authOut, keep bool, err error) {
 	if token == "" {
-		return nil, errRefreshInvalid()
+		return nil, false, errRefreshInvalid()
 	}
 	h := crypto.HashToken(token)
-	var out *authOut
 	var reusedUser, reusedSession uuid.UUID
-	err := s.tx(ctx, func(tx pgx.Tx) error {
+	err = s.tx(ctx, func(tx pgx.Tx) error {
 		var sid, uid uuid.UUID
 		var mfa bool
 		var created, expires time.Time
@@ -121,10 +152,15 @@ func (s *svc) rotateRefresh(ctx context.Context, token string, ri reqInfo) (*aut
 			if err != nil {
 				return err
 			}
-			if rotated != nil && time.Since(*rotated) < refreshReuseGrace {
+			if expect != uuid.Nil && uid != expect {
+				keep = true
 				return errRefreshInvalid()
 			}
-			if _, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1`, sid); err != nil {
+			if rotated != nil && time.Since(*rotated) < refreshReuseGrace {
+				keep = true
+				return errRefreshInvalid()
+			}
+			if _, err := endSession(ctx, tx, uid, sid); err != nil {
 				return err
 			}
 			if _, err := auditUser(ctx, tx, userPrincipal(uid, ri), uid, "session.refresh_reused", map[string]any{"session_id": sid}); err != nil {
@@ -135,6 +171,10 @@ func (s *svc) rotateRefresh(ctx context.Context, token string, ri reqInfo) (*aut
 		}
 		if err != nil {
 			return err
+		}
+		if expect != uuid.Nil && uid != expect {
+			keep = true
+			return errRefreshInvalid()
 		}
 		now := time.Now()
 		if now.After(expires) || now.Sub(created) > SessionMaxAge {
@@ -151,18 +191,18 @@ func (s *svc) rotateRefresh(ctx context.Context, token string, ri reqInfo) (*aut
 			sid, crypto.HashToken(next), newExp, ri.IP, ri.UserAgent); err != nil {
 			return err
 		}
-		out, err = s.tokenResponse(ctx, tx, uid, sid, mfa, next)
+		out, err = s.tokenResponse(ctx, tx, uid, sid, mfa, next, ri)
 		return err
 	})
 	if reusedUser != uuid.Nil {
 		s.d.Log.Warn("refresh token reuse; session revoked", "user_id", reusedUser, "session_id", reusedSession)
 		s.disconnect(reusedUser, reusedSession)
-		return nil, errRefreshInvalid()
+		return nil, false, errRefreshInvalid()
 	}
 	if err != nil {
-		return nil, err
+		return nil, keep, err
 	}
-	return out, nil
+	return out, false, nil
 }
 
 // disconnect asks the gateway to close the user's sockets.
@@ -177,9 +217,30 @@ func (s *svc) disconnect(uid, sid uuid.UUID) {
 	events.Disconnect(s.d.NATS.Conn, uid.String(), session)
 }
 
-// revokeOtherSessions ends every session of uid except keep (uuid.Nil ends all).
+// Every path that ends a session goes through endSession or revokeOtherSessions, which
+// delete the session's push devices in the same transaction: a signed-out phone stops
+// receiving pushes at once. (Deleting a user or a session row cascades to its devices.)
+
+// endSession revokes one live session of uid and deletes its push devices. It reports
+// whether a live session was ended.
+func endSession(ctx context.Context, q db.Querier, uid, sid uuid.UUID) (bool, error) {
+	tag, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, sid, uid)
+	if err != nil {
+		return false, err
+	}
+	if _, err := q.Exec(ctx, `DELETE FROM push_devices WHERE session_id = $1`, sid); err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// revokeOtherSessions ends every session of uid except keep (uuid.Nil ends all) and
+// deletes their push devices.
 func revokeOtherSessions(ctx context.Context, q db.Querier, uid, keep uuid.UUID) error {
-	_, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL`, uid, keep)
+	if _, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL`, uid, keep); err != nil {
+		return err
+	}
+	_, err := q.Exec(ctx, `DELETE FROM push_devices WHERE user_id = $1 AND session_id <> $2`, uid, keep)
 	return err
 }
 
@@ -191,6 +252,7 @@ type CoreSession struct {
 	CreatedAt  time.Time `json:"created_at"`
 	LastUsedAt time.Time `json:"last_used_at"`
 	Current    bool      `json:"current"`
+	Client     string    `json:"client" enum:"web,desktop,ios" doc:"The app the session signed in from"`
 }
 
 func (s *svc) registerSessions(api huma.API) {
@@ -211,7 +273,7 @@ func (s *svc) registerSessions(api huma.API) {
 			if cur.T.IsZero() {
 				cur.T = time.Now().Add(24 * time.Hour)
 			}
-			rows, err := s.d.DB.Pool.Query(ctx, `SELECT id, user_agent, ip, created_at, last_used_at FROM sessions
+			rows, err := s.d.DB.Pool.Query(ctx, `SELECT id, user_agent, ip, created_at, last_used_at, client FROM sessions
 				WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() AND (last_used_at, id) < ($2, $3)
 				ORDER BY last_used_at DESC, id DESC LIMIT $4`, p.UserID, cur.T, cur.ID, in.Limit+1)
 			if err != nil {
@@ -219,7 +281,7 @@ func (s *svc) registerSessions(api huma.API) {
 			}
 			list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (CoreSession, error) {
 				var x CoreSession
-				err := r.Scan(&x.ID, &x.UserAgent, &x.IP, &x.CreatedAt, &x.LastUsedAt)
+				err := r.Scan(&x.ID, &x.UserAgent, &x.IP, &x.CreatedAt, &x.LastUsedAt, &x.Client)
 				x.Current = x.ID == p.SessionID
 				return x, err
 			})
@@ -246,11 +308,11 @@ func (s *svc) registerSessions(api huma.API) {
 				return nil, err
 			}
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, sid, p.UserID)
+				ended, err := endSession(ctx, tx, p.UserID, sid)
 				if err != nil {
 					return err
 				}
-				if tag.RowsAffected() == 0 {
+				if !ended {
 					return httpx.NotFound("Session")
 				}
 				_, err = auditUser(ctx, tx, p, p.UserID, "session.revoked", map[string]any{"session_id": sid})

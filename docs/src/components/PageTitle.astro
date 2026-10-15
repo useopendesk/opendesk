@@ -4,7 +4,21 @@ import OdIcon from './OdIcon.astro';
 const { entry, editUrl } = Astro.locals.starlightRoute;
 const { title, description } = entry.data;
 // Every docs page also exists as plain Markdown at the same path with `.md`.
-const markdownUrl = editUrl ? Astro.url.pathname.replace(/\/$/, '') + '.md' : undefined;
+const markdownPath = editUrl ? Astro.url.pathname.replace(/\/$/, '') + '.md' : undefined;
+const markdownUrl = markdownPath ? new URL(markdownPath, Astro.site).toString() : undefined;
+const prompt = markdownUrl ? `Read ${markdownUrl} so I can ask questions about it.` : '';
+const open = markdownUrl
+  ? [
+      { label: 'Open in ChatGPT', href: `https://chatgpt.com/?${new URLSearchParams({ hints: 'search', q: prompt })}`, icon: 'openai' },
+      { label: 'Open in Claude', href: `https://claude.ai/new?${new URLSearchParams({ q: prompt })}`, icon: 'anthropic' },
+      { label: 'View as Markdown', href: markdownPath!, icon: 'markdown' },
+    ]
+  : [];
+const glyphs: Record<string, string> = {
+  openai: 'M22.28 9.82a5.98 5.98 0 0 0-.52-4.91 6.05 6.05 0 0 0-6.51-2.9A6.07 6.07 0 0 0 4.98 4.18a5.98 5.98 0 0 0-4 2.9 6.05 6.05 0 0 0 .74 7.1 5.98 5.98 0 0 0 .51 4.91 6.05 6.05 0 0 0 6.52 2.9A5.98 5.98 0 0 0 13.26 24a6.06 6.06 0 0 0 5.77-4.21 5.99 5.99 0 0 0 4-2.9 6.06 6.06 0 0 0-.75-7.07zm-9.02 12.61a4.48 4.48 0 0 1-2.88-1.04l.14-.08 4.78-2.76a.79.79 0 0 0 .39-.68v-6.74l2.02 1.17a.07.07 0 0 1 .04.05v5.58a4.5 4.5 0 0 1-4.49 4.5zm-9.66-4.13a4.47 4.47 0 0 1-.53-3.01l.14.09 4.78 2.76a.77.77 0 0 0 .78 0l5.84-3.37v2.33a.08.08 0 0 1-.03.06L9.74 19.95a4.5 4.5 0 0 1-6.14-1.65zM2.34 7.9a4.49 4.49 0 0 1 2.37-1.97v5.68a.77.77 0 0 0 .39.68l5.81 3.35-2.02 1.17a.08.08 0 0 1-.07 0l-4.83-2.79A4.5 4.5 0 0 1 2.34 7.87zm16.6 3.86-5.84-3.39 2.02-1.16a.08.08 0 0 1 .07 0l4.83 2.79a4.49 4.49 0 0 1-.68 8.1v-5.68a.79.79 0 0 0-.4-.67zm2.01-3.02-.14-.09-4.77-2.78a.78.78 0 0 0-.79 0L9.41 9.23V6.9a.07.07 0 0 1 .03-.06l4.83-2.79a4.5 4.5 0 0 1 6.68 4.66zM8.31 12.86l-2.02-1.16a.08.08 0 0 1-.04-.06V6.07a4.5 4.5 0 0 1 7.38-3.45l-.14.08L8.7 5.46a.79.79 0 0 0-.39.68zm1.1-2.37 2.6-1.5 2.6 1.5v3l-2.6 1.5-2.6-1.5z',
+  anthropic: 'M17.3 3.54h-3.67l6.7 16.92H24zm-10.6 0L0 20.46h3.74l1.37-3.55h7.01l1.37 3.55h3.74L10.54 3.54zm-.37 10.22 2.29-5.94 2.29 5.94z',
+  markdown: 'M22.27 19.39H1.73A1.73 1.73 0 0 1 0 17.66V6.34a1.73 1.73 0 0 1 1.73-1.73h20.54A1.73 1.73 0 0 1 24 6.34v11.32a1.73 1.73 0 0 1-1.73 1.73zM5.77 15.92v-4.5l2.31 2.88 2.3-2.88v4.5h2.31V8.08h-2.3l-2.31 2.89-2.31-2.89H3.46v7.84zM21.23 12h-2.31V8.08h-2.31V12h-2.3l3.46 4.04z',
+};
 ---
 
 <div class="od-title">
@@ -13,10 +27,25 @@ const markdownUrl = editUrl ? Astro.url.pathname.replace(/\/$/, '') + '.md' : un
   {
     editUrl && (
       <div class="od-actions print:hidden">
-        <button type="button" class="od-pill" data-copy-markdown={markdownUrl} title="Copy this page as Markdown">
+        <button type="button" class="od-pill" data-copy-markdown={markdownPath} title="Copy this page as Markdown">
           <OdIcon name="copy" size={13} />
-          <span data-label>Copy page</span>
+          <span data-label>Copy Markdown</span>
         </button>
+        <div class="od-open" data-open-menu>
+          <button type="button" class="od-pill" aria-haspopup="menu" aria-expanded="false" data-open-button>
+            Open
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+          <div class="od-open-panel" role="menu" hidden data-open-panel>
+            {open.map((o) => (
+              <a role="menuitem" href={o.href} target={o.href.startsWith('http') ? '_blank' : undefined} rel="noreferrer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={glyphs[o.icon]} /></svg>
+                {o.label}
+                {o.href.startsWith('http') && <OdIcon name="external" size={12} class="od-open-ext" />}
+              </a>
+            ))}
+          </div>
+        </div>
       </div>
     )
   }
@@ -33,7 +62,31 @@ const markdownUrl = editUrl ? Astro.url.pathname.replace(/\/$/, '') + '.md' : un
       } catch {
         label.textContent = 'Copy failed';
       }
-      setTimeout(() => (label.textContent = 'Copy page'), 1600);
+      setTimeout(() => (label.textContent = 'Copy Markdown'), 1600);
+    });
+  });
+
+  // The Open menu closes on click-away, on Escape and when an item is followed.
+  document.querySelectorAll<HTMLElement>('[data-open-menu]').forEach((menu) => {
+    const button = menu.querySelector<HTMLButtonElement>('[data-open-button]')!;
+    const panel = menu.querySelector<HTMLElement>('[data-open-panel]')!;
+    const set = (open: boolean) => {
+      panel.hidden = !open;
+      button.setAttribute('aria-expanded', String(open));
+    };
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      set(Boolean(panel.hidden));
+    });
+    panel.addEventListener('click', () => set(false));
+    document.addEventListener('click', (e) => {
+      if (!menu.contains(e.target as Node)) set(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) {
+        set(false);
+        button.focus();
+      }
     });
   });
 </script>
@@ -75,10 +128,49 @@ const markdownUrl = editUrl ? Astro.url.pathname.replace(/\/$/, '') + '.md' : un
     text-decoration: none;
     cursor: pointer;
   }
-  .od-pill:hover {
+  .od-pill:hover,
+  .od-pill[aria-expanded='true'] {
     background: var(--od-soft);
   }
   .od-pill :global(svg) {
     color: var(--od-muted);
+  }
+  .od-open {
+    position: relative;
+  }
+  .od-open-panel {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    display: grid;
+    min-width: 210px;
+    padding: 4px;
+    border: 1px solid var(--od-line);
+    border-radius: 10px;
+    background: var(--od-popover);
+    box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.25);
+  }
+  .od-open-panel[hidden] {
+    display: none;
+  }
+  .od-open-panel a {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 7px;
+    color: var(--od-heading);
+    font-size: 13px;
+    text-decoration: none;
+  }
+  .od-open-panel a:hover {
+    background: var(--od-hover);
+  }
+  .od-open-panel a svg {
+    color: var(--od-muted);
+  }
+  .od-open-panel :global(.od-open-ext) {
+    margin-left: auto;
   }
 </style>

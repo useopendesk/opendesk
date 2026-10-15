@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Check } from "lucide-react";
+import { Check, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RolePill } from "@/components/settings2/bits";
@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { TextInput } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
+import { playAlert, setAlertSound, setSoundPref, useAlertSound, useSoundPrefs, type AlertSound, type SoundPref } from "@/lib/alertSound";
 import { api } from "@/lib/api/endpoints";
 import type { User } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
@@ -129,7 +131,36 @@ export default function Profile() {
           <ThemeCards />
         </div>
       </Section>
+
+      <Section title={t("profile.sounds.title")} description={t("profile.sounds.hint")}>
+        <Sounds />
+      </Section>
     </SettingsPage>
+  );
+}
+
+/** Each sound on its own switch, with a way to hear it first. Stored per browser. */
+function Sounds() {
+  const { t } = useTranslation("settings");
+  const chat = useAlertSound();
+  const prefs = useSoundPrefs();
+  const rows: { key: "chat" | SoundPref; sound: AlertSound; on: boolean; set: (v: boolean) => void }[] = [
+    { key: "chat", sound: "waiting", on: chat, set: setAlertSound },
+    { key: "ticket", sound: "ticket", on: prefs.ticket, set: (v) => setSoundPref("ticket", v) },
+    { key: "reply", sound: "reply", on: prefs.reply, set: (v) => setSoundPref("reply", v) },
+    { key: "assigned", sound: "assigned", on: prefs.assigned, set: (v) => setSoundPref("assigned", v) },
+  ];
+  return (
+    <div>
+      {rows.map((r) => (
+        <Row key={r.key} label={t(`profile.sounds.${r.key}`)} description={t(`profile.sounds.${r.key}Hint`)}>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" square aria-label={t("profile.sounds.preview")} title={t("profile.sounds.preview")} onClick={() => playAlert(r.sound)} icon={<Volume2 className="size-3.5" />} />
+            <Switch checked={r.on} onCheckedChange={r.set} aria-label={t(`profile.sounds.${r.key}`)} />
+          </div>
+        </Row>
+      ))}
+    </div>
   );
 }
 

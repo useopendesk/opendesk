@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/domain"
 )
 
 // Tip is one thing worth doing now, offered under the header blob.
@@ -24,7 +25,11 @@ type TipList struct {
 // tips are plain counts over the caller's workspace, most pressing first. No AI.
 func (s *Service) tips(ctx context.Context, p *auth.Principal) ([]Tip, error) {
 	var soon, atRisk, breached, staleUnassigned, mineWaiting int
-	err := s.d.DB.Pool.QueryRow(ctx, `SELECT
+	hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)
+	if err != nil {
+		return nil, err
+	}
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE due > now() AND due <= now() + interval '1 hour'),
 		count(*) FILTER (WHERE due > now() + interval '1 hour' AND due <= now() + interval '4 hours' AND sla_risk >= 0.6),
 		count(*) FILTER (WHERE due <= now()),
@@ -35,8 +40,9 @@ func (s *Service) tips(ctx context.Context, p *auth.Principal) ([]Tip, error) {
 				CASE WHEN jsonb_typeof(custom #> '{ai_decisions,fields,sla_risk,value}') = 'number'
 					THEN (custom #>> '{ai_decisions,fields,sla_risk,value}')::float8 END AS sla_risk,
 				LEAST(CASE WHEN first_responded_at IS NULL THEN first_response_due_at END, resolution_due_at) AS due
-			 FROM tickets WHERE workspace_id = $1 AND deleted_at IS NULL AND NOT spam AND status IN ('open', 'pending', 'on_hold')) t`,
-		p.WorkspaceID, p.UserID).Scan(&soon, &atRisk, &breached, &staleUnassigned, &mineWaiting)
+			 FROM tickets tk WHERE workspace_id = $1 AND deleted_at IS NULL AND NOT spam AND status IN ('open', 'pending', 'on_hold')
+			 AND `+domain.VisibleSQLUser("tk", 3, 2)+`) t`,
+		p.WorkspaceID, p.UserID, hidden).Scan(&soon, &atRisk, &breached, &staleUnassigned, &mineWaiting)
 	if err != nil {
 		return nil, err
 	}

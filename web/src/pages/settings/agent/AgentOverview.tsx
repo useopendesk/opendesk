@@ -1,6 +1,6 @@
 // Settings > AI agent > Overview: how the widget agent did over a range
 // (GET /v1/ai/agent/report): conversations, resolutions, handoffs, ratings
-// and credits, a by-day chart, the tools it called, and the questions it
+// and what it spent, a by-day chart, the tools it called, and the questions it
 // couldn't answer, each one a click away from a help article. The setup
 // checklist (GET /v1/ai/agent/setup) leads the page until it is complete.
 
@@ -23,7 +23,7 @@ import { agentSettings } from "@/components/agent/settings";
 import { ReviewQueue } from "@/components/agent/ReviewQueue";
 import { useAI } from "@/lib/ai";
 import type { AgentReport, ReportsRange } from "@/lib/api/types";
-import { credits, number, percent } from "@/lib/format";
+import { formatUsd, number, percent } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { cn } from "@/lib/cn";
@@ -143,7 +143,7 @@ function Tiles({ d }: { d: AgentReport }) {
             </span>
           ),
         },
-        { label: t("overview.credits"), value: credits(d.credits), hint: t("overview.creditsHint") },
+        { label: t("overview.spent"), value: formatUsd(d.usd, { tiny: true }), hint: t("overview.spentHint") },
       ]}
     />
   );

@@ -18,6 +18,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { IconTile, ListSkeleton, MonoChip, StatePill, SummaryStrip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { useListMutation } from "@/components/settings2/optimistic";
+import { GrantedTeams, PrivateTeamsField } from "@/components/settings2/teams";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { ApiKey } from "@/lib/api/types";
@@ -164,6 +165,7 @@ export default function ApiKeys() {
                             <span className="mono mr-1 text-[11px] text-fg-4">{k.prefix.slice(0, 12)}…</span>
                             <ScopeChips scopes={k.scopes} />
                           </div>
+                          <GrantedTeams grants={k.private_teams} className="mt-1.5" />
                         </div>
                       </div>
                       <Tooltip content={k.last_used_at ? fullDate(k.last_used_at) : t("apiKeys.neverUsed")}>
@@ -314,6 +316,7 @@ function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>(readScopes);
   const [expiry, setExpiry] = useState<Expiry>("90");
+  const [privateTeams, setPrivateTeams] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const preset = scopes.length === allScopes.length ? "full" : scopes.length === readScopes.length && readScopes.every((s) => scopes.includes(s)) ? "read" : "custom";
@@ -324,6 +327,7 @@ function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         name: name.trim(),
         scopes,
         expires_at: expiry === "never" ? null : new Date(Date.now() + Number(expiry) * 86400_000).toISOString(),
+        ...(privateTeams.length ? { private_team_ids: privateTeams } : {}),
       }),
     onSuccess: (k) => {
       const { secret: _secret, ...row } = k;
@@ -415,6 +419,7 @@ function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             />
           )}
         </Field>
+        <PrivateTeamsField value={privateTeams} onChange={setPrivateTeams} />
         <button type="submit" className="hidden" />
       </form>
     </Dialog>

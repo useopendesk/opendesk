@@ -1,0 +1,264 @@
+---
+/**
+ * One figure from /security: a control at work, as the app shows it. The big
+ * scenes are short loops that play while on screen; the small ones are still.
+ */
+import Stage from '../Stage.astro';
+import Icon from '../Icon.astro';
+import Logo from '../Logo.astro';
+import type { IconName } from '../../lib/icons';
+
+const code = ['4', '8', '1', '0', '7', '2'];
+
+const sessions = [
+  { icon: 'laptop' as IconName, label: 'Chrome on macOS', ip: '203.0.113.24', when: 'Active now', current: true },
+  { icon: 'smartphone' as IconName, label: 'Safari on iOS', ip: '198.51.100.7', when: 'Last used 2 hours ago' },
+  { icon: 'laptop' as IconName, label: 'Firefox on Windows', ip: '192.0.2.181', when: 'Last used 3 days ago', target: true },
+];
+
+// Verbs and tones from web/src/pages/settings/AuditLog.tsx.
+const audit: { icon: IconName; tone: string; who: string; what: string; obj?: string; ip: string; at: string }[] = [
+  { icon: 'logIn', tone: 't-blue', who: 'Maya Chen', what: 'signed in', ip: '203.0.113.24', at: '09:41' },
+  { icon: 'shieldAlert', tone: 't-red', who: 'lena@margin.io', what: 'failed to sign in', ip: '198.51.100.62', at: '09:38' },
+  { icon: 'shieldCheck', tone: 't-amber', who: 'Lena Hoffmann', what: 'turned on two-factor authentication', ip: '198.51.100.7', at: '09:30' },
+  { icon: 'keyRound', tone: 't-violet', who: 'Tom Okafor', what: 'created an API key', obj: 'Zapier', ip: '192.0.2.44', at: '09:12' },
+  { icon: 'users', tone: 't-teal', who: 'Maya Chen', what: 'changed a member’s role', obj: 'to admin', ip: '203.0.113.24', at: '08:57' },
+  { icon: 'inbox', tone: 't-blue', who: 'Maya Chen', what: 'connected a mailbox', obj: 'support@margin.io', ip: '203.0.113.24', at: '08:51' },
+  { icon: 'monitor', tone: 't-blue', who: 'Lena Hoffmann', what: 'revoked a session', ip: '198.51.100.7', at: '08:40' },
+  { icon: 'chat', tone: 't-teal', who: 'Maya Chen', what: 'rotated the widget secret', ip: '203.0.113.24', at: '08:22' },
+  { icon: 'webhook', tone: 't-violet', who: 'Tom Okafor', what: 'deleted a webhook', obj: 'hooks.example.com', ip: '192.0.2.44', at: '08:05' },
+  { icon: 'lock', tone: 't-amber', who: 'Lena Hoffmann', what: 'changed their password', ip: '198.51.100.7', at: '07:48' },
+];
+
+const secrets: { icon: IconName; label: string; owner: string; hex: string }[] = [
+  { icon: 'server', label: 'Mailbox password', owner: 'IMAP, support@', hex: '9f3a1c07e4b2d85f6a0c3e91b7d42f58a6c1e03b9d7f2a4c86e5b1d09f37a2c4' },
+  { icon: 'key', label: 'OAuth refresh token', owner: 'Google, billing@', hex: 'c41e8b2f07a9d356e1b04c8f2a7d93e05b6c1f48d2a9e73b0c5f16a8e4d27b93' },
+  { icon: 'webhook', label: 'Webhook secret', owner: 'hooks.example.com', hex: '07d2e9a4c6b1f83e5a0d7c2b94f61e8a3d5c07b2f9e4a16c8d3b05e7f2a9c41d' },
+  { icon: 'shield', label: 'Two-factor secret', owner: 'Lena Hoffmann', hex: 'e6b03f9a2d71c4e8b5a06f3d9c2e17b84a5d0c3f6e9b21a7d4c80f5e3b6a19d2' },
+];
+
+const roles = ['Owner', 'Admin', 'Agent', 'Viewer'];
+const matrix: [string, boolean[]][] = [
+  ['Read tickets and reports', [true, true, true, true]],
+  ['Reply, assign and edit', [true, true, true, false]],
+  ['Workspace settings', [true, true, false, false]],
+  ['Delete the workspace', [true, false, false, false]],
+];
+
+interface Props {
+  name: 'mfa' | 'sessions' | 'audit' | 'secrets' | 'webhook' | 'roles' | 'logs' | 'ci' | 'delete';
+}
+const { name } = Astro.props;
+---
+{name === 'mfa' && (
+<Stage w={520} h={380} tone="none" label="The two-factor step at sign-in: a six-digit code is entered and accepted.">
+  <div class="float-card left-[90px] top-[34px] w-[340px] px-7 pb-7 pt-6 text-left" data-seq data-hold="3400">
+    <Logo variant="mark" class="size-6 text-fg" />
+    <div class="mt-4 text-[17px] font-semibold tracking-[-0.02em] text-fg">Two-factor authentication</div>
+    <div class="mt-1 text-[12px] leading-relaxed text-muted">Enter the 6-digit code from your authenticator app.</div>
+    <div class="mt-5 flex gap-2">
+      {code.map((d, i) => (
+        <span class="sec-digit relative flex h-11 flex-1 items-center justify-center rounded-[8px] font-mono text-[17px] font-medium text-fg ring-1 ring-line-strong">
+          <span class="s-pop" data-step={i + 1} data-wait={i === 0 ? 900 : 260}>{d}</span>
+        </span>
+      ))}
+    </div>
+    <div class="relative mt-4 h-9">
+      <div class="s-swap absolute inset-0 flex items-center justify-center rounded-[8px] bg-fg text-[12.5px] font-medium text-bg" data-step="0" data-wait="0" data-until="7">Verify</div>
+      <div class="s-swap absolute inset-0 flex items-center justify-center gap-2 rounded-[8px] bg-[color-mix(in_oklab,var(--ok)_12%,var(--bg))] text-[12.5px] font-medium text-ok ring-1 ring-[color-mix(in_oklab,var(--ok)_30%,transparent)]" data-step="7" data-wait="500"><Icon name="checkCircle" size={14} />Signed in</div>
+    </div>
+    <div class="mt-4 text-center text-[11.5px] text-muted underline decoration-line-strong underline-offset-2">Use a recovery code</div>
+  </div>
+  <div class="float-card left-[350px] top-[268px] flex items-center gap-2.5 px-3 py-2.5 text-left">
+    <svg viewBox="0 0 20 20" class="size-5 -rotate-90" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--line)" stroke-width="2.5" /><circle class="sec-totp" cx="10" cy="10" r="8" fill="none" stroke="var(--c-amber)" stroke-width="2.5" pathLength="100" stroke-dasharray="100" /></svg>
+    <div class="leading-tight"><div class="text-[11.5px] font-medium text-fg">Each code works once</div><div class="font-mono text-[10px] text-muted">new code every 30s</div></div>
+  </div>
+</Stage>
+)}
+
+{name === 'sessions' && (
+<Stage w={720} h={380} tone="none" mobileW={560} mobileX={56} label="The sessions list in settings: a device is signed out and disappears from the list.">
+  <div class="absolute inset-0" data-seq data-hold="3600">
+    <div class="float-card left-[60px] top-[36px] w-[600px] text-left">
+      <div class="flex items-start gap-3 border-b border-line px-5 py-4">
+        <div><div class="text-[14px] font-semibold text-fg">Sessions</div><div class="mt-0.5 text-[11.5px] text-muted">Devices signed in to your account.</div></div>
+        <span class="ml-auto rounded-[7px] px-2.5 py-1.5 text-[11.5px] font-medium text-fg ring-1 ring-line-strong">Sign out other devices</span>
+      </div>
+      {sessions.map((s) => (
+        <div class={`flex h-[62px] items-center gap-3 border-b border-line px-5 last:border-0 ${s.target ? 's-gone' : ''}`} data-step={s.target ? 3 : undefined} data-wait={s.target ? 700 : undefined}>
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-[7px] text-muted ring-1 ring-line"><Icon name={s.icon} size={15} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 text-[12.5px] font-medium text-fg">{s.label}{s.current && <span class="rounded-[5px] bg-fg px-1.5 py-0.5 text-[9.5px] font-medium text-bg">This device</span>}</div>
+            <div class="mt-0.5 flex items-center gap-2 text-[11px] text-muted"><span class="font-mono">{s.ip}</span><span>·</span><span>{s.when}</span></div>
+          </div>
+          {!s.current && <span class={`rounded-[7px] px-2.5 py-1.5 text-[11.5px] font-medium text-fg transition-colors ${s.target ? 'sec-hit' : ''}`} data-step={s.target ? 1 : undefined} data-wait={s.target ? 1200 : undefined}>Sign out</span>}
+        </div>
+      ))}
+    </div>
+    <!-- The confirm dialog -->
+    <div class="s-pop float-card left-[370px] top-[214px] w-[270px] p-4 text-left" data-step="2" data-until="3" data-wait="900">
+      <div class="text-[13px] font-semibold text-fg">Sign out this device?</div>
+      <div class="mt-1 text-[11.5px] text-muted">Firefox on Windows will be signed out.</div>
+      <div class="mt-3.5 flex justify-end gap-2 text-[11.5px] font-medium"><span class="rounded-[6px] px-2.5 py-1.5 text-fg ring-1 ring-line-strong">Cancel</span><span class="rounded-[6px] bg-fg px-2.5 py-1.5 text-bg">Sign out</span></div>
+    </div>
+    <div class="s-up float-card left-[60px] top-[310px] flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] text-fg" data-step="4" data-wait="500">
+      <span class="flex size-5 items-center justify-center rounded-full bg-ok text-white"><Icon name="check" size={11} stroke={3} /></span>Signed out
+      <span class="pill t-grey ml-1 font-mono">od.control.disconnect</span>
+      <span class="text-[11px] text-muted">sockets closed</span>
+    </div>
+  </div>
+</Stage>
+)}
+
+{name === 'audit' && (
+<Stage w={720} h={400} tone="none" mobileW={570} mobileX={46} label="The audit log in settings: sign-ins, a failed sign-in, two-factor turned on, an API key created, a role changed and a mailbox connected, scrolling by.">
+  <div class="float-card left-[50px] top-[30px] h-[400px] w-[620px] text-left">
+    <div class="flex items-center gap-3 border-b border-line px-5 py-3.5">
+      <span class="text-[14px] font-semibold text-fg">Audit log</span>
+      <span class="ml-auto flex rounded-[8px] bg-surface p-0.5 text-[11px] text-muted ring-1 ring-line">
+        {['All', 'Access', 'Security', 'People', 'Integrations'].map((c, i) => <span class={`rounded-[6px] px-2 py-1 ${i === 0 ? 'bg-bg text-fg shadow-[0_1px_2px_rgb(0_0_0/0.08)] ring-1 ring-line' : ''}`}>{c}</span>)}
+      </span>
+    </div>
+    <div class="px-5 pt-3 font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Today</div>
+    <div class="sec-feed absolute inset-x-0 bottom-0 top-[86px] overflow-hidden">
+      <div class="sec-feed-track">
+        {[...audit, ...audit].map((e, i) => (
+          <div class="flex h-[50px] items-center gap-3 px-5" aria-hidden={i >= audit.length ? 'true' : undefined}>
+            <span class={`${e.tone} tint-bg flex size-7 shrink-0 items-center justify-center rounded-[8px]`}><Icon name={e.icon} size={14} /></span>
+            <div class="min-w-0 flex-1 truncate text-[12.5px] text-body"><span class="font-medium text-fg">{e.who}</span> {e.what}{e.obj && <> <span class="font-medium text-fg">{e.obj}</span></>}</div>
+            <span class="shrink-0 font-mono text-[10.5px] text-subtle">{e.ip}</span>
+            <span class="w-10 shrink-0 text-right font-mono text-[10.5px] text-muted">{e.at}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</Stage>
+)}
+
+{name === 'secrets' && (
+<Stage w={520} h={400} tone="none" label="Stored credentials, each kept only as AES-256-GCM ciphertext.">
+  <div class="float-card left-[40px] top-[40px] w-[440px] text-left">
+    <div class="flex items-center gap-2 border-b border-line px-4 py-3">
+      <Icon name="database" size={14} class="text-muted" />
+      <span class="text-[12.5px] font-semibold text-fg">Stored credentials</span>
+      <span class="pill t-green ml-auto font-mono">AES-256-GCM</span>
+    </div>
+    {secrets.map((s, i) => (
+      <div class="border-b border-line px-4 py-3 last:border-0">
+        <div class="flex items-center gap-2 text-[12px]"><Icon name={s.icon} size={13} class="text-muted" /><span class="font-medium text-fg">{s.label}</span><span class="ml-auto truncate text-[10.5px] text-muted">{s.owner}</span></div>
+        <div class="mt-2 flex h-6 items-center rounded-[6px] bg-surface px-2 ring-1 ring-line">
+          <Icon name="lock" size={10} class="mr-2 shrink-0 text-subtle" />
+          <span class="sec-hex min-w-0 flex-1 overflow-hidden"><span class="sec-hex-run whitespace-nowrap font-mono text-[10.5px] text-subtle" style={`animation-duration:${22 + i * 5}s`}>{s.hex}{s.hex}</span></span>
+        </div>
+      </div>
+    ))}
+  </div>
+</Stage>
+)}
+
+{name === 'webhook' && (
+<Stage w={600} h={340} tone="none" mobileW={520} mobileX={40} label="Adding a webhook: a private address and a plain http address are refused, and an https address on the public internet is accepted.">
+  <div class="float-card left-[60px] top-[36px] w-[480px] p-5 text-left" data-seq data-hold="3000">
+    <div class="text-[14px] font-semibold text-fg">Add a webhook</div>
+    <div class="mt-4 text-[11.5px] font-medium text-body">Endpoint URL</div>
+    <div class="sec-url relative mt-1.5 flex h-9 items-center rounded-[8px] px-3 font-mono text-[12px] text-fg ring-1">
+      <span class="text-faint" data-step="0" data-wait="0" data-until="1">https://example.com/hooks/opendesk</span>
+      <span class="s-swap" data-step="1" data-wait="900" data-until="3">https://10.0.0.12/hooks</span>
+      <span class="s-swap" data-step="3" data-wait="2600" data-until="5">http://hooks.example.com/opendesk</span>
+      <span class="s-swap" data-step="5" data-wait="2600">https://hooks.example.com/opendesk</span>
+    </div>
+    <div class="relative mt-2 h-5 text-[11.5px]">
+      <span class="s-swap absolute inset-0 flex items-center gap-1.5 text-bad" data-step="2" data-wait="450" data-until="3"><Icon name="shieldAlert" size={13} />The URL must point to a public internet address.</span>
+      <span class="s-swap absolute inset-0 flex items-center gap-1.5 text-bad" data-step="4" data-wait="450" data-until="5"><Icon name="shieldAlert" size={13} />The URL must use https://.</span>
+      <span class="s-swap absolute inset-0 flex items-center gap-1.5 text-ok" data-step="6" data-wait="450"><Icon name="checkCircle" size={13} />Public, over HTTPS</span>
+    </div>
+    <div class="mt-4 flex flex-wrap gap-1.5">
+      {['ticket.created', 'message.created', 'contact.updated'].map((e) => <span class="pill t-grey font-mono">{e}</span>)}
+    </div>
+    <div class="mt-4 flex items-center gap-2 border-t border-line pt-3.5 text-[11px] text-muted"><Icon name="key" size={12} />Every delivery is signed with <span class="font-mono text-fg">OD-Signature</span></div>
+  </div>
+</Stage>
+)}
+
+{name === 'roles' && (
+<Stage w={600} h={340} tone="none" mobileW={540} mobileX={30} label="Roles: owners, admins, agents and viewers, and what each can do.">
+  <div class="float-card left-[50px] top-[30px] w-[500px] text-left">
+    <div class="grid grid-cols-[1fr_repeat(4,64px)] items-center border-b border-line px-4 py-3 text-[11px] font-medium text-muted">
+      <span>Role</span>{roles.map((r) => <span class="text-center">{r}</span>)}
+    </div>
+    {matrix.map(([what, can]) => (
+      <div class="grid grid-cols-[1fr_repeat(4,64px)] items-center border-b border-line px-4 py-3 last:border-0">
+        <span class="text-[12px] text-fg">{what}</span>
+        {can.map((y) => (
+          <span class="flex justify-center">
+            {y
+              ? <span class="flex size-5 items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--ok)_14%,transparent)] text-ok"><Icon name="check" size={11} stroke={2.5} /></span>
+              : <span class="h-[1.5px] w-2.5 rounded-full bg-line-strong"></span>}
+          </span>
+        ))}
+      </div>
+    ))}
+  </div>
+  <div class="float-card left-[50px] top-[262px] flex w-[500px] items-center gap-2.5 px-4 py-3 text-left">
+    <Icon name="database" size={14} class="shrink-0 text-muted" />
+    <span class="truncate font-mono text-[11px] text-body">… <span class="text-[var(--c-blue)]">WHERE</span> workspace_id = <span class="text-fg">$1</span></span>
+    <span class="ml-auto shrink-0 text-[11px] text-muted">from your session, never the request</span>
+  </div>
+</Stage>
+)}
+
+{name === 'logs' && (
+<div class="flex h-full items-center p-4">
+<pre class="w-full overflow-hidden rounded-[10px] bg-raised px-3.5 py-3 font-mono text-[10.5px] leading-[1.7] text-muted shadow-card ring-1 ring-line"><span class="text-fg">"msg"</span>: "http",
+<span class="text-fg">"method"</span>: "POST",
+<span class="text-fg">"path"</span>: "/v1/auth/login",
+<span class="text-fg">"status"</span>: 200,
+<span class="text-fg">"ms"</span>: 182</pre>
+</div>
+)}
+
+{name === 'ci' && (
+<div class="flex h-full items-center p-4">
+<div class="w-full rounded-[10px] bg-raised shadow-card ring-1 ring-line">
+  {[['govulncheck', 'Go'], ['pnpm audit', 'web'], ['mix deps.audit', 'realtime'], ['Trivy', 'images']].map(([c, w]) => (
+    <div class="flex items-center gap-2.5 border-b border-line px-3.5 py-2 last:border-0">
+      <span class="flex size-4 items-center justify-center rounded-full bg-ok text-white"><Icon name="check" size={9} stroke={3} /></span>
+      <span class="font-mono text-[11px] text-fg">{c}</span>
+      <span class="ml-auto text-[10.5px] text-muted">{w}</span>
+    </div>
+  ))}
+</div>
+</div>
+)}
+
+{name === 'delete' && (
+<div class="flex h-full items-center p-4">
+<div class="w-full rounded-[10px] bg-raised p-3.5 shadow-card ring-1 ring-[color-mix(in_oklab,var(--bad)_25%,var(--line))]">
+  <div class="text-[12px] font-medium text-fg">Delete your account</div>
+  <div class="mt-0.5 text-[10.5px] leading-relaxed text-muted">Removes your account and every workspace you are the only member of.</div>
+  <div class="mt-2.5 flex justify-end"><span class="rounded-[6px] bg-bad px-2.5 py-1 text-[10.5px] font-medium text-white">Delete account</span></div>
+</div>
+</div>
+)}
+
+<style is:global>
+  .sec-totp { animation: sec-totp 30s linear infinite; }
+  @keyframes sec-totp { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 100; } }
+  .seq-js .sec-digit:has(.on) { box-shadow: inset 0 0 0 1.5px var(--fg); }
+  .sec-hit { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .seq-js .sec-hit.on { background: var(--fg); color: var(--bg); box-shadow: none; }
+  .sec-url { box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow 300ms ease; }
+  .seq-js .sec-url:has(+ div .text-bad.on) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--bad) 60%, transparent), 0 0 0 3px color-mix(in oklab, var(--bad) 12%, transparent); }
+  .seq-js .sec-url:has(+ div .text-ok.on) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ok) 60%, transparent), 0 0 0 3px color-mix(in oklab, var(--ok) 12%, transparent); }
+  .sec-feed { mask-image: linear-gradient(180deg, transparent, #000 10%, #000 86%, transparent); }
+  .sec-feed-track { animation: sec-feed 34s linear infinite; }
+  .sec-feed:hover .sec-feed-track { animation-play-state: paused; }
+  @keyframes sec-feed { to { transform: translateY(-50%); } }
+  .sec-hex { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 70%, transparent); }
+  .sec-hex-run { display: inline-block; animation: sec-hex 24s linear infinite; }
+  @keyframes sec-hex { to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .sec-totp, .sec-feed-track, .sec-hex-run { animation: none; }
+  }
+</style>

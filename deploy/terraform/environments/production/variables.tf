@@ -5,29 +5,18 @@ variable "name" {
 }
 
 variable "aws_region" {
-  description = "AWS region. Keep Neon in the same one (neon_region)."
+  description = "AWS region. The PlanetScale database must be in the same one (PrivateLink is per region)."
   type        = string
   default     = "us-east-1"
 }
 
-variable "neon_region" {
-  type    = string
-  default = "aws-us-east-1"
-}
-
-variable "neon_org_id" {
-  type    = string
-  default = null
-}
-
-variable "neon_min_cu" {
-  type    = number
-  default = 0.5
-}
-
-variable "neon_max_cu" {
-  type    = number
-  default = 4
+variable "planetscale" {
+  description = "The PlanetScale Postgres database, created in the dashboard in aws_region (modules/planetscale)."
+  type = object({
+    organization = string
+    database     = string
+    branch       = optional(string, "main")
+  })
 }
 
 # ── Domains ───────────────────────────────────────────────────────────────
@@ -122,23 +111,33 @@ variable "log_retention_days" {
 }
 
 # ── Sizes ─────────────────────────────────────────────────────────────────
+#
+# The defaults are the launch size: one task of each, scaling out on CPU. For
+# no single point of failure (deploy/README.md, "Sizing"), set
+#   api     = { min = 2, max = 6 }
+#   gateway = { min = 2, max = 4 }
+#   worker  = { spot = false }
+#   nats_nodes = 3
+# and switch the PlanetScale cluster to high availability in its dashboard.
 
 variable "api" {
   type = object({
     cpu    = optional(number, 512)
     memory = optional(number, 1024)
-    min    = optional(number, 2)
-    max    = optional(number, 6)
+    min    = optional(number, 1)
+    max    = optional(number, 3)
   })
   default = {}
 }
 
 variable "worker" {
+  description = "spot runs the worker on Fargate Spot: about 70% cheaper, and River retries the jobs of an interrupted task."
   type = object({
     cpu    = optional(number, 512)
     memory = optional(number, 1024)
     min    = optional(number, 1)
     max    = optional(number, 2)
+    spot   = optional(bool, true)
   })
   default = {}
 }
@@ -147,8 +146,8 @@ variable "gateway" {
   type = object({
     cpu    = optional(number, 512)
     memory = optional(number, 1024)
-    min    = optional(number, 2)
-    max    = optional(number, 4)
+    min    = optional(number, 1)
+    max    = optional(number, 2)
   })
   default = {}
 }
@@ -166,9 +165,20 @@ variable "alb_deletion_protection" {
 # ── NATS ──────────────────────────────────────────────────────────────────
 
 variable "nats_mode" {
-  description = "cluster = three JetStream nodes on ECS; external = external_nats_url (e.g. Synadia Cloud)."
+  description = "cluster = NATS nodes on ECS (nats_nodes); external = external_nats_url (e.g. Synadia Cloud)."
   type        = string
   default     = "cluster"
+}
+
+variable "nats_nodes" {
+  description = "1 runs a single standalone server; 3 a cluster that survives losing a node."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = contains([1, 3, 5], var.nats_nodes)
+    error_message = "nats_nodes is 1, 3 or 5."
+  }
 }
 
 variable "external_nats_url" {
@@ -198,6 +208,18 @@ variable "microsoft_client_id" {
   default = ""
 }
 
+variable "google_mailbox_oauth" {
+  description = "Offer Google sign-in for new mailbox connections. Keep false until the Google OAuth client is verified for the Gmail scopes; mailboxes then connect with an app password or forwarding. User sign-in with Google is not affected."
+  type        = bool
+  default     = false
+}
+
+variable "microsoft_mailbox_oauth" {
+  description = "Offer Microsoft sign-in for new mailbox connections. User sign-in with Microsoft is not affected."
+  type        = bool
+  default     = true
+}
+
 variable "microsoft_tenant" {
   type    = string
   default = "common"
@@ -219,7 +241,7 @@ variable "optional_secrets" {
     (GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
-    ANTHROPIC_API_KEY, VOYAGE_API_KEY). See modules/secrets.
+    ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY). See modules/secrets.
   EOT
   type        = set(string)
   default     = []
@@ -228,7 +250,7 @@ variable "optional_secrets" {
     condition = alltrue([for s in var.optional_secrets : contains([
       "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
-      "ANTHROPIC_API_KEY", "VOYAGE_API_KEY",
+      "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY",
     ], s)])
     error_message = "optional_secrets may only list the operator-supplied secrets."
   }
@@ -254,9 +276,61 @@ variable "embeddings_model" {
   default     = ""
 }
 
-# Billing (contracts/billing.md). On when STRIPE_SECRET_KEY is in optional_secrets.
-variable "stripe_tax" {
-  description = "STRIPE_TAX: let Stripe Tax compute tax at checkout."
+# Native apps (contracts/native.md). iPhone push is on once APNS_KEY is in
+# optional_secrets: the instance sends its own pushes (push = direct) and, with
+# push_relay_serve, relays them for self-hosted instances that opt in.
+variable "apns_key_id" {
+  description = "APNS_KEY_ID: the key id of the APNs auth key (.p8) stored as APNS_KEY."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !contains(var.optional_secrets, "APNS_KEY") || length(var.apns_key_id) > 0
+    error_message = "apns_key_id is required once APNS_KEY is in optional_secrets."
+  }
+}
+
+variable "apns_team_id" {
+  description = "APNS_TEAM_ID: the Apple developer team that owns the APNs key and the app."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !contains(var.optional_secrets, "APNS_KEY") || length(var.apns_team_id) > 0
+    error_message = "apns_team_id is required once APNS_KEY is in optional_secrets."
+  }
+}
+
+variable "apns_topic" {
+  description = "APNS_TOPIC: the iPhone app's bundle id."
+  type        = string
+  default     = "sh.opendesk.app"
+}
+
+variable "push_relay_serve" {
+  description = "PUSH_RELAY_SERVE: serve /v1/push/relay/* for self-hosted instances. Needs APNS_KEY."
   type        = bool
   default     = true
+}
+
+variable "app_attest_app_ids" {
+  description = "APP_ATTEST_APP_IDS: comma-separated TEAMID.bundle ids whose App Attest proofs stand in for Turnstile. Empty turns App Attest off."
+  type        = string
+  default     = ""
+}
+
+variable "email_legal" {
+  description = "The company named in the footer of every platform email (EMAIL_LEGAL_*), where the law asks for it."
+  type = object({
+    entity                = string
+    company_number        = string
+    place_of_registration = string
+    address               = string
+  })
+  default = {
+    entity                = "Mindroot Ltd"
+    company_number        = "16543299"
+    place_of_registration = "England and Wales"
+    address               = "71-75 Shelton Street, London, England, WC2H 9JQ"
+  }
 }

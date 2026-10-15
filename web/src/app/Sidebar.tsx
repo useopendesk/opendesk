@@ -2,7 +2,7 @@
 // tracked-uppercase section labels, 28px rows, hairlines between groups, and an
 // icon-only rail (`b` or the Collapse row) that keeps every row reachable.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { AnimatedNumber } from "@/components/motion";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -10,6 +10,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronsUpDown,
   CircleCheck,
   CircleDashed,
@@ -17,18 +18,22 @@ import {
   Inbox,
   Keyboard,
   Layers,
+  Lock,
   LogOut,
   Monitor,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Server,
   Settings,
   ShieldAlert,
   Sun,
   User,
+  UserPlus,
   Users,
 } from "lucide-react";
+import { DropdownMenu as M } from "radix-ui";
 import { motion, useReducedMotion } from "motion/react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -40,6 +45,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/toast";
 import { Kbd } from "@/components/ui/kbd";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Picker } from "@/components/ui/picker";
+import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
+import { useHotkeys } from "@/lib/hotkeys";
+import type { Team, TicketCounts } from "@/lib/api/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { tone, toneFor } from "@/lib/tones";
@@ -47,10 +56,11 @@ import { folders, type FolderId } from "@/lib/folders";
 import { useAI } from "@/lib/ai";
 import { useDismissOnboarding, useSetAvailability } from "@/lib/pictures";
 import { q } from "@/lib/queries";
-import { atLeast, selectWorkspace, signOut, useRole, useSession, useWorkspace } from "@/lib/session";
+import { atLeast, loadAccounts, useRole, useSession, useWorkspace } from "@/lib/session";
 import { useTheme, type ThemePref } from "@/lib/theme";
-import { resetAnalytics } from "@/lib/analytics";
+import { desktop } from "@/lib/desktop";
 import { shell, toggleNav, useNav } from "./shellStore";
+import { quickSwitchKeys, useAccountActions, useQuickSwitch, useSwitcherEntries } from "./useAccounts";
 
 const folderIcons: Record<FolderId, ReactNode> = {
   unassigned: <CircleDashed />,
@@ -252,6 +262,146 @@ function Section({
   );
 }
 
+const OTHER_TEAMS_KEY = "od-nav-other-teams";
+
+/** One team inbox row: its colour dot, a lock when private, and what waits unassigned. */
+function TeamRow({ teamId, label, icon, locked, n, title, rail, muted }: { teamId: string; label: string; icon: ReactNode; locked?: boolean; n?: number; title?: string; rail: boolean; muted?: boolean }) {
+  const { t } = useTranslation("shell");
+  return (
+    <NavTip rail={rail} label={label}>
+      <Link
+        to="/teams/$teamId/{-$ticketId}"
+        params={{ teamId, ticketId: undefined }}
+        className={cn(rowBase, rowShape(rail), rowIdle, muted && "text-fg-3")}
+        activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
+        aria-label={rail ? label : undefined}
+        title={rail ? undefined : title}
+      >{withPill(<>
+        <span className="flex size-[15px] shrink-0 items-center justify-center">{icon}</span>
+        <Label rail={rail}>
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="truncate">{label}</span>
+            {locked && <Lock aria-label={t("nav.privateTeam")} className="size-[11px] shrink-0 text-fg-4" />}
+          </span>
+        </Label>
+        {n !== undefined && n > 0 && <Count n={n} rail={rail} />}
+        {rail && n !== undefined && n > 0 && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-fg ring-2 ring-chrome" />}
+      </>)}</Link>
+    </NavTip>
+  );
+}
+
+/**
+ * The caller's teams (once the workspace has one), "My teams" across them, and the
+ * other public teams under a fold. g then t opens a team switcher.
+ */
+function TeamsSection({ rail, drawer, counts }: { rail: boolean; drawer?: boolean; counts: TicketCounts | undefined }) {
+  const { t } = useTranslation("shell");
+  const ctx = useTeamsCtx();
+  const role = useRole();
+  const navigate = useNavigate();
+  const [switcher, setSwitcher] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(() => {
+    try {
+      return localStorage.getItem(OTHER_TEAMS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useHotkeys({ "g t": () => setSwitcher(true) }, !drawer && ctx.hasTeams);
+  if (!ctx.hasTeams) return null;
+  const byName = (a: Team, b: Team) => a.name.localeCompare(b.name);
+  const mine = ctx.teams.filter((x) => ctx.myTeams.has(x.id)).sort(byName);
+  const others = ctx.teams.filter((x) => !ctx.myTeams.has(x.id) && ctx.canSeeTeam(x)).sort(byName);
+  const countsOf = (id: string) => (id === "mine" ? counts?.my_teams : counts?.teams?.[id]);
+  const titleOf = (id: string) => {
+    const c = countsOf(id);
+    return c ? t("nav.teamCounts", { unassigned: c.unassigned, open: c.open }) : undefined;
+  };
+  const toggleOthers = () => {
+    setOthersOpen(!othersOpen);
+    try {
+      localStorage.setItem(OTHER_TEAMS_KEY, othersOpen ? "0" : "1");
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const go = (teamId: string) => void navigate({ to: "/teams/$teamId/{-$ticketId}", params: { teamId, ticketId: undefined } });
+  const row = (x: Team, muted?: boolean) => (
+    <TeamRow
+      key={x.id}
+      teamId={x.id}
+      label={x.name}
+      icon={<TeamDot team={x} />}
+      locked={x.private}
+      n={countsOf(x.id)?.unassigned}
+      title={titleOf(x.id)}
+      rail={rail}
+      muted={muted}
+    />
+  );
+  return (
+    <Section
+      id="teams"
+      label={t("nav.teams")}
+      rail={rail}
+      action={
+        atLeast(role, "admin") ? (
+          <Tooltip content={t("nav.manageTeams")}>
+            <Link
+              to="/settings/teams"
+              aria-label={t("nav.manageTeams")}
+              className="flex size-5 items-center justify-center rounded text-fg-4 opacity-0 transition-opacity hover:bg-chrome-hover hover:text-fg group-hover/section:opacity-100 focus-visible:opacity-100"
+            >
+              <Plus className="size-3.5" />
+            </Link>
+          </Tooltip>
+        ) : undefined
+      }
+    >
+      {!drawer && (
+        <Picker
+          open={switcher}
+          onOpenChange={setSwitcher}
+          side="right"
+          width={260}
+          placeholder={t("nav.switchTeam")}
+          value={null}
+          items={[
+            ...(mine.length > 1 ? [{ value: "mine", label: t("nav.myTeams"), icon: <Users />, group: t("nav.yourTeams") }] : []),
+            ...sortTeams([...mine, ...others], ctx.myTeams).map((x) => ({
+              value: x.id,
+              label: x.name,
+              icon: <TeamDot team={x} />,
+              hint: countsOf(x.id)?.unassigned ? String(countsOf(x.id)!.unassigned) : undefined,
+              group: ctx.myTeams.has(x.id) ? t("nav.yourTeams") : t("nav.otherTeams"),
+            })),
+          ]}
+          onSelect={go}
+          trigger={<span aria-hidden className="pointer-events-none mx-2.5 block h-0" />}
+        />
+      )}
+      {mine.length > 1 && (
+        <TeamRow teamId="mine" label={t("nav.myTeams")} icon={<Users className="size-[15px] text-fg-3" />} n={counts?.my_teams?.unassigned} title={titleOf("mine")} rail={rail} />
+      )}
+      {mine.map((x) => row(x))}
+      {others.length > 0 && !rail && (
+        <button
+          type="button"
+          aria-expanded={othersOpen}
+          onClick={toggleOthers}
+          className={cn(rowBase, rowShape(rail), rowIdle, "text-fg-3")}
+        >
+          <ChevronRight className={cn("transition-transform duration-150 motion-reduce:transition-none", othersOpen && "rotate-90")} />
+          <Label rail={rail}>{t("nav.otherTeams")}</Label>
+          <span className="mono ml-auto text-[11px] text-fg-4">{others.length}</span>
+        </button>
+      )}
+      {(othersOpen || (rail && !mine.length)) && others.map((x) => row(x, true))}
+    </Section>
+  );
+}
+
 export function Sidebar({ drawer }: { drawer?: boolean }) {
   const { data: counts } = useQuery(q.counts());
   const { data: views } = useQuery(q.views());
@@ -286,6 +436,8 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
             </NavTip>
           ))}
         </Section>
+
+        <TeamsSection rail={rail} drawer={drawer} counts={counts} />
 
         <Section
           id="views"
@@ -392,15 +544,30 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
   );
 }
 
+/**
+ * The workspace switcher. With more than one account signed in here, workspaces
+ * are grouped under each account's email; any of them opens in one step, and
+ * Mod+Alt+1..9 opens them in this order.
+ */
 export function WorkspaceSwitcher() {
   const ws = useWorkspace();
-  const memberships = useSession((s) => s.memberships);
-  const qc = useQueryClient();
+  const user = useSession((s) => s.user);
+  const entries = useSwitcherEntries();
+  const accounts = useSession((s) => s.accounts);
   const navigate = useNavigate();
+  const { switchTo, addAccount } = useAccountActions();
   const { t } = useTranslation("shell");
-  if (!ws) return null;
+  useQuickSwitch();
+  if (!ws || !user) return null;
+  const grouped = accounts.length > 1;
+  // Accounts in switcher order, each with its workspaces and their quick switch numbers.
+  const groups = (grouped ? accounts : accounts.filter((a) => a.user.id === user.id)).map((a) => ({
+    account: a,
+    items: entries.map((e, i) => ({ ...e, n: i + 1 })).filter((e) => e.account.user.id === a.user.id),
+  }));
+  if (!groups.length) groups.push({ account: { user, memberships: [] }, items: entries.map((e, i) => ({ ...e, n: i + 1 })) });
   return (
-    <Menu>
+    <Menu onOpenChange={(open) => open && void loadAccounts()}>
       <MenuTrigger asChild>
         <button
           type="button"
@@ -411,24 +578,42 @@ export function WorkspaceSwitcher() {
           <ChevronsUpDown className="size-3.5 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />
         </button>
       </MenuTrigger>
-      <MenuContent align="start" className="w-[240px]">
-        <MenuLabel>{t("workspaces.title")}</MenuLabel>
-        {memberships.map((m) => (
-          <MenuItem
-            key={m.workspace.id}
-            icon={<WorkspaceGlyph name={m.workspace.name} small />}
-            onSelect={() => {
-              if (m.workspace.id === ws.id) return;
-              selectWorkspace(m.workspace.id);
-              qc.clear();
-              void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
-            }}
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span className="truncate">{m.workspace.name}</span>
-              {m.workspace.id === ws.id && <Check className="!size-3 !text-fg" />}
-            </span>
-          </MenuItem>
+      <MenuContent align="start" className="max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-[264px] overflow-y-auto">
+        {!grouped && <MenuLabel>{t("workspaces.title")}</MenuLabel>}
+        {groups.map(({ account, items }, gi) => (
+          <M.Group key={account.user.id}>
+            {grouped && (
+              <M.Label className={cn("flex min-w-0 items-center gap-1.5 px-2 pb-1 text-[11.5px] text-fg-3", gi === 0 ? "pt-1.5" : "mt-1 border-t border-line pt-2")}>
+                <Avatar name={account.user.name || account.user.email} src={account.user.avatar_url} size="xs" />
+                <span className="truncate">{account.user.email}</span>
+              </M.Label>
+            )}
+            {items.map(({ membership: m, n }) => {
+              const current = account.user.id === user.id && m.workspace.id === ws.id;
+              return (
+                <MenuItem
+                  key={`${account.user.id}:${m.workspace.id}`}
+                  icon={<WorkspaceGlyph name={m.workspace.name} small />}
+                  onSelect={() => void switchTo(account.user.id, m.workspace.id)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{m.workspace.name}</span>
+                    {current && <Check aria-label={t("workspaces.current")} className="!size-3 !text-fg" />}
+                    {n <= 9 && (
+                      <Kbd className="opacity-0 transition-opacity duration-100 group-data-[highlighted]/item:opacity-100 motion-reduce:transition-none">
+                        {quickSwitchKeys(n)}
+                      </Kbd>
+                    )}
+                  </span>
+                </MenuItem>
+              );
+            })}
+            {!items.length && (
+              <MenuItem icon={<Plus />} onSelect={() => void switchTo(account.user.id, null)}>
+                <span className="text-fg-3">{t("workspaces.noneYet")}</span>
+              </MenuItem>
+            )}
+          </M.Group>
         ))}
         <MenuSeparator />
         <MenuItem icon={<Plus />} onSelect={() => void navigate({ to: "/onboarding" })}>
@@ -436,6 +621,10 @@ export function WorkspaceSwitcher() {
         </MenuItem>
         <MenuItem icon={<Settings />} onSelect={() => void navigate({ to: "/settings/workspace" })}>
           {t("workspaces.settings")}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<UserPlus />} onSelect={addAccount}>
+          {t("workspaces.addAccount")}
         </MenuItem>
       </MenuContent>
     </Menu>
@@ -516,8 +705,9 @@ function SetupChecklist({ rail }: { rail: boolean }) {
 
 function UserMenu({ rail }: { rail: boolean }) {
   const user = useSession((s) => s.user);
+  const accountCount = useSession((s) => s.accounts.length);
   const navigate = useNavigate();
-  const qc = useQueryClient();
+  const { logOut } = useAccountActions();
   const { t } = useTranslation("shell");
   const { data: members } = useQuery(q.members());
   const setAvailability = useSetAvailability();
@@ -577,19 +767,20 @@ function UserMenu({ rail }: { rail: boolean }) {
             {t("account.shortcuts")} <Kbd>?</Kbd>
           </span>
         </MenuItem>
+        {desktop && (
+          <MenuItem icon={<Server />} onSelect={() => desktop?.switchServer()}>
+            {t("desktop.switchServer")}
+          </MenuItem>
+        )}
         <MenuSeparator />
-        <MenuItem
-          danger
-          icon={<LogOut />}
-          onSelect={async () => {
-            await signOut();
-            resetAnalytics();
-            qc.clear();
-            void navigate({ to: "/login", search: { next: undefined, error: undefined } });
-          }}
-        >
+        <MenuItem danger icon={<LogOut />} onSelect={() => void logOut()}>
           {t("account.logout")}
         </MenuItem>
+        {accountCount > 1 && (
+          <MenuItem danger icon={<LogOut />} onSelect={() => void logOut(true)}>
+            {t("account.logoutAll")}
+          </MenuItem>
+        )}
       </MenuContent>
     </Menu>
   );

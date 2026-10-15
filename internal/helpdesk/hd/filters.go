@@ -2,6 +2,7 @@ package hd
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -12,18 +13,27 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
+// Team filter values besides a team id.
+const (
+	TeamMine = "mine"
+	TeamNone = "none"
+)
+
 // SeverityFilterValues are the severities a filter may name; "none" is no severity.
 var SeverityFilterValues = append(append([]string{}, domain.Severities...), "none")
 
 // TicketFilters is a saved view's filter set (contracts/api.md TicketFilters).
-// Assignee is "me", "none" or a user id.
+// Assignee is "me", "none" or a user id; TeamID "mine" (the caller's teams), "none" or a
+// team id.
 type TicketFilters struct {
 	Status    []string `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed"`
 	Priority  []string `json:"priority,omitempty" enum:"low,normal,high,urgent"`
 	Severity  []string `json:"severity,omitempty" enum:"sev1,sev2,sev3,sev4,none" doc:"none: tickets without a severity"`
 	Assignee  string   `json:"assignee,omitempty"`
-	TeamID    string   `json:"team_id,omitempty"`
+	TeamID    string   `json:"team_id,omitempty" doc:"A team id, mine (the caller's teams) or none"`
 	MailboxID string   `json:"mailbox_id,omitempty"`
+	BrandID   string   `json:"brand_id,omitempty"`
+	WidgetID  string   `json:"widget_id,omitempty"`
 	Tag       string   `json:"tag,omitempty"`
 	Channel   string   `json:"channel,omitempty" enum:"email,chat,api,portal"`
 	Q         string   `json:"q,omitempty" maxLength:"200"`
@@ -61,10 +71,35 @@ func (f *TicketFilters) Normalize(ctx context.Context, q db.Querier, wid uuid.UU
 		}
 		f.Assignee = id.String()
 	}
+	// team_id is a comma-separated list of team ids, mine and none.
+	var teams []string
+	for _, raw := range strings.Split(f.TeamID, ",") {
+		v := strings.TrimSpace(raw)
+		switch {
+		case v == "":
+			continue
+		case v != TeamMine && v != TeamNone:
+			id, err := ParseRef(v, "team_id")
+			if err != nil {
+				return err
+			}
+			if err := CheckRef(ctx, q, wid, "team", id); err != nil {
+				return err
+			}
+			v = id.String()
+		}
+		if !slices.Contains(teams, v) {
+			teams = append(teams, v)
+		}
+	}
+	if len(teams) > 50 {
+		return httpx.Validation("team_id takes at most 50 values")
+	}
+	f.TeamID = strings.Join(teams, ",")
 	for _, ref := range []struct {
 		v    *string
 		kind string
-	}{{&f.TeamID, "team"}, {&f.MailboxID, "mailbox"}} {
+	}{{&f.MailboxID, "mailbox"}, {&f.BrandID, "brand"}, {&f.WidgetID, "widget"}} {
 		*ref.v = strings.TrimSpace(*ref.v)
 		if *ref.v == "" {
 			continue
@@ -80,7 +115,7 @@ func (f *TicketFilters) Normalize(ctx context.Context, q db.Querier, wid uuid.UU
 	}
 	f.Tag = strings.TrimSpace(f.Tag)
 	if len([]rune(f.Tag)) > 50 {
-		return httpx.Validation("tag must be 50 characters or less")
+		return httpx.Validation("label must be 50 characters or less")
 	}
 	f.Channel = strings.TrimSpace(f.Channel)
 	if f.Channel != "" && !slices.Contains(domain.Channels, f.Channel) {
@@ -128,4 +163,12 @@ func SplitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// ViewVisibleSQL is the predicate for the views aliased alias that a caller sees in their
+// lists, with the caller's user id bound as $n (NULL for API keys): shared views, their own
+// personal views and the views of their teams.
+func ViewVisibleSQL(alias string, n int) string {
+	return fmt.Sprintf(`((%[1]s.team_id IS NULL AND (%[1]s.user_id IS NULL OR %[1]s.user_id = $%[2]d))
+		OR %[1]s.team_id IN (SELECT vt.team_id FROM team_members vt WHERE vt.user_id = $%[2]d))`, alias, n)
 }

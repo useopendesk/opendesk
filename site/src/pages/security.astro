@@ -1,13 +1,14 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
 import Icon from '../components/Icon.astro';
-import { EMAILS, LINKS } from '../lib/site';
+import SecurityBento from '../components/security/SecurityBento.astro';
+import { EMAIL, LINKS } from '../lib/site';
+import type { IconName } from '../lib/icons';
 
 // PLACEHOLDER: the 3 business day acknowledgement target in the disclosure box is
 // a commitment the owner must confirm.
 // Written as invariants the code holds (AGENTS.md, CASA Tier 1 / ASVS L1), never as gaps.
-const groups = [
+const groups: { icon: IconName; title: string; items: string[] }[] = [
   {
     icon: 'key',
     title: 'Authentication',
@@ -59,71 +60,147 @@ const groups = [
       'Dependencies and images are scanned for known vulnerabilities in CI.',
     ],
   },
-] as const;
----
-<Layout title="Security" description="How opendesk protects your data: Argon2id passwords, two-factor, scoped tokens, workspace isolation, encryption in transit and at rest, audit logs, CASA Tier 1 controls and responsible disclosure.">
-  <PageHero label="Security" title="Security you can read." lede="opendesk handles your customers’ email, so security is a property of the code, not a page of promises. The code is open, and these are the rules every change follows." />
+];
 
-  <section class="container-page py-20 md:py-24">
-    <div class="grid gap-4 md:grid-cols-3">
-      {[
-        ['shield', 'CASA Tier 1', 'opendesk connects to Gmail with restricted Google scopes, so its Google OAuth client is assessed under the App Defense Alliance Cloud Application Security Assessment, Tier 1 (OWASP ASVS 4.0.3 Level 1).'],
-        ['lock', 'Encrypted in transit and at rest', 'TLS for every connection, encryption at rest by our providers, and application-level AES-GCM for every stored credential.'],
-        ['code', 'Open to inspection', 'The code that runs the cloud is public. You, your security team or anyone else can audit it.'],
-      ].map(([icon, t, d], i) => (
-        <div class="reveal card p-7" style={`--d:${i * 50}ms`}>
-          <span class="flex size-9 items-center justify-center rounded-[5px] bg-fg text-bg"><Icon name={icon as 'shield'} size={17} /></span>
-          <h2 class="mt-6 text-[19px] font-semibold tracking-[-0.02em] text-fg">{t}</h2>
-          <p class="mt-2.5 text-[14.5px] leading-relaxed text-muted">{d}</p>
+const pillars: [IconName, string, string][] = [
+  ['shield', 'CASA Tier 1', 'opendesk connects to Gmail with restricted Google scopes, so its Google OAuth client is assessed under the App Defense Alliance Cloud Application Security Assessment, Tier 1 (OWASP ASVS 4.0.3 Level 1).'],
+  ['lock', 'Encrypted in transit and at rest', 'TLS for every connection, encryption at rest by our providers, and application-level AES-GCM for every stored credential.'],
+  ['code', 'Open to inspection', 'The code that runs the cloud is public. You, your security team or anyone else can audit it.'],
+];
+---
+<Layout cta={{ painting: 'terraces' }} title="Security" description="How opendesk protects your data: Argon2id passwords, two-factor, scoped tokens, workspace isolation, encryption in transit and at rest, audit logs, CASA Tier 1 controls and responsible disclosure.">
+  <!-- The standard: what it is held to, then every rule, numbered. -->
+  <section class="container-page pt-14 md:pt-20">
+    <div class="grid gap-12 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-end lg:gap-20">
+      <div>
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">Security</div>
+        <h1 class="mt-6 max-w-[12ch] text-[44px] font-semibold leading-[0.98] tracking-[-0.05em] text-fg sm:text-[64px] lg:text-[88px]">Security you can read.</h1>
+        <p class="lede mt-7 max-w-[560px]">opendesk handles your customers’ email, so security is a property of the code, not a page of promises. The code is open, and these are the rules every change follows.</p>
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a href={LINKS.github} class="btn btn-lg btn-primary"><Icon name="github" size={15} />Read the code</a>
+          <a href="#disclosure" class="btn btn-lg btn-ghost"><Icon name="shield" size={15} />Report a vulnerability</a>
+        </div>
+      </div>
+      <!-- What the code is held to, set like the front page of a standard. -->
+      <dl class="border-t-[3px] border-double border-fg font-mono text-[12px]">
+        {[
+          ['Assessment', 'ADA CASA Tier 1'],
+          ['Standard', 'OWASP ASVS 4.0.3, Level 1'],
+          ['Applies to', 'opendesk Cloud and every self-hosted install'],
+          ['Source', 'Apache-2.0, public on GitHub'],
+          ['Disclosure', EMAIL],
+        ].map(([k, v]) => (
+          <div class="grid grid-cols-[120px_1fr] gap-4 border-b border-line py-3.5">
+            <dt class="uppercase tracking-[0.06em] text-subtle">{k}</dt>
+            <dd class="text-fg">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+
+    <div class="mt-20 grid border-t border-line md:mt-28 md:grid-cols-3">
+      {pillars.map(([icon, t, d], i) => (
+        <div class={`py-8 md:py-10 ${i > 0 ? 'border-t border-line md:border-l md:border-t-0 md:pl-10' : ''} ${i < 2 ? 'md:pr-10' : ''}`}>
+          <Icon name={icon} size={18} class="text-fg" />
+          <h2 class="mt-5 text-[18px] font-semibold tracking-[-0.02em] text-fg">{t}</h2>
+          <p class="mt-2 text-[14.5px] leading-relaxed text-muted">{d}</p>
         </div>
       ))}
     </div>
   </section>
 
-  <section class="border-t border-line">
-    <div class="container-page py-20 md:py-24">
-      <div class="reveal max-w-2xl">
-        <div class="label">Controls</div>
-        <h2 class="h-section mt-4">What the code guarantees.</h2>
+  <!-- The controls, at work -->
+  <section id="controls" class="container-page mt-20 scroll-mt-24 md:mt-28">
+    <div class="grid gap-6 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
+      <div>
+        <div class="font-mono text-[12px] text-subtle">§ 1</div>
+        <h2 class="mt-3 text-[34px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[48px]">What the code guarantees.</h2>
       </div>
-      <div class="mt-12 divide-y divide-line border-y border-line">
-        {groups.map((g) => (
-          <div class="reveal grid gap-6 py-10 lg:grid-cols-[280px_1fr]">
-            <div class="flex items-center gap-3 self-start">
-              <Icon name={g.icon} size={18} class="text-fg" />
-              <h3 class="text-[17px] font-semibold text-fg">{g.title}</h3>
-            </div>
-            <ul class="grid gap-3.5 text-[15px] leading-relaxed text-muted">
-              {g.items.map((it) => <li class="flex gap-3"><Icon name="check" size={16} class="mt-1 shrink-0 text-fg" />{it}</li>)}
-            </ul>
-          </div>
-        ))}
+      <p class="lede max-w-[520px] lg:pb-1">Each control is a rule every change follows, held by the code that runs both the cloud and every self-hosted install. Here are some of them at work.</p>
+    </div>
+    <SecurityBento />
+  </section>
+
+  <!-- Every control, written down -->
+  <section id="list" class="container-page mt-28 scroll-mt-24 md:mt-40">
+    <div class="grid gap-6 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
+      <div>
+        <div class="font-mono text-[12px] text-subtle">§ 2</div>
+        <h2 class="mt-3 text-[34px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[48px]">Every control, written down.</h2>
+      </div>
+      <p class="lede max-w-[520px] lg:pb-1">The invariants behind the scenes above, numbered and grouped the way an assessor reads them.</p>
+    </div>
+    <div class="mt-12 md:mt-16">
+      {groups.map((g, i) => (
+        <div class="grid gap-4 border-t border-line py-8 md:py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+          <h3 class="flex items-baseline gap-4 text-[18px] font-semibold tracking-[-0.02em] text-fg lg:sticky lg:top-24 lg:self-start">
+            <span class="w-8 shrink-0 font-mono text-[12px] font-normal text-subtle">2.{i + 1}</span>{g.title}
+          </h3>
+          <ol class="divide-y divide-line border-y border-line lg:border-t-0">
+            {g.items.map((it, k) => (
+              <li class="flex gap-5 py-3.5 text-[15px] leading-relaxed text-body">
+                <span class="w-12 shrink-0 font-mono text-[12px] leading-[1.75rem] text-subtle">2.{i + 1}.{k + 1}</span>{it}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+      <div class="grid gap-4 border-y border-line py-8 md:py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+        <h3 class="flex items-baseline gap-4 text-[18px] font-semibold tracking-[-0.02em] text-fg">
+          <span class="w-8 shrink-0 font-mono text-[12px] font-normal text-subtle">2.{groups.length + 1}</span>Where the cloud runs
+        </h3>
+        <div class="max-w-[68ch] space-y-3 text-[15px] leading-relaxed text-body">
+          <p>The API and realtime gateway run on AWS. The web app, this site and inbound email routing run on Cloudflare. Data is stored in Postgres hosted by PlanetScale on AWS, reached only over AWS's private network. Product analytics run without tracking cookies on this site.</p>
+          <p>Self-hosted installs send nothing to us. You choose where they run and what they connect to.</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="container-page">
-    <div class="grid gap-4 lg:grid-cols-2">
-      <div class="reveal card p-7 md:p-8">
-        <div class="label">Hosting</div>
-        <h2 class="mt-4 text-[22px] font-semibold tracking-[-0.02em] text-fg">Where the cloud runs</h2>
-        <p class="mt-3 text-[15px] leading-relaxed text-muted">The API and realtime gateway run on AWS. The web app, this site and inbound email routing run on Cloudflare. Data is stored in Postgres hosted by Neon. Product analytics use PostHog, without tracking cookies on this site. The full list is in the <a href="/privacy/#subprocessors" class="text-fg underline decoration-line underline-offset-4 hover:decoration-fg">privacy policy</a>.</p>
-        <p class="mt-4 text-[15px] leading-relaxed text-muted">Self-hosted installs send nothing to us. You choose where they run and what they connect to.</p>
-      </div>
-      <div id="disclosure" class="reveal scroll-mt-24 rounded-[8px] bg-inverse p-7 text-inverse-fg md:p-8" style="--d:60ms">
-        <div class="font-mono text-[12px] uppercase tracking-[0.06em] opacity-55">Responsible disclosure</div>
-        <h2 class="mt-4 text-[22px] font-semibold tracking-[-0.02em]">Found a vulnerability?</h2>
-        <p class="mt-3 text-[15px] leading-relaxed opacity-75">Email <a href={`mailto:${EMAILS.security}`} class="underline underline-offset-4">{EMAILS.security}</a> with what you found, how to reproduce it and the impact you expect. Please do not open a public issue, and give us a reasonable time to fix it before you share it.</p>
-        <ul class="mt-5 space-y-2.5 text-[14.5px] opacity-85">
-          {[
-            'We acknowledge reports within 3 business days.',
-            'We keep you updated until it is fixed, and credit you if you want.',
-            'We will not pursue research done in good faith: test only accounts you own, do not access other people’s data, and do not degrade the service.',
-          ].map((t) => <li class="flex gap-3"><Icon name="check" size={16} class="mt-0.5 shrink-0" />{t}</li>)}
-        </ul>
-        <a href={`mailto:${EMAILS.security}`} class="btn mt-7 bg-inverse-fg text-inverse hover:opacity-90"><Icon name="mail" size={15} />{EMAILS.security}</a>
+  <!-- Responsible disclosure -->
+  <section id="disclosure" class="container-page mb-4 mt-28 scroll-mt-24 md:mt-40">
+    <div class="overflow-hidden rounded-[22px] bg-[#0a0a0a] text-white ring-1 ring-white/10 dark:bg-[#141414]">
+      <div class="grid gap-10 p-7 md:p-12 lg:grid-cols-[1.1fr_1fr] lg:gap-14 lg:p-14">
+        <div>
+          <div class="flex items-center gap-2 font-mono text-[11.5px] font-medium uppercase tracking-[0.06em] text-white/55"><span class="size-[7px] rounded-full bg-white"></span>Responsible disclosure</div>
+          <h2 class="mt-5 text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] md:text-[48px]">Found a vulnerability?</h2>
+          <p class="mt-5 max-w-[52ch] text-[16px] leading-relaxed text-white/70">Email <a href={`mailto:${EMAIL}`} class="text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">{EMAIL}</a> with what you found, how to reproduce it and the impact you expect. Please do not open a public issue, and give us a reasonable time to fix it before you share it.</p>
+          <ul class="mt-7 space-y-3 text-[15px] text-white/85">
+            {[
+              'We acknowledge reports within 3 business days.',
+              'We keep you updated until it is fixed, and credit you if you want.',
+              'We will not pursue research done in good faith: test only accounts you own, do not access other people’s data, and do not degrade the service.',
+            ].map((t) => <li class="flex gap-3"><Icon name="check" size={16} class="mt-[3px] shrink-0 text-white/60" />{t}</li>)}
+          </ul>
+          <a href={`mailto:${EMAIL}`} class="btn btn-lg mt-9 bg-white text-[#0a0a0a] hover:bg-white/90"><Icon name="mail" size={15} />{EMAIL}</a>
+        </div>
+        <!-- A report, the way we would like to read it -->
+        <div class="flex items-center" aria-hidden="true">
+          <div class="w-full overflow-hidden rounded-[14px] bg-white/[0.04] ring-1 ring-white/10">
+            <div class="flex h-10 items-center gap-2 border-b border-white/10 px-4">
+              <i class="size-2.5 rounded-full bg-white/15"></i><i class="size-2.5 rounded-full bg-white/15"></i><i class="size-2.5 rounded-full bg-white/15"></i>
+              <span class="ml-2 text-[11.5px] text-white/45">New message</span>
+            </div>
+            <div class="divide-y divide-white/10 text-[13px]">
+              <div class="flex gap-3 px-5 py-3"><span class="w-14 shrink-0 text-white/40">To</span><span class="text-white">{EMAIL}</span></div>
+              <div class="flex gap-3 px-5 py-3"><span class="w-14 shrink-0 text-white/40">Subject</span><span class="text-white">Vulnerability report<span class="od-caret !bg-white/80"></span></span></div>
+            </div>
+            <div class="space-y-4 px-5 py-5 text-[13px] leading-relaxed">
+              {[['What I found', 0.86], ['How to reproduce it', 0.72], ['The impact I expect', 0.58]].map(([h, w]) => (
+                <div>
+                  <div class="font-medium text-white/90">{h}</div>
+                  <div class="mt-2 space-y-1.5">
+                    <div class="h-1.5 rounded-full bg-white/10" style={`width:${Number(w) * 100}%`}></div>
+                    <div class="h-1.5 rounded-full bg-white/10" style={`width:${Number(w) * 70}%`}></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <p class="reveal mt-8 text-[14.5px] text-muted">More detail for self-hosters is in the <a href={`${LINKS.docs}/security/`} class="text-fg underline decoration-line underline-offset-4 hover:decoration-fg">security docs</a>.</p>
+    <p class="mt-5 px-1 text-[14.5px] text-muted">More detail for self-hosters is in the <a href={`${LINKS.docs}/security/`} class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">security docs</a>.</p>
   </section>
+
 </Layout>

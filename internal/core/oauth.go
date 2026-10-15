@@ -49,6 +49,26 @@ const (
 
 var msIssuerRe = regexp.MustCompile(`^https://login\.microsoftonline\.com/([0-9a-f-]{36})/v2\.0$`)
 
+// Native sign-in (contracts/native.md): the flow runs in the system browser and its
+// result goes back to the app through this exact URL, never another scheme or target.
+const nativeCallbackURL = "opendesk://auth/callback"
+
+var (
+	// pkceChallengeRe is BASE64URL(SHA256(verifier)) without padding.
+	pkceChallengeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	// pkceVerifierRe is RFC 7636's code_verifier.
+	pkceVerifierRe = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
+)
+
+// pkceMatches checks a code_verifier against the S256 challenge in constant time.
+func pkceMatches(verifier, challenge string) bool {
+	if !pkceVerifierRe.MatchString(verifier) || challenge == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	return constantTimeEq(base64.RawURLEncoding.EncodeToString(sum[:]), challenge)
+}
+
 type oauthProvider struct {
 	id, name string
 	kind     string // oidc | github
@@ -348,26 +368,37 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 429, "rate_limited", "Too many requests. Wait a moment and try again.")
 		return
 	}
+	q := r.URL.Query()
+	native := q.Get("client") == "native"
+	challenge := q.Get("code_challenge")
+	if native && !pkceChallengeRe.MatchString(challenge) {
+		s.oauthFail(w, r, true, "invalid_request")
+		return
+	}
 	cfg, err := s.oauth.ensure(r.Context(), p)
 	if err != nil {
 		s.d.Log.Error("oauth provider unavailable", "provider", p.id, "err", err)
-		s.oauthFail(w, r, "provider_unavailable")
+		s.oauthFail(w, r, native, "provider_unavailable")
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
 	sealed, err := s.d.Box.Seal([]byte(verifier))
 	if err != nil {
-		s.oauthFail(w, r, "server_error")
+		s.oauthFail(w, r, native, "server_error")
 		return
 	}
 	nonce := crypto.RandomToken(16)
 	bind := crypto.RandomToken(16)
-	state, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeOAuthState, Data: map[string]string{
+	data := map[string]string{
 		"flow": stateFlowLogin, "provider": p.id, "v": base64.RawURLEncoding.EncodeToString(sealed),
-		"nonce": nonce, "bind": bindHash(bind), "rt": safeRedirectPath(s.d.Cfg.AppURL, r.URL.Query().Get("redirect_to")),
-	}}, "", auth.OAuthStateTTL)
+		"nonce": nonce, "bind": bindHash(bind), "rt": safeRedirectPath(s.d.Cfg.AppURL, q.Get("redirect_to")),
+	}
+	if native {
+		data["client"], data["cc"] = "native", challenge
+	}
+	state, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeOAuthState, Data: data}, "", auth.OAuthStateTTL)
 	if err != nil {
-		s.oauthFail(w, r, "server_error")
+		s.oauthFail(w, r, native, "server_error")
 		return
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
@@ -382,10 +413,20 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, cfg.AuthCodeURL(state, opts...), http.StatusFound)
 }
 
-func (s *svc) oauthFail(w http.ResponseWriter, r *http.Request, code string) {
+// oauthDone sends the browser back with a one-time code or an error code: to the app's
+// /auth/callback, or to the native app's callback URL for a native flow.
+func (s *svc) oauthDone(w http.ResponseWriter, r *http.Request, native bool, key, value string) {
 	http.SetCookie(w, s.bindCookie("", -1))
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, s.appLink("/auth/callback", "error", code), http.StatusFound)
+	target := s.appLink("/auth/callback", key, value)
+	if native {
+		target = nativeCallbackURL + "?" + url.Values{key: {value}}.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+func (s *svc) oauthFail(w http.ResponseWriter, r *http.Request, native bool, code string) {
+	s.oauthDone(w, r, native, "error", code)
 }
 
 func (s *svc) oauthCallback(w http.ResponseWriter, r *http.Request) {
@@ -396,60 +437,69 @@ func (s *svc) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	c, stateErr := s.d.Tokens.Verify(q.Get("state"), auth.PurposeOAuthState)
+	stateOK := stateErr == nil && c.Data["flow"] == stateFlowLogin && c.Data["provider"] == p.id
+	// Only a verified state can send the browser to the native app.
+	native := stateOK && c.Data["client"] == "native"
 	if q.Get("error") != "" {
-		s.oauthFail(w, r, "access_denied")
+		s.oauthFail(w, r, native, "access_denied")
 		return
 	}
-	c, err := s.d.Tokens.Verify(q.Get("state"), auth.PurposeOAuthState)
-	if err != nil || c.Data["flow"] != stateFlowLogin || c.Data["provider"] != p.id {
-		s.oauthFail(w, r, "invalid_state")
+	if !stateOK {
+		s.oauthFail(w, r, false, "invalid_state")
 		return
 	}
 	bc, err := r.Cookie(oauthBindCookie)
 	if err != nil || !constantTimeEq(bindHash(bc.Value), c.Data["bind"]) {
-		s.oauthFail(w, r, "invalid_state")
+		s.oauthFail(w, r, native, "invalid_state")
 		return
 	}
 	sealed, err := base64.RawURLEncoding.DecodeString(c.Data["v"])
 	if err != nil {
-		s.oauthFail(w, r, "invalid_state")
+		s.oauthFail(w, r, native, "invalid_state")
 		return
 	}
 	verifier, err := s.d.Box.Open(sealed)
 	if err != nil {
-		s.oauthFail(w, r, "invalid_state")
+		s.oauthFail(w, r, native, "invalid_state")
 		return
 	}
 	code := q.Get("code")
 	if code == "" || len(code) > 4096 {
-		s.oauthFail(w, r, "invalid_request")
+		s.oauthFail(w, r, native, "invalid_request")
 		return
 	}
 	id, err := s.oauth.exchange(ctx, p, code, string(verifier), c.Data["nonce"])
 	if err != nil {
 		s.d.Log.Warn("oauth sign-in failed", "provider", p.id, "err", err)
-		s.oauthFail(w, r, "provider_error")
+		s.oauthFail(w, r, native, "provider_error")
 		return
 	}
-	ri := reqInfo{IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: truncate(r.UserAgent(), 400)}
-	loginCode, errCode := s.resolveIdentity(ctx, id, c.Data["rt"], ri)
+	ri := s.readReqInfo(r)
+	codeChallenge := ""
+	if native {
+		codeChallenge = c.Data["cc"]
+	}
+	loginCode, errCode := s.resolveIdentity(ctx, id, c.Data["rt"], codeChallenge, ri)
 	if errCode != "" {
-		s.oauthFail(w, r, errCode)
+		s.oauthFail(w, r, native, errCode)
 		return
 	}
-	http.SetCookie(w, s.bindCookie("", -1))
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, s.appLink("/auth/callback", "code", loginCode), http.StatusFound)
+	s.oauthDone(w, r, native, "code", loginCode)
 }
 
 // resolveIdentity binds the identity to a user and returns a one-time login code, or an
 // error code for the app. Identities bind by (issuer, subject); an existing password
 // account is linked only after its password is presented (POST /v1/auth/oauth/link).
-func (s *svc) resolveIdentity(ctx context.Context, id *fedIdentity, redirectTo string, ri reqInfo) (string, string) {
+// A code for a native flow carries its PKCE challenge, which exchange then requires.
+func (s *svc) resolveIdentity(ctx context.Context, id *fedIdentity, redirectTo, codeChallenge string, ri reqInfo) (string, string) {
 	var code, errCode string
 	var newUser uuid.UUID
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		data := map[string]string{"kind": "login", "method": id.Provider, "rt": redirectTo}
+		if codeChallenge != "" {
+			data["cc"] = codeChallenge
+		}
 		var uid uuid.UUID
 		err := tx.QueryRow(ctx, `UPDATE identities SET email = $3 WHERE issuer = $1 AND subject = $2 RETURNING user_id`,
 			id.Issuer, id.Subject, id.Email).Scan(&uid)
@@ -541,7 +591,8 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 		Summary: "Trade an OAuth callback code for a session", Tags: []string{"Auth"}, Security: []map[string][]string{}},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Code string `json:"code" maxLength:"200"`
+				Code         string `json:"code" maxLength:"200"`
+				CodeVerifier string `json:"code_verifier,omitempty" maxLength:"128" doc:"The PKCE verifier; required for a code issued to a native sign-in"`
 			}
 		}) (*authOut, error) {
 			ri := requestInfo(ctx)
@@ -554,6 +605,10 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 			}
 			if err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			// The code is spent either way: a wrong verifier cannot be retried.
+			if cc := o.Data["cc"]; cc != "" && !pkceMatches(in.Body.CodeVerifier, cc) {
+				return nil, httpx.E(400, "invalid_code", "This sign-in code is invalid or has expired.")
 			}
 			if o.Data["kind"] == "link" {
 				tok, err := createOneTime(ctx, s.d.DB.Pool, ottOAuthLink, o.UserID, o.Email, o.Data, oauthLinkTTL)

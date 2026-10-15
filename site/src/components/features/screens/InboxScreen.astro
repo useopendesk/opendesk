@@ -1,0 +1,296 @@
+---
+/**
+ * /features, "Shared inbox": the desktop app on All open in the list layout
+ * (InboxPage with ListToolbar, SummaryStrip and TicketRow in its full-width
+ * form), drawn 1:1 at 1280 x 804 for the Showcase stage.
+ *
+ * Every value follows web/src/components/tickets (TicketRow's wide row,
+ * waiting.tsx pills and badges, indicators, Avatar). On the timeline
+ * (`data-step`) a new email lands on top and the counts tick, routing gives it
+ * an owner, a teammate opens Katrin's ticket and Jonas starts replying to the
+ * chat he holds. The handled wait ticks throughout.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic, prioIcon, statusIcon, type Priority, type Tone } from '../../app/icons';
+import Ollie from '../../home/Ollie.astro';
+
+type Person = { name: string; initials: string; tone: Tone };
+const team: Record<string, Person> = {
+  maya: { name: 'Maya Chen', initials: 'MC', tone: 'violet' },
+  sam: { name: 'Sam Patel', initials: 'SP', tone: 'amber' },
+  jonas: { name: 'Jonas Berg', initials: 'JB', tone: 'indigo' },
+  priya: { name: 'Priya Rao', initials: 'PR', tone: 'teal' },
+};
+
+interface Row {
+  who: string;
+  subject: string;
+  preview: string;
+  time: string;
+  priority: Priority;
+  /** Ollie set the priority. */
+  ai?: boolean;
+  /** awaitingReply: name and subject read medium. */
+  unread?: boolean;
+  /** Not email: live chat (or Ollie's hand-off), the help center form, the API. */
+  channel?: 'chat' | 'handoff' | 'portal' | 'api';
+  severity?: string;
+  sla?: { label: string; breached?: boolean };
+  tags?: { name: string; tone: Tone }[];
+  fresh?: number;
+  assignee?: keyof typeof team;
+  /** The chat's wait: Ollie on it, or a person holding it. */
+  wait?: 'ollie' | 'held';
+}
+
+// All open, newest activity first.
+const rows: Row[] = [
+  {
+    who: 'Noah Fischer', subject: 'Shared notebook won’t open on iPhone', preview: 'It just spins after the update. Other notebooks open fine.',
+    time: 'now', priority: 'normal', ai: true, unread: true, channel: 'chat', wait: 'ollie', fresh: 1, tags: [{ name: 'ios', tone: 'blue' }],
+  },
+  {
+    who: 'Hugo Moreau', subject: 'Charged twice for my upgrade', preview: 'Is anyone there?',
+    time: '2m', priority: 'high', ai: true, unread: true, channel: 'handoff', wait: 'held', fresh: 2, assignee: 'jonas',
+    tags: [{ name: 'billing', tone: 'orange' }, { name: 'refund', tone: 'rose' }],
+  },
+  {
+    who: 'Katrin Vogel', subject: 'Synchronisierung zwischen iPad und Mac hängt', preview: 'Hallo Margin-Team, seit dem letzten Update werden meine Notizen nicht mehr synchronisiert.',
+    time: '8m', priority: 'normal', ai: true, unread: true, sla: { label: '18m' },
+  },
+  {
+    who: 'Elena Rossi', subject: 'Can’t export notebook to PDF', preview: 'When I export our “Client brief” notebook, the images are missing from the PDF.',
+    time: '14m', priority: 'high', unread: true, severity: '3', sla: { label: '25m over', breached: true }, assignee: 'maya',
+  },
+  {
+    who: 'Freya Nilsen', subject: 'API returns 429 when syncing notes', preview: 'Hi Freya, thanks for the request log. The limit you’re hitting is per endpoint, not per key.',
+    time: '22m', priority: 'high', channel: 'api', assignee: 'priya',
+  },
+  {
+    who: 'Paula Martins', subject: 'Keyboard shortcuts on Windows', preview: 'On Windows every shortcut uses Ctrl where the Mac uses Cmd, so Ctrl K opens search.',
+    time: '31m', priority: 'low', ai: true, unread: true, channel: 'portal',
+  },
+  {
+    who: 'Tom Becker', subject: 'Invoice address for Germany', preview: 'We moved offices, so the next invoice needs our new address in Berlin.',
+    time: '48m', priority: 'low', unread: true, sla: { label: '34m' }, assignee: 'sam',
+  },
+  {
+    who: 'Chloé Dubois', subject: 'Feature request: nested tags', preview: 'Thanks! Nested tags would make the sidebar so much calmer.',
+    time: '1h', priority: 'low', channel: 'chat',
+  },
+  {
+    who: 'Kenji Mori', subject: 'Notes missing after restoring a backup', preview: 'I restored yesterday’s backup and two notebooks from last week are gone.',
+    time: '2h', priority: 'urgent', unread: true, severity: '2', sla: { label: '1h 10m over', breached: true }, assignee: 'jonas',
+  },
+  {
+    who: 'Ana Souza', subject: 'Change billing email', preview: 'Hi Ana, done. Invoices now go to finance@souza.studio.',
+    time: '3h', priority: 'normal', assignee: 'sam',
+  },
+  {
+    who: 'Lucía Fernández', subject: 'No puedo exportar mi cuaderno a PDF', preview: 'Hola, desde ayer no puedo exportar mi cuaderno «Proyecto Marbella» a PDF.',
+    time: '4h', priority: 'normal', ai: true, unread: true, assignee: 'maya',
+  },
+  {
+    who: 'Mia Johansson', subject: 'Handwriting search misses words', preview: 'Search finds typed notes fine, but most of my handwritten pages never show up.',
+    time: '5h', priority: 'normal', unread: true, channel: 'portal',
+  },
+  {
+    who: 'Leon Wagner', subject: 'SSO with Okta on the Business plan', preview: 'Does the Business plan support SAML sign-in through Okta?',
+    time: '6h', priority: 'normal', unread: true, assignee: 'priya',
+  },
+  {
+    who: 'Grace Liu', subject: 'Can I change the paper in my order?', preview: 'I ordered the dotted A5 but meant to pick the squared one. Not shipped yet, I hope.',
+    time: '8h', priority: 'low', unread: true,
+  },
+  {
+    who: 'Omar Haddad', subject: 'Discount for a class set of notebooks', preview: 'I teach a class of 28 and would like a notebook for each of them.',
+    time: '1d', priority: 'normal', unread: true, assignee: 'sam',
+  },
+];
+
+// The new email, routed to Sam on step 2.
+const arriving: Row = {
+  who: 'Lukas Weber', subject: 'Cover came loose on my A5 notebook', preview: 'Hi, the linen cover on the notebook I ordered last week is coming off at the spine. Order #M-20417.',
+  time: 'now', priority: 'normal', ai: true, unread: true,
+};
+
+// Channel marks off email (indicators ChannelIcon, plain, 16 grid).
+const channelSvg = {
+  api: '<path d="M5.5 3.5C4 3.5 4 4.5 4 6s-1.5 2-1.5 2S4 8.5 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 4.5 12 6s1.5 2 1.5 2S12 8.5 12 10s0 2.5-1.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  portal: '<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+};
+const channelIcon = (c: 'api' | 'portal') => `<svg class="dm-ic ib-chan" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">${channelSvg[c]}</svg>`;
+// lucide Rows3: the list layout toggle.
+const rows3 = '<svg class="dm-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3"/><path d="M21 15H3"/></svg>';
+const urgentIcon = prioIcon('urgent', 12);
+
+/** Hugo's chat has been with Jonas this long when the scene opens. */
+const held = 124;
+---
+<div class="absolute inset-0" data-seq data-hold="3600">
+  <AppWindow active="open" crumbs={['Inbox', 'All open']} counts={{ open: ['36', '37'] }} width={1280}>
+    <section class="ib-list">
+      <!-- ListToolbar -->
+      <div class="ib-bar">
+        <Fragment set:html={ic('inbox', 16, 'dm-fg3')} />
+        <span class="ib-title">
+          <span class="ib-h">All open</span>
+          <span class="dm-mono ib-count"><span data-step="0" data-until="1" data-wait="0">36</span><span class="s-swap" data-step="1">37</span></span>
+        </span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('search', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('funnel', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('sort', 14)} /></span>
+        <span class="ib-bar-sep"></span>
+        <span class="dm-iconbtn"><Fragment set:html={rows3} /></span>
+      </div>
+
+      <!-- SummaryStrip -->
+      <div class="ib-summary">
+        <span class="ib-total"><span data-step="0" data-until="1" data-wait="0">36</span><span class="s-swap" data-step="1">37</span> tickets</span>
+        <span class="ib-sum"><i class="ib-dot dm-t-blue"></i><span class="dm-mono dm-fg2"><span data-step="0" data-until="1" data-wait="0">21</span><span class="s-swap" data-step="1">22</span></span>awaiting reply</span>
+        <span class="ib-sum"><Fragment set:html={urgentIcon} /><span class="dm-mono dm-fg2">2</span>urgent</span>
+        <span class="ib-sum"><i class="ib-dot dm-t-red dm-pulse"></i><span class="dm-mono dm-fg2">3</span>overdue</span>
+        <span class="ib-sum"><i class="ib-dot dm-t-amber"></i><span class="dm-mono dm-fg2">2</span>due soon</span>
+      </div>
+
+      <div class="ib-rows">
+        <!-- FocusGlide on the first row -->
+        <span class="ib-glide"><i></i></span>
+
+        {[arriving, ...rows].map((r) => {
+          const isNew = r === arriving;
+          const person = r.assignee ? team[r.assignee] : isNew ? team.sam : undefined;
+          const hugo = r.wait === 'held';
+          const katrin = r.who === 'Katrin Vogel';
+          const row = (
+            <div class="ib-row">
+              <span class="ib-slot"><Fragment set:html={statusIcon('open')} /></span>
+              <span class="ib-slot">
+                <Fragment set:html={prioIcon(r.priority)} />
+                {r.ai && <span class="ib-setby"><Ollie size={10} eyes={false} /></span>}
+              </span>
+              <span class="ib-who-col">
+                <span class={`ib-who ${r.unread ? 'ib-unread' : ''}`}>{r.who}</span>
+                {(r.channel === 'chat' || r.channel === 'handoff') && (
+                  <span class="dm-chatbadge ib-badge dm-t-blue">
+                    <Fragment set:html={ic(r.channel === 'handoff' ? 'hand' : 'messageCircle', 12, '', 2.2)} />
+                    {r.channel === 'handoff' ? 'Wants a person' : 'Live chat'}
+                  </span>
+                )}
+                {(r.channel === 'api' || r.channel === 'portal') && <Fragment set:html={channelIcon(r.channel)} />}
+                {katrin && (
+                  <span class="ib-viewers ib-in" data-step="3" data-wait="1700">
+                    <span class="ib-av ib-av-xs dm-chip dm-t-teal">PR</span>
+                  </span>
+                )}
+                {hugo && (
+                  <span class="ib-viewers ib-in" data-step="4" data-wait="1600">
+                    <span class="ib-av ib-av-xs dm-chip dm-t-indigo">JB<i class="ib-replying"></i></span>
+                  </span>
+                )}
+              </span>
+              <span class="ib-mid">
+                {r.severity && <span class={`dm-mono dm-sev dm-chip ${r.severity === '2' ? 'dm-t-orange' : 'dm-t-amber'}`}>S{r.severity}</span>}
+                <span class={`ib-subject ${r.unread ? 'ib-unread' : ''}`}>{r.subject}</span>
+                {r.wait && r.tags && (
+                  <span class="ib-labels">{r.tags.map((t) => <span class={`dm-label dm-chip dm-t-${t.tone}`}><i></i>{t.name}</span>)}</span>
+                )}
+                {r.fresh ? <span class="dm-newcount ib-new dm-t-blue">{r.fresh} new</span> : null}
+                {r.wait === 'ollie' && (
+                  <span class="dm-olliepill ib-pill dm-t-violet"><span class="dm-ping dm-ping-violet dm-ping-6"><i></i><i></i></span>Ollie is replying</span>
+                )}
+                {hugo && (
+                  <span class="ib-heldwrap">
+                    <span class="ib-held" data-step="0" data-until="4" data-wait="0"><i></i><span class="ib-held-who">With Jonas</span><span class="dm-mono ib-held-t" data-clock={held}>2m 04s</span></span>
+                    <span class="ib-held s-swap" data-step="4"><i></i><span class="ib-held-who">Jonas is replying</span><span class="dm-mono ib-held-t" data-clock={held + 7}>2m 11s</span></span>
+                  </span>
+                )}
+                {r.sla && (
+                  <span class={`dm-mono dm-sla dm-chip ${r.sla.breached ? 'dm-t-red' : 'dm-t-amber'}`}><i class={r.sla.breached ? 'dm-pulse' : ''}></i>{r.sla.label}</span>
+                )}
+                <span class="ib-preview">{r.preview}</span>
+              </span>
+              <span class="ib-end">
+                {person && (
+                  isNew
+                    ? <span class="ib-av dm-chip dm-t-amber ib-in" data-step="2" data-wait="1500">{person.initials}</span>
+                    : <span class={`ib-av dm-chip dm-t-${person.tone}`}>{person.initials}</span>
+                )}
+                <span class="dm-mono ib-time">{r.time}</span>
+              </span>
+            </div>
+          );
+          return isNew ? <div class="ib-arrive" data-step="1" data-wait="1600"><div>{row}</div></div> : row;
+        })}
+      </div>
+    </section>
+  </AppWindow>
+</div>
+
+<style is:global>
+  /* InboxPage in the list layout; the window and shared pieces are in app/app.css. */
+  .ib-list { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+
+  /* ListToolbar: h-12, the title on its baseline, ghost icon buttons. */
+  .ib-bar { display: flex; height: 49px; flex-shrink: 0; align-items: center; gap: 6px; border-bottom: 1px solid var(--dm-line); padding: 0 10px 0 16px; }
+  .ib-title { margin-left: 4px; display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 8px; }
+  .ib-h { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .ib-count { font-size: 11.5px; color: var(--dm-fg-4); }
+  .ib-bar-sep { margin: 0 2px; width: 1px; height: 16px; background: var(--dm-line); }
+
+  /* SummaryStrip */
+  .ib-summary { display: flex; height: 36px; flex-shrink: 0; align-items: center; gap: 2px; border-bottom: 1px solid var(--dm-line-soft); padding: 0 10px; }
+  .ib-total { margin-right: 4px; padding: 0 4px; font-size: 11.5px; color: var(--dm-fg-4); }
+  .ib-sum { display: inline-flex; height: 24px; align-items: center; gap: 6px; padding: 0 6px; font-size: 11.5px; color: var(--dm-fg-3); }
+  .ib-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--t); }
+
+  /* TicketRow, wide: one 44px line. */
+  .ib-rows { position: relative; min-height: 0; flex: 1; overflow: hidden; }
+  .ib-glide { position: absolute; inset: 0 0 auto; height: 44px; background: var(--dm-sunken); }
+  .ib-glide i { position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 0 2px 2px 0; background: var(--dm-fg-4); }
+  .ib-row { position: relative; display: flex; height: 44px; align-items: center; gap: 12px; border-bottom: 1px solid var(--dm-line-soft); padding: 0 16px 0 14px; }
+  .ib-slot { position: relative; display: flex; width: 16px; height: 16px; flex-shrink: 0; align-items: center; justify-content: center; }
+  .ib-badge { display: inline-flex; height: 18px; flex-shrink: 0; align-items: center; gap: 4px; border-radius: 5px; padding: 0 6px; font-size: 10.5px; font-weight: 500; }
+  .ib-new { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; border-radius: 9999px; padding: 0 6px; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ib-pill { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px; font-size: 11px; font-weight: 500; }
+  .ib-setby { position: absolute; right: -6px; top: -6px; display: flex; border-radius: 9999px; box-shadow: 0 0 0 1px var(--dm-surface); }
+  .ib-setby .ollie * { animation: none !important; }
+  .ib-who-col { display: flex; width: 180px; flex-shrink: 0; align-items: center; gap: 6px; }
+  .ib-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dm-fg-2); }
+  .ib-unread { font-weight: 500; color: var(--dm-fg); }
+  .ib-chan { color: var(--dm-fg-3); }
+  .ib-mid { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; }
+  .ib-subject { max-width: 60%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dm-fg-2); }
+  .ib-subject.ib-unread { color: var(--dm-fg); }
+  .ib-labels { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+  .ib-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dm-fg-4); }
+  .ib-end { display: flex; height: 24px; width: 84px; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 8px; }
+  .ib-time { min-width: 36px; text-align: right; white-space: nowrap; font-size: 11px; color: var(--dm-fg-3); }
+
+  /* Avatar sm (assignee) and xs (presence), initials on the person's tint. */
+  .ib-av { position: relative; display: inline-flex; width: 20px; height: 20px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 9999px; font-size: 8.5px; font-weight: 600; letter-spacing: -0.02em; }
+  .ib-av-xs { width: 16px; height: 16px; font-size: 7.5px; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 18%, transparent), 0 0 0 2px var(--dm-surface); }
+  .ib-viewers { display: flex; flex-shrink: 0; }
+  .ib-replying { position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px; border-radius: 9999px; background: var(--dm-amber); box-shadow: 0 0 0 1.5px var(--dm-surface); }
+
+  /* WaitPill, handled: amber and quiet, the wait still ticking. */
+  .ib-heldwrap { display: flex; min-width: 0; flex-shrink: 1; }
+  .ib-held {
+    display: inline-flex; height: 20px; min-width: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px;
+    background: color-mix(in oklab, var(--dm-amber) 10%, transparent); font-size: 11px; font-weight: 500;
+    color: color-mix(in oklab, var(--dm-amber) 82%, var(--dm-fg));
+  }
+  .ib-held i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 9999px; background: var(--dm-amber); }
+  .ib-held-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ib-held-t { flex-shrink: 0; opacity: 0.8; }
+
+  /* The timeline: a row slides in on top with the blue tint of a live arrival
+     (rowMotion), an avatar or a viewer pops in (animate-pop-in). */
+  .ib-arrive { display: grid; grid-template-rows: 1fr; }
+  .ib-arrive > div { min-height: 0; overflow: hidden; }
+  .seq-js [data-step].ib-arrive { transition: grid-template-rows 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease 60ms; }
+  .seq-js [data-step]:not(.on).ib-arrive { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js [data-step].on.ib-arrive .ib-row { animation: dm-fresh 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.2s backwards; }
+  .seq-js [data-step].ib-in { transition: opacity 220ms ease, transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .seq-js [data-step]:not(.on).ib-in { opacity: 0; transform: translateY(-3px) scale(0.9); }
+</style>

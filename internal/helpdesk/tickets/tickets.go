@@ -21,11 +21,19 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
+	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
 type ticketOut struct{ Body domain.Ticket }
+
+// patchedTicketOut is PATCH /v1/tickets/{id}: OD-Ticket-Hidden is "true" when the change
+// left the ticket where the caller may no longer see it.
+type patchedTicketOut struct {
+	Hidden string `header:"OD-Ticket-Hidden"`
+	Body   domain.Ticket
+}
 
 type listIn struct {
 	httpx.ListParams
@@ -33,9 +41,11 @@ type listIn struct {
 	Priority  string `query:"priority" doc:"Comma separated priorities"`
 	Severity  string `query:"severity" doc:"Comma separated severities (sev1..sev4), none for tickets without one"`
 	Assignee  string `query:"assignee" doc:"me, none or a user id"`
-	TeamID    string `query:"team_id"`
+	TeamID    string `query:"team_id" doc:"Comma-separated team ids, mine (the caller's teams) and none: tickets of any of them"`
 	MailboxID string `query:"mailbox_id"`
-	Tag       string `query:"tag" doc:"Tag name"`
+	BrandID   string `query:"brand_id"`
+	WidgetID  string `query:"widget_id"`
+	Tag       string `query:"tag" doc:"Label name"`
 	Channel   string `query:"channel" enum:"email,chat,api,portal,"`
 	ContactID string `query:"contact_id"`
 	ViewID    string `query:"view_id" doc:"Apply a saved view's filters; explicit filters override it"`
@@ -70,7 +80,8 @@ type ticketCreateBody struct {
 	Priority      string              `json:"priority,omitempty" enum:"low,normal,high,urgent"`
 	Severity      string              `json:"severity,omitempty" enum:"sev1,sev2,sev3,sev4"`
 	AssigneeID    string              `json:"assignee_id,omitempty"`
-	TeamID        string              `json:"team_id,omitempty"`
+	TeamID        string              `json:"team_id,omitempty" doc:"Wins over the address's team; routing rules may still move the ticket"`
+	BrandID       string              `json:"brand_id,omitempty" doc:"Default: the mailbox's brand, else the default brand"`
 	Tags          []string            `json:"tags,omitempty" maxItems:"50"`
 	Status        string              `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed"`
 	Cc            []string            `json:"cc,omitempty" maxItems:"20"`
@@ -86,12 +97,14 @@ type ticketPatchBody struct {
 	Priority     *string        `json:"priority,omitempty" enum:"low,normal,high,urgent"`
 	Severity     Opt[string]    `json:"severity,omitempty" doc:"sev1, sev2, sev3, sev4, or null to clear"`
 	AssigneeID   Opt[string]    `json:"assignee_id,omitempty" doc:"User id, or null to unassign"`
-	TeamID       Opt[string]    `json:"team_id,omitempty" doc:"Team id, or null"`
+	TeamID       Opt[string]    `json:"team_id,omitempty" doc:"Team id, or null. May switch the reply address (contracts/teams.md)"`
+	MailboxID    *string        `json:"mailbox_id,omitempty" doc:"The reply address: an address of the ticket's brand the caller may send from"`
+	BrandID      *string        `json:"brand_id,omitempty" doc:"A brand of the workspace; the reply address follows it"`
 	SnoozedUntil Opt[time.Time] `json:"snoozed_until,omitempty" doc:"Snooze until, or null to wake"`
 	Spam         *bool          `json:"spam,omitempty"`
-	Tags         *[]string      `json:"tags,omitempty" maxItems:"50" doc:"Replaces the tags, by name; missing tags are created"`
-	AddTags      []string       `json:"add_tags,omitempty" maxItems:"50" doc:"Adds these tags, by name, keeping the others; missing tags are created"`
-	RemoveTags   []string       `json:"remove_tags,omitempty" maxItems:"50" doc:"Removes these tags, by name"`
+	Tags         *[]string      `json:"tags,omitempty" maxItems:"50" doc:"Replaces the labels, by name; missing labels are created"`
+	AddTags      []string       `json:"add_tags,omitempty" maxItems:"50" doc:"Adds these labels, by name, keeping the others; missing labels are created"`
+	RemoveTags   []string       `json:"remove_tags,omitempty" maxItems:"50" doc:"Removes these labels, by name"`
 	Custom       map[string]any `json:"custom,omitempty" doc:"Merged into custom; null values remove keys"`
 	Fields       map[string]any `json:"fields,omitempty" doc:"Custom field values by key, merged; null clears a field"`
 }
@@ -105,6 +118,20 @@ func (b ticketPatchBody) toPatch() (Patch, error) {
 	}
 	if p.Team, err = optID(b.TeamID, "team_id"); err != nil {
 		return p, err
+	}
+	if b.MailboxID != nil {
+		id, err := hd.ParseRef(*b.MailboxID, "mailbox_id")
+		if err != nil {
+			return p, err
+		}
+		p.Mailbox = &id
+	}
+	if b.BrandID != nil {
+		id, err := hd.ParseRef(*b.BrandID, "brand_id")
+		if err != nil {
+			return p, err
+		}
+		p.Brand = &id
 	}
 	return p, nil
 }
@@ -170,7 +197,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 				return nil, in.fieldsErr
 			}
 			req := hd.TicketFilters{Status: hd.SplitCSV(in.Status), Priority: hd.SplitCSV(in.Priority), Severity: hd.SplitCSV(in.Severity), Assignee: in.Assignee,
-				TeamID: in.TeamID, MailboxID: in.MailboxID, Tag: in.Tag, Channel: in.Channel, Q: in.Q, Fields: in.fields}
+				TeamID: in.TeamID, MailboxID: in.MailboxID, BrandID: in.BrandID, WidgetID: in.WidgetID, Tag: in.Tag, Channel: in.Channel, Q: in.Q, Fields: in.fields}
 			f := req
 			if in.ViewID != "" {
 				view, err := loadView(ctx, d.DB.Pool, p, in.ViewID)
@@ -188,8 +215,11 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			if f.Severity, err = validEnum(f.Severity, hd.SeverityFilterValues, "severity"); err != nil {
 				return nil, err
 			}
-			page, err := listTickets(ctx, d.DB.Pool, p.WorkspaceID, p.ActorUserID(), listQuery{TicketFilters: f, ContactID: in.ContactID, Spam: in.Spam},
-				in.Sort, in.Order, in.Limit, in.Cursor)
+			lq, err := forCaller(ctx, d.DB.Pool, p, listQuery{TicketFilters: f, ContactID: in.ContactID, Spam: in.Spam})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			page, err := listTickets(ctx, d.DB.Pool, p.WorkspaceID, p.ActorUserID(), lq, in.Sort, in.Order, in.Limit, in.Cursor)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -239,7 +269,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			id, err := resolveTicket(ctx, d.DB.Pool, p.WorkspaceID, in.ID)
+			id, err := resolveVisible(ctx, d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -255,7 +285,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body ticketPatchBody
-		}) (*ticketOut, error) {
+		}) (*patchedTicketOut, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAgent, auth.ScopeTicketsWrite)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -269,8 +299,11 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			}
 			var t domain.Ticket
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				id, err := resolveTicket(ctx, tx, p.WorkspaceID, in.ID)
+				id, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
+					return err
+				}
+				if err := patch.checkCaller(ctx, tx, p, id); err != nil {
 					return err
 				}
 				if _, err := applyPatch(ctx, tx, d, p.WorkspaceID, id, actorOf(p), patch, applyOpts{Enqueue: true, RequireFields: true}); err != nil {
@@ -282,7 +315,21 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return &ticketOut{t}, nil
+			// The change may take the ticket out of the caller's sight (a private team they
+			// are not on): it still answers the ticket as changed, flagged so clients drop it.
+			out := &patchedTicketOut{Body: t}
+			var assignee *uuid.UUID
+			if t.Assignee != nil {
+				assignee = &t.Assignee.ID
+			}
+			visible, err := domain.CanSee(ctx, d.DB.Pool, p, t.TeamID, assignee)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if !visible {
+				out.Hidden = "true"
+			}
+			return out, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "delete-ticket", Method: http.MethodDelete, Path: "/v1/tickets/{id}",
@@ -295,7 +342,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				id, err := resolveTicket(ctx, tx, p.WorkspaceID, in.ID)
+				id, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
 					return err
 				}
@@ -341,7 +388,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				seen := map[uuid.UUID]bool{}
 				for _, raw := range in.Body.IDs {
-					id, err := resolveTicket(ctx, tx, p.WorkspaceID, raw)
+					id, err := resolveVisible(ctx, tx, p, raw)
 					if err != nil {
 						return err
 					}
@@ -355,6 +402,9 @@ func registerTickets(d *deps.Deps, api huma.API) {
 						}
 						out.Deleted++
 						continue
+					}
+					if err := patch.checkCaller(ctx, tx, p, id); err != nil {
+						return err
 					}
 					changes, err := applyPatch(ctx, tx, d, p.WorkspaceID, id, actorOf(p), patch, applyOpts{Enqueue: true, RequireFields: true})
 					if err != nil {
@@ -379,7 +429,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "merge-ticket", Method: http.MethodPost, Path: "/v1/tickets/{id}/merge",
 		Summary: "Merge a ticket into another", Tags: tags,
-		Description: "Moves every message and tag into into_id and closes this ticket. Returns the target."},
+		Description: "Moves every message and label into into_id and closes this ticket. Returns the target."},
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body struct {
@@ -392,11 +442,11 @@ func registerTickets(d *deps.Deps, api huma.API) {
 			}
 			var t domain.Ticket
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				src, err := resolveTicket(ctx, tx, p.WorkspaceID, in.ID)
+				src, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
 					return err
 				}
-				dst, err := resolveTicket(ctx, tx, p.WorkspaceID, in.Body.IntoID)
+				dst, err := resolveVisible(ctx, tx, p, in.Body.IntoID)
 				if err != nil {
 					return httpx.Validation("into_id is not a ticket in this workspace")
 				}
@@ -535,6 +585,7 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 		}
 		nt.AssigneeID = &id
 	}
+	var askedTeam *uuid.UUID
 	if b.TeamID != "" {
 		id, err := hd.ParseRef(b.TeamID, "team_id")
 		if err != nil {
@@ -543,8 +594,42 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 		if err := hd.CheckRef(ctx, tx, wid, "team", id); err != nil {
 			return domain.Ticket{}, err
 		}
-		nt.TeamID = &id
+		askedTeam = &id
 	}
+	var askedBrand *uuid.UUID
+	if b.BrandID != "" {
+		id, err := hd.ParseRef(b.BrandID, "brand_id")
+		if err != nil {
+			return domain.Ticket{}, err
+		}
+		if err := hd.CheckRef(ctx, tx, wid, "brand", id); err != nil {
+			return domain.Ticket{}, err
+		}
+		if nt.MailboxID != nil {
+			ok, err := mailboxInBrand(ctx, tx, wid, id, nt.MailboxID)
+			if err != nil {
+				return domain.Ticket{}, err
+			}
+			if !ok {
+				return domain.Ticket{}, httpx.Validation("mailbox_id must be an address of brand_id")
+			}
+		}
+		askedBrand = &id
+	}
+	if nt.MailboxID != nil {
+		ok, err := domain.CanSendFrom(ctx, tx, p, *nt.MailboxID)
+		if err != nil {
+			return domain.Ticket{}, err
+		}
+		if !ok {
+			return domain.Ticket{}, httpx.E(403, "forbidden", "Only members of its team can send from this address.")
+		}
+	}
+	brandID, err := domain.ResolveBrand(ctx, tx, wid, askedBrand, nt.MailboxID, nil)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	nt.BrandID = &brandID
 	cc, err := cleanEmails(b.Cc)
 	if err != nil {
 		return domain.Ticket{}, err
@@ -557,11 +642,39 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, nil); err != nil {
+	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, hd.Uploader{User: p.ActorUserID(), APIKey: p.ActorAPIKeyID()}); err != nil {
 		return domain.Ticket{}, err
 	}
 	bodyHTML := hd.SanitizeRich(b.BodyHTML)
 	bodyText := hd.HTMLToText(bodyHTML)
+
+	// The team (contracts/teams.md "Routing"): the one asked for, else the address's, then
+	// the first matching routing rule.
+	in := routing.Input{WorkspaceID: wid, Channel: nt.Channel, BrandID: brandID, MailboxID: nt.MailboxID, Subject: nt.Subject,
+		Body: bodyText, ContactID: nt.ContactID, TeamID: askedTeam}
+	if in.Channel != domain.ChannelEmail {
+		in.Channel = domain.ChannelAPI
+	}
+	if contactEmail != nil {
+		in.FromEmail = *contactEmail
+	}
+	routed, err := routing.Resolve(ctx, tx, in)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	nt.TeamID, nt.Routed = routed.TeamID, routed.Routed
+	if nt.TeamID != nil && nt.Routed == nil {
+		nt.Routed = &domain.TicketRouted{Via: "api"}
+	}
+	if nt.Routed != nil && nt.Routed.Via == "rule" && nt.Routed.RuleID != nil {
+		if _, err := tx.Exec(ctx, `UPDATE routing_rules SET run_count = run_count + 1 WHERE workspace_id = $1 AND id = $2`,
+			wid, *nt.Routed.RuleID); err != nil {
+			return domain.Ticket{}, err
+		}
+	}
+	if err := hd.CheckAssigneeOnTeam(ctx, tx, wid, nt.TeamID, nt.AssigneeID); err != nil {
+		return domain.Ticket{}, err
+	}
 
 	t, err := domain.CreateTicket(ctx, tx, nt)
 	if err != nil {
@@ -587,6 +700,7 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 		if kind == "reply" && nt.Channel == domain.ChannelEmail {
 			nm.To, nm.Cc, nm.Bcc = []string{*contactEmail}, cc, bcc
 			nm.FromEmail, nm.FromName = mailboxEmail, mailboxName
+			nm.MailboxID = nt.MailboxID
 			nm.DeliveryStatus = "pending"
 		}
 		msg, err := domain.AddMessage(ctx, tx, d.Jobs, nm)
@@ -626,7 +740,7 @@ func deleteTicket(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error {
 		wid, id); err != nil {
 		return err
 	}
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket.deleted", Data: map[string]any{"ticket_id": id}})
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket.deleted", TicketID: &id, Data: map[string]any{"ticket_id": id}})
 	return err
 }
 
@@ -640,7 +754,7 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 	if second.String() < first.String() {
 		first, second = second, first
 	}
-	srcState := ticketState{}
+	srcState, dstState := ticketState{}, ticketState{}
 	for _, id := range []uuid.UUID{first, second} {
 		s, err := lockTicket(ctx, tx, wid, id)
 		if err != nil {
@@ -648,6 +762,8 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 		}
 		if id == src {
 			srcState = s
+		} else {
+			dstState = s
 		}
 	}
 	var srcMerged *uuid.UUID
@@ -679,6 +795,9 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 		waiting_since = (SELECT min(m.created_at) FROM messages m WHERE m.workspace_id = $1 AND m.ticket_id = $2
 			AND m.kind = 'reply' AND m.direction = 'inbound' AND m.created_at > COALESCE((SELECT max(o.created_at) FROM messages o
 			WHERE o.workspace_id = $1 AND o.ticket_id = $2 AND o.kind = 'reply' AND o.direction = 'outbound'), '-infinity')),
+		unanswered_count = (SELECT count(*) FROM messages m WHERE m.workspace_id = $1 AND m.ticket_id = $2
+			AND m.kind = 'reply' AND m.direction = 'inbound' AND m.created_at > COALESCE((SELECT max(o.created_at) FROM messages o
+			WHERE o.workspace_id = $1 AND o.ticket_id = $2 AND o.kind = 'reply' AND o.direction = 'outbound'), '-infinity')),
 		last_message_preview = COALESCE(s.preview, t.last_message_preview),
 		first_responded_at = LEAST(t.first_responded_at, (SELECT first_responded_at FROM tickets WHERE id = $3)),
 		updated_at = now()
@@ -699,8 +818,19 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 	if _, err := applyPatch(ctx, tx, d, wid, src, actor, Patch{Status: &closed, Snooze: Opt[time.Time]{Set: true, Null: true}}, applyOpts{}); err != nil {
 		return err
 	}
-	if _, err := domain.LogActivity(ctx, tx, wid, src, actor.Type, actor.UserID, "merged",
-		map[string]any{"into": dst.String(), "into_number": dstNumber}); err != nil {
+	// The source's timeline names the target only when everyone who sees the source may see
+	// it too: a target in another, private team stays unnamed.
+	into := map[string]any{"into": dst.String(), "into_number": dstNumber}
+	if dstState.Team != nil && !sameID(dstState.Team, srcState.Team) {
+		private, err := hd.TeamPrivate(ctx, tx, wid, dstState.Team)
+		if err != nil {
+			return err
+		}
+		if private {
+			into = map[string]any{"into": nil, "into_number": nil}
+		}
+	}
+	if _, err := domain.LogActivity(ctx, tx, wid, src, actor.Type, actor.UserID, "merged", into); err != nil {
 		return err
 	}
 	if _, err := domain.LogActivity(ctx, tx, wid, dst, actor.Type, actor.UserID, "merged",

@@ -1,0 +1,164 @@
+---
+title: Labels and custom fields
+description: Sort tickets, contacts and companies with coloured labels, and record structured details with custom fields.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+**Labels** are short coloured names you put on tickets, contacts and companies, like `Bug`, `VIP` or `Churn risk`. **Custom fields** record the details your team needs every time, like the product area, the app version or a company's renewal date.
+
+Admins set both up in **Settings**, **Labels** and **Settings**, **Custom fields**, in the **Inbox** group. Agents apply labels and fill in fields. Viewers see them.
+
+<Screenshot src="/guides/labels/labels" alt="The Labels settings page: the New group and New label buttons ringed as 1, the One at a time badge of the Type group ringed as 2, the Question label row ringed as 3, and the Applies to and Uses columns ringed as 4" />
+
+<Legend>
+
+1. **New group** and **New label**.
+2. **One at a time**: a record can carry only one label of this group.
+3. **A label**: its colour, name and description. Click it to edit, or use its **⋯** menu.
+4. **Applies to** and **Uses**: whether the label is offered on tickets, contacts and companies, and how many records carry it.
+
+</Legend>
+
+## Create a label
+
+<Steps>
+<Step title="Click New label">
+
+Open **Settings**, **Labels**, and click **New label**.
+
+</Step>
+<Step title="Fill in the label">
+
+<Screenshot src="/guides/labels/new-label" alt="The New label dialog: Name ringed as 1, Description ringed as 2, Group ringed as 3, and Applies to with Tickets, Contacts and Companies ringed as 4" />
+
+<Legend>
+
+1. **Name**: 1 to 50 characters. Pick a colour next to it.
+2. **Description**: when to use the label. It is shown in pickers so everyone uses the label the same way, and it helps [Ollie's triage](/guides/triage-and-assignment/#triage-by-ollie) pick the right one.
+3. **Group**: file it under a group, or leave **No group**.
+4. **Applies to**: offer it on tickets, contacts, companies, or any mix.
+
+</Legend>
+
+</Step>
+<Step title="Apply it on a ticket">
+
+On a ticket, click **Add** next to **Labels** in the details panel, and tick the labels you want. A group of one label at a time says so in its heading, like **Type, pick one**: picking another label of it swaps the label instead of adding a second.
+
+<Screenshot src="/guides/labels/ticket-labels" alt="A ticket's Labels row with the Add button ringed as 1, and the label picker open with the heading Type, pick one ringed as 2" />
+
+</Step>
+</Steps>
+
+<Callout type="tip" title="Start with the defaults">
+
+New workspaces start with **Question**, **Problem**, **Bug**, **Feature request** and **Billing** in a **Type** group of one label at a time, plus **VIP** and **Feedback**. Rename, recolour or delete any of them. Renaming a label keeps the automations and views that use it working.
+
+</Callout>
+
+## Keep the list tidy
+
+Each label's **⋯** menu can edit it, change its colour, move it to a group, merge it, archive it or delete it.
+
+<Screenshot src="/guides/labels/label-menu" alt="The actions menu of the Bug label, with Merge into another label and Archive ringed as 1" />
+
+- **Merge into another label** moves everything that carried this label to the one you keep. Automations and views switch over, and this label is deleted.
+- **Archive** stops offering a label in pickers. It stays on the records that have it.
+- **Delete** takes the label off everything that has it.
+
+By default, anyone who applies a label can type a new name to create one. To keep the list curated, set **Who can create labels** to **Admins only**, at the foot of the Labels page. Agents then pick from the existing labels, and an admin adds new ones.
+
+<Screenshot src="/guides/labels/creation" alt="The Creating labels section with the Anyone and Admins only choice ringed as 1" />
+
+<Fold>
+
+## Groups
+
+Groups keep a long list of labels in order, for example `Type`, `Product area` or `Account health`. Drag groups, and the labels inside them, to set the order they appear in everywhere.
+
+Turn on **One label at a time** for a group when a record should have only one of its labels. The default `Type` group works this way: a ticket is a question or a bug, not both. The same rule holds for bulk edits, automations and AI triage.
+
+</Fold>
+
+## Custom fields
+
+<Screenshot src="/guides/labels/fields" alt="The Custom fields settings page: the Tickets, Contacts and Companies tabs ringed as 1, the New field button ringed as 2, the Required to solve badge on Resolution ringed as 3, and the Archived badge on an archived field ringed as 4" />
+
+<Legend>
+
+1. **Tickets**, **Contacts** and **Companies**: each has its own fields.
+2. **New field**: add a field to the tab you are on.
+3. **Required to solve**: the team must fill this field in before solving a ticket.
+4. **Archived**: hidden from forms, with its values kept.
+
+</Legend>
+
+<Steps>
+<Step title="Choose the tab, then click New field">
+
+Pick **Tickets**, **Contacts** or **Companies**, then click **New field**.
+
+</Step>
+<Step title="Name it and pick a type">
+
+The **Key** is filled in from the name. It is what the API, filters and automations use, and like the type it cannot change later. Add a description to show agents next to the field.
+
+<Screenshot src="/guides/labels/new-field" alt="The New ticket field dialog: Name, the key order_number, the ten field types from Text to Person, an optional Description, and the Required to solve switch" />
+
+| Type | Holds |
+| --- | --- |
+| Text, Long text | Free text. |
+| Number | A number, like affected users or ARR. |
+| Select, Multi-select | Options you define, each with a colour. |
+| Date | A calendar date, like a renewal or follow-up date. |
+| Checkbox | Yes or no. |
+| Link, Email | A link or an address. |
+| Person | Someone in the workspace, like an escalation owner. |
+
+</Step>
+<Step title="Fill it in on a ticket">
+
+Fields appear in the **Fields** section of the ticket's details panel, and on contact and company pages, in the order you set. Click a value to change it. A dot next to a name marks a field required to solve.
+
+<Screenshot src="/guides/labels/ticket-fields" alt="The Fields section of a ticket's details panel, with the Resolution field, marked required by a dot and still empty, ringed as 1" />
+
+</Step>
+</Steps>
+
+<Callout type="note" title="Required to solve">
+
+With **Required to solve** on a ticket field, like `Resolution`, a ticket cannot be solved or closed while the field is empty: opendesk asks for it first. Automations, merges and auto-close are not held back by required fields.
+
+</Callout>
+
+<Fold>
+
+## Filters, views and automations
+
+Filter the inbox by any field, like `Product area is Sync or Export` or `Affected users at least 10`, and save the filter as a [view](/guides/saved-replies-and-views/). Sort a list by a field to bring the biggest or the soonest to the top. Search also matches the text in fields.
+
+[Automations](/guides/automations/) can check a ticket's fields or its contact's fields, and the **Set field** action fills one in, for example setting `Product area` to `Billing` for mail to the billing address.
+
+</Fold>
+
+<Fold>
+
+## Archive and delete
+
+Archive a field to hide it from forms and pickers while keeping its values. Deleting a field removes its values. An automation that uses an archived or deleted field skips it.
+
+Limits: up to 100 fields per tab, 200 options per select, 1000 labels and 50 groups.
+
+</Fold>
+
+## Related
+
+- [Automations](/guides/automations/)
+- [Saved replies and views](/guides/saved-replies-and-views/)
+- [Labels and custom fields API](/api/resources/labels-fields/)

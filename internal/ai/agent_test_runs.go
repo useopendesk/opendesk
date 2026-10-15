@@ -30,7 +30,7 @@ import (
 // Test runs (contracts/agent.md "Tests"): a job answers each test with the playground
 // engine (read-only tools, nothing acts), checks handoff, tools and citations itself and
 // asks a fast model whether the answer conveys (or avoids) the expected content. Every
-// finished test publishes its result; credits are charged as playground usage.
+// finished test publishes its result; each is charged to the AI balance as playground usage.
 
 // agentRunConcurrency is how many tests of a run are answered at once.
 var agentRunConcurrency = 3
@@ -54,7 +54,7 @@ type AgentTestRun struct {
 	Passed  int         `json:"passed"`
 	Failed  int         `json:"failed"`
 	Errored int         `json:"errored"`
-	Credits float64     `json:"credits"`
+	USD     float64     `json:"usd" doc:"What the run cost, in US dollars"`
 	// Error says why a failed run stopped.
 	Error      *string           `json:"error"`
 	Results    []AgentTestResult `json:"results,omitempty" doc:"Only on GET /v1/ai/agent/test-runs/{id}"`
@@ -261,15 +261,15 @@ func failStaleRuns(ctx context.Context, q db.Querier, wid uuid.UUID) error {
 	return err
 }
 
-const runCols = `r.id, r.status, r.settings IS NOT NULL, r.total, r.passed, r.failed, r.errored, r.millicredits, r.error,
+const runCols = `r.id, r.status, r.settings IS NOT NULL, r.total, r.passed, r.failed, r.errored, r.micro_usd, r.error,
 	r.created_at, r.started_at, r.finished_at,
 	COALESCE((SELECT array_agg(x.test_id ORDER BY x.position) FROM ai_agent_test_results x WHERE x.workspace_id = r.workspace_id AND x.run_id = r.id), '{}')`
 
 func scanRun(row pgx.Row) (AgentTestRun, error) {
 	var r AgentTestRun
-	var milli int64
-	err := row.Scan(&r.ID, &r.Status, &r.Draft, &r.Total, &r.Passed, &r.Failed, &r.Errored, &milli, &r.Error, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &r.TestIDs)
-	r.Credits = float64(milli) / 1000
+	var usd plan.Micro
+	err := row.Scan(&r.ID, &r.Status, &r.Draft, &r.Total, &r.Passed, &r.Failed, &r.Errored, &usd, &r.Error, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &r.TestIDs)
+	r.USD = usd.USD()
 	if r.TestIDs == nil {
 		r.TestIDs = []uuid.UUID{}
 	}
@@ -365,8 +365,8 @@ type pendingTest struct {
 type testOutcome struct {
 	status string
 	res    AgentTestResult
-	milli  plan.Milli
-	// stop ends the run (no credits): the remaining tests are not run.
+	usd    plan.Micro
+	// stop ends the run (AI balance used up): the remaining tests are not run.
 	stop string
 }
 
@@ -483,14 +483,14 @@ func (s *Service) finishRun(ctx context.Context, wid, runID uuid.UUID, failure s
 func (s *Service) saveOutcome(ctx context.Context, wid, runID, testID uuid.UUID, out testOutcome) error {
 	ctx = context.WithoutCancel(ctx)
 	if out.status == "" {
-		return nil // not run (out of credits): stays pending
+		return nil // not run (AI balance used up): stays pending
 	}
 	r := out.res
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE ai_agent_test_results SET status = $4, answer_html = $5, handoff = $6, tools = $7, sources = $8,
-			action = $9, checks = $10, error = $11, millicredits = $12, finished_at = now()
+			action = $9, checks = $10, error = $11, micro_usd = $12, finished_at = now()
 			WHERE workspace_id = $1 AND run_id = $2 AND test_id = $3 AND status IN ('pending', 'running')`,
-			wid, runID, testID, out.status, r.AnswerHTML, r.Handoff, r.Tools, r.Sources, r.Action, r.Checks, r.Error, int64(out.milli))
+			wid, runID, testID, out.status, r.AnswerHTML, r.Handoff, r.Tools, r.Sources, r.Action, r.Checks, r.Error, int64(out.usd))
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -501,8 +501,8 @@ func (s *Service) saveOutcome(ctx context.Context, wid, runID, testID uuid.UUID,
 			return 0
 		}
 		if _, err := tx.Exec(ctx, `UPDATE ai_agent_test_runs SET passed = passed + $3, failed = failed + $4, errored = errored + $5,
-			millicredits = millicredits + $6 WHERE workspace_id = $1 AND id = $2`,
-			wid, runID, inc("passed"), inc("failed"), inc("error"), int64(out.milli)); err != nil {
+			micro_usd = micro_usd + $6 WHERE workspace_id = $1 AND id = $2`,
+			wid, runID, inc("passed"), inc("failed"), inc("error"), int64(out.usd)); err != nil {
 			return err
 		}
 		res, err := loadResult(ctx, tx, wid, runID, testID)
@@ -527,8 +527,8 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 	out := testOutcome{res: AgentTestResult{Tools: []string{}, Sources: []CitedSource{}, Checks: []AgentTestCheck{}}}
 	fail := func(err error) testOutcome {
 		msg := testErrorText(err)
-		if isNoCredits(err) {
-			out.stop = "Not enough credits to finish the run."
+		if isNoBalance(err) {
+			out.stop = "The AI balance is too low to finish the run."
 		}
 		out.status, out.res.Error = "error", &msg
 		return out
@@ -538,7 +538,7 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 		return fail(err)
 	}
 	res, err := s.runAgent(ctx, in, agentEvents{})
-	out.milli += res.Credits
+	out.usd += res.USD
 	if err != nil {
 		return fail(err)
 	}
@@ -596,8 +596,8 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 				c.Reason = "Ollie wrote no answer."
 			}
 		} else {
-			verdicts, milli, err := s.judge(ctx, wid, in.set, t.Messages, answer, res.Handoff, t.Expectations, judged)
-			out.milli += milli
+			verdicts, usd, err := s.judge(ctx, wid, in.set, t.Messages, answer, res.Handoff, t.Expectations, judged)
+			out.usd += usd
 			if err != nil {
 				return fail(err)
 			}
@@ -641,8 +641,8 @@ func countNoun(n int, one, many string) string {
 // testErrorText is a safe, fixed message for a test that could not be answered.
 func testErrorText(err error) string {
 	switch {
-	case isNoCredits(err):
-		return "Not enough credits."
+	case isNoBalance(err):
+		return "The AI balance is too low."
 	case errors.Is(err, ErrNoTools):
 		return "The AI provider can't run the agent."
 	case errors.Is(err, ErrBusy):
@@ -680,7 +680,7 @@ type judgeVerdict struct {
 // judge asks the fast model whether the answer conveys or avoids each judged expectation,
 // billed as playground usage. It returns one verdict per index in judged.
 func (s *Service) judge(ctx context.Context, wid uuid.UUID, set hd.AISettings, msgs []PlaygroundMessage, answer string, handoff bool,
-	es []AgentExpectation, judged []int) ([]judgeVerdict, plan.Milli, error) {
+	es []AgentExpectation, judged []int) ([]judgeVerdict, plan.Micro, error) {
 	var conv strings.Builder
 	for i, m := range msgs {
 		from := "agent"

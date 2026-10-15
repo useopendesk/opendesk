@@ -11,6 +11,12 @@ OD-Envelope-From: <envelope sender>
 Content-Type: message/rfc822
 ```
 
+`OD-Envelope-From` is the SMTP envelope sender (empty for the null sender of a
+delivery report); the API counts a delivery report as a bounce only with the null
+sender. The worker does not check senders itself: Email Routing writes its SPF, DKIM and
+DMARC results into the message under the authserv-id `mx.cloudflare.net`, and the API
+believes them because `INBOUND_AUTHSERV_ID` lists that id.
+
 The catch-all rule, the MX records for `in.opendesk.sh` and the worker binding are
 managed by Terraform (`deploy/terraform/modules/cloudflare`). This directory is only
 the worker code.

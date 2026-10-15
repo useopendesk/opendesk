@@ -27,6 +27,20 @@ type listQuery struct {
 	Spam      string // "", "true", "false", "any"
 	// Defs are the ticket field definitions (needed for Fields filters and field sorts).
 	Defs domain.FieldDefs
+	// Hidden are the private teams the caller may not see (domain.HiddenTeams); their
+	// tickets are left out unless the caller is the assignee. nil applies no visibility
+	// (internal callers only).
+	Hidden []uuid.UUID
+}
+
+// forCaller returns q with the caller's visibility applied.
+func forCaller(ctx context.Context, qr db.Querier, p *auth.Principal, q listQuery) (listQuery, error) {
+	hidden, err := domain.HiddenTeams(ctx, qr, p)
+	if err != nil {
+		return q, err
+	}
+	q.Hidden = hidden
+	return q, nil
 }
 
 // sqlBuilder accumulates WHERE clauses and positional args.
@@ -42,6 +56,12 @@ func (b *sqlBuilder) arg(v any) string {
 
 func (b *sqlBuilder) add(clause string) { b.where = append(b.where, clause) }
 
+// argN binds v and returns its parameter number.
+func (b *sqlBuilder) argN(v any) int {
+	b.args = append(b.args, v)
+	return len(b.args)
+}
+
 func (b *sqlBuilder) sql() string {
 	if len(b.where) == 0 {
 		return ""
@@ -55,6 +75,13 @@ var numberRef = regexp.MustCompile(`^#?(\d{1,18})$`)
 func applyFilters(b *sqlBuilder, wid uuid.UUID, me *uuid.UUID, f listQuery) error {
 	b.add("t.workspace_id = " + b.arg(wid))
 	b.add("t.deleted_at IS NULL")
+	if len(f.Hidden) > 0 {
+		if me != nil {
+			b.add(domain.VisibleSQLUser("t", b.argN(f.Hidden), b.argN(*me)))
+		} else {
+			b.add(domain.VisibleSQL("t", b.argN(f.Hidden)))
+		}
+	}
 	switch f.Spam {
 	case "true":
 		b.add("t.spam")
@@ -94,7 +121,44 @@ func applyFilters(b *sqlBuilder, wid uuid.UUID, me *uuid.UUID, f listQuery) erro
 		}
 		b.add("t.assignee_id = " + b.arg(id))
 	}
-	for _, ref := range []struct{ v, col string }{{f.TeamID, "t.team_id"}, {f.MailboxID, "t.mailbox_id"}, {f.ContactID, "t.contact_id"}} {
+	if strings.TrimSpace(f.TeamID) != "" {
+		// A comma-separated list of team ids, mine (the caller's teams) and none: any of them.
+		var ors []string
+		var teams []uuid.UUID
+		parts := strings.Split(f.TeamID, ",")
+		if len(parts) > 50 {
+			return httpx.Validation("team_id takes at most 50 values")
+		}
+		for _, raw := range parts {
+			switch v := strings.TrimSpace(raw); v {
+			case "":
+			case hd.TeamNone:
+				ors = append(ors, "t.team_id IS NULL")
+			case hd.TeamMine:
+				if me != nil {
+					ors = append(ors, "t.team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = "+b.arg(*me)+")")
+				}
+			default:
+				id, err := hd.ParseRef(v, "team_id")
+				if err != nil {
+					return err
+				}
+				if !slices.Contains(teams, id) {
+					teams = append(teams, id)
+				}
+			}
+		}
+		if len(teams) > 0 {
+			ors = append(ors, "t.team_id = ANY("+b.arg(teams)+"::uuid[])")
+		}
+		if len(ors) == 0 {
+			b.add("false")
+		} else {
+			b.add("(" + strings.Join(ors, " OR ") + ")")
+		}
+	}
+	for _, ref := range []struct{ v, col string }{{f.MailboxID, "t.mailbox_id"}, {f.ContactID, "t.contact_id"},
+		{f.BrandID, "t.brand_id"}, {f.WidgetID, "t.widget_id"}} {
 		if ref.v == "" {
 			continue
 		}
@@ -347,7 +411,7 @@ func loadView(ctx context.Context, q db.Querier, p *auth.Principal, id string) (
 		return f, err
 	}
 	var raw []byte
-	err = q.QueryRow(ctx, `SELECT filters FROM views WHERE workspace_id = $1 AND id = $2 AND (user_id IS NULL OR user_id = $3)`,
+	err = q.QueryRow(ctx, `SELECT filters FROM views v WHERE v.workspace_id = $1 AND v.id = $2 AND `+hd.ViewVisibleSQL("v", 3),
 		p.WorkspaceID, vid, p.ActorUserID()).Scan(&raw)
 	if db.IsNotFound(err) {
 		return f, httpx.Validation("view not found")
@@ -372,7 +436,8 @@ func mergeFilters(view, req hd.TicketFilters) hd.TicketFilters {
 		out.Severity = req.Severity
 	}
 	for _, f := range []struct{ dst, src *string }{{&out.Assignee, &req.Assignee}, {&out.TeamID, &req.TeamID},
-		{&out.MailboxID, &req.MailboxID}, {&out.Tag, &req.Tag}, {&out.Channel, &req.Channel}, {&out.Q, &req.Q}} {
+		{&out.MailboxID, &req.MailboxID}, {&out.Tag, &req.Tag}, {&out.Channel, &req.Channel}, {&out.Q, &req.Q},
+		{&out.BrandID, &req.BrandID}, {&out.WidgetID, &req.WidgetID}} {
 		if *f.src != "" {
 			*f.dst = *f.src
 		}
@@ -409,6 +474,28 @@ func resolveTicket(ctx context.Context, q db.Querier, wid uuid.UUID, ref string)
 	return id, err
 }
 
+// resolveVisible is resolveTicket for a caller: a ticket of a private team the caller may
+// not see is not found, like a missing one.
+func resolveVisible(ctx context.Context, q db.Querier, p *auth.Principal, ref string) (uuid.UUID, error) {
+	id, err := resolveTicket(ctx, q, p.WorkspaceID, ref)
+	if err != nil {
+		return id, err
+	}
+	var team, assignee *uuid.UUID
+	if err := q.QueryRow(ctx, `SELECT team_id, assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2`,
+		p.WorkspaceID, id).Scan(&team, &assignee); err != nil {
+		return id, err
+	}
+	ok, err := domain.CanSee(ctx, q, p, team, assignee)
+	if err != nil {
+		return id, err
+	}
+	if !ok {
+		return uuid.Nil, httpx.NotFound("Ticket")
+	}
+	return id, nil
+}
+
 // Counts is the sidebar badge set.
 type TicketCounts struct {
 	Unassigned int            `json:"unassigned"`
@@ -419,10 +506,19 @@ type TicketCounts struct {
 	Solved     int            `json:"solved"`
 	Spam       int            `json:"spam"`
 	Views      map[string]int `json:"views"`
+	// Teams counts every team the caller can see; MyTeams the tickets of the caller's teams.
+	Teams   map[string]TeamCount `json:"teams" doc:"Every team the caller can see"`
+	MyTeams TeamCount            `json:"my_teams" doc:"Tickets of the caller's teams"`
+}
+
+// TeamCount counts a team's open and pending tickets (spam excluded).
+type TeamCount struct {
+	Open       int `json:"open"`
+	Unassigned int `json:"unassigned"`
 }
 
 func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketCounts, error) {
-	c := TicketCounts{Views: map[string]int{}}
+	c := TicketCounts{Views: map[string]int{}, Teams: map[string]TeamCount{}}
 	err := q.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending','on_hold') AND assignee_id IS NULL),
 		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending','on_hold') AND assignee_id = $2),
@@ -430,14 +526,43 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 		count(*) FILTER (WHERE NOT spam AND status = 'pending'),
 		count(*) FILTER (WHERE NOT spam AND status = 'on_hold'),
 		count(*) FILTER (WHERE NOT spam AND status = 'solved'),
-		count(*) FILTER (WHERE spam AND status <> 'closed')
+		count(*) FILTER (WHERE spam AND status <> 'closed'),
+		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending')
+			AND team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = $2)),
+		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending') AND assignee_id IS NULL
+			AND team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = $2))
 		FROM tickets WHERE workspace_id = $1 AND deleted_at IS NULL`, p.WorkspaceID, p.ActorUserID()).
-		Scan(&c.Unassigned, &c.Mine, &c.Open, &c.Pending, &c.OnHold, &c.Solved, &c.Spam)
+		Scan(&c.Unassigned, &c.Mine, &c.Open, &c.Pending, &c.OnHold, &c.Solved, &c.Spam, &c.MyTeams.Open, &c.MyTeams.Unassigned)
 	if err != nil {
 		return c, err
 	}
-	rows, err := q.Query(ctx, `SELECT id, filters FROM views WHERE workspace_id = $1 AND (user_id IS NULL OR user_id = $2)
-		ORDER BY position, name LIMIT 100`, p.WorkspaceID, p.ActorUserID())
+	hidden, err := domain.HiddenTeams(ctx, q, p)
+	if err != nil {
+		return c, err
+	}
+	rows, err := q.Query(ctx, `SELECT tm.id,
+		count(t.id) FILTER (WHERE t.id IS NOT NULL), count(t.id) FILTER (WHERE t.assignee_id IS NULL)
+		FROM teams tm LEFT JOIN tickets t ON t.workspace_id = tm.workspace_id AND t.team_id = tm.id AND t.deleted_at IS NULL
+			AND NOT t.spam AND t.status IN ('open', 'pending')
+		WHERE tm.workspace_id = $1 AND NOT tm.id = ANY($2::uuid[]) GROUP BY tm.id`, p.WorkspaceID, hidden)
+	if err != nil {
+		return c, err
+	}
+	for rows.Next() {
+		var id uuid.UUID
+		var tc TeamCount
+		if err := rows.Scan(&id, &tc.Open, &tc.Unassigned); err != nil {
+			rows.Close()
+			return c, err
+		}
+		c.Teams[id.String()] = tc
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return c, err
+	}
+	rows, err = q.Query(ctx, `SELECT v.id, v.filters FROM views v WHERE v.workspace_id = $1 AND `+hd.ViewVisibleSQL("v", 2)+`
+		ORDER BY v.position, v.name LIMIT 100`, p.WorkspaceID, p.ActorUserID())
 	if err != nil {
 		return c, err
 	}
@@ -467,7 +592,7 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 				return c, err
 			}
 		}
-		lq := listQuery{TicketFilters: v.f, Defs: defs}
+		lq := listQuery{TicketFilters: v.f, Defs: defs, Hidden: hidden}
 		if len(v.f.Fields) > 0 {
 			if lq.Fields, err = hd.NormalizeFieldFilters(defs, v.f.Fields); err != nil {
 				continue // a view whose filters no longer parse counts as zero

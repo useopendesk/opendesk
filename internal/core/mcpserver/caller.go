@@ -27,6 +27,8 @@ type caller struct {
 	p *auth.Principal
 	// idem derives the Idempotency-Key of a write from its route and body.
 	idem func(method, path string, body []byte) string
+	// names caches team and brand names for the tool call.
+	names *refNames
 }
 
 // apiError is a non-2xx answer from the API, kept as its problem body.

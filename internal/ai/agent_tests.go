@@ -22,6 +22,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/plan"
 )
 
 // The agent quality loop (contracts/agent.md "Tests"): saved test conversations with
@@ -94,7 +95,7 @@ type AgentTestResult struct {
 	Action     *PlaygroundAction `json:"action" doc:"A tool call that needs confirmation; never run in tests"`
 	Checks     []AgentTestCheck  `json:"checks"`
 	Error      *string           `json:"error"`
-	Credits    float64           `json:"credits"`
+	USD        float64           `json:"usd" doc:"What answering and grading the test cost, in US dollars"`
 	// Draft reports that the run used unsaved settings.
 	Draft bool `json:"draft"`
 	// PreviousStatus is the test's final status in the run before, so a newly failing test stands out.
@@ -439,7 +440,7 @@ func publishTest(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, t Ag
 // resultCols reads a result x of run xr, with prev.status the test's status in the run
 // before (the joins are resultJoins).
 const resultCols = `x.run_id, x.test_id, x.status, x.answer_html, x.handoff, x.tools, x.sources, x.action, x.checks, x.error,
-	x.millicredits, x.finished_at, (xr.settings IS NOT NULL), prev.status`
+	x.micro_usd, x.finished_at, (xr.settings IS NOT NULL), prev.status`
 
 const prevJoin = `LEFT JOIN LATERAL (SELECT y.status FROM ai_agent_test_results y JOIN ai_agent_test_runs yr ON yr.id = y.run_id
 		WHERE y.workspace_id = x.workspace_id AND y.test_id = x.test_id AND y.status IN ('passed', 'failed', 'error')
@@ -453,13 +454,13 @@ type resultScan struct {
 	tools                  []string
 	sources, action, check []byte
 	errText, prev          *string
-	milli                  *int64
+	usd                    *int64
 	finished               *time.Time
 }
 
 func (r *resultScan) dest() []any {
 	return []any{&r.runID, &r.testID, &r.status, &r.answer, &r.handoff, &r.tools, &r.sources, &r.action, &r.check, &r.errText,
-		&r.milli, &r.finished, &r.draft, &r.prev}
+		&r.usd, &r.finished, &r.draft, &r.prev}
 }
 
 func (r *resultScan) result() *AgentTestResult {
@@ -474,8 +475,8 @@ func (r *resultScan) result() *AgentTestResult {
 	if r.draft != nil {
 		out.Draft = *r.draft
 	}
-	if r.milli != nil {
-		out.Credits = float64(*r.milli) / 1000
+	if r.usd != nil {
+		out.USD = plan.Micro(*r.usd).USD()
 	}
 	if out.Tools == nil {
 		out.Tools = []string{}

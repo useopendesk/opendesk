@@ -15,9 +15,11 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/helpdesk/contacts"
 	"github.com/useopendesk/opendesk/internal/helpdesk/kb"
 	"github.com/useopendesk/opendesk/internal/helpdesk/resources"
+	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 	"github.com/useopendesk/opendesk/internal/helpdesk/widget"
 	"github.com/useopendesk/opendesk/internal/images"
@@ -31,6 +33,8 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	resources.Register(d, api, r)
 	kb.Register(d, api, r)
 	widget.Register(d, api, r)
+	brands.Register(d, api, r)
+	routing.Register(d, api)
 	images.Register(d, r)
 }
 

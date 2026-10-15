@@ -1,0 +1,396 @@
+name: Desktop
+
+# The desktop app (desktop/).
+#   pull requests and pushes touching desktop/: typecheck and build
+#   a desktop-v* tag: package macOS, Windows and Linux and publish a GitHub
+#     release `desktop-v<version>` with generated notes, then refresh the rolling
+#     `desktop-latest` release: the update feed installed apps read and the
+#     stable download links on opendesk.sh/download (desktop/README.md, "Release")
+#     desktop-v1.2.3          stable: latest*.yml, beta*.yml, the stable download
+#                             names and version.json, then a site redeploy
+#     desktop-v1.2.3-beta.1   beta: beta*.yml and its installers only; stable
+#                             apps and the download links stay where they are
+#   workflow_dispatch: package all three as workflow artifacts, publishing nothing
+#
+# Signing and notarization use these secrets when they exist; without them the
+# builds are unsigned:
+#   macOS signing:        CSC_LINK, CSC_KEY_PASSWORD
+#   macOS notarization:   APPLE_API_KEY (base64 .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER
+#                         or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#   Windows signing:      AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+#                         AZURE_TRUSTED_SIGNING_ENDPOINT, AZURE_TRUSTED_SIGNING_ACCOUNT,
+#                         AZURE_TRUSTED_SIGNING_PROFILE, AZURE_TRUSTED_SIGNING_PUBLISHER
+#                         (Azure Trusted Signing), or WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
+on:
+  push:
+    branches: [main]
+    tags: ["desktop-v*"]
+    paths:
+      - "desktop/**"
+      - "brand/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "brand/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  # Never cancel a release half way through uploading.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "12.10.1"
+
+jobs:
+  check:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Bundles are in dist/
+        run: test -s dist/main.cjs && test -s dist/preload.cjs && test -s dist/picker-preload.cjs && test -s dist/picker/index.html
+      - name: pnpm audit
+        run: pnpm audit --prod --audit-level high
+
+  validate:
+    name: Validate tag
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          v="${TAG#desktop-v}"
+          if ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::$TAG is not desktop-v<semver> (desktop-v1.2.3 or desktop-v1.2.3-beta.1)"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          case "$v" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Package (${{ matrix.name }})
+    needs: [check, validate]
+    # On a tag (after validate) or a manual run (validate skipped).
+    if: >-
+      always() && needs.check.result == 'success' &&
+      (needs.validate.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.validate.result == 'skipped'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            runner: macos-latest
+            flag: --mac
+          - name: Windows
+            runner: windows-latest
+            flag: --win
+          - name: Linux
+            runner: ubuntu-latest
+            flag: --linux
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Version from the tag
+        if: needs.validate.outputs.version != ''
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: npm pkg set version="$VERSION"
+      - run: pnpm build
+      - name: Package
+        env:
+          FLAG: ${{ matrix.flag }}
+          # macOS
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER }}
+        run: |
+          # No certificate: an unsigned build rather than a search of the keychain.
+          if [ -z "$CSC_LINK" ] && [ -z "$WIN_CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          [ -z "$CSC_LINK" ] && unset CSC_LINK CSC_KEY_PASSWORD
+          [ -z "$WIN_CSC_LINK" ] && unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          # Notarization with an App Store Connect API key: electron-builder reads
+          # the .p8 from a path, written for this step only.
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+            trap 'rm -f "$key"' EXIT
+            (umask 077 && printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$key")
+            export APPLE_API_KEY="$key"
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          else
+            unset APPLE_API_KEY_ID APPLE_API_ISSUER
+          fi
+          unset APPLE_API_KEY_BASE64
+          pnpm exec electron-builder --config electron-builder.config.cjs "$FLAG" --publish never
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-${{ matrix.name }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.blockmap
+            desktop/release/latest*.yml
+            desktop/release/beta*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs: [validate, package]
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+      # Semantic version order, for the feed and the notes.
+      #   node -e "$SEMVER" gt <a> <b>          exits 0 when a > b
+      #   node -e "$SEMVER" prev <tag> <tags…>  the tag before <tag>: the previous
+      #                                         stable one for a stable tag, any
+      #                                         earlier one for a prerelease
+      SEMVER: |
+        const parse = (t) => {
+          const m = /^(?:desktop-v)?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(String(t ?? "").trim());
+          return m && { core: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split(".") : [] };
+        };
+        const cmp = (a, b) => {
+          for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i];
+          if (!a.pre.length || !b.pre.length) return b.pre.length - a.pre.length;
+          for (let i = 0; ; i++) {
+            const x = a.pre[i], y = b.pre[i];
+            if (x === undefined || y === undefined) return x === y ? 0 : x === undefined ? -1 : 1;
+            const nx = /^\d+$/.test(x), ny = /^\d+$/.test(y);
+            if (nx && ny && +x !== +y) return +x - +y;
+            if (nx !== ny) return nx ? -1 : 1;
+            if (!nx && x !== y) return x < y ? -1 : 1;
+          }
+        };
+        const [cmd, ...args] = process.argv.slice(1);
+        if (cmd === "gt") {
+          const a = parse(args[0]), b = parse(args[1]);
+          process.exit(a && b && cmp(a, b) > 0 ? 0 : 1);
+        }
+        if (cmd === "prev") {
+          const cur = parse(args[0]);
+          const prev = args.slice(1)
+            .map((t) => [t, parse(t)])
+            .filter(([, v]) => v && cmp(v, cur) < 0 && (cur.pre.length > 0 || v.pre.length === 0))
+            .sort((a, b) => cmp(b[1], a[1]))[0];
+          if (prev) console.log(prev[0]);
+        }
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          file() { for f in dist/$1; do [ -f "$f" ] && basename "$f" && return; done; echo "?"; }
+          link() { local f; f=$(file "$1"); printf '[%s](%s/%s)' "$2" "$base" "$f"; }
+
+          # What changed since the previous desktop release.
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/desktop-v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')
+          # shellcheck disable=SC2086
+          prev=$(node -e "$SEMVER" prev "$TAG" $tags)
+          changes=""
+          if [ -n "$prev" ]; then
+            changes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f previous_tag_name="$prev" --jq .body) || changes=""
+          fi
+
+          {
+            echo "## opendesk desktop $VERSION"
+            echo
+            if [ "$PRERELEASE" = true ]; then
+              echo "A beta. Apps with **Get beta updates** turned on update to it; everyone else stays on the stable version."
+              echo
+            fi
+            echo "- **macOS** 13 or later, Apple silicon and Intel: $(link '*-mac.dmg' 'dmg')"
+            echo "- **Windows** 10 or later, x64 and arm64: $(link '*-setup.exe' 'installer')"
+            echo "- **Linux** x64: $(link '*-linux-x86_64.AppImage' 'AppImage') or $(link '*-linux-amd64.deb' 'deb'); arm64: $(link '*-linux-arm64.AppImage' 'AppImage') or $(link '*-linux-arm64.deb' 'deb')"
+            echo
+            echo "Checksums are in [SHA256SUMS]($base/SHA256SUMS). Installed apps update themselves."
+            if [ "$PRERELEASE" != true ]; then
+              echo "The newest version is always at https://opendesk.sh/download."
+            fi
+            if [ -n "$changes" ]; then
+              echo
+              printf '%s\n' "$changes"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+      - name: Create the release
+        run: |
+          # Never "Latest": that badge, and /releases/latest, belong to the server's v* releases.
+          flags="--verify-tag --latest=false --title opendesk-desktop-$VERSION"
+          [ "$PRERELEASE" = true ] && flags="$flags --prerelease"
+          # shellcheck disable=SC2086
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md" $flags
+      - name: Refresh desktop-latest (the update feed and the download links)
+        run: |
+          set -euo pipefail
+          R="$GITHUB_REPOSITORY"
+          gt() { node -e "$SEMVER" gt "$1" "$2"; }
+          # The files a channel file points at, with their blockmaps.
+          refs() {
+            local f
+            for f in "$@"; do
+              [ -f "$f" ] || continue
+              sed -nE 's/^[[:space:]]*(- )?(url|path):[[:space:]]*//p' "$f" | tr -d "'\"\r"
+            done | sort -u | while read -r n; do [ -n "$n" ] && printf '%s\n%s.blockmap\n' "$n" "$n"; done
+          }
+          ver() { sed -nE 's/^version:[[:space:]]*//p' "$1" | tr -d "'\"\r" | head -n1; }
+          assets() { gh release view desktop-latest --repo "$R" --json assets --jq '.assets[].name'; }
+
+          if ! gh release view desktop-latest --repo "$R" >/dev/null 2>&1; then
+            gh release create desktop-latest --repo "$R" --target "$GITHUB_SHA" --latest=false \
+              --title "opendesk desktop (latest)" \
+              --notes "Update feed for installed desktop apps, and the stable download links on https://opendesk.sh/download. Release notes are on the desktop-v* releases."
+          fi
+          # The channel files the feed serves now.
+          mkdir -p feed
+          gh release download desktop-latest --repo "$R" --dir feed --pattern 'latest*.yml' --pattern 'beta*.yml' 2>/dev/null || true
+
+          if [ "$PRERELEASE" = true ]; then
+            # Beta: the beta channel files and the installers they point at. The
+            # stable channel, the stable download names and version.json stay.
+            shopt -s nullglob
+            beta=(dist/beta*.yml)
+            [ ${#beta[@]} -gt 0 ] || { echo "::error::no beta*.yml in this build"; exit 1; }
+            files=()
+            while read -r n; do [ -f "dist/$n" ] && files+=("dist/$n"); done < <(refs "${beta[@]}")
+            gh release upload desktop-latest "${files[@]}" --repo "$R" --clobber
+            gh release upload desktop-latest "${beta[@]}" --repo "$R" --clobber
+            # Older prerelease leftovers: what the previous beta files pointed at,
+            # unless the new beta files or the stable channel still use it.
+            in_use=$( { refs "${beta[@]}"; refs feed/latest*.yml; } )
+            have=$(assets)
+            refs feed/beta*.yml | while read -r a; do
+              printf '%s\n' "$in_use" | grep -qxF "$a" && continue
+              printf '%s\n' "$have" | grep -qxF "$a" || continue
+              gh release delete-asset desktop-latest "$a" --repo "$R" --yes
+            done
+            echo "desktop-latest serves beta $VERSION"
+            exit 0
+          fi
+
+          # Stable. The download links on opendesk.sh/download use these names.
+          mkdir -p stable
+          stable() {
+            # shellcheck disable=SC2206 # $1 is a glob
+            local m=(dist/$1)
+            [ ${#m[@]} -eq 1 ] && [ -f "${m[0]}" ] || { echo "::error::expected one dist/$1"; exit 1; }
+            cp "${m[0]}" "stable/$2"
+          }
+          stable '*-mac.dmg' opendesk-mac.dmg
+          stable '*-setup.exe' opendesk-windows.exe
+          stable '*-linux-x86_64.AppImage' opendesk-linux-x64.AppImage
+          stable '*-linux-arm64.AppImage' opendesk-linux-arm64.AppImage
+          stable '*-linux-amd64.deb' opendesk-linux-amd64.deb
+          stable '*-linux-arm64.deb' opendesk-linux-arm64.deb
+          jq -n --arg v "$VERSION" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg u "https://github.com/$R/releases/tag/$TAG" \
+            '{version: $v, date: $d, notes_url: $u}' > version.json
+
+          # A beta newer than this version keeps the beta channel; otherwise beta
+          # users move to this version.
+          keep_beta=false
+          if [ -f feed/beta.yml ] && gt "$(ver feed/beta.yml)" "$VERSION"; then keep_beta=true; fi
+
+          # This version's files first, then the channel files that point at them,
+          # then version.json, so nothing ever points at a missing file.
+          files=()
+          for f in dist/*; do case "$f" in *.yml) ;; *) files+=("$f") ;; esac; done
+          gh release upload desktop-latest "${files[@]}" stable/* --repo "$R" --clobber
+          gh release upload desktop-latest dist/latest*.yml --repo "$R" --clobber
+          [ "$keep_beta" = true ] || gh release upload desktop-latest dist/beta*.yml --repo "$R" --clobber
+          gh release upload desktop-latest version.json --repo "$R" --clobber
+
+          # Everything else is a previous version's leftover.
+          keep=$( { (cd dist && printf '%s\n' *); (cd stable && printf '%s\n' *); echo version.json
+                    if [ "$keep_beta" = true ]; then (cd feed && printf '%s\n' beta*.yml); refs feed/beta*.yml; fi; } )
+          assets | while read -r a; do
+            printf '%s\n' "$keep" | grep -qxF "$a" || gh release delete-asset desktop-latest "$a" --repo "$R" --yes
+          done
+          echo "desktop-latest serves $VERSION$([ "$keep_beta" = true ] && echo ", beta channel kept on $(ver feed/beta.yml)")"
+
+  site:
+    name: Redeploy the download page
+    needs: [validate, release]
+    if: needs.validate.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Deploy the site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.event.repository.default_branch }}
+        # opendesk.sh/download reads the version from desktop-latest at build time.
+        run: gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "$REF" -f target=site

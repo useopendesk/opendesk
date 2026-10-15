@@ -1,0 +1,166 @@
+---
+title: Triage and assignment
+description: Send new tickets to whoever is available, per team, cap each person's load, and let Ollie set priority, severity, labels and team as tickets arrive.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+New tickets can find their owner on their own. **Assignment** hands each one to a teammate who is online and has room, with a method you choose for the workspace, a team or an address. **Triage** lets Ollie read each new ticket first and set its priority, severity, labels and team, so the right people see it. Both live in **Settings**, in the **Inbox** group.
+
+<Screenshot src="/guides/triage/assignment" alt="The Assignment settings page: the Default mode choices ringed as 1, Which method applies ringed as 2, the Rules for teams and mailboxes ringed as 3, and the Away settings ringed as 4" />
+
+<Legend>
+
+1. **Default mode**: how new tickets are assigned when no team or address has its own rule. **Off**, **Round robin** or **Load balanced**.
+2. **Which method applies**: the ticket's team first, else the address it was sent to, else the workspace default.
+3. **Rules**: give a team or a mailbox its own mode. A team rule wins over a mailbox rule.
+4. **Away**: mark idle teammates away after a while, so tickets do not wait on someone who stepped out.
+
+</Legend>
+
+## Assignment modes
+
+| Mode | What it does |
+| --- | --- |
+| Off | Tickets wait in **Unassigned** until someone takes them. |
+| Round robin | Teammates take turns: the next ticket goes to the next person. |
+| Load balanced | The next ticket goes to whoever has the fewest open and pending tickets. Ties go round robin. |
+
+## Set up assignment
+
+<Steps>
+<Step title="Choose the workspace default">
+
+Open **Settings**, **Assignment** and pick a **Default mode**. It applies to every ticket whose team and address have no rule of their own.
+
+</Step>
+<Step title="Give a team its own method">
+
+Open the team in **Settings**, **Teams**, and pick a mode under **Assign new tickets**. **Workspace default** follows the mode chosen above. The same rule also shows under **Rules** on the Assignment page, where you can add one for a mailbox too.
+
+<Screenshot src="/guides/triage/team-assignment" alt="A team's Assignment section with the Assign new tickets picker ringed as 1, set to Round robin" />
+
+</Step>
+<Step title="Decide who on the team takes tickets">
+
+On the team's page, under **Members**, each person has a team role. **Leads** and **members** are assigned the team's tickets. **Observers** see the team's tickets and can comment, but are never assigned, which suits a manager or someone from another team who follows along.
+
+<Screenshot src="/guides/triage/team-members" alt="A team's Members section: the Lead, Member and Observer role descriptions ringed as 1, and the role picker of a teammate set to Observer ringed as 2" />
+
+</Step>
+<Step title="Set caps where you need them">
+
+Further down the Assignment page, **Team availability** lists everyone who can be assigned, by team or all together, with their status and how many tickets they hold. Click **Set cap** to limit someone's open and pending tickets.
+
+<Screenshot src="/guides/triage/availability" alt="The Team availability section: the By team and Everyone toggle ringed as 1, a teammate's Online status ringed as 2, and the Set cap button ringed as 3" />
+
+</Step>
+</Steps>
+
+<Callout type="note" title="Who can be assigned">
+
+- The pool is the leads and members of the ticket's team, else of its mailbox's team, else every owner, admin and agent of the workspace.
+- Observers and viewers are never assigned.
+- A teammate must be **Online** and under their cap.
+- When nobody fits, the ticket stays unassigned and is tried again when the customer replies.
+
+</Callout>
+
+## Online, away and offline
+
+Everyone sets their own availability. Click your name at the bottom of the sidebar, and pick **Online**, **Away** or **Offline** under **Availability**. Only online teammates get new tickets. Admins can change anyone's status from **Team availability**.
+
+<Screenshot src="/guides/triage/my-status" alt="The account menu open from the bottom of the sidebar: the Availability choices Online, Away and Offline ringed as 1, and the button with your name that opens it ringed as 2" />
+
+**Mark idle teammates away**, in the **Away** section, sets an online teammate to away after a time without activity in the app, from 10 minutes to 24 hours. They are back as soon as they use the app again.
+
+## Triage by Ollie
+
+When AI is on, Ollie can read every new ticket as it arrives and sort it. Open **Settings**, **Triage**.
+
+<Screenshot src="/guides/triage/settings" alt="The Triage settings page: the Decision engine and Confidence to apply slider ringed as 1, the Triage new tickets switch ringed as 2, What Ollie may change with Priority, Severity, Labels and Team ringed as 3, and Assign after triage ringed as 4" />
+
+<Legend>
+
+1. **Decision engine** and **Confidence to apply**: how sure Ollie must be before it changes a ticket. Below that, it suggests instead.
+2. **Triage new tickets**: turn triage on or off.
+3. **What Ollie may change**: tick what triage may set. Sentiment, language and category are always recorded.
+4. **Assign after triage**: assign each ticket once Ollie has sorted it.
+
+</Legend>
+
+| Decision | What Ollie may do |
+| --- | --- |
+| Priority (low, normal, high, urgent) | Raise the priority. Ollie never lowers it. |
+| Severity (Sev 1 to Sev 4) | Set the severity, or raise it. Ollie never lowers it. |
+| Labels | Add labels that match the ticket, and one from your exclusive **Type** group when you have one. |
+| Team | Route a ticket with no team to the team that fits it best. |
+| Category, sentiment, language | Always recorded on the ticket. |
+| Spam | Only ever suggested, never applied. |
+
+By default Ollie may change priority, severity and labels. Every change shows on the timeline as made by Ollie, for example "Ollie set severity to Sev 2", so anyone can see why a ticket moved and change it back.
+
+<Callout type="tip" title="Write descriptions Ollie can use">
+
+Ollie picks a team from the teams' **descriptions**, and labels from the labels' descriptions. A line like "Invoices, refunds, payment methods and plan changes" on the Billing team does more than the name alone. Set it on the team's page, up to 280 characters.
+
+<Screenshot src="/guides/triage/team-settings" alt="A team's General section with the Description field ringed as 1" />
+
+</Callout>
+
+<Fold>
+
+## Confidence and suggestions
+
+Ollie uses a fast decision model when your instance has one set up (see [AI for self-hosters](/self-hosting/ai/)), else the configured AI model. Each decision comes with a confidence. Ollie applies a decision only when its confidence is at or above **Confidence to apply** (50% to 99%, default 70%). Below it, the decision waits in the ticket's Ollie panel under **Ollie suggests**: **Apply** sets it with one click, **Skip** drops it. Setting the field yourself also clears the suggestion.
+
+Without a TypeSafe key, Ollie triages with the configured AI model, which has no calibrated confidence: its decisions apply without a threshold. The **Decision engine** card shows which engine is in use.
+
+</Fold>
+
+<Fold>
+
+## Assign after triage
+
+With **Assign after triage** on, each ticket is assigned once Ollie has sorted it, so the team Ollie picked is the one whose people get it. It uses that team's mode, else the ticket's, else load balancing when the mode is off. The activity shows the ticket as assigned by Ollie, via triage.
+
+Without it, assignment runs straight after [automations](/guides/automations/) when a ticket is created, when the customer replies and when the ticket moves to another team, for tickets that are still unassigned and not solved, closed or spam. The activity shows it as assigned by the system, with the mode.
+
+</Fold>
+
+<Fold>
+
+## Severity
+
+Severity is the business impact of a ticket, separate from how soon it needs an answer:
+
+| Severity | Meaning |
+| --- | --- |
+| Sev 1 | Critical: the product is down or data is at risk for many customers. |
+| Sev 2 | Major: a key feature is broken for a customer, with no workaround. |
+| Sev 3 | Minor: something is wrong but there is a workaround. |
+| Sev 4 | Low: a question, cosmetic issue or request with no impact. |
+
+A ticket can have no severity. Filter, sort, build views and write automations on it like priority.
+
+</Fold>
+
+<Fold>
+
+## Setup checklist
+
+New workspaces show a checklist: connect a mailbox, invite a teammate, upload your photo, install the chat widget, publish a help article, set up triage and assignment, create a label, and try Ollie. Each step ticks itself off when it is done. Anyone can hide it for themselves.
+
+</Fold>
+
+## Related
+
+- [Teams and roles](/guides/teams-and-roles/)
+- [SLA policies](/guides/sla-policies/), including business hours
+- [Labels and custom fields](/guides/labels-and-custom-fields/)
+- [Assignment API](/api/resources/pictures-assignment/)

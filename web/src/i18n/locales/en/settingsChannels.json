@@ -13,7 +13,7 @@
     "outsideHours": "Only outside business hours",
     "outsideHoursHint": "During business hours your team answers as usual.",
     "hoursOff": "Business hours are off, so this has no effect.",
-    "credits": "Each answer uses about {{n}} credits.",
+    "cost": "Each answer costs about {{cost}} on the agent's model.",
     "handoff": "When {{name}} can't help, the ticket waits for your team, unassigned.",
     "behaviourLink": "Agent behaviour"
   },
@@ -86,7 +86,8 @@
     "receiving": "Receiving",
     "sending": "Sending",
     "works": "{{what}} works",
-    "failed": "{{what}} failed"
+    "failed": "{{what}} failed",
+    "detail": "The server said"
   },
   "detail": {
     "fallbackTitle": "Mailbox",
@@ -105,17 +106,24 @@
     "reconnect": "Reconnect",
     "incoming": "Incoming (IMAP)",
     "outgoing": "Outgoing (SMTP)",
-    "sending": "Sending",
-    "sendingHint": "How replies from this mailbox look to customers.",
+    "send": {
+      "title": "Sending",
+      "hint": "How replies from this mailbox reach customers.",
+      "via": "Replies are sent",
+      "server": "SMTP server",
+      "passwordNeeded": "Enter the password for this server.",
+      "testHint": "Signs in to the server without sending anything.",
+      "saveToTest": "Save to test the new settings. Saving signs in first."
+    },
+    "sending": "Name and addresses",
+    "sendingHint": "How this mailbox appears to your team and to customers.",
     "name": "Name",
     "nameHint": "Shown to your team.",
     "senderName": "Sender name",
-    "senderNameHint": "What customers see in the From line.",
+    "senderNameHint": "Fills {mailbox} in the From name. Empty uses the name.",
     "team": "Team",
     "teamHint": "New tickets from this mailbox go to this team.",
     "noTeam": "No team",
-    "sentFrom": "Sent from",
-    "sentFromHint": "Replies go out from opendesk's sending address on behalf of this mailbox. Use IMAP and SMTP to send from your own server.",
     "signature": "Signature",
     "signatureHint": "Added below every reply sent from this mailbox.",
     "signaturePlaceholder": "The Support team at Company",
@@ -155,17 +163,6 @@
   },
   "wizard": {
     "methodsLabel": "Connection method",
-    "recommended": "Recommended",
-    "google": "Gmail or Google Workspace",
-    "googleBody": "Sign in with Google. Mail syncs and replies send from your address.",
-    "microsoft": "Microsoft 365 or Outlook",
-    "microsoftBody": "Sign in with Microsoft. Works with Exchange Online mailboxes.",
-    "forwarding": "Forward from any provider",
-    "forwardingBody": "Forward mail to an address opendesk gives you. No passwords shared.",
-    "imap": "IMAP and SMTP",
-    "imapBody": "Connect any mail server with a username and password.",
-    "stepMethod": "Method",
-    "stepDetails": "Details",
     "stepDone": "Done",
     "continue": "Continue",
     "continueGoogle": "Continue with Google",
@@ -184,15 +181,10 @@
     "nameHint": "Shown to your team, like Support or Billing.",
     "namePlaceholder": "Support",
     "email": "Email address",
-    "emailOauthHint": "The account you'll sign in with.",
     "senderName": "Sender name",
-    "senderNameHint": "Customers see this in their inbox.",
+    "senderNameHint": "Fills {mailbox} in the From name. Empty uses the name.",
     "senderPlaceholder": "Company Support",
-    "team": "Team",
-    "teamHint": "New tickets go to this team.",
-    "noTeam": "No team",
     "oauthNote": "You'll go to {{provider}} to approve access, then come back here. opendesk reads and sends mail for this address only, and you can disconnect at any time.",
-    "forwardingNote": "After you create it, you get a private address to forward mail to. Replies are sent from opendesk's own sending address on behalf of your address, until you add SMTP in the mailbox settings.",
     "incoming": "Incoming mail (IMAP)",
     "outgoing": "Outgoing mail (SMTP)",
     "sameCredentials": "Use the same username and password as IMAP",
@@ -216,8 +208,13 @@
       "imapPassword": "Enter the password or an app password.",
       "smtpHost": "Enter a server name, like smtp.example.com.",
       "smtpUser": "Enter the SMTP username.",
-      "smtpPassword": "Enter the SMTP password."
-    }
+      "smtpPassword": "Enter the SMTP password.",
+      "port": "Enter a port from 1 to 65535."
+    },
+    "stepAddress": "Address",
+    "stepConnect": "Connect",
+    "emailHint": "The address customers write to.",
+    "connect": "Connect"
   },
   "forwarding": {
     "forwardTo": "Forward mail for <code>{{email}}</code> to",
@@ -245,5 +242,181 @@
         "s4": "If outbound forwarding is blocked, allow it in the outbound spam policy, or use an Outlook rule that forwards to the address instead."
       }
     }
+  },
+  "addressing": {
+    "brand": "Brand",
+    "brandHint": "Tickets to this address belong to this brand, and its replies carry the brand's name and logo.",
+    "team": "New tickets to this address go to",
+    "teamHint": "The team that owns email to this address. Routing rules can still send a ticket elsewhere.",
+    "noTeam": "No team",
+    "privateTeam": "{{name}} is private: only its members see tickets to this address and send from it.",
+    "fromName": "From name",
+    "previewMailbox": "Support",
+    "fromNameHint": "What customers see as the sender. Click a variable to add it.",
+    "fromInvalid": "Fix the From name first.",
+    "previewReply": "A reply",
+    "previewAuto": "Auto-reply",
+    "fromErrors": {
+      "long": "Keep it under {{max}} characters.",
+      "chars": "Leave out < > and quotes.",
+      "variable": "Use only the variables below."
+    },
+    "vars": {
+      "agent": "The author's full name",
+      "agent_first": "The author's first name",
+      "team": "The ticket's team, else the brand",
+      "brand": "The brand's name",
+      "mailbox": "This address's sender name"
+    },
+    "aliases": "Aliases",
+    "aliasesHint": "Other addresses that deliver into this mailbox, like help@. Replies go out as the address the customer wrote to. Up to 20.",
+    "noAliases": "No aliases",
+    "aliasSame": "That's this mailbox's own address."
+  },
+  "forms": {
+    "title": "Contact forms",
+    "hint": "Add the address your website's contact form sends from. When its email passes the sender check, the visitor who filled in the form becomes the contact and replies go to them.",
+    "empty": "No contact forms. Enter an address or @domain.",
+    "publicDomain": "{{domain}} is a public email provider. Enter the form's exact address instead.",
+    "ownAddress": "That's this mailbox's own address."
+  },
+  "connect": {
+    "detecting": "Looking up {{domain}}",
+    "unknownHost": "Unknown provider",
+    "source": {
+      "known": "A known email provider",
+      "mx": "Detected from the domain's MX records",
+      "autoconfig": "From the domain's autoconfig file",
+      "ispdb": "From Thunderbird's provider database",
+      "srv": "From the domain's DNS service records",
+      "none": "We couldn't tell who hosts {{domain}}. Enter the server settings, or forward mail."
+    },
+    "detectFailed": "We couldn't look up {{domain}}. You can still choose how to connect.",
+    "howTitle": "How should opendesk connect?",
+    "anotherWay": "Choose another way",
+    "suggestedWays": "Show the suggested ways",
+    "recommended": "Recommended",
+    "advanced": "Advanced",
+    "method": {
+      "google": "Sign in with Google",
+      "googleBody": "Approve access in Google. Mail syncs and replies send from your address.",
+      "microsoft": "Sign in with Microsoft",
+      "microsoftBody": "Approve access in Microsoft. Works with Exchange Online mailboxes.",
+      "app_password": "App password",
+      "app_passwordBody": "Create an app password in {{host}} and paste it here. The servers are set for you.",
+      "password": "Email password",
+      "passwordBody": "Sign in with the mailbox's password. The servers are set for you.",
+      "forwarding": "Forward mail to opendesk",
+      "forwardingBody": "Forward mail to an address opendesk gives you. Works with any provider, no password shared.",
+      "imap": "Other IMAP and SMTP",
+      "imapBody": "Enter the server settings yourself."
+    },
+    "microsoftNoPassword": "Microsoft turned off password sign-in over IMAP and is phasing it out for SMTP AUTH, so this mailbox connects by forwarding and replies go out through opendesk.",
+    "protonNoImap": "Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Forward mail from Proton instead (Proton's paid plans can forward).",
+    "notConfigured": {
+      "title": "{{provider}} sign-in isn't set up on this server",
+      "body": "Connecting mailboxes with {{provider}} sign-in needs an OAuth client. Add these to your opendesk environment and restart:",
+      "docs": "Setup guide",
+      "alternatives": "No setup is needed for the ways below."
+    },
+    "servers": {
+      "title": "Server settings, set for you",
+      "edit": "Edit",
+      "imap": "IMAP",
+      "smtp": "SMTP",
+      "tls": "TLS",
+      "starttls": "STARTTLS"
+    },
+    "password": "Password",
+    "passwordPlaceholder": "The mailbox's password",
+    "appPassword": "App password",
+    "appPasswordPlaceholder": "Paste the app password",
+    "zohoTwoFactor": "Two-factor authentication on? Zoho needs an app password instead of your password.",
+    "checking": "Checking the sign-in with {{host}}",
+    "checkingGeneric": "Checking the sign-in with the server",
+    "verifiedNote": "opendesk signs in to both servers before it saves anything.",
+    "addressing": "Team, brand and From name",
+    "addressingHint": "Optional. You can change these later.",
+    "sending": "Replies are sent",
+    "sendSystem": "Through opendesk",
+    "sendSystemBody": "From {{sender}} with your mailbox's name, and replies to the customer come back to {{email}}.",
+    "sendSmtp": "Through your SMTP server",
+    "sendSmtpBody": "From {{email}} itself.",
+    "sendSmtpMicrosoft": "Microsoft is phasing out password sign-in for SMTP AUTH in Exchange Online, and many admins already have it off. If the sign-in is refused, send through opendesk instead.",
+    "failedTitle": "Couldn't connect",
+    "legInbound": "IMAP",
+    "legOutbound": "SMTP",
+    "gmail": {
+      "banner": "An app password connects Gmail or Google Workspace over IMAP and SMTP in about two minutes.",
+      "p1": "2-Step Verification",
+      "p2": "App password",
+      "p3": "Connect",
+      "s1Title": "Turn on 2-Step Verification",
+      "s1Sub": "Google only offers app passwords on accounts that have it on.",
+      "s1a": "Open your Google Account's security page and find <b>2-Step Verification</b> under How you sign in to Google.",
+      "s1b": "Turn it on with a phone prompt, an authenticator app or a text message.",
+      "s1Open": "Open Google security settings",
+      "s1Note": "On Google Workspace an admin can require or block 2-Step Verification for the organization. Accounts in Advanced Protection can't have app passwords.",
+      "s1Already": "Already on? Just continue.",
+      "s1Next": "It's on, continue",
+      "s2Title": "Create an app password",
+      "s2Sub": "A 16-letter password Google makes for one app. opendesk stores it encrypted.",
+      "s2a": "Open the app passwords page. Google may ask you to sign in again.",
+      "s2b": "Type <b>opendesk</b> as the app name and choose <b>Create</b>.",
+      "s2c": "Copy the 16 letters it shows. The spaces don't matter.",
+      "s2Open": "Open app passwords",
+      "s2Note": "No app passwords page? 2-Step Verification is still off, or your Google Workspace admin has turned app passwords off for your organization. Ask them to allow app passwords for your account.",
+      "s2Next": "I have it, continue",
+      "s3Title": "Connect the mailbox",
+      "s3Sub": "Paste the app password. Nothing else to type.",
+      "lengthHint": "Google app passwords are 16 letters. This looks like something else, maybe the account password. It's checked when you connect either way.",
+      "s3Note": "Use the address you sign in to Google with, not an alias. Deleting the app password in your Google Account disconnects the mailbox."
+    },
+    "guide": {
+      "title": "Create an app password",
+      "yahoo": {
+        "s1": "Sign in to Yahoo and open <b>Account security</b>.",
+        "s2": "Choose <b>Generate app password</b>, name it <b>opendesk</b> and choose <b>Generate password</b>.",
+        "s3": "Copy the password and paste it below.",
+        "open": "Open Yahoo account security"
+      },
+      "aol": {
+        "s1": "Sign in to AOL and open <b>Account security</b>.",
+        "s2": "Choose <b>Generate app password</b>, name it <b>opendesk</b> and choose <b>Generate password</b>.",
+        "s3": "Copy the password and paste it below.",
+        "open": "Open AOL account security"
+      },
+      "icloud": {
+        "s1": "Sign in at account.apple.com and open <b>Sign-In and Security</b>. Two-factor authentication must be on.",
+        "s2": "Choose <b>App-Specific Passwords</b> and add one named <b>opendesk</b>.",
+        "s3": "Copy the password and paste it below. The address must be your iCloud address, not an alias.",
+        "open": "Open your Apple Account"
+      },
+      "fastmail": {
+        "s1": "In Fastmail open <b>Settings</b>, <b>Privacy and Security</b>, then <b>Manage app passwords</b>.",
+        "s2": "Create one named <b>opendesk</b> with access to IMAP and SMTP.",
+        "s3": "Copy the password and paste it below.",
+        "open": "Open Fastmail app passwords"
+      },
+      "zoho": {
+        "s1": "In Zoho Accounts open <b>Security</b>, then <b>App Passwords</b>.",
+        "s2": "Generate one named <b>opendesk</b>.",
+        "s3": "Copy it and paste it below. Also check that IMAP access is on in Zoho Mail settings under Mail Accounts.",
+        "open": "Open Zoho app passwords"
+      },
+      "yandex": {
+        "s1": "Open Yandex ID, then <b>Security</b> and <b>App passwords</b>.",
+        "s2": "Create a password for <b>Mail</b> named <b>opendesk</b>.",
+        "s3": "Copy it and paste it below. Also allow IMAP in Yandex Mail settings under Email clients.",
+        "open": "Open Yandex app passwords"
+      }
+    },
+    "method_label": {
+      "signin": "Sign-in",
+      "app_password": "App password",
+      "password": "Password",
+      "forwarding": "Forwarding"
+    },
+    "forwardingIntro": "After you create it, you get a private address to forward this mailbox's mail to. Nothing is shared but the mail you forward."
   }
 }

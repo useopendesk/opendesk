@@ -32,7 +32,8 @@ describe("mock AI routes", () => {
     const r = await call("GET", "/v1/ai/config");
     expect(r.status).toBe(200);
     expect(r.body.enabled).toBe(true);
-    expect(r.body.costs.kb_draft).toBe(5);
+    // 8,000 input and 1,500 output tokens on Claude Sonnet 5.5 at $3 / $15 per 1M.
+    expect(r.body.costs.kb_draft).toBe(0.0465);
   });
 
   it("finds billing tickets by meaning", () => {

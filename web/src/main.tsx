@@ -6,11 +6,13 @@ import { RouterProvider } from "@tanstack/react-router";
 import { configureClient } from "./lib/api/client";
 import { config } from "./lib/config";
 import { initTheme } from "./lib/theme";
+import { initDesktop } from "./lib/desktop";
 import { initAnalytics } from "./lib/analytics";
 import { wireUpgradePrompts } from "./lib/upgrade";
 import { router } from "./router";
 
 configureClient({ baseUrl: config.apiUrl });
+initDesktop();
 initTheme();
 wireUpgradePrompts();
 

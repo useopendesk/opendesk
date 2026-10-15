@@ -4,8 +4,11 @@ description: Sign your users' ids with HMAC-SHA256 so the chat widget can trust 
 ---
 
 import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+import Screenshot from '../../../../components/Screenshot.astro';
 
 When a signed-in user opens the widget, you can tell opendesk who they are. Without verification, anyone could claim to be any user. With it, opendesk accepts the identity only when it comes with a signature that only your server can produce.
+
+Each chat widget has its own secret. Sign with the secret of the widget that runs on that site: a session is verified only by the widget whose secret signed it.
 
 The signature is:
 
@@ -17,11 +20,17 @@ A session that sends a valid `user_hash` for its `user_id` is marked **verified*
 
 <Steps>
 
-1. **Get the widget secret.** In **Settings → Chat widget**, rotate the widget secret. It is shown once, so store it in your server's secrets. Rotating it needs the `admin` role. Rotating again invalidates every hash signed with the old secret.
+1. **Get the widget's secret.** Open **Settings**, **Brands and widgets**, the brand, then the widget on its **Chat widgets** tab. Under **Identify signed-in users**, click **Rotate secret**. The new secret is shown once, so store it in your server's secrets. A new widget can also show its first secret right when you create it.
+
+   <Screenshot src="/guides/chat/identify" alt="The Identify signed-in users section of a widget: the identify snippet ringed as 1, and the Widget secret with Rotate secret ringed as 2" />
+
+   Rotating needs the admin role, two-factor authentication and a sign-in from the last 12 hours. The old secret stops working at once: every hash signed with it is refused until your server uses the new one. Chats already open keep working.
+
+   <Screenshot src="/guides/chat/rotate" alt="The Rotate the widget secret dialog: the current secret for Marketing site stops working at once, with Cancel and Rotate secret" />
 
 2. **Compute the hash on your server** for the signed-in user, with one of the examples below.
 
-3. **Pass `user_id` and `user_hash` to the widget**, together with the optional `email` and `name`, as shown by the embed snippet in settings. The widget sends them when it starts a session (`POST /v1/widget/session`).
+3. **Pass `user_id` and `user_hash` to the widget**, together with the optional `email` and `name`, as in the identify snippet on the widget's page. The widget sends them when it starts a session (`POST /v1/widget/session`).
 
 </Steps>
 
@@ -108,6 +117,14 @@ For the secret `test-secret` and user id `42`, every example above must return t
 ```sh
 printf '42' | openssl dgst -sha256 -hmac 'test-secret'
 ```
+
+## Several widgets
+
+All the widgets of a workspace share one set of user ids: a verified `user_id` is the same contact whichever widget verified it. So:
+
+- Use the same user ids on two sites only when they are the same people, such as one account system behind both.
+- Keep every widget's secret as safe as the others: each one vouches for the same ids.
+- A visitor who was verified on one widget is verified on another only when that widget's own secret signed the same `user_id`. Otherwise they start there as a new, anonymous visitor.
 
 ## Tips
 

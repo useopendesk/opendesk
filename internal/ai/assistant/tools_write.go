@@ -20,6 +20,7 @@ func writeTools() []*tool {
 		"priority":      enum("New priority.", priorities...),
 		"severity":      enum("New severity: sev1 critical, sev2 major, sev3 minor, sev4 minimal, or none to clear.", append(append([]string{}, severities...), "none")...),
 		"assignee":      str(`Assign to "me", "none" to unassign, or a teammate's name, email or user id.`),
+		"team":          str(`Move to a team by name or id, or "none" to remove the team.`),
 		"add_labels":    arr("Label names to add.", str("")),
 		"remove_labels": arr("Label names to remove.", str("")),
 	}
@@ -31,7 +32,7 @@ func writeTools() []*tool {
 	return []*tool{
 		{
 			Name: "update_ticket", Write: true, MinRole: auth.RoleAgent,
-			Description: "Change one ticket: status, priority, severity, assignee, labels or custom fields. Needs the user's approval, which the panel asks for; just call it.",
+			Description: "Change one ticket: status, priority, severity, assignee, team, labels or custom fields. Needs the user's approval, which the panel asks for; just call it.",
 			Schema:      obj(singleProps, "ticket"),
 			Active:      "Preparing a ticket change", Done: "Updated the ticket",
 			Propose: proposeUpdate, Apply: applyUpdate,
@@ -121,6 +122,7 @@ type ticketChanges struct {
 	Priority     string         `json:"priority,omitempty"`
 	Severity     string         `json:"severity,omitempty"`
 	Assignee     string         `json:"assignee,omitempty"`
+	Team         string         `json:"team,omitempty"`
 	AddLabels    []string       `json:"add_labels,omitempty"`
 	RemoveLabels []string       `json:"remove_labels,omitempty"`
 	Fields       map[string]any `json:"fields,omitempty"`
@@ -134,6 +136,9 @@ type patchArgs struct {
 	AssigneeSet  bool           `json:"assignee_set,omitempty"`
 	AssigneeID   string         `json:"assignee_id,omitempty"`
 	AssigneeName string         `json:"assignee_name,omitempty"`
+	TeamSet      bool           `json:"team_set,omitempty"`
+	TeamID       string         `json:"team_id,omitempty"`
+	TeamName     string         `json:"team_name,omitempty"`
 	AddTags      []string       `json:"add_tags,omitempty"`
 	RemoveTags   []string       `json:"remove_tags,omitempty"`
 	Fields       map[string]any `json:"fields,omitempty"`
@@ -159,6 +164,13 @@ func (p patchArgs) body() map[string]any {
 			b["assignee_id"] = nil
 		} else {
 			b["assignee_id"] = p.AssigneeID
+		}
+	}
+	if p.TeamSet {
+		if p.TeamID == "" {
+			b["team_id"] = nil
+		} else {
+			b["team_id"] = p.TeamID
 		}
 	}
 	if len(p.AddTags) > 0 {
@@ -211,6 +223,13 @@ func (rc *runCtx) resolveChanges(ctx context.Context, c ticketChanges, allowFiel
 			return p, err
 		}
 		p.AssigneeSet, p.AssigneeID, p.AssigneeName = true, id, name
+	}
+	if strings.TrimSpace(c.Team) != "" {
+		id, name, err := rc.resolveTeam(ctx, c.Team)
+		if err != nil {
+			return p, err
+		}
+		p.TeamSet, p.TeamID, p.TeamName = true, id, name
 	}
 	p.AddTags, p.RemoveTags = cleanLabels(c.AddLabels), cleanLabels(c.RemoveLabels)
 	if allowFields && len(c.Fields) > 0 {
@@ -275,6 +294,17 @@ func (p patchArgs) diff(t *ticket) []Change {
 			return t.Assignee.Name
 		}), To: p.AssigneeName})
 	}
+	if p.TeamSet {
+		out = append(out, Change{Field: "Team", From: from(func(t ticket) string {
+			switch {
+			case t.TeamID == nil:
+				return "No team"
+			case t.teamName != "":
+				return t.teamName
+			}
+			return *t.TeamID
+		}), To: p.TeamName})
+	}
 	if len(p.AddTags)+len(p.RemoveTags) > 0 {
 		var to []string
 		for _, l := range p.AddTags {
@@ -336,6 +366,9 @@ func proposeUpdate(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Pr
 	if p.AssigneeSet && ((t.Assignee == nil && p.AssigneeID == "") || (t.Assignee != nil && t.Assignee.ID == p.AssigneeID)) {
 		p.AssigneeSet = false
 	}
+	if p.TeamSet && ((t.TeamID == nil && p.TeamID == "") || (t.TeamID != nil && *t.TeamID == p.TeamID)) {
+		p.TeamSet = false
+	}
 	changes := p.diff(&t)
 	if len(changes) == 0 {
 		return nil, Preview{}, httpx.Validation(fmt.Sprintf("#%d already has those values; nothing to change", t.Number))
@@ -344,7 +377,7 @@ func proposeUpdate(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Pr
 	return updateArgs{TicketID: t.ID, Number: t.Number, Patch: p}, pv, nil
 }
 
-func applyUpdate(ctx context.Context, _ *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {
+func applyUpdate(ctx context.Context, rc *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {
 	a, err := decode[updateArgs](raw)
 	if err != nil {
 		return output{}, err
@@ -352,6 +385,9 @@ func applyUpdate(ctx context.Context, _ *runCtx, w *caller, raw json.RawMessage,
 	var t ticket
 	if err := w.do(ctx, http.MethodPatch, "/v1/tickets/"+a.TicketID, nil, a.Patch.body(), &t, ""); err != nil {
 		return output{}, err
+	}
+	if rc != nil {
+		rc.describe(ctx, &t)
 	}
 	return output{Content: block("update_ticket", "Updated: "+t.line()), Summary: fmt.Sprintf("Updated #%d", t.Number), Refs: []Ref{t.ref()}}, nil
 }

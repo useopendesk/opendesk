@@ -1,7 +1,8 @@
 # opendesk behind automatic HTTPS, on one domain.
 #
 #   /socket*      -> realtime:4000  (Phoenix Channels; WebSocket upgrades pass through)
-#   everything    -> opendesk:8080  (API, web app, widget, help center, /config.js)
+#   everything    -> opendesk:8080  (API, web app, widget, help center, /config.js,
+#                                    and /config.json and /v1/push/instance-key for the apps)
 #
 # OPENDESK_DOMAIN is the site address. A public hostname gets a Let's Encrypt
 # (or ZeroSSL) certificate as soon as its DNS points here and ports 80 and 443

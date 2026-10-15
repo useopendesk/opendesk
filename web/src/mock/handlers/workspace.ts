@@ -1,7 +1,7 @@
 // Workspaces, members, invitations, teams, API keys, webhooks, audit log,
 // events, realtime tokens and notifications. Widget settings: handlers/widget.ts.
 
-import type { ApiKey, Member, Role, Team, Webhook, WebhookDelivery, WorkspaceSettings } from "@/lib/api/types";
+import type { ApiKey, Member, Role, Webhook, WebhookDelivery, WorkspaceSettings } from "@/lib/api/types";
 import { db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
@@ -9,9 +9,12 @@ import { baseWorkspace } from "../seed";
 import { seedDefaultLabels } from "../labels";
 import { isRecord, nowIso, randomToken, slugify, uuid, DAY } from "../util";
 import { checkLimit } from "./billing";
-import { crud, assign } from "./crud";
+import { assign } from "./crud";
 import { registerPictures } from "./pictures";
 import { registerWidget } from "./widget";
+import { lapseGrants, registerTeams, seedDefaultBrand } from "./teams";
+import { envelopeTeam, standIn } from "../gateway";
+import { setGrants, teamRole } from "../teams";
 
 const ROLES: Role[] = ["owner", "admin", "agent", "viewer"];
 
@@ -67,6 +70,7 @@ export function seedNewWorkspace(name: string): WsData {
   seedDefaultLabels(ws);
   ws.views = [{ id: uuid(), name: "Urgent", shared: true, filters: { status: ["open"], priority: ["urgent", "high"] }, position: 0 }];
   ws.sla = [{ id: uuid(), name: "Standard", priority: null, first_response_minutes: 480, resolution_minutes: 4320, business_hours: false, enabled: true, position: 0 }];
+  seedDefaultBrand(ws);
   db.workspaces.push(ws);
   return ws;
 }
@@ -74,6 +78,7 @@ export function seedNewWorkspace(name: string): WsData {
 export function registerWorkspace() {
   registerPictures();
   registerWidget();
+  registerTeams();
   post("/v1/workspaces", (ctx) => {
     const name = required(ctx, "name").slice(0, 60);
     const ws = seedNewWorkspace(name);
@@ -88,7 +93,15 @@ export function registerWorkspace() {
       ctx.ws.workspace.name = name.trim().slice(0, 60);
     }
     if (isRecord(ctx.body.settings)) {
+      const wasGravatar = !!ctx.ws.workspace.settings.gravatar;
       ctx.ws.workspace.settings = { ...ctx.ws.workspace.settings, ...(ctx.body.settings as WorkspaceSettings) };
+      // Turning Gravatar pictures off removes them (contracts/api.md "Profile pictures and logos").
+      if (wasGravatar && !ctx.ws.workspace.settings.gravatar)
+        for (const c of ctx.ws.contacts)
+          if (c.avatar_source === "gravatar") {
+            c.avatar_url = null;
+            c.avatar_source = null;
+          }
     }
     audit(ctx.ws, "workspace.updated", "workspace", ctx.ws.workspace.id, { fields: Object.keys(ctx.body) });
     return ctx.ws.workspace;
@@ -139,7 +152,11 @@ export function registerWorkspace() {
     if (!m) throw notFound("Member");
     if (m.role === "owner") throw new HttpError(409, "owner_cannot_leave", "The owner can't be removed. Transfer ownership first.");
     ctx.ws.members = ctx.ws.members.filter((x) => x !== m);
-    for (const t of ctx.ws.teams) t.member_ids = t.member_ids.filter((x) => x !== m.user_id);
+    for (const t of ctx.ws.teams) {
+      t.members = t.members.filter((x) => x.user_id !== m.user_id);
+      t.member_ids = t.members.map((x) => x.user_id);
+    }
+    lapseGrants(ctx.ws);
     publish(ctx.ws, "member.removed", { user_id: m.user_id }, { topics: [`user:${m.user_id}`] });
     audit(ctx.ws, "member.removed", "member", m.user_id);
     return respond(204);
@@ -202,22 +219,6 @@ export function registerWorkspace() {
     return { workspace: ws.workspace, role };
   });
 
-  // Teams.
-  crud<Team>({
-    path: "/v1/teams",
-    resource: "team",
-    list: (ws) => ws.teams,
-    create: (ctx, id) => ({ id, name: required(ctx, "name").slice(0, 60), member_ids: strArr(ctx.body.member_ids) ?? [], created_at: nowIso() }),
-    update: (ctx, row) => {
-      if (s(ctx, "name") !== undefined) row.name = required(ctx, "name").slice(0, 60);
-      const ids = strArr(ctx.body.member_ids);
-      if (ids) row.member_ids = ids;
-    },
-    beforeDelete: (ctx, row) => {
-      for (const t of ctx.ws.tickets) if (t.team_id === row.id) t.team_id = null;
-    },
-  });
-
   // API keys: the secret is only returned on create.
   get("/v1/api-keys", (ctx) => paginate(ctx, ctx.ws.apiKeys, 100));
   get("/v1/api-keys/:id", (ctx) => ctx.ws.apiKeys.find((k) => k.id === ctx.params.id) ?? (() => { throw notFound("API key"); })());
@@ -228,6 +229,7 @@ export function registerWorkspace() {
     if (!scopes.length) throw invalid("Choose at least one scope");
     const secret = `od_live_${randomToken(43)}`;
     const key: ApiKey = { id: uuid(), name, prefix: secret.slice(0, 16), scopes, last_used_at: null, expires_at: s(ctx, "expires_at") ?? null, created_at: nowIso(), created_by: userRef(db.meId) };
+    setGrants(ctx.ws, key, privateTeams(ctx, []));
     ctx.ws.apiKeys.unshift(key);
     audit(ctx.ws, "api_key.created", "api_key", key.id, { name });
     return respond(201, { ...key, secret });
@@ -236,6 +238,8 @@ export function registerWorkspace() {
     const key = ctx.ws.apiKeys.find((k) => k.id === ctx.params.id);
     if (!key) throw notFound("API key");
     assign(key, ctx.body, ["name", "scopes"]);
+    if ("private_team_ids" in ctx.body) setGrants(ctx.ws, key, privateTeams(ctx, key.private_team_ids ?? []));
+    audit(ctx.ws, "api_key.updated", "api_key", key.id, { fields: Object.keys(ctx.body) });
     return key;
   });
   del("/v1/api-keys/:id", (ctx) => {
@@ -259,6 +263,7 @@ export function registerWorkspace() {
     const events = strArr(ctx.body.events) ?? [];
     if (!events.length) throw invalid("Choose at least one event");
     const hook: Webhook = { id: uuid(), url, description: s(ctx, "description") ?? "", events, enabled: ctx.body.enabled !== false, created_at: nowIso() };
+    setGrants(ctx.ws, hook, privateTeams(ctx, []));
     ctx.ws.webhooks.unshift(hook);
     ctx.ws.deliveries[hook.id] = [];
     publish(ctx.ws, "webhook.created", { webhook: hook });
@@ -269,6 +274,7 @@ export function registerWorkspace() {
     const hook = findHook(ctx);
     if (s(ctx, "url")) checkUrl(s(ctx, "url")!);
     assign(hook, ctx.body, ["url", "description", "events", "enabled"]);
+    if ("private_team_ids" in ctx.body) setGrants(ctx.ws, hook, privateTeams(ctx, hook.private_team_ids ?? []));
     publish(ctx.ws, "webhook.updated", { webhook: hook });
     audit(ctx.ws, "webhook.updated", "webhook", hook.id);
     return hook;
@@ -307,7 +313,13 @@ export function registerWorkspace() {
     const log = ctx.ws.events;
     const oldest = log[0]?.seq;
     const resync = since < 0 || (oldest !== undefined && since < oldest - 1);
-    return { data: resync ? [] : log.filter((e) => e.seq > since).slice(0, limit), latest_seq: ctx.ws.seq, resync };
+    // Events of private teams the caller is not on come back as stand-ins (contracts/teams.md "Realtime").
+    const mine = (e: (typeof log)[number]) => {
+      const team = envelopeTeam.get(e);
+      const row = team ? ctx.ws.teams.find((t) => t.id === team) : null;
+      return !row || !!teamRole(row, db.meId) ? e : standIn(e);
+    };
+    return { data: resync ? [] : log.filter((e) => e.seq > since).slice(0, limit).map(mine), latest_seq: ctx.ws.seq, resync };
   });
 
   post("/v1/realtime/token", () =>
@@ -325,6 +337,23 @@ export function registerWorkspace() {
     for (const n of ctx.ws.notifications) if (!n.read_at && (all || ids?.includes(n.id))) n.read_at = now;
     return respond(204);
   });
+}
+
+/**
+ * private_team_ids on a key or webhook: private teams only, and only ones the
+ * caller belongs to may be added (contracts/teams.md "Visibility"). Anyone may
+ * take a team out: narrowing access needs no membership.
+ */
+function privateTeams(ctx: Ctx, current: string[]): string[] {
+  if (!("private_team_ids" in ctx.body)) return current;
+  const ids = strArr(ctx.body.private_team_ids);
+  if (!ids) throw invalid("private_team_ids must be a list of team ids");
+  for (const id of ids) {
+    const t = ctx.ws.teams.find((x) => x.id === id);
+    if (!t || !t.private) throw invalid("Only private teams can be listed");
+    if (!current.includes(id) && !teamRole(t, db.meId)) throw forbidden("Only members of a private team can give access to it");
+  }
+  return [...new Set(ids)];
 }
 
 function findHook(ctx: Ctx): Webhook {

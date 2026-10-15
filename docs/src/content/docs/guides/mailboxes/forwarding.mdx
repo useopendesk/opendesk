@@ -1,0 +1,136 @@
+---
+title: Forwarding
+description: Forward your support address to opendesk from Gmail, Google Workspace, Microsoft 365 or any provider, and choose how replies are sent.
+---
+
+import Screenshot from '../../../../components/Screenshot.astro';
+import Steps from '../../../../components/Steps.astro';
+import Step from '../../../../components/Step.astro';
+import Callout from '../../../../components/Callout.astro';
+import Legend from '../../../../components/Legend.astro';
+import Fold from '../../../../components/Fold.astro';
+
+Forwarding works with every provider and shares no password with opendesk. When you create a forwarding mailbox, opendesk gives it a private address, such as `margin-returns-cace@in.opendesk.sh`. You forward your support address to it, and every message becomes a ticket.
+
+<Screenshot src="/guides/mailboxes/forwarding-address" alt="Add a mailbox, done: the private forwarding address for returns@margin.app with its copy button ringed as 1, and the Google Workspace forwarding steps ringed as 2" />
+
+<Legend>
+
+1. **The address to forward to**, with a copy button. It is also on the mailbox's page.
+2. **Steps for your provider**: Gmail, Google Workspace or Microsoft 365. The one that fits your address is selected.
+
+</Legend>
+
+## Create a forwarding mailbox
+
+<Steps>
+<Step title="Add the mailbox and pick forwarding">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address customers write to. Choose **Forward mail to opendesk** and click **Continue**. It is recommended for Microsoft 365 and Outlook.com when Microsoft sign-in isn't offered, and for Proton Mail.
+
+</Step>
+<Step title="Choose how replies are sent">
+
+- **Through opendesk**: replies come from opendesk's sending address with your mailbox's name, and the customer's answers come back to your address.
+- **Through your SMTP server**: replies come from your address itself. Enter the SMTP server, port, security, username and password. opendesk signs in to it before it saves anything.
+
+<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for a forwarding mailbox: Replies are sent, Through opendesk, ringed as 1, and the Create mailbox button ringed as 2" />
+
+Click **Create mailbox** (or **Connect** for SMTP).
+
+</Step>
+<Step title="Copy the forwarding address">
+
+The last step shows the private address and short steps for your provider. Copy the address.
+
+</Step>
+<Step title="Turn on forwarding at your provider">
+
+Follow the steps for your provider below. Gmail sends a confirmation email first: it arrives in opendesk as a ticket, so open it and click the link or copy the code.
+
+</Step>
+<Step title="Send a test email">
+
+Write to your support address from another account. It shows up in **Unassigned** as a new ticket.
+
+</Step>
+</Steps>
+
+<Callout>
+
+- Sending through opendesk needs no setup, but replies don't land in your mailbox's Sent folder. Sending through your SMTP server keeps your domain's own SPF and DKIM on every reply.
+- Self-hosted instances use their own inbound domain (`INBOUND_DOMAIN`). See [Email setup](/self-hosting/email/).
+
+</Callout>
+
+## Gmail
+
+1. In Gmail, open **Settings** (the gear), then **See all settings**, then **Forwarding and POP/IMAP**.
+2. Click **Add a forwarding address** and paste your opendesk forwarding address. Click **Next**, then **Proceed**.
+3. Gmail sends a confirmation email to that address. It arrives in opendesk as a ticket. Open it and either click the confirmation link or copy the code.
+4. Back in Gmail, enter the code if asked, then choose **Forward a copy of incoming mail to** your opendesk address.
+5. Choose what Gmail does with its own copy (keeping it is fine) and click **Save Changes**.
+
+To forward only some mail, skip step 4 and create a filter instead: **Create a filter** with your criteria, then **Forward it to** the opendesk address.
+
+## Google Workspace
+
+Each user can set up forwarding the same way as Gmail above. For a shared address or a Google Group, an admin can route mail at the domain level instead, without a mailbox sign-in:
+
+1. In the [Google Admin console](https://admin.google.com), go to **Apps**, **Google Workspace**, **Gmail**, **Routing**.
+2. Under **Routing**, click **Configure** (or **Add another rule**).
+3. Under **Email messages to affect**, choose **Inbound** (and **Internal - receiving** if colleagues email support too).
+4. Under **For the above types of messages, do the following**, choose **Modify message**. Under **Envelope recipient**, check **Add more recipients**, click **Add**, and enter the opendesk forwarding address.
+5. Under **Options**, limit the rule to your support address with an envelope filter: **Only affect specific envelope recipients**, single recipient `support@example.com`.
+6. Save. Changes can take up to an hour to apply.
+
+Admins can also restrict who may set up automatic forwarding, under **Gmail**, **End User Access**, **Automatic forwarding**. Allow it for the support user if you use per-user forwarding.
+
+## Microsoft 365 and Outlook
+
+Microsoft 365 blocks automatic forwarding to outside addresses by default. An admin allows it first.
+
+<Screenshot src="/guides/mailboxes/microsoft-forward-to" alt="Add a mailbox for support@contoso.com, done: the private forwarding address ringed as 1, and the Microsoft 365 forwarding steps ringed as 2" />
+
+### Allow forwarding to outside addresses (admin)
+
+1. Open the [Microsoft Defender portal](https://security.microsoft.com), then **Email & collaboration**, **Policies & rules**, **Threat policies**, **Anti-spam policies**.
+2. Open **Anti-spam outbound policy (Default)**, or create an outbound policy that applies only to your support mailbox (recommended).
+3. Under **Forwarding rules**, set **Automatic forwarding rules** to **On - Forwarding is enabled**. Save.
+
+### Forward the mailbox
+
+Either set forwarding on the mailbox (admin):
+
+1. In the [Exchange admin center](https://admin.exchange.microsoft.com), open **Recipients**, **Mailboxes**, and select the mailbox. In the [Microsoft 365 admin center](https://admin.microsoft.com), the same is under **Users**, **Active users** (or **Teams & groups**, **Shared mailboxes**).
+2. Under **Mail flow settings** (the **Mail** tab in the Microsoft 365 admin center), choose **Manage email forwarding**.
+3. Turn on forwarding, enter the opendesk forwarding address, and keep **Deliver to both** on if the mailbox should keep a copy. Save.
+
+Or create a rule in Outlook on the web (user):
+
+1. Open **Settings**, **Mail**, **Rules**, **Add new rule**.
+2. Name it and add the condition **Apply to all messages** (or narrower conditions).
+3. Add the action **Forward to** (or **Redirect to**) and enter the opendesk forwarding address. Save.
+
+**Redirect** keeps the original sender. Both work, since opendesk reads the original headers, but redirect is the cleaner choice. To send replies from the mailbox itself, see [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/#turn-on-smtp-auth).
+
+## Any other provider
+
+Look for "forwarding" or "redirect" in your provider's mail settings or admin panel, and forward to your opendesk address. Most providers send a confirmation message first; it appears in opendesk as a ticket. Proton Mail can forward on its paid plans.
+
+<Fold>
+
+## Troubleshooting
+
+- **Nothing arrives.** Check that the forwarding rule is on and points at the exact address from the mailbox's page. In Microsoft 365, check that the outbound spam policy allows forwarding.
+- **The wrong person is the sender.** Use redirect rather than forward where your provider offers both.
+- **Duplicates.** Each message is stored once, by its Message-ID, so the same message delivered twice doesn't open a second ticket.
+- **Your own mail turns into tickets.** Mail from the mailbox's own address, its aliases and opendesk's forwarding addresses is skipped, and so is automatic mail like out-of-office replies.
+
+</Fold>
+
+## Related
+
+- [Connect a mailbox](/guides/mailboxes/)
+- [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/)
+- [Other providers](/guides/mailboxes/imap-smtp/)

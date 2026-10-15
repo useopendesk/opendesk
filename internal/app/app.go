@@ -21,6 +21,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/ai/assistant"
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/ai/knowledge"
 	"github.com/useopendesk/opendesk/internal/ai/mcp"
 	"github.com/useopendesk/opendesk/internal/analytics"
@@ -37,6 +38,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/idempotency"
 	"github.com/useopendesk/opendesk/internal/integrations"
@@ -44,6 +46,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/mailer"
 	"github.com/useopendesk/opendesk/internal/natsx"
 	"github.com/useopendesk/opendesk/internal/plan"
+	"github.com/useopendesk/opendesk/internal/push"
 	"github.com/useopendesk/opendesk/internal/storage"
 	"github.com/useopendesk/opendesk/internal/version"
 	"github.com/useopendesk/opendesk/internal/webui"
@@ -65,6 +68,7 @@ var areas = []area{
 	{integrations.Register, integrations.RegisterWorkers, integrations.Periodic, integrations.Background},
 	{assistant.Register, assistant.RegisterWorkers, assistant.Periodic, assistant.Background},
 	{knowledge.Register, knowledge.RegisterWorkers, knowledge.Periodic, knowledge.Background},
+	{bots.Register, bots.RegisterWorkers, bots.Periodic, bots.Background},
 	{mcp.Register, mcp.RegisterWorkers, mcp.Periodic, mcp.Background},
 	{mcpserver.Register, mcpserver.RegisterWorkers, mcpserver.Periodic, mcpserver.Background},
 }
@@ -106,8 +110,13 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 	turnstile := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{Secret: cfg.TurnstileSecret, Disabled: cfg.TurnstileSecret == ""})
 	d := &deps.Deps{Cfg: cfg, Log: log, DB: database, NATS: nc, Storage: store, Mailer: m,
 		Analytics: analytics.New(cfg.PosthogKey, cfg.PosthogHost, log), Box: box, Tokens: auth.NewTokens(cfg.AuthSecret),
-		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AICreditMarkup)}
+		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AIUsageMarkup)}
 	domain.Configure(cfg.APIURL, cfg.AuthSecret)
+	if cfg.APNsKey != "" {
+		if d.APNs, err = push.NewAPNs(cfg.APNsKey, cfg.APNsKeyID, cfg.APNsTeamID, cfg.APNsTopic); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &events.PruneWorker{Pool: database.Direct, Retention: cfg.EventRetention})
@@ -128,6 +137,9 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 	d.Jobs, err = river.NewClient[pgx.Tx](riverpgxv5.New(database.Direct), rc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("river: %w", err)
+	}
+	if cfg.PushMode() != "off" {
+		hd.ConfigurePush(d.Jobs)
 	}
 	cleanup := func() {
 		d.Analytics.Close()
@@ -177,7 +189,7 @@ func Router(d *deps.Deps) http.Handler {
 		csp := webCSP(cfg)
 		r.Handle("/*", webui.Handler(webui.RuntimeConfig{APIURL: cfg.APIURL, GatewayURL: cfg.GatewayURL,
 			PosthogKey: os.Getenv("WEB_POSTHOG_KEY"), PosthogHost: os.Getenv("WEB_POSTHOG_HOST"),
-			TurnstileSiteKey: cfg.TurnstileSiteKey, SelfHosted: true}, csp))
+			TurnstileSiteKey: cfg.TurnstileSiteKey, SelfHosted: true, MailboxOAuth: cfg.MailboxOAuthProviders()}, csp))
 	}
 	return r
 }

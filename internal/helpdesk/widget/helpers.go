@@ -42,7 +42,7 @@ func clientIP(ctx context.Context) string {
 	return s
 }
 
-// checkOrigin enforces settings.widget.allowed_origins: when the list is set, the browser
+// checkOrigin enforces the widget's allowed_origins: when the list is set, the browser
 // Origin must be one of them.
 func checkOrigin(w hd.WidgetSettings, origin string) error {
 	if len(w.AllowedOrigins) == 0 {
@@ -55,22 +55,21 @@ func checkOrigin(w hd.WidgetSettings, origin string) error {
 	return httpx.E(http.StatusForbidden, "origin_not_allowed", "This site is not allowed to use the chat widget.")
 }
 
-// visitor resolves the visitor, checks the widget is enabled for the workspace and the
-// request origin is allowed.
+// visitor resolves the visitor, checks their session's widget is enabled and the
+// request origin is one it allows.
 func (h *handler) visitor(ctx context.Context, origin string) (*auth.Principal, error) {
 	p, err := auth.RequireVisitor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s, err := hd.LoadSettings(ctx, h.d.DB.Pool, p.WorkspaceID)
+	g, err := loadVisitorWidget(ctx, h.d.DB.Pool, p)
 	if err != nil {
 		return nil, err
 	}
-	w := s.WidgetOrDefault()
-	if !w.Enabled {
-		return nil, httpx.E(http.StatusForbidden, "widget_disabled", "The chat widget is turned off.")
+	if !g.Settings.Enabled {
+		return nil, errWidgetDisabled
 	}
-	if err := checkOrigin(w, origin); err != nil {
+	if err := checkOrigin(g.Settings, origin); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -83,18 +82,12 @@ func (h *handler) allowWrite(p *auth.Principal, bucket string, limit int) error 
 	return nil
 }
 
-// publicMessage is the visitor-facing form of a message: no recipient lists, no
-// delivery internals and no agent email addresses.
+// publicMessage is the visitor-facing form of a message (domain.PublicMessage): no
+// recipient lists, delivery internals, sender checks or agent email addresses.
 func publicMessage(m domain.Message) domain.Message {
-	m.To, m.Cc, m.Bcc = []string{}, []string{}, []string{}
-	m.DeliveryError = ""
+	m = domain.PublicMessage(m)
 	if m.Author.Type != "contact" {
 		m.FromEmail = ""
-	}
-	if m.Author.User != nil {
-		u := *m.Author.User
-		u.Email = ""
-		m.Author.User = &u
 	}
 	return m
 }

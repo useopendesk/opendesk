@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 import { qk } from "@/lib/queries";
 import { tone, type Tone } from "@/lib/tones";
 import { RESUME_AUTO_RECHARGE_KEY, useAddPaymentMethod, useAutoRecharge, useCanManageBilling, useFmt } from "./hooks";
-import { CREDIT_PACK_SIZE, formatMoney, rechargeQuote, withPatch } from "./model";
+import { dollarForDollar, formatMoney, MAX_TOP_UP_USD, MIN_TOP_UP_USD, topUpQuote, withPatch } from "./model";
 
 const SAVE_DELAY = 600;
 
@@ -49,8 +49,8 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
   );
 
   const ar = b.auto_recharge;
-  const pack = b.prices.credit_pack;
-  if (!ar || !pack || !canManage) return null;
+  const topUp = b.prices.ai_top_up;
+  if (!ar || !topUp || !canManage) return null;
   const v = withPatch(ar, draft);
 
   const flush = (extra: AutoRechargePatch = {}) => {
@@ -77,27 +77,44 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
   };
   const goAddCard = () => {
     try {
-      sessionStorage.setItem(RESUME_AUTO_RECHARGE_KEY, JSON.stringify({ enabled: true, threshold: v.threshold, packs: v.packs, monthly_limit: v.monthly_limit }));
+      sessionStorage.setItem(
+        RESUME_AUTO_RECHARGE_KEY,
+        JSON.stringify({ enabled: true, threshold_usd: v.threshold_usd, amount_usd: v.amount_usd, monthly_limit_usd: v.monthly_limit_usd }),
+      );
     } catch {
       /* private mode: the customer turns it on again after adding the card */
     }
     addCard.mutate();
   };
 
-  const quote = rechargeQuote(pack, v.packs, fmt.locale);
-  // One recharge must lift the balance back above the threshold, so each bounds the other.
-  const size = pack.credits ?? CREDIT_PACK_SIZE;
-  const maxThreshold = Math.max(50, Math.min(100000, v.packs * size - 50));
-  const minPacks = Math.min(20, Math.floor(v.threshold / size) + 1);
-  const monthMax = quote.amount !== null ? formatMoney(quote.amount * v.monthly_limit, pack.currency, fmt.locale) : null;
+  const quote = topUpQuote(topUp, v.amount_usd, fmt.locale);
+  const same = dollarForDollar(topUp);
+  // One recharge must lift the balance back above the threshold, and fit the monthly limit,
+  // so each bounds the next.
+  const maxThreshold = Math.max(0.01, Math.min(1000, Math.round((v.amount_usd - 0.01) * 100) / 100));
+  const minAmount = Math.min(MAX_TOP_UP_USD, Math.max(MIN_TOP_UP_USD, Math.floor(v.threshold_usd) + 1));
+  const maxAmount = Math.min(MAX_TOP_UP_USD, v.monthly_limit_usd);
+  const usd = (n: number) => fmt.usd(n, { trim: true });
   const last = ar.last_recharge;
   const failure = !v.enabled ? ar.failure : null;
+  const retry = v.enabled ? ar.retry : null;
+  const retryText = (iso: string) => {
+    const d = new Date(iso);
+    const time = new Intl.DateTimeFormat(fmt.locale, { hour: "numeric", minute: "2-digit" }).format(d);
+    return d.toDateString() === new Date().toDateString()
+      ? t("autoRecharge.retryToday", { time })
+      : t("autoRecharge.retryLater", { date: fmt.date(iso), time });
+  };
 
   return (
     <div id="auto-recharge" className="scroll-mt-6">
       <Section
         title={t("autoRecharge.title")}
-        description={t("autoRecharge.description")}
+        description={
+          v.enabled
+            ? t("autoRecharge.summary", { usd: usd(v.amount_usd), threshold: fmt.usd(v.threshold_usd), limit: usd(v.monthly_limit_usd) })
+            : t("autoRecharge.description")
+        }
         actions={
           <label className="flex cursor-pointer items-center gap-2 text-[12px] text-fg-3">
             {v.enabled ? t("autoRecharge.on") : t("autoRecharge.off")}
@@ -120,6 +137,19 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
             }
           />
         )}
+        {retry && (
+          <Callout
+            hue="amber"
+            icon={<CreditCard className="size-3.5" />}
+            title={t("autoRecharge.retryTitle")}
+            body={retryText(retry.at)}
+            action={
+              <Button size="sm" loading={addCard.isPending} onClick={() => addCard.mutate()}>
+                {t("autoRecharge.updateCard")}
+              </Button>
+            }
+          />
+        )}
         {needsCard && !v.enabled && !failure && (
           <Callout
             hue="amber"
@@ -135,28 +165,48 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
         )}
         <Row label={t("autoRecharge.threshold")} description={t("autoRecharge.thresholdHint")}>
           <Stepper
-            value={v.threshold}
-            onChange={(threshold) => edit({ threshold })}
-            min={50}
+            value={v.threshold_usd}
+            onChange={(threshold_usd) => edit({ threshold_usd })}
+            min={0.01}
             max={maxThreshold}
-            step={50}
-            suffix={t("autoRecharge.thresholdSuffix")}
+            step={1}
+            decimals={2}
+            prefix="$"
             aria-label={t("autoRecharge.threshold")}
-            className="w-[176px]"
+            decLabel={t("autoRecharge.thresholdDec")}
+            incLabel={t("autoRecharge.thresholdInc")}
+            className="w-[140px]"
           />
         </Row>
-        <Row label={t("autoRecharge.packs")} description={quote.price ? t("autoRecharge.packsQuote", { credits: fmt.num(quote.credits), price: quote.price }) : undefined}>
-          <Stepper value={v.packs} onChange={(packs) => edit({ packs })} min={minPacks} max={20} aria-label={t("autoRecharge.packs")} className="w-[120px]" />
-        </Row>
-        <Row label={t("autoRecharge.limit")} description={monthMax ? t("autoRecharge.limitHint", { amount: monthMax }) : t("autoRecharge.limitHintNoPrice")}>
+        <Row
+          label={t("autoRecharge.amount")}
+          description={same || !quote.price ? t("autoRecharge.amountHint") : t("autoRecharge.amountQuote", { usd: usd(v.amount_usd), price: quote.price })}
+        >
           <Stepper
-            value={v.monthly_limit}
-            onChange={(monthly_limit) => edit({ monthly_limit })}
-            min={1}
-            max={30}
-            suffix={t("autoRecharge.limitSuffix")}
+            value={v.amount_usd}
+            onChange={(amount_usd) => edit({ amount_usd })}
+            min={minAmount}
+            max={maxAmount}
+            step={5}
+            prefix="$"
+            aria-label={t("autoRecharge.amount")}
+            decLabel={t("autoRecharge.amountDec")}
+            incLabel={t("autoRecharge.amountInc")}
+            className="w-[140px]"
+          />
+        </Row>
+        <Row label={t("autoRecharge.limit")} description={t("autoRecharge.limitHint")}>
+          <Stepper
+            value={v.monthly_limit_usd}
+            onChange={(monthly_limit_usd) => edit({ monthly_limit_usd })}
+            min={Math.max(MIN_TOP_UP_USD, v.amount_usd)}
+            max={50_000}
+            step={25}
+            prefix="$"
             aria-label={t("autoRecharge.limit")}
-            className="w-[176px]"
+            decLabel={t("autoRecharge.limitDec")}
+            incLabel={t("autoRecharge.limitInc")}
+            className="w-[150px]"
           />
         </Row>
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-[12px]">
@@ -164,7 +214,7 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
             <RefreshCw className="size-3 shrink-0 text-fg-4" aria-hidden />
             <span className="truncate">
               {last
-                ? t("autoRecharge.last", { date: fmt.date(last.at), credits: fmt.num(last.credits), price: formatMoney(last.amount, last.currency, fmt.locale) })
+                ? t("autoRecharge.last", { date: fmt.date(last.at), usd: usd(last.usd), price: formatMoney(last.amount, last.currency, fmt.locale) })
                 : v.enabled
                   ? t("autoRecharge.none")
                   : t("autoRecharge.offHint")}
@@ -172,7 +222,7 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
           </span>
           {v.enabled && (
             <span className="mono shrink-0 text-[11.5px] tabular-nums text-fg-4">
-              {t("autoRecharge.thisMonth", { used: v.recharges_this_month, limit: v.monthly_limit })}
+              {t("autoRecharge.thisMonth", { used: usd(v.charged_this_month_usd), limit: usd(v.monthly_limit_usd) })}
             </span>
           )}
         </div>

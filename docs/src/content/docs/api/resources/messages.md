@@ -34,11 +34,16 @@ type Message = {
   attachments: Attachment[];
   delivery_status: "none" | "pending" | "sent" | "failed" | "bounced";
   delivery_error: string;
+  reply_to: string;
+  auth_failed: boolean;
+  form_sender: string;
   created_at: string;
 };
 ```
 
 `body_html` is sanitized before storage. For inbound email, quoted history is trimmed from the body and `has_quoted` is true; fetch `/v1/messages/{id}/original` for the full text.
+
+Inbound email also carries what the sender checks found. `reply_to` is the `Reply-To` the message named when it differs from `from_email`. `auth_failed` is true when its `From` failed DMARC at a trusted receiving server: treat the message as unverified. `form_sender` is set when the message came through a trusted website contact form (see [Mailboxes](/api/resources/mailboxes/#contact-forms)); `from_email` is then the visitor. The widget never receives these three.
 
 ## Send a reply
 

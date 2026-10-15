@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export const inputBase =
@@ -185,65 +185,116 @@ export function Field({
   );
 }
 
-/** Number field with our own steppers; the native spinner is hidden globally. */
+/** What a number field's text says: a number, nothing, or not a number. */
+export function parseNumber(text: string, decimal = false): number | null | undefined {
+  const v = text.trim().replace(",", ".");
+  if (!v) return null;
+  if (!(decimal ? /^-?(\d+\.?\d*|\.\d+)$/ : /^-?\d+$/).test(v)) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * A number field: a text input (no spinners) that takes digits, and a decimal
+ * point when `decimal`. `onChange` only ever gets a number within min..max;
+ * anything else marks the field invalid, and leaving it puts back a valid
+ * number (clamped into range, or the last one). ArrowUp and ArrowDown step,
+ * Shift steps ten times as far.
+ */
 export function NumberInput({
   value,
   onChange,
+  onValidChange,
   min,
   max,
   step = 1,
+  decimal = false,
   suffix,
+  invalid,
   className,
   id,
   ...aria
 }: {
   value: number;
   onChange: (n: number) => void;
+  /** Whether the text is a number in range right now (false while it is not). */
+  onValidChange?: (valid: boolean) => void;
   min?: number;
   max?: number;
   step?: number;
+  decimal?: boolean;
   suffix?: string;
+  invalid?: boolean;
   className?: string;
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
 }) {
+  const show = (n: number) => (Number.isFinite(n) ? String(n) : "");
+  const [text, setText] = useState(() => show(value));
+  const [bad, setBad] = useState(false);
   const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
+  const inRange = (n: number) => n === clamp(n);
+
+  // A value changed from outside (a unit switch, a reset) replaces the text, unless the text already says it.
+  const [seen, setSeen] = useState(value);
+  if (!Object.is(seen, value)) {
+    setSeen(value);
+    if (parseNumber(text, decimal) !== value) setText(show(value));
+  }
+
+  const mark = (ok: boolean) => {
+    setBad(!ok);
+    onValidChange?.(ok);
+  };
+  const edit = (next: string) => {
+    if (next && !(decimal ? /^-?[\d.,]*$/ : /^-?\d*$/).test(next)) return; // ignore keys that are not part of a number
+    setText(next);
+    const n = parseNumber(next, decimal);
+    const ok = n != null && inRange(n);
+    mark(ok);
+    if (ok && n !== value) onChange(n);
+  };
+  const commit = () => {
+    const n = parseNumber(text, decimal);
+    const next = n == null ? value : clamp(n);
+    setText(show(next));
+    mark(true);
+    if (next !== value) onChange(next);
+  };
+  const stepBy = (d: number) => {
+    const base = parseNumber(text, decimal) ?? value;
+    const next = clamp(Math.round(((Number.isFinite(base) ? base : (min ?? 0)) + d) * 1e6) / 1e6);
+    setText(show(next));
+    mark(true);
+    if (next !== value) onChange(next);
+  };
+
   return (
     <div className={cn("relative flex h-8 items-center", className)}>
       <input
         id={id}
-        type="number"
-        inputMode="numeric"
-        value={Number.isFinite(value) ? value : ""}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(clamp(Number(e.target.value)))}
-        className={cn(inputBase, "h-8 pr-12 mono tabular-nums")}
+        type="text"
+        inputMode={decimal ? "decimal" : "numeric"}
+        autoComplete="off"
+        spellCheck={false}
+        value={text}
+        role="spinbutton"
+        aria-valuenow={Number.isFinite(value) ? value : undefined}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-invalid={bad || invalid || undefined}
+        onChange={(e) => edit(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          stepBy((e.key === "ArrowUp" ? step : -step) * (e.shiftKey ? 10 : 1));
+        }}
+        className={cn(inputBase, "h-8 mono tabular-nums", suffix && "pr-10")}
         {...aria}
       />
-      {suffix && <span className="pointer-events-none absolute right-7 text-xs text-fg-3">{suffix}</span>}
-      <div className="absolute right-1 flex flex-col">
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="Increase"
-          onClick={() => onChange(clamp(value + step))}
-          className="flex h-3.5 w-5 items-center justify-center rounded-sm text-fg-3 hover:bg-hover hover:text-fg"
-        >
-          <ChevronUp className="size-3" />
-        </button>
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="Decrease"
-          onClick={() => onChange(clamp(value - step))}
-          className="flex h-3.5 w-5 items-center justify-center rounded-sm text-fg-3 hover:bg-hover hover:text-fg"
-        >
-          <ChevronDown className="size-3" />
-        </button>
-      </div>
+      {suffix && <span className="pointer-events-none absolute right-2.5 text-xs text-fg-3">{suffix}</span>}
     </div>
   );
 }

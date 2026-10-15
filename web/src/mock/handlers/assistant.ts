@@ -5,7 +5,7 @@
 import type { AssistantSession, AssistantStep, Approval, Preview, Tip, TranscriptItem } from "@/components/assistant/api";
 import type { Ticket, UserRef } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
-import { reserve, spend } from "../credits";
+import { reserve, spend } from "../aiBalance";
 import { HttpError, del, get, invalid, patch, post, respond, type Ctx } from "../router";
 import { aiDecisions } from "@/lib/decisions";
 import { applyPatch, findTicket } from "../tickets";
@@ -237,7 +237,7 @@ async function connectedTools(ctx: Ctx, s: Sess, lower: string, current: Ticket 
     body,
   };
   const n = 180 + current.number;
-  const url = x.provider === "github" ? `https://github.com/fieldnote/app/issues/${n}` : x.provider === "atlassian" ? `https://fieldnote.atlassian.net/browse/SUP-${n}` : `https://${host}/fieldnote/issue/FN-${n}`;
+  const url = x.provider === "github" ? `https://github.com/margin/app/issues/${n}` : x.provider === "atlassian" ? `https://margin.atlassian.net/browse/SUP-${n}` : `https://${host}/margin/issue/FN-${n}`;
   s.pending = {
     id: pid,
     callId: st.id,

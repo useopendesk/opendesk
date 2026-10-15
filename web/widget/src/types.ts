@@ -1,6 +1,10 @@
 // Shapes from contracts/api.md (Widget section), contracts/agent.md and
 // contracts/realtime.md ("Live events") that the widget uses.
 
+import type { BotLook } from "../../src/lib/botlook";
+
+export type { BotLook };
+
 export type ContactRef = { id: string; email: string | null; name: string; avatar_url: string };
 
 export type WidgetTheme = "auto" | "light" | "dark";
@@ -8,19 +12,35 @@ export type WidgetPosition = "right" | "left";
 export type WidgetLauncher = "icon" | "label";
 export type WidgetRadius = "square" | "soft" | "round";
 export type TeamMember = { name: string; avatar_url: string | null };
-export type BotIdentity = { name: string; avatar_url: string | null };
+/** What a message or a live reply carries of its bot (contracts/bots.md "Where a bot shows"). */
+export type BotRef = {
+  /** null: the default bot before the bots load (the dashboard preview). */
+  id: string | null;
+  name: string;
+  /** A PNG of the look, or the uploaded picture; "" when there is none. */
+  avatar_url: string;
+  look: BotLook;
+};
+/** WidgetConfig.bot: the widget's bot, else the default bot. */
+export type BotIdentity = BotRef & {
+  /** Shown under the name; "" = none. */
+  role: string;
+  /** Its opening message in a new chat while the agent answers; "" = config.greeting. */
+  greeting: string;
+};
 
 /** GET /v1/widget/config. Older servers omit the appearance keys; `resolveConfig` fills them in. */
 export type WidgetConfig = {
+  /** The widget's brand name (the workspace name for the default brand). */
   workspace_name: string;
-  /** settings.widget.color, else the workspace brand colour. */
+  /** The widget's colour, else the brand's, else the workspace brand colour. */
   brand_color: string | null;
   greeting: string;
   help_center_url: string | null;
   require_email: boolean;
   /** Workspace default language (BCP 47) for visitors whose browser language isn't supported. */
   locale?: string | null;
-  /** widget_avatar, else the workspace logo. */
+  /** The widget's avatar, else the brand logo, else the workspace logo. */
   avatar_url?: string | null;
   launcher_icon_url?: string | null;
   theme?: WidgetTheme;
@@ -33,7 +53,7 @@ export type WidgetConfig = {
   /** "" = the translated "Chat with us". */
   launcher_label?: string;
   radius?: WidgetRadius;
-  /** "" = the workspace name. */
+  /** The widget's title, else the brand name. */
   title?: string;
   /** "" = the translated reply-time line. */
   subtitle?: string;
@@ -45,9 +65,19 @@ export type WidgetConfig = {
   team?: TeamMember[];
   /** The AI agent handles new conversations (contracts/agent.md). */
   ai_answers?: boolean;
-  /** The agent's name and picture; a null picture is the Ollie mark. */
+  /** Who the AI agent is to visitors: the widget's bot (contracts/bots.md). */
   bot?: BotIdentity;
+  /** At most 8. When not empty, asked before the first message; the pick is sent as `topic_id`. */
+  topics?: WidgetTopic[];
+  /** Within the business hours of the widget's team, else the workspace's; true without hours. */
+  open?: boolean;
+  /** Shown while closed; "" = the translated default. */
+  offline_message?: string;
+  /** The widget's brand: its name, and its colour (else the workspace brand colour). */
+  brand?: { name: string; color: string | null };
 };
+
+export type WidgetTopic = { id: string; label: string };
 
 export type WidgetSession = {
   visitor_token: string;
@@ -91,6 +121,8 @@ export type Message = {
     type: "contact" | "user" | "system" | "api";
     user: { id: string; name: string; avatar_url: string } | null;
     contact: ContactRef | null;
+    /** The bot an AI reply was sent as (contracts/bots.md); older servers omit it. */
+    bot?: BotRef | null;
   };
   body_html: string;
   body_text: string;
@@ -110,7 +142,7 @@ export type Envelope = { id: string; seq: number; type: string; data: Record<str
 
 /** A `"live"` push on the contact topic (contracts/realtime.md "Live events"). */
 export type LiveEvent =
-  | { type: "ai.reply.started"; data: { reply_id: string; ticket_id: string; bot?: { name: string } } }
+  | { type: "ai.reply.started"; data: { reply_id: string; ticket_id: string; bot?: Partial<BotRef> | null } }
   | { type: "ai.reply.delta"; data: { reply_id: string; ticket_id: string; text: string } }
   | { type: "ai.reply.tool"; data: { reply_id: string; ticket_id: string; tool: string; status: "running" | "done" | "error" } }
   | {

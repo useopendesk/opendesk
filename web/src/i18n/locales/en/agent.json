@@ -5,7 +5,9 @@
     "choose": "Choose a model",
     "none": "No models available",
     "context": "{{n}} context",
-    "price": "{{input}} credits / 1M in · {{output}} out",
+    "price": "{{input}} / {{output}} per 1M",
+    "priceHint": "US dollars per million tokens, input / output, as your workspace pays them",
+    "typicalReply": "Draft reply about {{cost}}",
     "unavailable": "No longer offered, uses the default",
     "search": "Search models"
   },
@@ -16,8 +18,8 @@
     "duplicate": "Already in the list",
     "full": "At most {{max}}"
   },
-  "credits": {
-    "unit": "credits",
+  "usd": {
+    "unit": "a month",
     "presets": "Quick picks"
   },
   "off": {
@@ -55,12 +57,12 @@
     "knowHint": "Facts that aren't in your help center yet: products, policies, opening hours, useful links.",
     "instructions": "Instructions",
     "instructionsHint": "Write it like a note to a new teammate. The agent never invents prices, policies or order details beyond this and your knowledge.",
-    "instructionsPlaceholder": "We sell the Fieldnote app on Free and Pro plans. Refunds within 30 days of a charge. Support hours are 9 to 6, Monday to Friday, Berlin time. Point people to fieldnote.app/status during an outage.",
+    "instructionsPlaceholder": "We sell the Margin app on Free and Pro plans. Refunds within 30 days of a charge. Support hours are 9 to 6, Monday to Friday, Berlin time. Point people to margin.app/status during an outage.",
     "knowledgeLink": "Add websites, files and snippets in Knowledge",
     "model": "Model and limits",
-    "modelHint": "A larger model answers harder questions and uses more credits per reply.",
+    "modelHint": "A larger model answers harder questions and costs more per reply.",
     "widgetModel": "Agent model",
-    "widgetModelHint": "Credits follow real usage, so a pricier model or a longer conversation uses more.",
+    "widgetModelHint": "Each reply costs what it uses on this model, so a pricier model or a longer conversation costs more.",
     "sameAsMain": "Same as the main model",
     "maxReplies": "Replies per conversation",
     "maxRepliesHint": "After this many replies in one conversation the agent hands off to your team.",
@@ -74,8 +76,8 @@
     "topic_short": "At least 2 characters",
     "topic_long": "Up to 100 characters",
     "topic_markup": "Plain text only, without < or >",
-    "cap": "Monthly credit cap",
-    "capHint": "When the agent has used this many credits in a calendar month, it goes quiet and your team takes over. Owners and admins get one notification.",
+    "cap": "Monthly spending cap",
+    "capHint": "When the agent has spent this much of the AI balance in a calendar month, it goes quiet and your team takes over. Owners and admins get one notification.",
     "noCap": "No cap",
     "collectEmail": "Ask for an email before handing off",
     "collectEmailHint": "When the visitor hasn't shared an email, the agent asks for one so your team can follow up."
@@ -102,8 +104,8 @@
     "ratings": "Rated helpful",
     "up": "Helpful",
     "down": "Not helpful",
-    "credits": "Credits",
-    "creditsHint": "Used by the agent's replies",
+    "spent": "Spent",
+    "spentHint": "AI usage of the agent's replies",
     "byDay": "By day",
     "byDayHint": "Conversations the agent took part in, and how they ended.",
     "chart": "Chart",
@@ -416,8 +418,8 @@
     "what": "the agent playground",
     "chat": "Playground chat",
     "reset": "Start over",
-    "spent": "{{n}} credits",
-    "spentHint": "Credits used in this session",
+    "spent": "{{cost}} spent",
+    "spentHint": "AI usage in this session",
     "emptyTitle": "Say hello to {{name}}",
     "emptyBody": "Ask what your customers ask. Read-only tools run for real; tools that need confirmation stop at the action card.",
     "try1": "How do I reset my password?",
@@ -432,11 +434,12 @@
     "actionPending": "Would ask to confirm",
     "actionNote": "Not run in the playground",
     "handoff": "Handed off to your team here",
-    "replyCredits": "{{n}} credits",
+    "replyCost": "{{cost}}",
     "draftTitle": "Using your unsaved changes",
     "draftBody": "Replies follow the edits on the Behaviour page. Save them there when you are happy.",
     "draftBack": "Back to behaviour",
     "overrides": "Try different settings",
+    "answerAs": "Answer as",
     "overridesHint": "Changes here only affect this playground.",
     "overridesLink": "Change the real settings",
     "useSaved": "Use saved",
@@ -446,6 +449,6 @@
     "emailInvalid": "Enter a valid email",
     "verified": "Verified identity",
     "verifiedHint": "As if your site signed the visitor in. Unlocks verified-only tools.",
-    "note": "Each reply uses about {{n}} credits, counted as playground usage. Longer conversations and larger models use more."
+    "note": "Each reply costs about {{cost}} on the agent's model, counted as playground usage. Longer conversations and pricier models cost more."
   }
 }

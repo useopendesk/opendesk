@@ -1,0 +1,35 @@
+---
+/**
+ * The social card, 1200x630: the hero's app window standing in the hero's
+ * painting, cropped from the top left. `pnpm og` (scripts/og.mjs) photographs it
+ * into public/og.jpg. It exists only while that script runs (OG_CARDS=1), so a
+ * normal build ships no page here.
+ */
+import '../../styles/global.css';
+import Backdrop from '../../components/home/Backdrop.astro';
+import AppMock from '../../components/home/AppMock.astro';
+
+export function getStaticPaths() {
+  return process.env.OG_CARDS === '1' ? [{ params: { slug: undefined } }] : [];
+}
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>og</title>
+    <style is:global>
+      html, body { width: 1200px; height: 630px; overflow: hidden; margin: 0; }
+      astro-dev-toolbar { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="relative isolate h-[630px] w-[1200px] overflow-hidden" data-og-card>
+      <Backdrop name="roadside" priority sizes="1920px" class="absolute inset-0 -z-10 h-full w-full" style="object-position:50% 22%" />
+      <div class="absolute left-[56px] top-[44px] h-[800px] w-[1280px] overflow-hidden rounded-[14px] ring-1 ring-black/[0.08] shadow-[0_2px_6px_rgb(0_0_0/0.06),0_60px_120px_-40px_rgb(10_30_80/0.55)]">
+        <div class="h-full" data-seq><AppMock /></div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -63,5 +63,10 @@
   "rateUp": "Útil",
   "rateDown": "Não foi útil",
   "ratedThanks": "Obrigado pelo feedback",
-  "jumpLatest": "Ir para o mais recente"
+  "jumpLatest": "Ir para o mais recente",
+  "topicsTitle": "Como podemos ajudar?",
+  "topicsHint": "Escolha um tema para que sua mensagem chegue às pessoas certas.",
+  "placeholderTopic": "Escolha um tema para começar",
+  "changeTopic": "Mudar tema",
+  "offlineDefault": "No momento estamos ausentes. Deixe uma mensagem e responderemos assim que voltarmos."
 }

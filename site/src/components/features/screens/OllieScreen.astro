@@ -1,0 +1,531 @@
+---
+/**
+ * /features, "Ollie": the desktop app on All open with Katrin's ticket open,
+ * drawn 1:1 at 1280 x 804 for the Showcase stage. The list in its narrow form,
+ * the ticket view with the conversation, the composer and the properties
+ * panel, where Ollie's section holds its summary.
+ *
+ * Every value follows web/src: TicketRow (compact), MessageItem with
+ * TranslateButton and TranslatedNote, Composer with ComposerAiStatus and
+ * ComposerSources, OlliePanel. On the timeline (`data-step`) Katrin's German
+ * message is translated, Ollie drafts a reply in her language into the
+ * composer (the words stream in), the reply is sent and posts to the thread.
+ * Without the timeline (reduced motion, no JS) it holds on the finished draft.
+ */
+import AppWindow from '../../app/AppWindow.astro';
+import { ic, prioIcon, statusIcon, type Priority, type Tone } from '../../app/icons';
+import Ollie from '../../home/Ollie.astro';
+
+interface Row {
+  who: string;
+  subject: string;
+  preview: string;
+  time: string;
+  priority: Priority;
+  ai?: boolean;
+  unread?: boolean;
+  channel?: 'chat' | 'handoff' | 'api' | 'portal';
+  severity?: string;
+  sla?: { label: string; breached?: boolean };
+  tags?: { name: string; tone: Tone }[];
+  fresh?: number;
+  assignee?: { initials: string; tone: Tone };
+  wait?: 'ollie' | 'held';
+  active?: boolean;
+}
+
+// All open, as the inbox stop leaves it.
+const rows: Row[] = [
+  {
+    who: 'Lukas Weber', subject: 'Cover came loose on my A5 notebook', preview: 'Hi, the linen cover on the notebook I ordered last week is coming off at the spine.',
+    time: '3m', priority: 'normal', ai: true, unread: true, assignee: { initials: 'SP', tone: 'amber' },
+  },
+  {
+    who: 'Noah Fischer', subject: 'Shared notebook won’t open on iPhone', preview: 'It just spins after the update. Other notebooks open fine.',
+    time: '3m', priority: 'normal', ai: true, unread: true, channel: 'chat', wait: 'ollie', fresh: 1, tags: [{ name: 'ios', tone: 'blue' }],
+  },
+  {
+    who: 'Hugo Moreau', subject: 'Charged twice for my upgrade', preview: 'Is anyone there?',
+    time: '5m', priority: 'high', ai: true, unread: true, channel: 'handoff', wait: 'held', fresh: 2, assignee: { initials: 'JB', tone: 'indigo' },
+    tags: [{ name: 'billing', tone: 'orange' }],
+  },
+  {
+    who: 'Katrin Vogel', subject: 'Synchronisierung zwischen iPad und Mac hängt', preview: 'Hallo Margin-Team, seit dem letzten Update werden meine Notizen nicht mehr synchronisiert.',
+    time: '11m', priority: 'normal', ai: true, unread: true, sla: { label: '15m' }, active: true,
+  },
+  {
+    who: 'Elena Rossi', subject: 'Can’t export notebook to PDF', preview: 'When I export our “Client brief” notebook, the images are missing from the PDF.',
+    time: '17m', priority: 'high', unread: true, severity: '3', sla: { label: '28m over', breached: true }, assignee: { initials: 'MC', tone: 'violet' },
+  },
+  {
+    who: 'Freya Nilsen', subject: 'API returns 429 when syncing notes', preview: 'Hi Freya, thanks for the request log. The limit you’re hitting is per endpoint, not per key.',
+    time: '25m', priority: 'high', channel: 'api', assignee: { initials: 'PR', tone: 'teal' },
+  },
+  {
+    who: 'Paula Martins', subject: 'Keyboard shortcuts on Windows', preview: 'On Windows every shortcut uses Ctrl where the Mac uses Cmd, so Ctrl K opens search.',
+    time: '34m', priority: 'low', ai: true, unread: true, channel: 'portal',
+  },
+  {
+    who: 'Tom Becker', subject: 'Invoice address for Germany', preview: 'We moved offices, so the next invoice needs our new address in Berlin.',
+    time: '51m', priority: 'low', unread: true, sla: { label: '31m' }, assignee: { initials: 'SP', tone: 'amber' },
+  },
+  {
+    who: 'Chloé Dubois', subject: 'Feature request: nested tags', preview: 'Thanks! Nested tags would make the sidebar so much calmer.',
+    time: '1h', priority: 'low', channel: 'chat',
+  },
+];
+
+const channelSvg = {
+  api: '<path d="M5.5 3.5C4 3.5 4 4.5 4 6s-1.5 2-1.5 2S4 8.5 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 4.5 12 6s1.5 2 1.5 2S12 8.5 12 10s0 2.5-1.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  portal: '<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+};
+const channelIcon = (c: 'api' | 'portal') => `<svg class="dm-ic ol-chan" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">${channelSvg[c]}</svg>`;
+// lucide glyphs this screen adds: Loader2 (sending, translating) and Square (Stop).
+const lucide = (body: string, size: number, cls = '', sw = 2) =>
+  `<svg class="dm-ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const spinner = (size: number) => lucide('<path d="M21 12a9 9 0 1 1-6.219-8.56"/>', size, 'ol-spin');
+const stop = '<svg class="dm-ic" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>';
+const sparkle = (size: number, cls = '') => ic('sparkles', size, `dm-violet ${cls}`, 1.75);
+const x8 = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg>';
+
+const katrin = 'k.vogel@vogel-architektur.de';
+// Katrin's message as she wrote it, and as Ollie translates it.
+const original = [
+  'Hallo Margin-Team,',
+  'seit dem letzten Update werden meine Notizen nicht mehr zwischen iPad und Mac synchronisiert. Seit gestern zeigt das iPad „Synchronisierung pausiert“, und neue Notizen vom Mac kommen dort nicht an.',
+  'Ich habe die App und das iPad schon neu gestartet. Können Sie sich das bitte ansehen?',
+  'Viele Grüße<br />Katrin Vogel',
+];
+const translated = [
+  'Hello Margin team,',
+  'since the last update my notes no longer sync between my iPad and Mac. Since yesterday the iPad has shown “Sync paused”, and new notes from the Mac don’t arrive there.',
+  'I’ve already restarted the app and the iPad. Could you please take a look?',
+  'Best regards<br />Katrin Vogel',
+];
+// Ollie writes in the language of the customer's last message.
+const reply = [
+  'Hallo Katrin,',
+  'danke für Ihre Nachricht, und entschuldigen Sie die Unannehmlichkeiten. Meistens hilft es, sich auf dem iPad ab- und wieder anzumelden. Dadurch startet eine neue Synchronisierung.',
+  'Falls das nicht reicht, öffnen Sie Einstellungen, Synchronisierung und wählen Sie Jetzt synchronisieren.',
+  'Viele Grüße<br />Maya',
+];
+---
+<div class="absolute inset-0" data-seq data-hold="4200">
+  <AppWindow active="open" crumbs={['Inbox', 'All open', '#2465']} counts={{ open: '37' }} width={1280}>
+    <!-- The list, narrow beside the open ticket -->
+    <section class="ol-list">
+      <div class="ol-bar">
+        <Fragment set:html={ic('inbox', 16, 'dm-fg3')} />
+        <span class="ol-title"><span class="ol-h">All open</span><span class="dm-mono ol-count">37</span></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('search', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('funnel', 14)} /></span>
+        <span class="dm-iconbtn"><Fragment set:html={ic('sort', 14)} /></span>
+      </div>
+      <div class="ol-rows">
+        {rows.map((r) => (
+          <div class={`ol-row ${r.active ? 'ol-row-on' : ''}`}>
+            {r.active && <span class="ol-glide"></span>}
+            <div class="ol-row-icons">
+              <span class="ol-slot"><Fragment set:html={statusIcon('open')} /></span>
+              <span class="ol-slot">
+                <Fragment set:html={prioIcon(r.priority)} />
+                {r.ai && <span class="ol-setby"><Ollie size={10} eyes={false} /></span>}
+              </span>
+            </div>
+            <div class="ol-row-main">
+              <div class="ol-line">
+                <span class={`ol-who ${r.unread ? 'ol-unread' : ''}`}>{r.who}</span>
+                {(r.channel === 'chat' || r.channel === 'handoff') && (
+                  <span class="dm-chatbadge ol-badge dm-t-blue">
+                    <Fragment set:html={ic(r.channel === 'handoff' ? 'hand' : 'messageCircle', 12, '', 2.2)} />
+                    {r.channel === 'handoff' ? 'Wants a person' : 'Live chat'}
+                  </span>
+                )}
+                {(r.channel === 'api' || r.channel === 'portal') && <Fragment set:html={channelIcon(r.channel)} />}
+                <span class="dm-grow"></span>
+                <span class="ol-end">
+                  {r.assignee && <span class={`ol-av dm-chip dm-t-${r.assignee.tone}`}>{r.assignee.initials}</span>}
+                  <span class="dm-mono ol-time">{r.time}</span>
+                </span>
+              </div>
+              <div class="ol-line ol-l2">
+                {r.severity && <span class="dm-mono dm-sev dm-chip dm-t-amber">S{r.severity}</span>}
+                <span class={`ol-subject ${r.unread ? 'ol-unread' : ''}`}>{r.subject}</span>
+                {r.wait && r.tags && (
+                  <span class="ol-labels">{r.tags.map((t) => <span class={`dm-label dm-chip dm-t-${t.tone}`}><i></i>{t.name}</span>)}</span>
+                )}
+              </div>
+              <div class="ol-line ol-l3">
+                <span class="ol-preview">{r.preview}</span>
+                {r.fresh ? <span class="dm-newcount ol-new dm-t-blue">{r.fresh} new</span> : null}
+                {r.wait === 'ollie' && <span class="dm-olliepill ol-pill dm-t-violet"><span class="dm-ping dm-ping-violet dm-ping-6"><i></i><i></i></span>Ollie is replying</span>}
+                {r.wait === 'held' && <span class="ol-held"><i></i><span class="dm-truncate">With Jonas</span><span class="dm-mono ol-held-t" data-clock="301">5m 01s</span></span>}
+                {r.sla && <span class={`dm-mono dm-sla dm-chip ${r.sla.breached ? 'dm-t-red' : 'dm-t-amber'}`}><i class={r.sla.breached ? 'dm-pulse' : ''}></i>{r.sla.label}</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- The ticket -->
+    <div class="ol-detail">
+      <header class="ol-thead">
+        <span class="dm-iconbtn"><Fragment set:html={ic('x', 16)} /></span>
+        <span class="ol-thead-nav">
+          <span class="dm-iconbtn"><Fragment set:html={ic('chevronUp', 16)} /></span>
+          <span class="dm-iconbtn"><Fragment set:html={ic('chevronDown', 16)} /></span>
+        </span>
+        <span class="dm-mono ol-thead-pos">4 / 37</span>
+        <span class="ol-thead-sep"></span>
+        <span class="ol-thead-title">
+          <span class="dm-mono ol-thead-num">#2465</span>
+          <span class="ol-thead-h">Synchronisierung zwischen iPad und Mac hängt</span>
+          <span class="ol-thead-pills">
+            <span class="dm-pill dm-chip dm-t-blue"><Fragment set:html={statusIcon('open', 12)} />Open</span>
+            <span class="dm-pill dm-chip dm-t-blue"><Fragment set:html={prioIcon('normal', 12)} />Normal</span>
+          </span>
+        </span>
+        <span class="dm-btn ol-solve"><Fragment set:html={ic('circleCheck', 14, 'dm-green')} />Solve</span>
+        <span class="ol-thead-acts">
+          <span class="dm-iconbtn"><Fragment set:html={ic('alarm', 14)} /></span>
+          <span class="dm-iconbtn"><Fragment set:html={ic('ellipsis', 16)} /></span>
+        </span>
+        <span class="dm-iconbtn dm-fg"><Fragment set:html={ic('panelRight', 16)} /></span>
+      </header>
+
+      <div class="ol-dbody">
+        <div class="ol-thread">
+          <!-- Timeline, kept at its end: what arrives pushes the rest up -->
+          <div class="ol-log">
+            <div class="ol-day"><i></i><span class="dm-caps">Today</span><i></i></div>
+            <article class="ol-msg">
+              <header class="ol-msg-head">
+                <span class="ol-av ol-av-md dm-chip dm-t-teal">KV</span>
+                <span class="ol-msg-names"><span class="ol-msg-who">Katrin Vogel</span><span class="ol-msg-mail">{katrin}</span></span>
+                <span class="ol-tr" data-step="0" data-until="1" data-wait="0"><Fragment set:html={sparkle(12)} />Translate</span>
+                <span class="ol-tr s-swap" data-step="1" data-until="2" data-wait="1400"><Fragment set:html={spinner(12)} />Translating</span>
+                <span class="dm-mono ol-msg-time">8:52 AM</span>
+              </header>
+              <div class="ol-msg-body">
+                <div class="ol-lang ol-lang-de" data-step="0" data-until="2" data-wait="0">
+                  {original.map((p) => <p set:html={p} />)}
+                </div>
+                <div class="ol-lang ol-lang-en" data-step="2" data-wait="1000">
+                  <p class="ol-note"><Fragment set:html={sparkle(12)} />Translated from German<span>·</span><span class="ol-note-link">Show original</span></p>
+                  {translated.map((p) => <p set:html={p} />)}
+                </div>
+              </div>
+            </article>
+
+            <!-- The reply, once sent -->
+            <div class="ol-post" data-step="7" data-until="99" data-wait="700"><div><div class="ol-post-in">
+              <article class="ol-msg">
+                <header class="ol-msg-head">
+                  <span class="ol-av ol-av-md dm-chip dm-t-violet">MC</span>
+                  <span class="ol-msg-names"><span class="ol-msg-who">Maya Chen</span><span class="ol-msg-mail">to {katrin}</span></span>
+                  <span class="ol-sent"><Fragment set:html={ic('check', 12, 'dm-green')} />Sent</span>
+                  <span class="dm-mono ol-msg-time">9:03 AM</span>
+                </header>
+                <div class="ol-msg-body">{reply.map((p) => <p set:html={p} />)}</div>
+              </article>
+            </div></div></div>
+          </div>
+
+          <!-- Composer -->
+          <div class="ol-composer">
+            <span class="ol-mark" data-step="7" data-until="99" data-wait="700"></span>
+            <div class="ol-composer-top">
+              <span class="ol-seg"><span class="ol-seg-on">Reply</span><span>Note</span></span>
+              <span class="ol-composer-to">To <span class="dm-mono">{katrin}</span></span>
+              <span class="ol-composer-cc">Cc / Bcc</span>
+            </div>
+            <div class="ol-editor">
+              <div class="ol-ph" data-step="0" data-until="3" data-wait="0">Write a reply. Type / for saved replies.</div>
+              <div class="ol-ph s-swap" data-step="7" data-until="99" data-wait="700">Write a reply. Type / for saved replies.</div>
+              <div class="ol-draft" data-step="3" data-wait="1500"><div>
+                <div class="ol-draft-text" data-stream="26">{reply.map((p) => <p set:html={p} />)}</div>
+              </div></div>
+            </div>
+            <div class="ol-composer-bar">
+              <span class="ol-fmt"><Fragment set:html={ic('bold', 15)} /></span>
+              <span class="ol-fmt"><Fragment set:html={ic('italic', 15)} /></span>
+              <span class="ol-fmt"><Fragment set:html={ic('link', 15)} /></span>
+              <span class="ol-fmt"><Fragment set:html={ic('list', 15)} /></span>
+              <span class="ol-fmt"><Fragment set:html={ic('listOrdered', 15)} /></span>
+              <span class="ol-ai"><Fragment set:html={sparkle(14)} />AI</span>
+              <span class="dm-iconbtn"><Fragment set:html={ic('paperclip', 15)} /></span>
+              <span class="dm-iconbtn"><Fragment set:html={ic('savedReplies', 15)} /></span>
+              <span class="ol-composer-sep"></span>
+              <span class="ol-send">
+                <span class="ol-send-main">
+                  <span class="ol-send-label">Send</span>
+                  <span class="ol-send-phase" data-step="5" data-until="6" data-wait="1700"><Fragment set:html={spinner(14)} /></span>
+                  <span class="ol-send-phase" data-step="6" data-until="7" data-wait="600"><Fragment set:html={ic('check', 14, '', 2.5)} /></span>
+                </span>
+                <span class="ol-send-more"><Fragment set:html={ic('chevronDown', 14)} /></span>
+              </span>
+            </div>
+            <!-- ComposerSources -->
+            <div class="ol-sources" data-step="4" data-wait="400"><div><div class="ol-sources-in">
+              <span class="ol-based">Based on</span>
+              <span class="ol-source"><span class="ol-source-ic"><Fragment set:html={ic('bookOpen', 10, 'dm-violet')} /></span>Sync is paused or stuck</span>
+              <span class="ol-source-x"><Fragment set:html={ic('x', 12)} /></span>
+            </div></div></div>
+            <!-- ComposerAiStatus -->
+            <div class="ol-status" data-step="3" data-until="4"><div><div class="ol-status-in">
+              <span class="ol-workbar"><i></i></span>
+              <Fragment set:html={sparkle(14, 'dm-pulse')} />
+              <span class="ol-shimmer">Drafting a reply</span>
+              <span class="dm-mono ol-elapsed"></span>
+              <span class="ol-stop"><Fragment set:html={stop} />Stop</span>
+            </div></div></div>
+          </div>
+        </div>
+
+        <!-- Properties -->
+        <aside class="ol-props">
+          <section class="ol-props-main">
+            <div class="ol-prop"><span class="ol-prop-k">Status</span><span class="ol-prop-v"><Fragment set:html={statusIcon('open')} />Open</span></div>
+            <div class="ol-prop"><span class="ol-prop-k">Priority</span><span class="ol-prop-v"><Fragment set:html={prioIcon('normal')} />Normal<span class="ol-setby-inline"><Ollie size={12} eyes={false} /></span></span></div>
+            <div class="ol-prop"><span class="ol-prop-k">Severity</span><span class="ol-prop-v"><i class="ol-nosev"></i><span class="dm-fg4">No severity</span></span></div>
+            <div class="ol-prop"><span class="ol-prop-k">Assignee</span><span class="ol-prop-v"><span class="ol-av ol-av-xs dm-chip dm-t-violet">MC</span>Maya Chen</span></div>
+            <div class="ol-prop"><span class="ol-prop-k">Team</span><span class="ol-prop-v"><Fragment set:html={ic('users', 14, 'dm-fg3')} />Support</span></div>
+            <div class="ol-prop ol-prop-labels"><span class="ol-prop-k">Labels</span><span class="ol-prop-tags">
+              <span class="dm-label dm-chip dm-t-blue"><i></i>sync<Fragment set:html={x8} /></span>
+              <span class="ol-add">Add</span>
+            </span></div>
+          </section>
+          <section class="ol-props-fields">
+            <div class="dm-caps">Fields</div>
+            <div class="ol-field"><span class="ol-field-k">Resolution<i class="ol-req"></i></span><span class="ol-field-v dm-fg4">Empty</span></div>
+            <div class="ol-field-more">Show 8 empty fields</div>
+          </section>
+          <!-- OlliePanel -->
+          <section class="ol-panel">
+            <div class="ol-panel-head">
+              <Ollie size={22} />
+              <span><span class="ol-panel-name">Ollie</span><span class="ol-panel-sub">Here to help with this ticket</span></span>
+            </div>
+            <div class="ol-panel-body">
+              <div class="ol-summary">
+                <p class="ol-summary-text">Katrin’s notes stopped syncing between her iPad and Mac after the last update. Since yesterday the iPad shows “Sync paused”.</p>
+                <ul class="ol-points">
+                  <li><i></i><span>New notes from the Mac never reach the iPad</span></li>
+                  <li><i></i><span>She already restarted the app and the iPad</span></li>
+                </ul>
+                <div class="ol-meta">
+                  <span class="ol-mood dm-t-gray">Neutral</span>
+                  <span class="ol-updated">Updated 9 minutes ago</span>
+                  <span class="ol-refresh">Refresh</span>
+                </div>
+              </div>
+              <div><span class="dm-btn dm-btn-sm">Suggest changes</span></div>
+              <div class="ol-ask">Ask Ollie about this ticket</div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </AppWindow>
+</div>
+
+<style is:global>
+  /* The list (TicketRow, compact) beside the ticket view; the window and shared
+     pieces are in app/app.css. */
+  .ol-list { display: flex; width: 380px; flex-shrink: 0; flex-direction: column; border-right: 1px solid var(--dm-line); }
+  .ol-bar { display: flex; height: 49px; flex-shrink: 0; align-items: center; gap: 6px; border-bottom: 1px solid var(--dm-line); padding: 0 10px 0 16px; }
+  .ol-title { margin-left: 4px; display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 8px; }
+  .ol-h { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .ol-count { font-size: 11.5px; color: var(--dm-fg-4); }
+  .ol-rows { position: relative; min-height: 0; flex: 1; overflow: hidden; }
+  .ol-row { position: relative; display: flex; gap: 10px; overflow: hidden; border-bottom: 1px solid var(--dm-line-soft); padding: 10px 12px 10px 14px; }
+  .ol-row-on { background: var(--dm-active); }
+  .ol-glide { position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 0 2px 2px 0; background: var(--dm-fg); }
+  .ol-row-icons { display: flex; width: 16px; flex-shrink: 0; flex-direction: column; align-items: center; gap: 7px; padding-top: 1px; }
+  .ol-slot { position: relative; display: flex; width: 16px; height: 16px; flex-shrink: 0; align-items: center; justify-content: center; }
+  .ol-setby { position: absolute; right: -6px; top: -6px; display: flex; border-radius: 9999px; box-shadow: 0 0 0 1px var(--dm-surface); }
+  .ol-setby .ollie *, .ol-setby-inline .ollie * { animation: none !important; }
+  .ol-row-main { min-width: 0; flex: 1; }
+  .ol-line { display: flex; align-items: center; gap: 6px; }
+  .ol-l2 { margin-top: 2px; min-width: 0; }
+  .ol-l3 { margin-top: 4px; }
+  .ol-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dm-fg-2); }
+  .ol-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dm-fg); }
+  .ol-unread { font-weight: 500; color: var(--dm-fg); }
+  .ol-chan { color: var(--dm-fg-3); }
+  .ol-end { display: flex; height: 16px; width: 60px; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 8px; }
+  .ol-time { white-space: nowrap; font-size: 10.5px; color: var(--dm-fg-4); }
+  .ol-preview { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--dm-fg-3); }
+  .ol-labels { margin-left: auto; display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding-left: 4px; }
+  .ol-badge { display: inline-flex; height: 18px; flex-shrink: 0; align-items: center; gap: 4px; border-radius: 5px; padding: 0 6px; font-size: 10.5px; font-weight: 500; }
+  .ol-new { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; border-radius: 9999px; padding: 0 6px; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ol-pill { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px; font-size: 11px; font-weight: 500; }
+  .ol-held {
+    display: inline-flex; height: 20px; min-width: 0; align-items: center; gap: 6px; border-radius: 9999px; padding: 0 8px;
+    background: color-mix(in oklab, var(--dm-amber) 10%, transparent); font-size: 10.5px; font-weight: 500;
+    color: color-mix(in oklab, var(--dm-amber) 82%, var(--dm-fg));
+  }
+  .ol-held i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 9999px; background: var(--dm-amber); }
+  .ol-held-t { flex-shrink: 0; opacity: 0.8; }
+
+  /* Avatars: initials on the person's tint (sm in rows, md on messages). */
+  .ol-av { position: relative; display: inline-flex; width: 16px; height: 16px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 9999px; font-size: 7.5px; font-weight: 600; letter-spacing: -0.02em; }
+  .ol-av-md { width: 24px; height: 24px; font-size: 9.5px; }
+
+  /* Ticket view */
+  .ol-detail { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  .ol-thead { display: flex; height: 48px; flex-shrink: 0; align-items: center; border-bottom: 1px solid var(--dm-line); padding: 0 12px; }
+  .ol-thead-nav { margin-left: 8px; display: flex; }
+  .ol-thead-pos { margin-left: 4px; font-size: 11px; color: var(--dm-fg-4); white-space: nowrap; }
+  .ol-thead-sep { margin: 0 12px; width: 1px; height: 20px; flex-shrink: 0; background: var(--dm-line); }
+  .ol-thead-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; }
+  .ol-thead-num { flex-shrink: 0; font-size: 11.5px; color: var(--dm-fg-3); }
+  .ol-thead-h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .ol-thead-pills { margin-left: 4px; display: flex; flex-shrink: 0; gap: 6px; }
+  .ol-solve { margin-left: 8px; }
+  .ol-thead-acts { margin: 0 8px 0 4px; display: flex; gap: 4px; }
+  .ol-dbody { display: flex; min-height: 0; flex: 1; }
+
+  /* Thread: the log keeps its end in view above the composer. */
+  .ol-thread { display: flex; width: 350px; flex-shrink: 0; flex-direction: column; overflow: hidden; }
+  .ol-log { display: flex; min-height: 0; flex: 1; flex-direction: column; justify-content: flex-end; overflow: hidden; padding: 20px 20px 8px; }
+  .ol-day { display: flex; flex-shrink: 0; align-items: center; gap: 12px; padding: 8px 0; margin-bottom: 8px; }
+  .ol-day i { height: 1px; flex: 1; background: var(--dm-line-soft); }
+  .ol-msg { flex-shrink: 0; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); }
+  .ol-msg-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 0; }
+  .ol-msg-names { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 8px; }
+  .ol-msg-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+  .ol-msg-mail { min-width: 0; flex-shrink: 4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--dm-fg-3); }
+  .ol-msg-time { flex-shrink: 0; font-size: 11px; color: var(--dm-fg-4); }
+  .ol-msg-body { display: grid; padding: 4px 16px 14px 50px; font-size: 13.5px; line-height: 21.6px; }
+  .ol-msg-body p + p { margin-top: 8.7px; }
+  .ol-lang { grid-area: 1 / 1; }
+  .ol-tr { display: inline-flex; height: 20px; flex-shrink: 0; align-items: center; gap: 4px; border-radius: 4px; padding: 0 6px; font-size: 11px; color: var(--dm-fg-3); opacity: 0.8; }
+  .ol-note { margin-bottom: 6px; display: flex; align-items: center; gap: 6px; font-size: 11px; line-height: 16px; color: var(--dm-fg-4); }
+  .ol-msg-body .ol-note + p { margin-top: 0; }
+  .ol-sent { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; font-size: 11px; color: var(--dm-fg-4); }
+
+  /* The sent reply opens in at the end of the log. */
+  .ol-post { display: grid; grid-template-rows: 1fr; flex-shrink: 0; }
+  .ol-post > div { min-height: 0; overflow: hidden; }
+  .ol-post-in { padding-top: 8px; }
+
+  /* Composer */
+  .ol-composer { position: relative; flex-shrink: 0; margin: 0 20px 15px; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); box-shadow: var(--dm-shadow-xs); }
+  .ol-mark { display: none; }
+  .ol-composer-top { display: flex; height: 40px; align-items: center; gap: 8px; border-bottom: 1px solid var(--dm-line-soft); padding: 0 8px; font-size: 12px; line-height: 16px; }
+  .ol-seg { display: flex; height: 28px; flex-shrink: 0; align-items: center; border-radius: 5px; background: var(--dm-hover); padding: 2px; font-weight: 500; color: var(--dm-fg-3); }
+  .ol-seg span { display: flex; height: 24px; align-items: center; border-radius: 5px; padding: 0 8px; }
+  .ol-seg .ol-seg-on { background: var(--dm-surface); color: var(--dm-fg); box-shadow: 0 0 0 1px var(--dm-line), 0 1px 2px rgb(0 0 0 / 0.06); }
+  .ol-composer-to { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dm-fg-3); }
+  .ol-composer-to .dm-mono { color: var(--dm-fg-2); }
+  .ol-composer-cc { flex-shrink: 0; padding: 0 6px; color: var(--dm-fg-3); }
+  .ol-editor { display: flex; max-height: 300px; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+  .ol-ph { height: 44px; flex-shrink: 0; padding: 10px 12px 0; font-size: 13px; color: var(--dm-fg-4); white-space: nowrap; overflow: hidden; }
+  .ol-draft { display: grid; grid-template-rows: 1fr; flex-shrink: 0; }
+  .ol-draft > div { min-height: 0; overflow: hidden; }
+  .ol-draft-text { min-height: 96px; padding: 10px 12px 8px; font-size: 13px; line-height: 20.8px; }
+  .ol-draft-text p + p { margin-top: 8.4px; }
+  .ol-composer-bar { display: flex; height: 36px; align-items: center; padding: 0 6px 6px; color: var(--dm-fg-3); }
+  .ol-fmt { display: flex; width: 16px; height: 28px; align-items: center; justify-content: center; margin-right: 2px; }
+  .ol-ai { margin: 0 2px; display: flex; height: 28px; align-items: center; gap: 6px; padding: 0 8px; font-size: 12px; transition: opacity 200ms ease; }
+  .ol-composer-bar .dm-iconbtn { color: var(--dm-fg-3); }
+  .ol-composer-sep { margin: 0 8px; width: 1px; height: 16px; background: var(--dm-line); }
+  .ol-send { display: flex; transition: opacity 200ms ease; }
+  .ol-send > span { display: flex; height: 28px; align-items: center; background: var(--dm-inverse); color: var(--dm-inverse-fg); }
+  .ol-send-main { position: relative; display: grid !important; place-items: center; border-radius: 5px 0 0 5px; padding: 0 10px; font-size: 12.5px; font-weight: 500; }
+  .ol-send-main > * { grid-area: 1 / 1; }
+  .ol-send-more { width: 28px; justify-content: center; border-radius: 0 5px 5px 0; border-left: 1px solid color-mix(in oklab, var(--dm-inverse-fg) 15%, transparent); }
+  .ol-send-label { transition: opacity 150ms ease; }
+  .ol-spin { animation: ol-spin 0.8s linear infinite; }
+  @keyframes ol-spin { to { transform: rotate(360deg); } }
+
+  /* ComposerSources and ComposerAiStatus, under the toolbar */
+  .ol-sources, .ol-status { display: grid; grid-template-rows: 1fr; }
+  .ol-sources > div, .ol-status > div { min-height: 0; overflow: hidden; }
+  .ol-sources-in { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; }
+  .ol-based { font-size: 11px; color: var(--dm-fg-4); }
+  .ol-source { display: inline-flex; height: 20px; align-items: center; gap: 4px; border: 1px solid var(--dm-line); border-radius: 4px; background: var(--dm-surface); padding: 0 6px 0 4px; font-size: 11px; color: var(--dm-fg-2); }
+  .ol-source-ic { display: flex; width: 14px; height: 14px; align-items: center; justify-content: center; border-radius: 3px; background: color-mix(in oklab, var(--dm-violet) 10%, transparent); }
+  .ol-source-x { display: flex; width: 20px; height: 20px; align-items: center; justify-content: center; color: var(--dm-fg-4); }
+  .ol-status-in { position: relative; display: flex; height: 36px; align-items: center; gap: 8px; border-top: 1px solid var(--dm-line-soft); padding: 0 12px; font-size: 12px; }
+  .ol-workbar { position: absolute; left: 0; right: 0; top: -1px; height: 1px; overflow: hidden; }
+  .ol-workbar i { display: block; width: 33%; height: 100%; background: var(--dm-violet); animation: ol-bar 1.4s ease-in-out infinite; }
+  @keyframes ol-bar { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  .ol-shimmer {
+    flex-shrink: 0; font-weight: 500; color: transparent; -webkit-background-clip: text; background-clip: text;
+    background-image: linear-gradient(90deg, var(--dm-fg-3) 35%, var(--dm-fg) 50%, var(--dm-fg-3) 65%); background-size: 200% 100%;
+    animation: ol-shimmer 1.6s linear infinite;
+  }
+  @keyframes ol-shimmer { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  .ol-stop { margin-left: auto; display: inline-flex; height: 24px; align-items: center; gap: 6px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--dm-fg-2); }
+
+  /* The draft's elapsed time (useElapsed), counted in tenths by CSS. */
+  @property --ol-s { syntax: '<integer>'; inherits: false; initial-value: 0; }
+  @property --ol-t { syntax: '<integer>'; inherits: false; initial-value: 0; }
+  .ol-elapsed { flex-shrink: 0; font-size: 10.5px; color: var(--dm-fg-4); counter-reset: s var(--ol-s) t var(--ol-t); }
+  .ol-elapsed::after { content: counter(s) '.' counter(t) 's'; }
+  .ol-status.on .ol-elapsed { animation: ol-secs 10s steps(10, jump-none) forwards, ol-tenths 1s steps(10, jump-none) infinite; }
+  @keyframes ol-secs { from { --ol-s: 0; } to { --ol-s: 9; } }
+  @keyframes ol-tenths { from { --ol-t: 0; } to { --ol-t: 9; } }
+
+  /* Properties */
+  .ol-props { min-width: 0; flex: 1; overflow: hidden; border-left: 1px solid var(--dm-line); }
+  .ol-props-main { border-bottom: 1px solid var(--dm-line-soft); padding: 10px; }
+  .ol-prop { display: flex; height: 32px; align-items: center; gap: 4px; }
+  .ol-prop-labels { height: 38px; }
+  .ol-prop-k { width: 76px; flex-shrink: 0; font-size: 12px; color: var(--dm-fg-3); }
+  .ol-prop-v { display: flex; height: 28px; min-width: 0; flex: 1; align-items: center; gap: 8px; border-radius: 5px; padding: 0 8px; font-size: 12.5px; }
+  .ol-prop-tags { display: flex; align-items: center; gap: 4px; padding-left: 4px; }
+  .ol-setby-inline { display: flex; margin-left: -2px; }
+  .ol-nosev { width: 22px; height: 16px; flex-shrink: 0; border: 1px dashed var(--dm-line-strong); border-radius: 4px; }
+  .ol-add { display: inline-flex; height: 18px; align-items: center; border: 1px dashed var(--dm-line-strong); border-radius: 4px; padding: 0 6px; font-size: 11px; color: var(--dm-fg-3); }
+  .ol-props-fields { border-bottom: 1px solid var(--dm-line-soft); padding: 10px 10px 8px; }
+  .ol-field { display: flex; height: 28px; align-items: center; gap: 4px; padding-left: 6px; }
+  .ol-field-k { display: flex; width: 70px; flex-shrink: 0; align-items: center; gap: 4px; font-size: 12px; color: var(--dm-fg-3); }
+  .ol-field-v { padding: 0 8px; font-size: 12.5px; }
+  .ol-req { width: 4px; height: 4px; flex-shrink: 0; border-radius: 9999px; background: var(--dm-amber); }
+  .ol-field-more { margin-top: 2px; display: flex; height: 24px; align-items: center; padding: 0 10px; font-size: 11.5px; color: var(--dm-fg-4); }
+
+  /* OlliePanel: the blob, its status line, the stored summary, Ask. */
+  .ol-panel { border-bottom: 1px solid var(--dm-line-soft); }
+  .ol-panel-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  .ol-panel-name { display: block; font-size: 12.5px; line-height: 16px; font-weight: 500; }
+  .ol-panel-sub { display: block; font-size: 11.5px; line-height: 16px; color: var(--dm-fg-4); }
+  .ol-panel-body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+  .ol-summary { display: flex; flex-direction: column; gap: 8px; }
+  .ol-summary-text { font-size: 12.5px; line-height: 19px; }
+  .ol-points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .ol-points li { display: flex; gap: 8px; font-size: 12px; line-height: 18px; color: var(--dm-fg-2); }
+  .ol-points i { margin-top: 7px; width: 4px; height: 4px; flex-shrink: 0; border-radius: 9999px; background: var(--dm-violet); }
+  .ol-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dm-fg-4); }
+  .ol-mood { display: inline-flex; height: 18px; align-items: center; border-radius: 4px; padding: 0 6px; font-size: 10.5px; font-weight: 500; background: color-mix(in oklab, var(--t) 10%, transparent); color: color-mix(in oklab, var(--t) 82%, var(--dm-fg)); }
+  .ol-updated { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ol-refresh { font-size: 11.5px; }
+  .ol-ask { display: flex; height: 32px; align-items: center; border: 1px solid var(--dm-line); border-radius: 7px; background: var(--dm-surface); padding: 0 10px; font-size: 12.5px; color: var(--dm-fg-4); }
+
+  /* The timeline. Hidden states apply only while it runs (lib/scenes.ts). */
+  .seq-js .ol-lang { transition: opacity 320ms ease; }
+  .seq-js .ol-lang:not(.on), .seq-js .ol-lang.off { display: block !important; opacity: 0; }
+  .seq-js .ol-ph[data-step]:not(.on) { display: none; }
+  .seq-js .ol-draft { transition: grid-template-rows 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 260ms ease; }
+  .seq-js .ol-draft:not(.on), .seq-js .ol-composer:has(.ol-mark.on) .ol-draft { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js .ol-draft-text .w:not(.on) { display: none; }
+  .seq-js .ol-draft-text .w.on { animation: ol-word 240ms ease; }
+  @keyframes ol-word { from { opacity: 0; } }
+  .seq-js .ol-sources, .seq-js .ol-status { transition: grid-template-rows 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease; }
+  .seq-js .ol-sources:not(.on), .seq-js .ol-composer:has(.ol-mark.on) .ol-sources { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js .ol-status:not(.on) { grid-template-rows: 0fr; opacity: 0; }
+  .seq-js .ol-status.off { display: grid !important; grid-template-rows: 0fr; opacity: 0; }
+  .seq-js .ol-composer:has(.ol-status.on:not(.off)) .ol-ai { opacity: 0.4; }
+  .seq-js .ol-composer:not(:has(.ol-sources.on)) .ol-send,
+  .seq-js .ol-composer:has(.ol-mark.on) .ol-send { opacity: 0.4; }
+  .seq-js .ol-send-phase { transition: opacity 150ms ease; }
+  .seq-js .ol-send-phase:not(.on), .seq-js .ol-send-phase.off { display: flex !important; opacity: 0; }
+  .ol-send-phase { display: flex; }
+  [data-seq]:not(.seq-js) .ol-send-phase { display: none; }
+  .seq-js .ol-send:has(.ol-send-phase.on:not(.off)) .ol-send-label { opacity: 0; }
+  .seq-js .ol-post { transition: grid-template-rows 520ms cubic-bezier(0.16, 1, 0.3, 1), opacity 320ms ease 80ms; }
+  .seq-js .ol-post:not(.on) { grid-template-rows: 0fr; opacity: 0; }
+</style>

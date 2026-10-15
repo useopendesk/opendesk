@@ -18,12 +18,24 @@
     "waitingShort_one": "{{count}} waiting in chat",
     "waitingShort_other": "{{count}} waiting in chat",
     "waitingCount_one": "{{count}} live chat waiting for a reply",
-    "waitingCount_other": "{{count}} live chats waiting for a reply"
+    "waitingCount_other": "{{count}} live chats waiting for a reply",
+    "teams": "Teams",
+    "myTeams": "My teams",
+    "yourTeams": "Your teams",
+    "otherTeams": "Other teams",
+    "privateTeam": "Private team",
+    "teamCounts": "{{unassigned}} unassigned, {{open}} open",
+    "manageTeams": "Manage teams",
+    "switchTeam": "Switch team",
+    "teamHint": "Team"
   },
   "workspaces": {
     "title": "Workspaces",
     "create": "Create workspace",
-    "settings": "Workspace settings"
+    "settings": "Workspace settings",
+    "current": "Current workspace",
+    "noneYet": "No workspace yet",
+    "addAccount": "Add an account"
   },
   "theme": {
     "title": "Theme",
@@ -35,7 +47,8 @@
     "menu": "Account menu",
     "profile": "Profile",
     "shortcuts": "Keyboard shortcuts",
-    "logout": "Log out"
+    "logout": "Log out",
+    "logoutAll": "Log out of all accounts"
   },
   "breadcrumb": "Breadcrumb",
   "search": {
@@ -47,6 +60,7 @@
     "title": "Notifications",
     "unread": "Notifications, {{count}} unread",
     "markAll": "Mark all read",
+    "settings": "Notification settings",
     "empty": "You're all caught up",
     "emptyHint": "Assignments, mentions and replies show up here.",
     "all": "All",
@@ -66,18 +80,31 @@
       "handoff": "{{who}} asked for a person",
       "handoffAnon": "A customer asked for a person",
       "other": "Notification",
-      "capReached": "Ollie reached this month's agent credit cap",
-      "creditsLow": "AI credits are running low",
-      "creditsOut": "AI credits are out: Ollie is paused",
+      "capReached": "Ollie reached this month's agent cap",
+      "capReachedUsd": "Ollie reached this month's {{cap}} agent cap",
+      "balanceLow": "The AI balance is running low",
+      "balanceLowUsd": "The AI balance is running low: {{remaining}} left",
+      "balanceOut": "The AI balance is used up: Ollie is paused",
       "rechargeFailed": "Auto-recharge failed and is now off",
       "keyRejected": "Your AI provider rejected the workspace's key",
-      "keyNoFunds": "Your AI provider account is out of funds"
+      "keyNoFunds": "Your AI provider account is out of funds",
+      "someone": "Someone",
+      "teamJoined": "{{who}} joined {{team}}",
+      "teamJoinedPrivate": "{{who}} joined the private team {{team}} and can now see its tickets",
+      "teamJoinedAnon": "{{who}} joined a team you lead"
+    },
+    "hold": {
+      "paused": "Paused until {{when}}: nothing reaches your email, phone or desktop",
+      "unsubscribed": "Notification emails are off here: you unsubscribed",
+      "emailOff": "Notification emails are off",
+      "turnOn": "Turn on"
     }
   },
   "shortcuts": {
     "toggleSidebar": "Toggle sidebar",
     "goMine": "Go to my tickets",
-    "goReports": "Go to reports"
+    "goReports": "Go to reports",
+    "switchWorkspace": "Open workspace 1 to 9"
   },
   "route": {
     "loading": "Loading",
@@ -95,5 +122,38 @@
   "connection": {
     "lost": "Connection lost. Reconnecting, changes will sync when it is back.",
     "back": "Back online"
+  },
+  "desktop": {
+    "switchServer": "Switch server",
+    "changeServer": "Change",
+    "oauthWaiting": "Continue in your browser. You'll be signed in here when you're done.",
+    "oauthCancel": "Cancel",
+    "oauthTimeout": "Sign-in took too long. Start again.",
+    "oauthBrowser": "Your browser didn't open. Try again.",
+    "inBrowserTitle": "Continues in your browser",
+    "inBrowserBody": "Connecting opens this page in your browser, where you finish signing in to {{name}}. It shows up here when you're done.",
+    "inBrowserOpened": "Opened in your browser. Finish there and it shows up here.",
+    "continueInBrowser": "Continue in browser",
+    "updateReady": "opendesk {{version}} is ready.",
+    "updateReadyHint": "Restart to update.",
+    "updateDownloading": "Downloading opendesk {{version}}",
+    "updateDownloadingPlain": "Downloading an update",
+    "updateRestart": "Restart",
+    "updateNotes": "What's new",
+    "updateLater": "Later"
+  },
+  "accounts": {
+    "ended": "Your session for {{email}} has ended. Add the account again to switch to it.",
+    "addTitle": "Add an account",
+    "addSubtitle": "Sign in to another opendesk account. You stay signed in to {{email}}.",
+    "addSubtitleMany": "Sign in to another opendesk account. You stay signed in to your {{count}} accounts here.",
+    "back": "Back to {{name}}",
+    "backPlain": "Back to opendesk",
+    "limit": "This browser is signed in to {{count}} accounts, the most it can hold. Log out of one to add another.",
+    "switching": "Switching to {{email}}",
+    "paletteSwitch": "Switch to {{workspace}} as {{email}}",
+    "paletteAdd": "Add an account",
+    "paletteLogoutAll": "Log out of all accounts",
+    "reauthAs": "Sign in as {{email}}"
   }
 }

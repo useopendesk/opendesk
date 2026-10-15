@@ -59,10 +59,20 @@ func listLinks(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID) ([]Li
 	return out, rows.Err()
 }
 
-func ticketExists(ctx context.Context, q db.Querier, wid, id uuid.UUID) error {
-	var ok bool
-	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL)`,
-		wid, id).Scan(&ok); err != nil {
+// visibleTicket answers not found for a ticket p may not see (contracts/teams.md "Visibility"),
+// the same as for a missing one.
+func visibleTicket(ctx context.Context, q db.Querier, p *auth.Principal, id uuid.UUID) error {
+	var team, assignee *uuid.UUID
+	err := q.QueryRow(ctx, `SELECT team_id, assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		p.WorkspaceID, id).Scan(&team, &assignee)
+	if db.IsNotFound(err) {
+		return httpx.NotFound("Ticket")
+	}
+	if err != nil {
+		return err
+	}
+	ok, err := domain.CanSee(ctx, q, p, team, assignee)
+	if err != nil {
 		return err
 	}
 	if !ok {
@@ -125,7 +135,7 @@ func (s *Service) registerLinks(api huma.API) {
 			if !ok {
 				return nil, httpx.NotFound("Ticket")
 			}
-			if err := ticketExists(ctx, s.d.DB.Pool, p.WorkspaceID, tid); err != nil {
+			if err := visibleTicket(ctx, s.d.DB.Pool, p, tid); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			out := &struct {
@@ -178,7 +188,7 @@ func (s *Service) registerLinks(api huma.API) {
 			}
 			var l Link
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if err := ticketExists(ctx, tx, p.WorkspaceID, tid); err != nil {
+				if err := visibleTicket(ctx, tx, p, tid); err != nil {
 					return err
 				}
 				existing, err := scanLink(tx.QueryRow(ctx, linkSelect+` WHERE workspace_id = $1 AND ticket_id = $2 AND url = $3`, p.WorkspaceID, tid, link))
@@ -204,7 +214,7 @@ func (s *Service) registerLinks(api huma.API) {
 					ids.New(), p.WorkspaceID, tid, iid, prov, link, title, p.ActorUserID(), actorType(p))); err != nil {
 					return err
 				}
-				if err := s.publish(ctx, tx, "ticket_link.created", p.WorkspaceID, map[string]any{"ticket_id": tid, "link": l}); err != nil {
+				if err := s.publishTicket(ctx, tx, "ticket_link.created", p.WorkspaceID, tid, map[string]any{"ticket_id": tid, "link": l}); err != nil {
 					return err
 				}
 				_, err = domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actorType(p), p.ActorUserID(), "linked",
@@ -234,6 +244,9 @@ func (s *Service) registerLinks(api huma.API) {
 				return nil, httpx.NotFound("Link")
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := visibleTicket(ctx, tx, p, tid); err != nil {
+					return err
+				}
 				l, err := scanLink(tx.QueryRow(ctx, `DELETE FROM ticket_links WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3
 					RETURNING id, ticket_id, integration_id, provider, url, title, actor_type, created_by, created_at`, p.WorkspaceID, tid, lid))
 				if db.IsNotFound(err) {
@@ -241,7 +254,7 @@ func (s *Service) registerLinks(api huma.API) {
 				} else if err != nil {
 					return err
 				}
-				if err := s.publish(ctx, tx, "ticket_link.deleted", p.WorkspaceID, map[string]any{"ticket_id": tid, "link_id": lid}); err != nil {
+				if err := s.publishTicket(ctx, tx, "ticket_link.deleted", p.WorkspaceID, tid, map[string]any{"ticket_id": tid, "link_id": lid}); err != nil {
 					return err
 				}
 				_, err = domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actorType(p), p.ActorUserID(), "unlinked",

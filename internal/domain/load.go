@@ -48,8 +48,9 @@ func VerifyAttachmentSig(id uuid.UUID, exp, sig string) bool {
 // TicketSelect is the column list ScanTicket reads. Append WHERE/ORDER clauses using alias t.
 var TicketSelect = `SELECT t.id, t.number, t.subject, t.status, t.priority, t.severity, t.channel, t.mailbox_id, t.team_id,
 	t.sla_policy_id, t.first_response_due_at, t.resolution_due_at, t.first_responded_at, t.solved_at, t.snoozed_until,
-	t.last_message_at, t.last_customer_message_at, t.waiting_since, t.last_message_preview, t.message_count, t.spam,
+	t.last_message_at, t.last_customer_message_at, t.waiting_since, t.unanswered_count, t.last_message_preview, t.message_count, t.spam,
 	t.csat_score, t.csat_comment, t.custom, t.fields, t.created_at, t.updated_at,
+	t.brand_id, t.widget_id, t.origin_mailbox_id, t.received_at, t.page_url, t.routed,
 	c.id, c.email, c.name, c.avatar_url,
 	u.id, u.name, u.email, u.avatar_url,
 	` + TagRefsSQL("ticket_tags", "lt.ticket_id = t.id") + `
@@ -71,8 +72,9 @@ func ScanTicket(row pgx.Row) (Ticket, error) {
 	var tags []byte
 	err := row.Scan(&t.ID, &t.Number, &t.Subject, &t.Status, &t.Priority, &t.Severity, &t.Channel, &t.MailboxID, &t.TeamID,
 		&slaID, &frDue, &resDue, &t.FirstRespondedAt, &t.SolvedAt, &t.SnoozedUntil,
-		&t.LastMessageAt, &t.LastCustomerMessageAt, &t.WaitingSince, &t.LastMessagePreview, &t.MessageCount, &t.Spam,
+		&t.LastMessageAt, &t.LastCustomerMessageAt, &t.WaitingSince, &t.UnansweredCount, &t.LastMessagePreview, &t.MessageCount, &t.Spam,
 		&csatScore, &csatComment, &t.Custom, &t.Fields, &t.CreatedAt, &t.UpdatedAt,
+		&t.BrandID, &t.WidgetID, &t.OriginMailboxID, &t.ReceivedAt, &t.PageURL, &t.Routed,
 		&cID, &cEmail, &cName, &cAvatar, &uID, &uName, &uEmail, &uAvatar, &tags)
 	if err != nil {
 		return t, err
@@ -114,25 +116,32 @@ func LoadTicket(ctx context.Context, q db.Querier, wid, id uuid.UUID) (Ticket, e
 // MessageSelect is the column list scanMessage reads.
 const MessageSelect = `SELECT m.id, m.ticket_id, m.kind, m.direction, m.author_type, m.body_html, m.body_text,
 	m.full_html <> '', m.subject, m.from_email, m.from_name, m.to_emails, m.cc_emails, m.bcc_emails,
-	m.delivery_status, m.delivery_error, m.ai, m.ai_action, m.ai_rating, m.created_at,
+	m.delivery_status, m.delivery_error, m.ai, m.ai_action, m.ai_rating, m.mailbox_id, m.reply_to, m.auth_failed,
+	m.form_sender, m.created_at,
 	u.id, u.name, u.email, u.avatar_url,
 	c.id, c.email, c.name, c.avatar_url,
+	bt.id, bt.name, bt.avatar, bt.look,
 	COALESCE((SELECT json_agg(json_build_object('id', a.id, 'filename', a.filename, 'content_type', a.content_type,
 		'size_bytes', a.size_bytes, 'inline', a.inline) ORDER BY a.created_at)
 		FROM attachments a WHERE a.message_id = m.id), '[]')
 FROM messages m
 LEFT JOIN users u ON u.id = m.author_user_id
-LEFT JOIN contacts c ON c.id = m.author_contact_id`
+LEFT JOIN contacts c ON c.id = m.author_contact_id
+LEFT JOIN bots bt ON bt.id = m.bot_id`
 
 func ScanMessage(row pgx.Row) (Message, error) {
 	var m Message
 	var uID, cID *uuid.UUID
 	var uName, uEmail, uAvatar, cEmail, cName, cAvatar *string
 	var atts []byte
+	var bID *uuid.UUID
+	var bName, bAvatar *string
+	var bLook []byte
 	err := row.Scan(&m.ID, &m.TicketID, &m.Kind, &m.Direction, &m.Author.Type, &m.BodyHTML, &m.BodyText,
 		&m.HasQuoted, &m.Subject, &m.FromEmail, &m.FromName, &m.To, &m.Cc, &m.Bcc,
-		&m.DeliveryStatus, &m.DeliveryError, &m.AI, &m.AIAction, &m.AIRating, &m.CreatedAt,
-		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &atts)
+		&m.DeliveryStatus, &m.DeliveryError, &m.AI, &m.AIAction, &m.AIRating, &m.MailboxID, &m.ReplyTo, &m.AuthFailed,
+		&m.FormSender, &m.CreatedAt,
+		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &bID, &bName, &bAvatar, &bLook, &atts)
 	if err != nil {
 		return m, err
 	}
@@ -141,6 +150,9 @@ func ScanMessage(row pgx.Row) (Message, error) {
 	}
 	if cID != nil {
 		m.Author.Contact = &ContactRef{ID: *cID, Email: cEmail, Name: deref(cName), AvatarURL: Avatar(deref(cAvatar))}
+	}
+	if bID != nil {
+		m.Author.Bot = &BotRef{ID: *bID, Name: deref(bName), AvatarURL: BotAvatarURL(*bID, Avatar(deref(bAvatar)), bLook), Look: bLook}
 	}
 	m.Attachments = []Attachment{}
 	if err := json.Unmarshal(atts, &m.Attachments); err != nil {
@@ -227,7 +239,7 @@ func deref(s *string) string {
 }
 
 // PublicMessage is the view of a message a customer may see: no agent emails,
-// recipients or delivery internals.
+// recipients, delivery internals or sender checks.
 func PublicMessage(m Message) Message {
 	if m.Author.User != nil {
 		u := *m.Author.User
@@ -236,6 +248,8 @@ func PublicMessage(m Message) Message {
 	}
 	m.To, m.Cc, m.Bcc = []string{}, []string{}, []string{}
 	m.DeliveryError = ""
+	m.MailboxID = nil
+	m.ReplyTo, m.AuthFailed, m.FormSender = "", false, ""
 	if m.Direction == "outbound" {
 		m.FromEmail = ""
 	}

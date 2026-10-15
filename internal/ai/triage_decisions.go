@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/ai/decide"
+	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
@@ -93,9 +95,12 @@ type triageOptions struct {
 
 type labelOpt struct{ name, desc string }
 
+// teamOpt is a team triage may route to: every team of the workspace, private ones too
+// (triage acts for the workspace, not for a person), judged by its name and description.
 type teamOpt struct {
 	id   uuid.UUID
 	name string
+	desc string
 }
 
 // noneOption is the "nothing fits" key of label and team choices. Label and team names
@@ -138,13 +143,13 @@ func loadTriageOptions(ctx context.Context, q db.Querier, wid uuid.UUID) (triage
 	if err := rows.Err(); err != nil {
 		return o, err
 	}
-	rows, err = q.Query(ctx, `SELECT id, name FROM teams WHERE workspace_id = $1 ORDER BY name LIMIT 254`, wid)
+	rows, err = q.Query(ctx, `SELECT id, name, description FROM teams WHERE workspace_id = $1 ORDER BY name LIMIT 254`, wid)
 	if err != nil {
 		return o, err
 	}
 	o.teams, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (teamOpt, error) {
 		var t teamOpt
-		return t, r.Scan(&t.id, &t.name)
+		return t, r.Scan(&t.id, &t.name, &t.desc)
 	})
 	return o, err
 }
@@ -169,8 +174,8 @@ func (s *Service) triage(ctx context.Context, q db.Querier, wid uuid.UUID, userI
 	}
 	if s.jev() {
 		t, c, err := s.triageJev(ctx, wid, userID, tid, tc, o)
-		// Out of credits for Jev, a workspace on its own key still triages on its LLM.
-		if err == nil || s.provider == nil || !skippable(err) || (isNoCredits(err) && !s.usesOwnKey(ctx, wid)) {
+		// Out of AI balance for Jev, a workspace on its own key still triages on its LLM.
+		if err == nil || s.provider == nil || !skippable(err) || (isNoBalance(err) && !s.usesOwnKey(ctx, wid)) {
 			return t, c, err
 		}
 		s.d.Log.Warn("jev triage failed, using the AI model", "ticket_id", tid, "reason", errReason(err))
@@ -335,11 +340,12 @@ func triageQuestions(o triageOptions) map[string]decide.Question {
 			labelOptions(o.labels, "No label clearly applies."))
 	}
 	if len(o.teams) > 0 {
-		opts := decide.Options{{Key: noneOption, Description: "No team clearly owns this."}}
+		list := make([]labelOpt, 0, len(o.teams))
 		for _, t := range o.teams {
-			opts = append(opts, decide.Option{Key: t.name})
+			list = append(list, labelOpt{t.name, strings.TrimSpace(t.desc)})
 		}
-		q["team"] = decide.Choice(ask("Which team should own `ticket`, judging by the team names?"), opts)
+		q["team"] = decide.Choice(ask("Which team should own `ticket`, judging by the team names and what each team handles?"),
+			labelOptions(list, "No team clearly owns this."))
 	}
 	return q
 }
@@ -457,12 +463,14 @@ func (s *Service) triageLLM(ctx context.Context, wid uuid.UUID, userID *uuid.UUI
 		tagList = untrusted(strings.Join(o.lines, "\n"))
 	}
 	teamNames := make([]string, 0, len(o.teams))
+	var teamLines []string
 	for _, t := range o.teams {
 		teamNames = append(teamNames, t.name)
+		teamLines = append(teamLines, block("team", []string{"name", t.name}, untrusted(clip(t.desc, 280))))
 	}
 	teamList := "(none)"
-	if len(teamNames) > 0 {
-		teamList = untrusted(strings.Join(teamNames, "\n"))
+	if len(teamLines) > 0 {
+		teamList = strings.Join(teamLines, "\n")
 	}
 	req := Request{Model: s.models.Fast, MaxTokens: 1500, Effort: "low", JSONSchema: llmTriageSchema(teamNames), SchemaName: "ticket_triage",
 		System: []Block{{Text: triageSystem, Cache: true}},
@@ -563,6 +571,46 @@ func validateTriage(raw llmTriage, o triageOptions) *Triage {
 
 // --- Apply -------------------------------------------------------------------------
 
+// routeToTeam puts a ticket without a team in team, recorded as routed by triage. The
+// reply address follows when it has no team of its own and the brand has an address of
+// the new team (contracts/teams.md "Reply address"); the answer is the activity's
+// mailbox_from/mailbox_to then. A private team's ticket leaves other agents' lists
+// (ticket.hidden on the workspace topic).
+func routeToTeam(ctx context.Context, tx pgx.Tx, wid, tid, brand uuid.UUID, mailbox *uuid.UUID, team uuid.UUID) (map[string]any, error) {
+	moved := map[string]any{}
+	next := mailbox
+	if mailbox != nil && brand != uuid.Nil {
+		var mbTeam *uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT team_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *mailbox).Scan(&mbTeam); err != nil && !db.IsNotFound(err) {
+			return nil, err
+		}
+		if mbTeam == nil {
+			m, err := domain.TeamReplyMailbox(ctx, tx, wid, brand, team)
+			if err != nil {
+				return nil, err
+			}
+			if m != nil && *m != *mailbox {
+				next = m
+				moved["mailbox_from"], moved["mailbox_to"] = mailbox.String(), m.String()
+			}
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tickets SET team_id = $3, mailbox_id = $4, routed = '{"via": "triage"}'::jsonb
+		WHERE workspace_id = $1 AND id = $2`, wid, tid, team, next); err != nil {
+		return nil, err
+	}
+	private, err := hd.TeamPrivate(ctx, tx, wid, &team)
+	if err != nil {
+		return nil, err
+	}
+	if private {
+		if err := hd.PublishTicketHidden(ctx, tx, wid, tid, team); err != nil {
+			return nil, err
+		}
+	}
+	return moved, nil
+}
+
 // applyTriage writes a triage result in tx, attributed to actor "ai". A decision is
 // applied when the workspace lets triage change its field and its confidence is at or
 // above the workspace threshold (LLM decisions carry no confidence and pass); otherwise
@@ -573,10 +621,12 @@ func validateTriage(raw llmTriage, o triageOptions) *Triage {
 func applyTriage(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, t *Triage, createSuggested bool, via string) ([]string, error) {
 	var priority string
 	var severity *string
-	var team *uuid.UUID
+	var team, assignee, mailbox *uuid.UUID
+	var brand uuid.UUID
 	var spam bool
-	if err := tx.QueryRow(ctx, `SELECT priority, severity, team_id, spam FROM tickets WHERE workspace_id = $1 AND id = $2
-		AND deleted_at IS NULL FOR UPDATE`, wid, tid).Scan(&priority, &severity, &team, &spam); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT priority, severity, team_id, spam, assignee_id, mailbox_id, brand_id FROM tickets
+		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, wid, tid).
+		Scan(&priority, &severity, &team, &spam, &assignee, &mailbox, &brand); err != nil {
 		if db.IsNotFound(err) {
 			return nil, httpx.NotFound("Ticket")
 		}
@@ -667,15 +717,27 @@ func applyTriage(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, t *Triage, 
 	}
 	if t.team != nil && team == nil {
 		if err := hd.CheckRef(ctx, tx, wid, "team", *t.team); err == nil {
-			if apply("team", "team") {
-				if _, err := tx.Exec(ctx, `UPDATE tickets SET team_id = $3 WHERE workspace_id = $1 AND id = $2`, wid, tid, *t.team); err != nil {
+			// A private team takes the ticket only when its assignee is on the team.
+			onTeam := hd.CheckAssigneeOnTeam(ctx, tx, wid, t.team, assignee)
+			if onTeam != nil && !errors.As(onTeam, new(*httpx.Error)) {
+				return nil, onTeam
+			}
+			if onTeam == nil && apply("team", "team") {
+				moved, err := routeToTeam(ctx, tx, wid, tid, brand, mailbox, *t.team)
+				if err != nil {
 					return nil, err
 				}
-				if err := logAct("team_changed", with(map[string]any{"from": nil, "to": t.team.String()}, meta("team"))); err != nil {
+				data := with(with(map[string]any{"from": nil, "to": t.team.String()}, meta("team")), moved)
+				// via is how the ticket reached its team (contracts/teams.md); trigger is what ran triage.
+				data["trigger"], data["via"] = data["via"], "triage"
+				if err := logAct("team_changed", data); err != nil {
 					return nil, err
 				}
 				dec("team").Applied = true
 				changes = append(changes, "team_id")
+				if len(moved) > 0 {
+					changes = append(changes, "mailbox_id")
+				}
 			} else {
 				suggest("team", "team", t.team.String())
 			}
@@ -759,11 +821,12 @@ func applyTriage(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, t *Triage, 
 }
 
 // DismissSuggestion is DELETE /v1/tickets/{id}/ai/suggestions/{field}.
-func (s *Service) DismissSuggestion(ctx context.Context, wid uuid.UUID, rawID, field string) error {
+func (s *Service) DismissSuggestion(ctx context.Context, p *auth.Principal, rawID, field string) error {
 	if !slices.Contains(SuggestionFields, field) {
 		return httpx.Validation(fmt.Sprintf("field must be one of %s", strings.Join(SuggestionFields, ", ")))
 	}
-	tid, err := resolveTicket(ctx, s.d.DB.Pool, wid, rawID)
+	wid := p.WorkspaceID
+	tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, rawID)
 	if err != nil {
 		return err
 	}

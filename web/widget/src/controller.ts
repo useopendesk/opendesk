@@ -4,7 +4,7 @@
 
 import { WidgetApi, WidgetError, type Fetcher } from "./api";
 import { isAiAnswer } from "./ai";
-import { pageUrl, resolveConfig } from "./config";
+import { pageUrl, readBotRef, resolveConfig } from "./config";
 import { t } from "./i18n";
 import { dropLive, liveMessage, reduceLive } from "./live";
 import { plainText } from "./markdown";
@@ -186,14 +186,35 @@ export class Controller {
     void this.loadConversations();
   }
 
-  newConversation() {
-    this.set((s) => ({ view: "thread", active: null, messages: { ...s.messages, [NEW]: s.messages[NEW] ?? [] } }));
+  /** A new conversation; with `topic`, already about one of config.topics (the home screen's topic list). */
+  newConversation(topic: string | null = null) {
+    this.set((s) => ({ view: "thread", active: null, topic, queued: null, messages: { ...s.messages, [NEW]: s.messages[NEW] ?? [] } }));
   }
 
-  /** A suggestion chip: start a conversation with that text. */
+  /** A suggestion chip: start a conversation with that text, once the email and topic steps are done. */
   async startWith(text: string) {
     this.newConversation();
-    if (this.needsEmail()) return; // the composer keeps the email step first
+    this.set({ queued: text });
+    await this.flushQueued();
+  }
+
+  /** The widget has topics and the new conversation has none yet: ask before the first message. */
+  needsTopic(): boolean {
+    const { config, active, topic } = this.s;
+    return !active && !topic && !!config?.topics?.length;
+  }
+
+  /** Pick the new conversation's topic (null asks again); a waiting suggestion goes out with it. */
+  async pickTopic(id: string | null) {
+    if (this.s.active) return;
+    this.set({ topic: id });
+    await this.flushQueued();
+  }
+
+  private async flushQueued() {
+    const text = this.s.queued;
+    if (!text || this.needsEmail() || this.needsTopic()) return;
+    this.set({ queued: null });
     await this.send(text, []);
   }
 
@@ -315,6 +336,7 @@ export class Controller {
     const s = await this.session();
     this.remember(s.visitor_token);
     this.set({ session: s });
+    await this.flushQueued();
   }
 
   needsEmail(): boolean {
@@ -376,7 +398,7 @@ export class Controller {
       for (const f of local.localFiles ?? []) uploaded.push(await this.api.upload(f));
       const ids = uploaded.map((a) => a.id);
       if (key === NEW) {
-        const { conversation, message } = await this.api.start(local.body_text, ids.length ? ids : undefined, page);
+        const { conversation, message } = await this.api.start(local.body_text, ids.length ? ids : undefined, page, this.s.topic ?? undefined);
         this.set((s) => {
           const rest = { ...s.messages };
           delete rest[NEW];
@@ -477,9 +499,13 @@ export class Controller {
     const viewing = s.open && s.view === "thread" && s.active === tid;
     if (!s.open) this.set((st) => ({ unread: st.unread + 1 }));
     else if (!viewing) void this.loadConversations();
+    // An agent's reply read on screen: tell the API the visitor is here, so it is not emailed too.
+    if (viewing && !s.preview && m.author.type === "user" && typeof document !== "undefined" && !document.hidden) {
+      void this.api.seen(tid).catch(() => {});
+    }
     if (s.config?.sound && !s.preview && typeof document !== "undefined" && document.hidden) chime();
     const ai = isAiAnswer(m);
-    const who = m.author.user?.name ?? (ai ? (s.config?.bot?.name ?? t("ai")) : s.config?.workspace_name || t("support"));
+    const who = m.author.user?.name ?? (ai ? readBotRef(m.author.bot)?.name || s.config?.bot?.name || t("ai") : s.config?.workspace_name || t("support"));
     const text = (m.body_text || plainText(m.body_html.replace(/<[^>]+>/g, " "))).slice(0, 200);
     this.announce(t("newMessage", { name: who, text }));
     this.emit("message", { conversation_id: tid, body: m.body_text, from: who });

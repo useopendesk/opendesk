@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hostVars, pageUrl, resolveConfig } from "./config";
+import { OLLIE_LOOK, renderBotSvg } from "../../src/lib/botlook";
+import { botShown, hostVars, pageUrl, readBotRef, resolveConfig } from "./config";
 import { splitSources } from "./html";
 import { actionStatus } from "./ai";
 
@@ -20,7 +21,7 @@ describe("widget config", () => {
       sound: false,
       team: [],
       ai_answers: false,
-      bot: { name: "Ollie", avatar_url: null },
+      bot: { id: null, name: "Ollie", role: "", avatar_url: "", look: OLLIE_LOOK, greeting: "" },
     });
   });
 
@@ -38,7 +39,7 @@ describe("widget config", () => {
       radius: "round",
       suggestions: ["a", "Where is my order?", "  Reset password  ", "Billing", "Plans", "Extra"],
       team: [{ name: "Priya", avatar_url: "ftp://x" }, { name: "Tom", avatar_url: null }, { name: "Mei", avatar_url: null }, { name: "Ana", avatar_url: null }],
-      bot: { name: "", avatar_url: "https://cdn.test/bot.png" },
+      bot: { name: "", avatar_url: "https://cdn.test/bot.png" } as never,
     });
     expect(c.brand_color).toBeNull();
     expect(c.help_center_url).toBeNull();
@@ -48,7 +49,99 @@ describe("widget config", () => {
     expect(c.suggestions).toEqual(["Where is my order?", "Reset password", "Billing", "Plans"]);
     expect(c.team).toHaveLength(3);
     expect(c.team?.[0].avatar_url).toBeNull();
-    expect(c.bot).toEqual({ name: "Ollie", avatar_url: "https://cdn.test/bot.png" });
+    expect(c.bot).toMatchObject({ name: "Ollie", avatar_url: "https://cdn.test/bot.png", look: { kind: "image" } });
+  });
+
+  it("reads the bot: an older server's name and picture, and a tampered look", () => {
+    // An older server: {name, avatar_url}. The picture becomes an image look, the rest is Ollie's.
+    const old = resolveConfig({ workspace_name: "A", bot: { name: "  Ava  ", avatar_url: "https://cdn.test/ava.png" } as never }).bot;
+    expect(old).toEqual({ id: null, name: "Ava", role: "", avatar_url: "https://cdn.test/ava.png", look: { ...OLLIE_LOOK, kind: "image" }, greeting: "" });
+    expect(resolveConfig({ workspace_name: "A", bot: { name: "Ava", avatar_url: null } as never }).bot).toMatchObject({ name: "Ava", avatar_url: "", look: OLLIE_LOOK });
+
+    // A current server, with a look someone tampered with: every bad value takes Ollie's.
+    const bot = resolveConfig({
+      workspace_name: "A",
+      bot: {
+        id: "b1",
+        name: "Pip",
+        role: "Support assistant",
+        avatar_url: "javascript:alert(1)",
+        greeting: "  Hi, I'm Pip.\nHow can I help?  ",
+        look: {
+          kind: "emoji",
+          shape: '"><script>alert(1)</script>',
+          fill: { type: "gradient", color: "red;background:url(x)", to: "#0B7F73" },
+          eyes: "dots",
+          mouth: "<g onload=alert(1)>",
+          accessory: "crown",
+          accent: "#f5a524",
+          blush: "yes",
+          background: "ring",
+          emoji: '<img src=x onerror="alert(1)">',
+          extra: "<svg/onload=alert(1)>",
+        },
+      } as never,
+    }).bot!;
+    expect(bot).toMatchObject({ id: "b1", name: "Pip", role: "Support assistant", avatar_url: "", greeting: "Hi, I'm Pip.\nHow can I help?" });
+    expect(bot.look).toEqual({
+      kind: "emoji",
+      shape: OLLIE_LOOK.shape,
+      fill: { type: "gradient", color: OLLIE_LOOK.fill.color, to: "#0b7f73" },
+      eyes: "dots",
+      mouth: OLLIE_LOOK.mouth,
+      accessory: "crown",
+      accent: "#f5a524",
+      blush: OLLIE_LOOK.blush,
+      background: "ring",
+      emoji: "",
+    });
+    const svg = renderBotSvg(bot.look);
+    expect(svg).not.toMatch(/script|onload|onerror|url\(x\)|<img/);
+
+    // A look that is not an object at all.
+    expect(resolveConfig({ workspace_name: "A", bot: { name: "Pip", look: "<svg/>" } as never }).bot?.look).toEqual(OLLIE_LOOK);
+  });
+
+  it("shows a message's own bot, else the widget's", () => {
+    const widget = resolveConfig({ workspace_name: "A" }).bot!;
+    expect(botShown(readBotRef(null), widget)).toBe(widget);
+    // An older live event names only the bot: the widget's look stays.
+    expect(botShown(readBotRef({ name: "Ava" }), widget)).toMatchObject({ name: "Ava", look: OLLIE_LOOK });
+    const own = botShown(readBotRef({ id: "b2", name: "Fox", avatar_url: "https://cdn.test/fox.png", look: { ...OLLIE_LOOK, kind: "emoji", emoji: "🦊" } }), widget);
+    expect(own).toMatchObject({ id: "b2", name: "Fox", avatar_url: "https://cdn.test/fox.png", look: { kind: "emoji", emoji: "🦊" } });
+    expect(renderBotSvg(own.look)).toContain("🦊");
+  });
+
+  it("reads topics, hours, the offline message and the brand", () => {
+    const older = resolveConfig({ workspace_name: "Acme", brand_color: null, greeting: "", help_center_url: null, require_email: false });
+    expect(older).toMatchObject({ topics: [], open: true, offline_message: "", brand: { name: "Acme", color: null } });
+
+    const c = resolveConfig({
+      workspace_name: "",
+      brand_color: null,
+      greeting: "",
+      help_center_url: null,
+      require_email: false,
+      topics: [
+        { id: "billing", label: "  Billing  " },
+        { id: "billing", label: "Twice" },
+        { id: "x", label: "a" },
+        { id: "", label: "No id" },
+        ...Array.from({ length: 10 }, (_, i) => ({ id: `t${i}`, label: `Topic ${i}` })),
+      ],
+      open: false,
+      offline_message: "  Back on Monday.  ",
+      brand: { name: "Pressroom", color: "#e11d48" },
+    });
+    expect(c.topics?.[0]).toEqual({ id: "billing", label: "Billing" });
+    expect(c.topics).toHaveLength(8);
+    expect(c.topics?.map((x) => x.id)).not.toContain("x");
+    expect(c.open).toBe(false);
+    expect(c.offline_message).toBe("Back on Monday.");
+    // No widget colour or name: the brand's.
+    expect(c.brand_color).toBe("#e11d48");
+    expect(c.workspace_name).toBe("Pressroom");
+    expect(resolveConfig({ ...c, brand_color: "#123456" }).brand_color).toBe("#123456");
   });
 
   it("maps appearance onto host CSS variables", () => {

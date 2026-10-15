@@ -11,7 +11,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/emersion/go-msgauth/authres"
 	"github.com/jhillyerd/enmime/v2"
 )
 
@@ -106,32 +105,40 @@ func addresses(env *enmime.Envelope, key string) []string {
 	return out
 }
 
-// sender is who the ticket belongs to: Reply-To wins over From.
+// sender is who wrote the message: the From address, which is who the contact is and
+// what every threading check compares. Reply-To is only where the sender asks replies to
+// go (replyTo).
 func (pm *parsedMail) sender() (addr, name string) {
-	if pm.ReplyTo != "" {
-		name = pm.ReplyName
-		if name == "" && strings.EqualFold(pm.ReplyTo, pm.FromAddr) {
-			name = pm.FromName
-		}
-		return pm.ReplyTo, name
-	}
 	return pm.FromAddr, pm.FromName
+}
+
+// replyTo is the Reply-To address when it differs from From, else "".
+func (pm *parsedMail) replyTo() string {
+	if pm.ReplyTo == "" || strings.EqualFold(pm.ReplyTo, pm.FromAddr) || !validAddress(pm.ReplyTo) {
+		return ""
+	}
+	return pm.ReplyTo
 }
 
 func (pm *parsedMail) header(key string) string { return pm.env.GetHeader(key) }
 
-func (pm *parsedMail) headerValues(key string) []string { return pm.env.GetHeaderValues(key) }
+func (pm *parsedMail) headerValues(key string) []string {
+	if pm.env == nil {
+		return nil
+	}
+	return pm.env.GetHeaderValues(key)
+}
 
 // noiseReason returns why a message is machine-generated (and must not open a ticket
-// or trigger replies), or "".
-func noiseReason(pm *parsedMail, ownAddrs []string, mailboxEmail string) string {
+// or trigger replies), or "". null is whether the envelope sender is the null sender.
+func noiseReason(pm *parsedMail, ownAddrs []string, mailboxEmail string, null bool) string {
 	from := pm.FromAddr
 	for _, a := range ownAddrs {
 		if from != "" && strings.EqualFold(from, a) {
 			return "from_own_mailbox"
 		}
 	}
-	if isBounce(pm) {
+	if systemSender(pm) || null && isDeliveryReport(pm) {
 		return "bounce"
 	}
 	if v := strings.ToLower(strings.TrimSpace(pm.header("Auto-Submitted"))); v != "" && v != "no" {
@@ -181,12 +188,19 @@ func ownList(listID, mailboxEmail string) bool {
 	return strings.TrimSpace(id) == want
 }
 
-func isBounce(pm *parsedMail) bool {
+// systemSender reports mail from a mail system's own address, which never reads replies.
+func systemSender(pm *parsedMail) bool {
 	local, _, _ := strings.Cut(pm.FromAddr, "@")
 	switch strings.ToLower(local) {
 	case "mailer-daemon", "postmaster":
 		return true
 	}
+	return false
+}
+
+// isDeliveryReport reports a message shaped as a delivery status notification (RFC 3464).
+// It is a bounce only with the null envelope sender.
+func isDeliveryReport(pm *parsedMail) bool {
 	ct := pm.header("Content-Type")
 	mt, params, err := mime.ParseMediaType(ct)
 	return err == nil && mt == "multipart/report" && strings.EqualFold(params["report-type"], "delivery-status")
@@ -248,25 +262,6 @@ func cleanLine(s string, n int) string {
 	return truncate(strings.TrimSpace(s), n)
 }
 
-// dmarcFailed reads the topmost Authentication-Results (added by the last receiving
-// server) and reports dmarc=fail.
-func dmarcFailed(pm *parsedMail) bool {
-	vals := pm.headerValues("Authentication-Results")
-	if len(vals) == 0 {
-		return false
-	}
-	_, results, err := authres.Parse(vals[0])
-	if err != nil {
-		return strings.Contains(strings.ToLower(vals[0]), "dmarc=fail")
-	}
-	for _, r := range results {
-		if d, ok := r.(*authres.DMARCResult); ok && d.Value == authres.ResultFail {
-			return true
-		}
-	}
-	return false
-}
-
 var subjectTagRe = regexp.MustCompile(`\[#(\d{1,18})\]`)
 
 // subjectTicketNumber reads a "[#123]" tag.
@@ -286,19 +281,6 @@ func plusTicketNumber(tag string) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(tag[1:], 10, 64)
 	return n, err == nil && n > 0
-}
-
-// ourTicketNumbers reads ticket numbers from our own Message-ID format in references.
-func ourTicketNumbers(ids []string) []int64 {
-	var out []int64
-	for _, id := range ids {
-		if m := ourMsgIDRe.FindStringSubmatch(id); m != nil {
-			if n, err := strconv.ParseInt(m[2], 10, 64); err == nil {
-				out = append(out, n)
-			}
-		}
-	}
-	return out
 }
 
 var replyPrefixRe = regexp.MustCompile(`(?i)^\s*((re|aw|sv|antw|vs|ref|odp|fwd?|fw|tr|wg|rv|enc)\s*(\[\d+\])?\s*:\s*)+`)

@@ -21,7 +21,7 @@ variable "external_url" {
 }
 
 variable "node_count" {
-  description = "JetStream needs an odd number for quorum."
+  description = "1 for a standalone server; a cluster needs an odd number (3 or 5) for quorum."
   type        = number
   default     = 3
 }

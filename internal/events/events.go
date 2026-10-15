@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"time"
 
@@ -32,6 +33,84 @@ type Event struct {
 	Visibility  string // defaults to agents
 	Topics      []string
 	Data        any
+	// TicketID marks an event about a ticket. When the ticket is in a private team the
+	// event goes to that team's topic instead of the workspace's (contracts/teams.md).
+	TicketID *uuid.UUID
+	// TeamID scopes the event to a private team directly, without a ticket lookup.
+	TeamID *uuid.UUID
+	// Workspace delivers the event to the whole workspace even though its data names a
+	// ticket. Only ticket.hidden uses it: it carries ids alone and tells everyone outside
+	// the team to drop the ticket.
+	Workspace bool
+}
+
+// TicketRef is a payload that names the ticket it is about. Publish scopes an event whose
+// data is (or holds, in a map[string]any) a TicketRef like an event with TicketID.
+type TicketRef interface{ EventTicketID() *uuid.UUID }
+
+// ticketKeys are the map keys looked at first, in order, for the ticket an event is about.
+var ticketKeys = []string{"ticket_id", "ticket", "notification", "message", "activity"}
+
+// TicketOf returns the ticket an event's data names: a TicketRef, or a map[string]any with
+// "ticket_id" (uuid.UUID, *uuid.UUID or string) or a TicketRef value. nil when none.
+func TicketOf(data any) *uuid.UUID {
+	if id := refTicket(data); id != nil {
+		return id
+	}
+	m, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, k := range ticketKeys {
+		if id := valueTicket(m[k]); id != nil {
+			return id
+		}
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		if id := refTicket(m[k]); id != nil {
+			return id
+		}
+	}
+	return nil
+}
+
+func valueTicket(v any) *uuid.UUID {
+	switch x := v.(type) {
+	case uuid.UUID:
+		if x != uuid.Nil {
+			return &x
+		}
+	case *uuid.UUID:
+		if x != nil && *x != uuid.Nil {
+			id := *x
+			return &id
+		}
+	case string:
+		if id, err := uuid.Parse(x); err == nil && id != uuid.Nil {
+			return &id
+		}
+	}
+	return refTicket(v)
+}
+
+func refTicket(v any) *uuid.UUID {
+	r, ok := v.(TicketRef)
+	if !ok {
+		return nil
+	}
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return nil
+	}
+	id := r.EventTicketID()
+	if id == nil || *id == uuid.Nil {
+		return nil
+	}
+	return id
 }
 
 // Envelope is the stored and transmitted form.
@@ -49,9 +128,13 @@ type Envelope struct {
 // Topic helpers.
 func WorkspaceTopic(wid uuid.UUID) string { return "workspace:" + wid.String() }
 func UserTopic(uid uuid.UUID) string      { return "user:" + uid.String() }
-func ContactTopic(wid, cid uuid.UUID) string {
-	return "contact:" + wid.String() + ":" + cid.String()
+
+// ContactTopic is a visitor's widget topic for events about a chat of brand bid. The gateway
+// pushes them to `contact:<wid>:<cid>` sockets of that brand only (contracts/realtime.md).
+func ContactTopic(wid, cid, bid uuid.UUID) string {
+	return "contact:" + wid.String() + ":" + cid.String() + ":" + bid.String()
 }
+func TeamTopic(wid, tid uuid.UUID) string { return "team:" + wid.String() + ":" + tid.String() }
 
 // Publish writes ev in tx and returns the envelope. The relay delivers it after commit.
 func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
@@ -62,7 +145,27 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 	if err != nil {
 		return Envelope{}, fmt.Errorf("marshal event %s: %w", ev.Type, err)
 	}
+	// An event about a ticket in a private team goes to that team (contracts/teams.md
+	// "Visibility"): the ticket comes from TicketID, else from the data.
+	team := ev.TeamID
+	ticket := ev.TicketID
+	if ticket == nil && team == nil && !ev.Workspace {
+		ticket = TicketOf(ev.Data)
+	}
+	if ev.Workspace {
+		team, ticket = nil, nil
+	}
+	if team == nil && ticket != nil {
+		tid, err := PrivateTeam(ctx, tx, ev.WorkspaceID, *ticket)
+		if err != nil {
+			return Envelope{}, fmt.Errorf("event team: %w", err)
+		}
+		team = tid
+	}
 	topics := []string{WorkspaceTopic(ev.WorkspaceID)}
+	if team != nil {
+		topics = []string{TeamTopic(ev.WorkspaceID, *team)}
+	}
 	for _, t := range ev.Topics {
 		if !slices.Contains(topics, t) {
 			topics = append(topics, t)
@@ -74,9 +177,9 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 		ev.WorkspaceID).Scan(&env.Seq); err != nil {
 		return Envelope{}, fmt.Errorf("next event seq: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO events (workspace_id, seq, id, type, visibility, topics, data, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		env.WorkspaceID, env.Seq, env.ID, env.Type, env.Visibility, env.Topics, data, env.OccurredAt); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO events (workspace_id, seq, id, type, visibility, topics, data, created_at, team_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		env.WorkspaceID, env.Seq, env.ID, env.Type, env.Visibility, env.Topics, data, env.OccurredAt, team); err != nil {
 		return Envelope{}, fmt.Errorf("insert event: %w", err)
 	}
 	// Wake the relay at commit; it also polls, so a lost notify only adds latency.
@@ -86,11 +189,22 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 	return env, nil
 }
 
+// HiddenType is the stand-in for an event of a private team the reader cannot see: it keeps
+// seq contiguous and carries no data (contracts/teams.md "Visibility").
+const HiddenType = "event.hidden"
+
+// Hide returns the stand-in for e.
+func Hide(e Envelope) Envelope {
+	return Envelope{ID: e.ID, Seq: e.Seq, WorkspaceID: e.WorkspaceID, Type: HiddenType, Visibility: VisibilityAgents,
+		Data: json.RawMessage(`{}`), OccurredAt: e.OccurredAt}
+}
+
 // Since returns events after seq for replay. resync=true when the gap is older than retention.
+// Events of the hidden private teams are replaced by their stand-in.
 func Since(ctx context.Context, q interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}, wid uuid.UUID, since int64, limit int, includeAgents bool) (out []Envelope, latest int64, resync bool, err error) {
+}, wid uuid.UUID, since int64, limit int, includeAgents bool, hidden []uuid.UUID) (out []Envelope, latest int64, resync bool, err error) {
 	if err = q.QueryRow(ctx, `SELECT event_seq FROM workspaces WHERE id = $1`, wid).Scan(&latest); err != nil {
 		return nil, 0, false, err
 	}
@@ -104,16 +218,21 @@ func Since(ctx context.Context, q interface {
 	if oldest == nil || *oldest > since+1 {
 		return []Envelope{}, latest, true, nil
 	}
-	rows, err := q.Query(ctx, `SELECT id, seq, workspace_id, type, visibility, topics, data, created_at FROM events
-		WHERE workspace_id = $1 AND seq > $2 AND ($3 OR visibility = 'public') ORDER BY seq LIMIT $4`, wid, since, includeAgents, limit+1)
+	rows, err := q.Query(ctx, `SELECT id, seq, workspace_id, type, visibility, topics, data, created_at,
+		COALESCE(team_id = ANY($5::uuid[]), false) FROM events
+		WHERE workspace_id = $1 AND seq > $2 AND ($3 OR visibility = 'public') ORDER BY seq LIMIT $4`, wid, since, includeAgents, limit+1, hidden)
 	if err != nil {
 		return nil, 0, false, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var e Envelope
-		if err = rows.Scan(&e.ID, &e.Seq, &e.WorkspaceID, &e.Type, &e.Visibility, &e.Topics, &e.Data, &e.OccurredAt); err != nil {
+		var hide bool
+		if err = rows.Scan(&e.ID, &e.Seq, &e.WorkspaceID, &e.Type, &e.Visibility, &e.Topics, &e.Data, &e.OccurredAt, &hide); err != nil {
 			return nil, 0, false, err
+		}
+		if hide {
+			e = Hide(e)
 		}
 		out = append(out, e)
 	}

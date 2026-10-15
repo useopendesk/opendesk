@@ -68,19 +68,7 @@ func (s *service) testOutbound(ctx context.Context, m *mailboxRow) error {
 		if err != nil {
 			return err
 		}
-		ep := smtpEndpoint{host: m.Config.SMTPHost, port: m.Config.SMTPPort, mode: m.Config.SMTPTLS, user: m.Config.SMTPUsername,
-			pass: creds.smtpPassword(), guarded: true, helo: s.heloName(), allowNoTLS: s.guard.allowPrivate, authRequired: true}
-		c, stop, err := s.dialSMTP(ctx, ep)
-		if err != nil {
-			return err
-		}
-		defer stop()
-		defer c.Close()
-		if err := s.smtpAuth(c, ep); err != nil {
-			return err
-		}
-		_ = c.Quit()
-		return nil
+		return s.checkSMTP(ctx, s.mailboxSMTP(m, creds))
 	case KindGoogle:
 		resp, body, err := s.apiCall(ctx, m, resIMAP, func(token string) (*http.Request, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.gmailBase+"/gmail/v1/users/me/profile", nil)
@@ -115,4 +103,25 @@ func (s *service) testOutbound(ctx context.Context, m *mailboxRow) error {
 		return nil
 	}
 	return permanent("The mailbox has no way to send email.")
+}
+
+// mailboxSMTP is the mailbox's own SMTP server as configured.
+func (s *service) mailboxSMTP(m *mailboxRow, creds credentials) smtpEndpoint {
+	return smtpEndpoint{host: m.Config.SMTPHost, port: m.Config.SMTPPort, mode: m.Config.SMTPTLS, user: m.Config.SMTPUsername,
+		pass: creds.smtpPassword(), guarded: true, helo: s.heloName(), allowNoTLS: s.guard.allowPrivate, authRequired: true}
+}
+
+// checkSMTP signs in to an SMTP server and leaves without sending anything.
+func (s *service) checkSMTP(ctx context.Context, ep smtpEndpoint) error {
+	c, stop, err := s.dialSMTP(ctx, ep)
+	if err != nil {
+		return err
+	}
+	defer stop()
+	defer c.Close()
+	if err := s.smtpAuth(c, ep); err != nil {
+		return err
+	}
+	_ = c.Quit()
+	return nil
 }

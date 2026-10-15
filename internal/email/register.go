@@ -19,6 +19,7 @@ import (
 func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s := newService(d)
 	s.registerMailboxRoutes(api)
+	s.registerConnectRoutes(api)
 	s.registerOAuthRoutes(api, r)
 	// Raw RFC 822 body; authenticated by the shared inbound secret.
 	r.Post("/v1/inbound/email", s.inboundHTTP)
@@ -32,6 +33,7 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &processInboundWorker{s: s})
 	river.AddWorker(w, &sendMessageWorker{s: s})
 	river.AddWorker(w, &sendTicketEmailWorker{s: s})
+	river.AddWorker(w, &chatFollowUpWorker{s: s})
 }
 
 // Periodic returns this area's scheduled jobs: every minute, queue a sync for each

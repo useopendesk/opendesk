@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,7 +29,7 @@ type Config struct {
 	SiteURL    string
 	ServeWeb   bool // serve the embedded web app and /config.js from this binary
 
-	// DatabaseURL is the pooled connection (Neon "-pooler" host) used by request handlers.
+	// DatabaseURL is the pooled connection (PgBouncer in transaction mode) used by request handlers.
 	// DatabaseURLDirect is unpooled; migrations, River (LISTEN/NOTIFY) and the event relay use it.
 	DatabaseURL       string
 	DatabaseURLDirect string
@@ -55,7 +56,7 @@ type Config struct {
 	S3ForcePathStyle bool
 
 	MailDriver   string // log | smtp | ses
-	MailFrom     string // "opendesk <notifications@opendesk.sh>"
+	MailFrom     string // "opendesk <team@opendesk.sh>"
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUsername string
@@ -66,6 +67,9 @@ type Config struct {
 	InboundDomain   string // forwarding addresses live here, e.g. in.opendesk.sh
 	InboundSecret   string // shared secret for POST /v1/inbound/email
 	InboundSMTPAddr string // optional built-in SMTP receiver, e.g. :2525
+	// InboundAuthservIDs are the authserv-ids whose Authentication-Results on inbound mail
+	// are believed (INBOUND_AUTHSERV_ID, comma-separated), e.g. mx.cloudflare.net.
+	InboundAuthservIDs []string
 
 	GoogleClientID        string
 	GoogleClientSecret    string
@@ -78,9 +82,34 @@ type Config struct {
 	OIDCClientID          string
 	OIDCClientSecret      string
 	OIDCName              string
+	// GoogleMailboxOAuth and MicrosoftMailboxOAuth allow connecting a new mailbox with
+	// that provider's sign-in (GOOGLE_MAILBOX_OAUTH, MICROSOFT_MAILBOX_OAUTH). Each is on
+	// when the provider's client is configured, unless set to false. Reconnecting a
+	// mailbox that already uses the provider, and signing in to opendesk with it, are
+	// not affected.
+	GoogleMailboxOAuth    bool
+	MicrosoftMailboxOAuth bool
+	// MailhostISPDB lets mailbox server detection ask Thunderbird's ISPDB
+	// (autoconfig.thunderbird.net), which sends it the domain name. Default: on when
+	// billing is configured (the hosted service), off otherwise.
+	MailhostISPDB bool
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
+	// Native apps (contracts/native.md). AppAttestAppIDs ("TEAMID.bundle") turn App Attest
+	// proofs on; AppAttestDevelopment also accepts development-environment keys.
+	AppAttestAppIDs      []string
+	AppAttestDevelopment bool
+	// APNs token auth. With a key this instance pushes to iPhones itself (push = direct).
+	APNsKey    string // the .p8 key, PEM or base64
+	APNsKeyID  string
+	APNsTeamID string
+	APNsTopic  string
+	// PushRelayURL is the relay origin used without an APNs key (push = relay).
+	PushRelayURL string
+	// PushRelayServe serves /v1/push/relay/* for other instances (needs an APNs key).
+	PushRelayServe bool
+
 	// LogoDevToken turns on logo.dev as the first source of company logos (sends the
 	// company's domain to logo.dev).
 	LogoDevToken string
@@ -96,8 +125,7 @@ type Config struct {
 	StripeWebhookSecret string
 	StripePricePro      string // recurring per-seat price, monthly
 	StripePriceProYear  string // optional recurring per-seat price, yearly
-	StripePriceCredits  string // one-time price for an AI credit pack
-	StripeTax           bool   // Stripe Tax automatic tax on Checkout
+	StripePriceTopUp    string // one-time price for an AI usage top-up ($10 of usage each)
 	StripeAPIURL        string // development only: a local Stripe fake or stripe-mock instead of api.stripe.com
 
 	// AI. AIProvider: openrouter | anthropic | openai (any OpenAI-compatible endpoint, e.g. Ollama) | none.
@@ -114,14 +142,47 @@ type Config struct {
 	EmbeddingsDriver string // openrouter | voyage | openai | none
 	VoyageAPIKey     string
 	EmbeddingsModel  string
-	// AICreditMarkup turns a call's provider cost into credits when billing is on (contracts/billing.md).
-	AICreditMarkup float64
+	// AIUsageMarkup multiplies a call's provider cost into what the workspace pays when
+	// billing is on (contracts/billing.md "Metered usage").
+	AIUsageMarkup float64
 
 	// Decisions (contracts/ai.md "Decisions"). DecisionsProvider: typesafe (Jev) | openrouter (Jev) | llm | none.
 	DecisionsProvider string
 	TypesafeAPIKey    string
 	TypesafeAPIURL    string // base URL; the API path is /v1/systemone
 	TypesafeModel     string
+	// NotifyEmail paces notification emails (contracts/api.md "Notification preferences and emails").
+	NotifyEmail NotifyEmail
+	// EmailLegal identifies the company that sends platform email (EMAIL_LEGAL_*). It has no
+	// default: an instance shows a company only when its operator sets one.
+	EmailLegal EmailLegal
+}
+
+// EmailLegal is the sender's company identification for the footer of platform email.
+type EmailLegal struct {
+	Entity, Number, Place, Address string
+}
+
+// Line is the footer line, such as "Acme Ltd, registered in England and Wales, company
+// number 123. Registered office: 1 High Street, London." Empty without an entity.
+func (l EmailLegal) Line() string {
+	if l.Entity == "" {
+		return ""
+	}
+	out := l.Entity
+	switch {
+	case l.Place != "" && l.Number != "":
+		out += ", registered in " + l.Place + ", company number " + l.Number
+	case l.Number != "":
+		out += ", company number " + l.Number
+	case l.Place != "":
+		out += ", registered in " + l.Place
+	}
+	out += "."
+	if l.Address != "" {
+		out += " Registered office: " + l.Address + "."
+	}
+	return out
 }
 
 // DecisionsEnabled reports whether a decision engine is configured.
@@ -129,7 +190,31 @@ func (c *Config) DecisionsEnabled() bool {
 	return c.DecisionsProvider == "typesafe" || c.DecisionsProvider == "openrouter" || (c.DecisionsProvider == "llm" && c.AIEnabled())
 }
 
-// BillingEnabled reports whether plans, limits and credits are enforced.
+// PushMode is how this instance reaches iPhones: direct (APNs key), relay or off.
+func (c *Config) PushMode() string {
+	switch {
+	case c.APNsKey != "":
+		return "direct"
+	case c.PushRelayURL != "":
+		return "relay"
+	}
+	return "off"
+}
+
+// MailboxOAuthProviders lists the sign-ins a new mailbox may connect with, for the
+// web app's runtime config (mailboxOAuth).
+func (c *Config) MailboxOAuthProviders() []string {
+	out := []string{}
+	if c.GoogleMailboxOAuth {
+		out = append(out, "google")
+	}
+	if c.MicrosoftMailboxOAuth {
+		out = append(out, "microsoft")
+	}
+	return out
+}
+
+// BillingEnabled reports whether plans, limits and the AI balance are enforced.
 func (c *Config) BillingEnabled() bool { return c.StripeSecretKey != "" }
 
 // AIEnabled reports whether an AI provider is configured.
@@ -137,44 +222,137 @@ func (c *Config) AIEnabled() bool { return c.AIProvider != "none" && c.AIProvide
 
 func (c *Config) IsProduction() bool { return c.Env == "production" }
 
+// NotifyEmail paces notification emails per person and per instance.
+type NotifyEmail struct {
+	// Pacing names the defaults: strict (opendesk Cloud: billing on) or relaxed.
+	Pacing string
+	// Delay: the first email after a quiet spell waits this long for the notification to be read.
+	Delay time.Duration
+	// Cooldowns: the gap after each email while activity continues; the last one repeats.
+	Cooldowns []time.Duration
+	// QuietReset: with nothing new for this long, the next email starts over at the first step.
+	QuietReset time.Duration
+	// UrgentGap: urgent notifications may cut a cooldown short, never sooner than this after the last email.
+	UrgentGap time.Duration
+	// UrgentPerDay caps the emails sent early for urgent notifications, per person.
+	UrgentPerDay int
+	// PerHour and PerDay cap notification emails per person (rolling windows).
+	PerHour, PerDay int
+	// InstancePerMinute caps notification emails across the instance; more wait, none are dropped.
+	InstancePerMinute int
+	// ActiveWindow: emails wait while the person was active in the app this recently.
+	ActiveWindow time.Duration
+}
+
+// NotifyEmailDefaults are the pacing defaults: strict for opendesk Cloud, relaxed for
+// self-hosted instances.
+func NotifyEmailDefaults(strict bool) NotifyEmail {
+	if strict {
+		return NotifyEmail{Pacing: "strict", Delay: 5 * time.Minute, Cooldowns: []time.Duration{15 * time.Minute, 30 * time.Minute, time.Hour},
+			QuietReset: 2 * time.Hour, UrgentGap: 10 * time.Minute, UrgentPerDay: 6, PerHour: 4, PerDay: 24, InstancePerMinute: 120,
+			ActiveWindow: 5 * time.Minute}
+	}
+	return NotifyEmail{Pacing: "relaxed", Delay: 5 * time.Minute, Cooldowns: []time.Duration{5 * time.Minute, 15 * time.Minute, 30 * time.Minute, time.Hour},
+		QuietReset: 2 * time.Hour, UrgentGap: 5 * time.Minute, UrgentPerDay: 12, PerHour: 12, PerDay: 100, InstancePerMinute: 60,
+		ActiveWindow: 5 * time.Minute}
+}
+
+// loadNotifyEmail reads NOTIFY_EMAIL_*: NOTIFY_EMAIL_PACING picks the defaults (strict when
+// billing is on), and each other variable overrides one value.
+func loadNotifyEmail(billing bool) (NotifyEmail, error) {
+	pacing := env("NOTIFY_EMAIL_PACING", map[bool]string{true: "strict", false: "relaxed"}[billing])
+	if pacing != "strict" && pacing != "relaxed" {
+		return NotifyEmail{}, fmt.Errorf("NOTIFY_EMAIL_PACING must be strict or relaxed, got %q", pacing)
+	}
+	n := NotifyEmailDefaults(pacing == "strict")
+	n.Delay = envDuration("NOTIFY_EMAIL_DELAY", n.Delay)
+	if v := envList("NOTIFY_EMAIL_COOLDOWNS"); len(v) > 0 {
+		n.Cooldowns = nil
+		for _, s := range v {
+			d, err := time.ParseDuration(s)
+			if err != nil || d <= 0 {
+				return NotifyEmail{}, fmt.Errorf("NOTIFY_EMAIL_COOLDOWNS must be durations such as 15m,30m,1h, got %q", s)
+			}
+			n.Cooldowns = append(n.Cooldowns, d)
+		}
+	}
+	n.QuietReset = envDuration("NOTIFY_EMAIL_QUIET_RESET", n.QuietReset)
+	n.UrgentGap = envDuration("NOTIFY_EMAIL_URGENT_GAP", n.UrgentGap)
+	n.UrgentPerDay = envInt("NOTIFY_EMAIL_URGENT_PER_DAY", n.UrgentPerDay)
+	n.PerHour = envInt("NOTIFY_EMAIL_PER_HOUR", n.PerHour)
+	n.PerDay = envInt("NOTIFY_EMAIL_PER_DAY", n.PerDay)
+	n.InstancePerMinute = envInt("NOTIFY_EMAIL_INSTANCE_PER_MINUTE", n.InstancePerMinute)
+	n.ActiveWindow = envDuration("NOTIFY_EMAIL_ACTIVE_WINDOW", n.ActiveWindow)
+	return n, n.Validate()
+}
+
+// Validate refuses pacing that would email without limits or never.
+func (n NotifyEmail) Validate() error {
+	longest := time.Duration(0)
+	for _, d := range n.Cooldowns {
+		if d <= 0 || d > 24*time.Hour {
+			return errors.New("NOTIFY_EMAIL_COOLDOWNS must be between 1s and 24h each")
+		}
+		longest = max(longest, d)
+	}
+	switch {
+	case len(n.Cooldowns) == 0 || len(n.Cooldowns) > 10:
+		return errors.New("NOTIFY_EMAIL_COOLDOWNS needs 1 to 10 steps")
+	case n.Delay < 0 || n.Delay > 24*time.Hour:
+		return errors.New("NOTIFY_EMAIL_DELAY must be between 0 and 24h")
+	case n.QuietReset < longest:
+		return errors.New("NOTIFY_EMAIL_QUIET_RESET must be at least the longest cooldown")
+	case n.UrgentGap < 0 || n.UrgentPerDay < 0:
+		return errors.New("NOTIFY_EMAIL_URGENT_GAP and NOTIFY_EMAIL_URGENT_PER_DAY must not be negative")
+	case n.PerHour < 1 || n.PerDay < n.PerHour:
+		return errors.New("NOTIFY_EMAIL_PER_HOUR must be at least 1 and NOTIFY_EMAIL_PER_DAY at least NOTIFY_EMAIL_PER_HOUR")
+	case n.InstancePerMinute < 1:
+		return errors.New("NOTIFY_EMAIL_INSTANCE_PER_MINUTE must be at least 1")
+	case n.ActiveWindow < 0 || n.ActiveWindow > 24*time.Hour:
+		return errors.New("NOTIFY_EMAIL_ACTIVE_WINDOW must be between 0 and 24h")
+	}
+	return nil
+}
+
 // Load reads the environment. It refuses to boot on unsafe secrets.
 func Load() (*Config, error) {
 	c := &Config{
-		Env:               env("OPENDESK_ENV", "development"),
-		Role:              env("OPENDESK_ROLE", "all"),
-		HTTPAddr:          env("HTTP_ADDR", ":8080"),
-		DataDir:           env("DATA_DIR", "./data"),
-		APIURL:            strings.TrimRight(env("API_URL", "http://localhost:8080"), "/"),
-		AppURL:            strings.TrimRight(env("APP_URL", "http://localhost:5173"), "/"),
-		GatewayURL:        strings.TrimRight(env("GATEWAY_URL", "ws://localhost:4000/socket"), "/"),
-		SiteURL:           strings.TrimRight(env("SITE_URL", "https://opendesk.sh"), "/"),
-		ServeWeb:          envBool("SERVE_WEB", false),
-		DatabaseURL:       env("DATABASE_URL", "postgres://opendesk:opendesk@localhost:5432/opendesk?sslmode=disable"),
-		DatabaseURLDirect: env("DATABASE_URL_DIRECT", ""),
-		CookieDomain:      env("COOKIE_DOMAIN", ""),
-		SignupEnabled:     envBool("SIGNUP_ENABLED", true),
-		TrustProxy:        envBool("TRUST_PROXY", false),
-		NATSURL:           env("NATS_URL", ""),
-		NATSToken:         env("NATS_TOKEN", ""),
-		NATSListen:        env("NATS_LISTEN", "127.0.0.1:4222"),
-		StorageDriver:     env("STORAGE_DRIVER", "local"),
-		S3Bucket:          env("S3_BUCKET", ""),
-		S3Region:          env("S3_REGION", "auto"),
-		S3Endpoint:        env("S3_ENDPOINT", ""),
-		S3AccessKey:       env("S3_ACCESS_KEY_ID", ""),
-		S3SecretKey:       env("S3_SECRET_ACCESS_KEY", ""),
-		S3ForcePathStyle:  envBool("S3_FORCE_PATH_STYLE", false),
-		MailDriver:        env("MAIL_DRIVER", "log"),
-		MailFrom:          env("MAIL_FROM", "opendesk <notifications@localhost>"),
-		SMTPHost:          env("SMTP_HOST", ""),
-		SMTPPort:          envInt("SMTP_PORT", 587),
-		SMTPUsername:      env("SMTP_USERNAME", ""),
-		SMTPPassword:      env("SMTP_PASSWORD", ""),
-		SMTPTLS:           env("SMTP_TLS", "starttls"),
-		SESRegion:         env("SES_REGION", "us-east-1"),
-		InboundDomain:     env("INBOUND_DOMAIN", "in.localhost"),
-		InboundSecret:     env("INBOUND_SECRET", ""),
-		InboundSMTPAddr:   env("INBOUND_SMTP_ADDR", ""),
+		Env:                env("OPENDESK_ENV", "development"),
+		Role:               env("OPENDESK_ROLE", "all"),
+		HTTPAddr:           env("HTTP_ADDR", ":8080"),
+		DataDir:            env("DATA_DIR", "./data"),
+		APIURL:             strings.TrimRight(env("API_URL", "http://localhost:8080"), "/"),
+		AppURL:             strings.TrimRight(env("APP_URL", "http://localhost:5173"), "/"),
+		GatewayURL:         strings.TrimRight(env("GATEWAY_URL", "ws://localhost:4000/socket"), "/"),
+		SiteURL:            strings.TrimRight(env("SITE_URL", "https://opendesk.sh"), "/"),
+		ServeWeb:           envBool("SERVE_WEB", false),
+		DatabaseURL:        env("DATABASE_URL", "postgres://opendesk:opendesk@localhost:5432/opendesk?sslmode=disable"),
+		DatabaseURLDirect:  env("DATABASE_URL_DIRECT", ""),
+		CookieDomain:       env("COOKIE_DOMAIN", ""),
+		SignupEnabled:      envBool("SIGNUP_ENABLED", true),
+		TrustProxy:         envBool("TRUST_PROXY", false),
+		NATSURL:            env("NATS_URL", ""),
+		NATSToken:          env("NATS_TOKEN", ""),
+		NATSListen:         env("NATS_LISTEN", "127.0.0.1:4222"),
+		StorageDriver:      env("STORAGE_DRIVER", "local"),
+		S3Bucket:           env("S3_BUCKET", ""),
+		S3Region:           env("S3_REGION", "auto"),
+		S3Endpoint:         env("S3_ENDPOINT", ""),
+		S3AccessKey:        env("S3_ACCESS_KEY_ID", ""),
+		S3SecretKey:        env("S3_SECRET_ACCESS_KEY", ""),
+		S3ForcePathStyle:   envBool("S3_FORCE_PATH_STYLE", false),
+		MailDriver:         env("MAIL_DRIVER", "log"),
+		MailFrom:           env("MAIL_FROM", "opendesk <notifications@localhost>"),
+		SMTPHost:           env("SMTP_HOST", ""),
+		SMTPPort:           envInt("SMTP_PORT", 587),
+		SMTPUsername:       env("SMTP_USERNAME", ""),
+		SMTPPassword:       env("SMTP_PASSWORD", ""),
+		SMTPTLS:            env("SMTP_TLS", "starttls"),
+		SESRegion:          env("SES_REGION", "us-east-1"),
+		InboundDomain:      env("INBOUND_DOMAIN", "in.localhost"),
+		InboundSecret:      env("INBOUND_SECRET", ""),
+		InboundSMTPAddr:    env("INBOUND_SMTP_ADDR", ""),
+		InboundAuthservIDs: envList("INBOUND_AUTHSERV_ID"),
 
 		GoogleClientID:        env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:    env("GOOGLE_CLIENT_SECRET", ""),
@@ -191,16 +369,24 @@ func Load() (*Config, error) {
 		TurnstileSiteKey: env("TURNSTILE_SITE_KEY", ""),
 		TurnstileSecret:  env("TURNSTILE_SECRET", ""),
 		LogoDevToken:     env("LOGO_DEV_TOKEN", ""),
-		PosthogKey:       env("POSTHOG_KEY", ""),
-		PosthogHost:      env("POSTHOG_HOST", "https://us.i.posthog.com"),
-		EventRetention:   envDuration("EVENT_RETENTION", 7*24*time.Hour),
+
+		AppAttestAppIDs:      envList("APP_ATTEST_APP_IDS"),
+		AppAttestDevelopment: envBool("APP_ATTEST_DEVELOPMENT", false),
+		APNsKey:              os.Getenv("APNS_KEY"),
+		APNsKeyID:            env("APNS_KEY_ID", ""),
+		APNsTeamID:           env("APNS_TEAM_ID", ""),
+		APNsTopic:            env("APNS_TOPIC", "sh.opendesk.app"),
+		PushRelayURL:         strings.TrimRight(env("PUSH_RELAY_URL", ""), "/"),
+		PushRelayServe:       envBool("PUSH_RELAY_SERVE", false),
+		PosthogKey:           env("POSTHOG_KEY", ""),
+		PosthogHost:          env("POSTHOG_HOST", "https://us.i.posthog.com"),
+		EventRetention:       envDuration("EVENT_RETENTION", 7*24*time.Hour),
 
 		StripeSecretKey:     env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePricePro:      env("STRIPE_PRICE_PRO", ""),
 		StripePriceProYear:  env("STRIPE_PRICE_PRO_YEARLY", ""),
-		StripePriceCredits:  env("STRIPE_PRICE_CREDITS", ""),
-		StripeTax:           envBool("STRIPE_TAX", true),
+		StripePriceTopUp:    env("STRIPE_PRICE_AI_TOPUP", env("STRIPE_PRICE_CREDITS", "")),
 		StripeAPIURL:        env("STRIPE_API_URL", ""),
 
 		AIProvider:        env("AI_PROVIDER", ""),
@@ -221,11 +407,11 @@ func Load() (*Config, error) {
 		TypesafeAPIURL:    strings.TrimRight(env("TYPESAFE_API_URL", "https://api.typesafe.ai"), "/"),
 		TypesafeModel:     env("TYPESAFE_MODEL", ""),
 	}
-	markup, err := strconv.ParseFloat(env("AI_CREDIT_MARKUP", "1.5"), 64)
+	markup, err := strconv.ParseFloat(env("AI_USAGE_MARKUP", env("AI_CREDIT_MARKUP", "1.5")), 64)
 	if err != nil || markup < 1 || markup > 100 {
-		return nil, fmt.Errorf("AI_CREDIT_MARKUP must be a number from 1 to 100")
+		return nil, fmt.Errorf("AI_USAGE_MARKUP must be a number from 1 to 100")
 	}
-	c.AICreditMarkup = markup
+	c.AIUsageMarkup = markup
 	if c.AIProvider == "" {
 		switch {
 		case c.OpenRouterAPIKey != "":
@@ -307,6 +493,9 @@ func Load() (*Config, error) {
 	if c.DatabaseURLDirect == "" {
 		c.DatabaseURLDirect = c.DatabaseURL
 	}
+	c.GoogleMailboxOAuth = mailboxOAuth("GOOGLE_MAILBOX_OAUTH", c.GoogleClientID, c.GoogleClientSecret)
+	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftClientID, c.MicrosoftClientSecret)
+	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	for _, o := range strings.Split(env("CORS_ORIGINS", c.AppURL), ",") {
@@ -348,10 +537,42 @@ func Load() (*Config, error) {
 	if c.IsProduction() && c.StripeAPIURL != "" {
 		return nil, errors.New("STRIPE_API_URL is for development only; production talks to Stripe directly")
 	}
+	if (c.APNsKey != "" || c.APNsKeyID != "" || c.APNsTeamID != "") && (strings.TrimSpace(c.APNsKey) == "" || c.APNsKeyID == "" || c.APNsTeamID == "") {
+		return nil, errors.New("APNS_KEY, APNS_KEY_ID and APNS_TEAM_ID are required together")
+	}
+	if c.PushRelayServe && c.APNsKey == "" {
+		return nil, errors.New("PUSH_RELAY_SERVE needs an APNs key (APNS_KEY, APNS_KEY_ID, APNS_TEAM_ID)")
+	}
+	if c.PushRelayURL != "" {
+		u, err := url.Parse(c.PushRelayURL)
+		local := u != nil && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || !(u.Scheme == "https" || (u.Scheme == "http" && local && !c.IsProduction())) {
+			return nil, errors.New("PUSH_RELAY_URL must be an https origin, e.g. https://api.opendesk.sh")
+		}
+	}
+	c.EmailLegal = EmailLegal{Entity: env("EMAIL_LEGAL_ENTITY", ""), Number: env("EMAIL_LEGAL_COMPANY_NUMBER", ""),
+		Place: env("EMAIL_LEGAL_PLACE_OF_REGISTRATION", ""), Address: env("EMAIL_LEGAL_ADDRESS", "")}
+	if c.NotifyEmail, err = loadNotifyEmail(c.BillingEnabled()); err != nil {
+		return nil, err
+	}
 	if c.BillingEnabled() && (c.StripeWebhookSecret == "" || c.StripePricePro == "") {
 		return nil, errors.New("STRIPE_WEBHOOK_SECRET and STRIPE_PRICE_PRO are required when STRIPE_SECRET_KEY is set")
 	}
 	return c, nil
+}
+
+// mailboxOAuth reads a mailbox sign-in switch: off without the provider's client,
+// on when unset, else the value; anything that is not a boolean turns it off.
+func mailboxOAuth(k, clientID, clientSecret string) bool {
+	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(clientSecret) == "" {
+		return false
+	}
+	v := strings.TrimSpace(os.Getenv(k))
+	if v == "" {
+		return true
+	}
+	b, err := strconv.ParseBool(v)
+	return err == nil && b
 }
 
 func decodeKey(s string) ([]byte, error) {

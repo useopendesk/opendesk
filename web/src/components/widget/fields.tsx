@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SortableList } from "@/components/settings2/Sortable";
-import type { Member, WidgetConfig, WidgetSettings, Workspace } from "@/lib/api/types";
+import type { Bot, Member, WidgetBot, WidgetConfig, WidgetSettings, Workspace } from "@/lib/api/types";
+import { OLLIE_LOOK } from "@/lib/botlook";
 import { cn } from "@/lib/cn";
 
-export const LIMITS = { greeting: 300, launcher_label: 24, title: 40, subtitle: 80, suggestion: 60, suggestions: 4, origins: 20, bot_name: 30 } as const;
+export const LIMITS = { greeting: 300, launcher_label: 24, title: 40, subtitle: 80, suggestion: 60, suggestions: 4, origins: 20 } as const;
 
 /** Text settings refuse markup and control characters (contracts/api.md). */
 // eslint-disable-next-line no-control-regex
@@ -202,8 +203,16 @@ export function SuggestionsEditor({ value, onChange }: { value: string[]; onChan
   );
 }
 
+/** The default bot before the bots load. */
+export const OLLIE_BOT: WidgetBot = { id: null, name: "Ollie", role: "", avatar_url: "", look: OLLIE_LOOK, greeting: "" };
+
+/** A bot as the widget config carries it (contracts/bots.md). */
+export function widgetBotOf(b: Bot): WidgetBot {
+  return { id: b.id, name: b.name, role: b.role, avatar_url: b.avatar_url, look: b.look, greeting: b.personality.greeting };
+}
+
 /** What GET /v1/widget/config would answer for this draft (contracts/api.md). */
-export function toWidgetConfig(d: WidgetSettings, ws: Workspace | null, members: Member[] | undefined, aiAnswers: boolean): WidgetConfig {
+export function toWidgetConfig(d: WidgetSettings, ws: Workspace | null, members: Member[] | undefined, aiAnswers: boolean, bot?: WidgetBot | null): WidgetConfig {
   const presenceRank = { online: 0, away: 1, offline: 2 } as const;
   const team = d.show_team
     ? (members ?? [])
@@ -234,6 +243,6 @@ export function toWidgetConfig(d: WidgetSettings, ws: Workspace | null, members:
     sound: d.sound,
     team,
     ai_answers: aiAnswers,
-    bot: { name: tidy(d.bot_name ?? "") || "Ollie", avatar_url: ws?.images?.widget_bot ?? null },
+    bot: bot ?? OLLIE_BOT,
   };
 }

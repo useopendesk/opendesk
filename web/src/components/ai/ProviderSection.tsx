@@ -1,4 +1,4 @@
-// Settings > AI > Provider: run the workspace's AI on opendesk credits (or the
+// Settings > AI > Provider: run the workspace's AI on the opendesk AI balance (or the
 // instance's provider when self-hosted), or on its own key (OpenRouter, an
 // OpenAI-compatible endpoint, or Anthropic). A key is tested before it is saved,
 // is never shown again past its last 4 characters, and its state ("Rejected by
@@ -78,7 +78,7 @@ export function ProviderSection({ canEdit }: { canEdit: boolean }) {
                 else setEditing(false);
               }}
               options={[
-                { value: "instance", label: billing ? t("provider.credits") : t("provider.instance") },
+                { value: "instance", label: billing ? t("provider.balance") : t("provider.instance") },
                 { value: "own", label: t("provider.own") },
               ]}
             />

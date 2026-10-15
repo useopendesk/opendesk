@@ -29,21 +29,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NoAccess, SettingsPage } from "@/components/layout";
 import { Button } from "@/components/ui/button";
-import { Field, Textarea, TextInput } from "@/components/ui/input";
+import { Field, TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ModelPicker } from "@/components/ai/ModelPicker";
-import { AgentOffNotice, BotAvatar, Counter, Eyebrow } from "@/components/agent/bits";
-import { agentSettings, INSTRUCTIONS_MAX, playgroundSettings, useAgentDraft } from "@/components/agent/settings";
+import { AgentOffNotice, Eyebrow } from "@/components/agent/bits";
+import { agentSettings, playgroundSettings, useAgentDraft } from "@/components/agent/settings";
+import { BotFace } from "@/components/bots/BotFace";
+import { BotSelect, resolveBot } from "@/components/bots/BotSelect";
 import { ImproveAnswerDialog, TestEditor, toTestMessages } from "@/components/agent/quality";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { AgentExpectation, AgentSource, AgentTestBody, PlaygroundBody, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
+import type { AgentExpectation, AgentSource, AgentTestBody, Bot, PlaygroundBody, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
 import { useAI } from "@/lib/ai";
-import { credits } from "@/lib/format";
+import { formatUsd } from "@/lib/format";
 import { springs } from "@/lib/motion";
 import { q } from "@/lib/queries";
-import { atLeast, useRole, useWorkspace } from "@/lib/session";
+import { atLeast, useRole } from "@/lib/session";
 import { AI_TONE, tone } from "@/lib/tones";
 import { cn } from "@/lib/cn";
 
@@ -58,7 +60,7 @@ type Turn =
       sources: AgentSource[];
       action: PlaygroundDone["action"];
       handoff: boolean;
-      credits: number | null;
+      usd: number | null;
       streaming: boolean;
       error: string | null;
     };
@@ -81,36 +83,94 @@ export default function AgentPlayground() {
   const { t } = useTranslation("agent");
   const admin = atLeast(useRole(), "admin");
   const ai = useAI();
-  const ws = useWorkspace();
   const { data: models } = useQuery({ ...q.aiModels(), enabled: admin && ai.enabled });
   const { data: widget } = useQuery({ ...q.widgetSettings(), enabled: admin });
+  const { data: bots } = useQuery({ ...q.bots(), enabled: admin });
   const draft = useAgentDraft((s) => s.draft);
   const saved = agentSettings(ai.features);
 
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const abort = useRef<AbortController | null>(null);
   // Quick overrides, used when there is no Behaviour draft.
   const [model, setModel] = useState<string | null>(null);
-  const [instructions, setInstructions] = useState<string | null>(null);
+  const [botId, setBotId] = useState<string | null>(null);
   const [visitor, setVisitor] = useState({ name: "", email: "", verified: false });
   // Save as test and Improve answer, opened from an agent reply.
   const [saving, setSaving] = useState<Partial<AgentTestBody> | null>(null);
   const [improving, setImproving] = useState<{ question: string; answer: string } | null>(null);
 
-  useEffect(() => () => abort.current?.abort(), []);
-
-  const botName = (draft?.botName.trim() || widget?.bot_name || "").trim() || "Ollie";
-  const botSrc = ws?.images?.widget_bot ?? null;
+  const bot = resolveBot(bots, botId);
   const defaultModel = ai.features?.model || ai.config?.models.default || models?.default || "";
-  const settings: PlaygroundBody["settings"] = draft
-    ? playgroundSettings(draft)
-    : model !== null || instructions !== null
-      ? { widget_model: model ?? saved.widget_model, widget_instructions: instructions ?? saved.widget_instructions }
-      : undefined;
-  const spent = turns.reduce((n, x) => n + (x.role === "agent" ? (x.credits ?? 0) : 0), 0);
+  const base = draft ? playgroundSettings(draft) : model !== null ? { widget_model: model } : undefined;
+  const settings: PlaygroundBody["settings"] = botId ? { ...base, bot_id: botId } : base;
+  const chat = usePlaygroundChat(settings, visitor);
+  const { turns } = chat;
   const suggestions = widget?.suggestions?.length ? widget.suggestions.slice(0, 4) : [t("playground.try1"), t("playground.try2"), t("playground.try3")];
+
+  const before = (turn: AgentTurn) => turns.slice(0, turns.findIndex((x) => x.id === turn.id));
+  const saveAsTest = (turn: AgentTurn) => {
+    const expectations: AgentExpectation[] = [{ kind: turn.handoff ? "handoff" : "no_handoff" }];
+    if (turn.sources.length) expectations.push({ kind: "cites_knowledge" });
+    const email = visitor.email.trim();
+    setSaving({
+      messages: toTestMessages(toMessages(before(turn))),
+      expectations,
+      visitor: visitor.verified ? { verified: true, email: email || undefined } : undefined,
+    });
+  };
+  const improve = (turn: AgentTurn) => {
+    const asked = before(turn).filter((x) => x.role === "visitor");
+    setImproving({ question: asked[asked.length - 1]?.text ?? "", answer: stripMarkers(turn.text).trim() });
+  };
+
+  if (!admin)
+    return (
+      <SettingsPage title={t("playground.title")}>
+        <NoAccess what={t("playground.what")} />
+      </SettingsPage>
+    );
+
+  return (
+    <SettingsPage wide title={t("playground.title")} description={t("playground.description")}>
+      {ai.config && !saved.widget_answers && !draft?.ai.widget_answers && <AgentOffNotice className="-mb-3" />}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <Chat chat={chat} bot={chatBot(bot)} suggestions={suggestions} onSaveTest={saveAsTest} onImprove={improve} />
+        <aside className="flex flex-col gap-4">
+          <SettingsPanel
+            hasDraft={!!draft}
+            model={model ?? saved.widget_model}
+            onModel={setModel}
+            botId={botId}
+            onBot={setBotId}
+            overridden={model !== null || botId !== null}
+            onClear={() => {
+              setModel(null);
+              setBotId(null);
+            }}
+            models={models?.data}
+            defaultModel={defaultModel}
+          />
+          <VisitorPanel value={visitor} onChange={setVisitor} />
+          <p className="px-1 text-[11.5px] leading-[17px] text-fg-3">{t("playground.note", { cost: formatUsd(ai.cost("playground") ?? 0.03, { precise: true }) })}</p>
+        </aside>
+      </div>
+      {saving && <TestEditor initial={saving} onClose={() => setSaving(null)} />}
+      {improving && <ImproveAnswerDialog question={improving.question} answer={improving.answer} onClose={() => setImproving(null)} />}
+    </SettingsPage>
+  );
+}
+
+/** A bot as the chat shows it. */
+export type ChatBot = { name: string; look: unknown; image: string | null };
+export const chatBot = (b: Pick<Bot, "name" | "look" | "image_url"> | undefined): ChatBot => (b ? { name: b.name, look: b.look, image: b.image_url } : { name: "Ollie", look: null, image: null });
+
+/** A playground conversation: POST /v1/ai/agent/playground, streamed, with the given drafts. */
+export function usePlaygroundChat(settings: PlaygroundBody["settings"], visitor: { name: string; email: string; verified: boolean }) {
+  const { t } = useTranslation("agent");
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abort.current?.abort(), []);
 
   const patchLast = (fn: (a: Extract<Turn, { role: "agent" }>) => Partial<Extract<Turn, { role: "agent" }>>) =>
     setTurns((all) => {
@@ -127,7 +187,7 @@ export default function AgentPlayground() {
     if (!msg || busy) return;
     setText("");
     const history = [...turns, { id: nextId(), role: "visitor" as const, text: msg }];
-    const agent: Turn = { id: nextId(), role: "agent", text: "", html: null, tools: [], sources: [], action: null, handoff: false, credits: null, streaming: true, error: null };
+    const agent: Turn = { id: nextId(), role: "agent", text: "", html: null, tools: [], sources: [], action: null, handoff: false, usd: null, streaming: true, error: null };
     setTurns([...history, agent]);
     setBusy(true);
     const ctl = new AbortController();
@@ -157,7 +217,7 @@ export default function AgentPlayground() {
               sources: e.data.sources,
               action: e.data.action,
               handoff: e.data.handoff,
-              credits: e.data.credits,
+              usd: e.data.usd,
               streaming: false,
             }));
         },
@@ -179,102 +239,28 @@ export default function AgentPlayground() {
     setText("");
   };
 
-  const before = (turn: AgentTurn) => turns.slice(0, turns.findIndex((x) => x.id === turn.id));
-  const saveAsTest = (turn: AgentTurn) => {
-    const expectations: AgentExpectation[] = [{ kind: turn.handoff ? "handoff" : "no_handoff" }];
-    if (turn.sources.length) expectations.push({ kind: "cites_knowledge" });
-    const email = visitor.email.trim();
-    setSaving({
-      messages: toTestMessages(toMessages(before(turn))),
-      expectations,
-      visitor: visitor.verified ? { verified: true, email: email || undefined } : undefined,
-    });
-  };
-  const improve = (turn: AgentTurn) => {
-    const asked = before(turn).filter((x) => x.role === "visitor");
-    setImproving({ question: asked[asked.length - 1]?.text ?? "", answer: stripMarkers(turn.text).trim() });
-  };
-
-  if (!admin)
-    return (
-      <SettingsPage title={t("playground.title")}>
-        <NoAccess what={t("playground.what")} />
-      </SettingsPage>
-    );
-
-  return (
-    <SettingsPage wide title={t("playground.title")} description={t("playground.description")}>
-      {ai.config && !saved.widget_answers && !draft?.ai.widget_answers && <AgentOffNotice className="-mb-3" />}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <Chat
-          turns={turns}
-          busy={busy}
-          text={text}
-          setText={setText}
-          onSend={send}
-          onStop={() => abort.current?.abort()}
-          onReset={reset}
-          botName={botName}
-          botSrc={botSrc}
-          suggestions={suggestions}
-          spent={spent}
-          onSaveTest={saveAsTest}
-          onImprove={improve}
-        />
-        <aside className="flex flex-col gap-4">
-          <SettingsPanel
-            hasDraft={!!draft}
-            model={model ?? saved.widget_model}
-            onModel={setModel}
-            instructions={instructions ?? saved.widget_instructions}
-            onInstructions={setInstructions}
-            overridden={model !== null || instructions !== null}
-            onClear={() => {
-              setModel(null);
-              setInstructions(null);
-            }}
-            models={models?.data}
-            defaultModel={defaultModel}
-          />
-          <VisitorPanel value={visitor} onChange={setVisitor} />
-          <p className="px-1 text-[11.5px] leading-[17px] text-fg-3">{t("playground.note", { n: ai.cost("playground") ?? 3 })}</p>
-        </aside>
-      </div>
-      {saving && <TestEditor initial={saving} onClose={() => setSaving(null)} />}
-      {improving && <ImproveAnswerDialog question={improving.question} answer={improving.answer} onClose={() => setImproving(null)} />}
-    </SettingsPage>
-  );
+  const spent = turns.reduce((n, x) => n + (x.role === "agent" ? (x.usd ?? 0) : 0), 0);
+  return { turns, text, setText, busy, send, stop: () => abort.current?.abort(), reset, spent };
 }
 
-function Chat({
-  turns,
-  busy,
-  text,
-  setText,
-  onSend,
-  onStop,
-  onReset,
-  botName,
-  botSrc,
+export type PlaygroundChat = ReturnType<typeof usePlaygroundChat>;
+
+export function Chat({
+  chat,
+  bot,
   suggestions,
-  spent,
   onSaveTest,
   onImprove,
+  className,
 }: {
-  turns: Turn[];
-  busy: boolean;
-  text: string;
-  setText: (s: string) => void;
-  onSend: (s: string) => void;
-  onStop: () => void;
-  onReset: () => void;
-  botName: string;
-  botSrc: string | null;
+  chat: PlaygroundChat;
+  bot: ChatBot;
   suggestions: string[];
-  spent: number;
-  onSaveTest: (turn: AgentTurn) => void;
-  onImprove: (turn: AgentTurn) => void;
+  onSaveTest?: (turn: AgentTurn) => void;
+  onImprove?: (turn: AgentTurn) => void;
+  className?: string;
 }) {
+  const { turns, busy, text, setText, send: onSend, stop: onStop, reset: onReset, spent } = chat;
   const { t } = useTranslation("agent");
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -287,15 +273,15 @@ function Chat({
   }, [turns.length, tail]);
 
   return (
-    <section className="flex h-[min(680px,calc(100vh-220px))] min-h-[460px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xs" aria-label={t("playground.chat")}>
+    <section className={cn("flex h-[min(680px,calc(100vh-220px))] min-h-[460px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xs", className)} aria-label={t("playground.chat")}>
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-4">
-        <BotAvatar src={botSrc} size={24} />
+        <BotFace look={bot.look} image={bot.image} size={24} state={busy ? "thinking" : "idle"} blink />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-fg">{botName}</div>
+          <div className="truncate text-[13px] font-medium text-fg">{bot.name}</div>
         </div>
         {spent > 0 && (
           <Tooltip content={t("playground.spentHint")}>
-            <span className="mono text-[11px] tabular-nums text-fg-3">{t("playground.spent", { n: credits(spent) })}</span>
+            <span className="mono text-[11px] tabular-nums text-fg-3">{t("playground.spent", { cost: formatUsd(spent, { precise: true }) })}</span>
           </Tooltip>
         )}
         <Button size="xs" variant="ghost" icon={<RotateCcw className="size-3" />} onClick={onReset} disabled={!turns.length}>
@@ -305,9 +291,9 @@ function Chat({
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto bg-sunken/60 px-4 py-4" aria-live="polite">
         {!turns.length ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <BotAvatar src={botSrc} size={44} />
+            <BotFace look={bot.look} image={bot.image} size={44} blink />
             <div>
-              <div className="text-[14px] font-medium text-fg">{t("playground.emptyTitle", { name: botName })}</div>
+              <div className="text-[14px] font-medium text-fg">{t("playground.emptyTitle", { name: bot.name })}</div>
               <p className="mx-auto mt-1 max-w-[340px] text-[12.5px] leading-[18px] text-fg-3">{t("playground.emptyBody")}</p>
             </div>
             <div className="flex max-w-[460px] flex-wrap justify-center gap-1.5">
@@ -326,7 +312,7 @@ function Chat({
         ) : (
           <ol className="flex flex-col gap-4">
             {turns.map((x) => (
-              <li key={x.id}>{x.role === "visitor" ? <VisitorBubble text={x.text} /> : <AgentBubble turn={x} botName={botName} botSrc={botSrc} onSaveTest={busy ? undefined : () => onSaveTest(x)} onImprove={busy ? undefined : () => onImprove(x)} />}</li>
+              <li key={x.id}>{x.role === "visitor" ? <VisitorBubble text={x.text} /> : <AgentBubble turn={x} bot={bot} onSaveTest={busy || !onSaveTest ? undefined : () => onSaveTest(x)} onImprove={busy || !onImprove ? undefined : () => onImprove(x)} />}</li>
             ))}
           </ol>
         )}
@@ -383,14 +369,12 @@ const SOURCE_ICON: Record<AgentSource["kind"], typeof Globe> = { article: BookOp
 
 function AgentBubble({
   turn,
-  botName,
-  botSrc,
+  bot,
   onSaveTest,
   onImprove,
 }: {
   turn: AgentTurn;
-  botName: string;
-  botSrc: string | null;
+  bot: ChatBot;
   onSaveTest?: () => void;
   onImprove?: () => void;
 }) {
@@ -402,9 +386,9 @@ function AgentBubble({
   const waiting = turn.streaming && !shown && !turn.tools.length;
   return (
     <motion.div initial={reduce ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={springs.snap} className="group/bubble flex items-start gap-2.5">
-      <BotAvatar src={botSrc} size={26} className="mt-0.5" />
+      <BotFace look={bot.look} image={bot.image} size={26} state={turn.streaming ? "thinking" : "idle"} className="mt-0.5" />
       <div className="flex min-w-0 max-w-[85%] flex-col gap-1.5">
-        <span className="text-[11.5px] font-medium text-fg-3">{botName}</span>
+        <span className="text-[11.5px] font-medium text-fg-3">{bot.name}</span>
         {turn.tools.length > 0 && (
           <ul className="flex flex-col gap-1">
             <AnimatePresence initial={false}>
@@ -476,7 +460,7 @@ function AgentBubble({
             {turn.error}
           </div>
         )}
-        {(turn.sources.length > 0 || turn.credits !== null) && !turn.streaming && (
+        {(turn.sources.length > 0 || turn.usd !== null) && !turn.streaming && (
           <div className="flex flex-wrap items-center gap-1.5">
             {turn.sources.map((s) => {
               const Icon = SOURCE_ICON[s.kind] ?? BookOpen;
@@ -497,8 +481,8 @@ function AgentBubble({
                 </span>
               );
             })}
-            {turn.credits !== null && (
-              <span className="mono ml-auto text-[10.5px] tabular-nums text-fg-4">{t("playground.replyCredits", { n: credits(turn.credits) })}</span>
+            {turn.usd !== null && (
+              <span className="mono ml-auto text-[10.5px] tabular-nums text-fg-4">{t("playground.replyCost", { cost: formatUsd(turn.usd, { precise: true }) })}</span>
             )}
           </div>
         )}
@@ -521,8 +505,8 @@ function SettingsPanel({
   hasDraft,
   model,
   onModel,
-  instructions,
-  onInstructions,
+  botId,
+  onBot,
   overridden,
   onClear,
   models,
@@ -531,8 +515,8 @@ function SettingsPanel({
   hasDraft: boolean;
   model: string;
   onModel: (v: string) => void;
-  instructions: string;
-  onInstructions: (v: string) => void;
+  botId: string | null;
+  onBot: (v: string | null) => void;
   overridden: boolean;
   onClear: () => void;
   models: Parameters<typeof ModelPicker>[0]["models"];
@@ -564,14 +548,7 @@ function SettingsPanel({
           <ModelPicker id={p.id} value={model} onChange={onModel} models={models} defaultId={defaultModel} defaultLabel={t("behaviour.sameAsMain")} aria-label={t("behaviour.widgetModel")} />
         )}
       </Field>
-      <Field label={t("behaviour.instructions")}>
-        {(p) => (
-          <div className="flex flex-col gap-1">
-            <Textarea {...p} rows={5} className="text-[12.5px]" value={instructions} onChange={(e) => onInstructions(e.target.value)} placeholder={t("behaviour.instructionsPlaceholder")} />
-            <Counter n={instructions.length} max={INSTRUCTIONS_MAX} className="self-end" />
-          </div>
-        )}
-      </Field>
+      <Field label={t("playground.answerAs")}>{(p) => <BotSelect id={p.id} size="sm" value={botId} onChange={onBot} />}</Field>
       <p className="text-[11.5px] leading-[17px] text-fg-3">
         {t("playground.overridesHint")}{" "}
         <Link to="/settings/ai/behaviour" className="text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg">

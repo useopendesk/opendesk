@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, Columns2, Filter, Inbox as InboxIcon, Rows3, Search, X } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Columns2, Filter, Lock, Mail, Rows3, Search, Users, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuCheckItem, MenuContent, MenuLabel, MenuSeparator, MenuSub, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuCheckItem, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuSub, MenuTrigger } from "@/components/ui/menu";
+import { Picker } from "@/components/ui/picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Channel, Priority, Severity } from "@/lib/api/types";
 import { encodeFieldFilters, parseFieldFilters, type InboxSearch } from "@/lib/folders";
@@ -14,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { AnimatedNumber } from "@/components/motion";
 import { TagSwatch } from "./TagSwatch";
 import { ChannelIcon, PriorityIcon, SeverityChip, channelLabel, priorityLabel, priorityOrder, severityLabel, severityOrder } from "./bits";
+import { addressLabel, BrandChip, sortTeams, TeamDot, useTeamsCtx } from "./teams";
 
 export type InboxLayout = "split" | "list";
 
@@ -53,7 +55,13 @@ export function ListToolbar({
   compact,
   layout,
   onLayout,
+  below,
+  inTeam,
 }: {
+  /** A row under the title (a team inbox's tabs). */
+  below?: ReactNode;
+  /** A team inbox: the team filter is the page itself. */
+  inTeam?: boolean;
   title: string;
   icon: ReactNode;
   count?: number | null;
@@ -68,7 +76,10 @@ export function ListToolbar({
   const { t } = useTranslation("inbox");
   const reduced = useReducedMotion();
   const { data: tags } = useQuery(q.tags());
-  const { data: mailboxes } = useQuery(q.mailboxes());
+  const teams = useTeamsCtx();
+  const mailboxes = teams.mailboxes;
+  const [addressOpen, setAddressOpen] = useState(false);
+  const openingAddress = useRef(false);
   const [term, setTerm] = useState(search.q ?? "");
   const [searchOpen, setSearchOpen] = useState(!!search.q);
   const first = useRef(true);
@@ -115,7 +126,33 @@ export function ListToolbar({
     setFieldFilters(vals.length ? [...rest, { key: f.key, op: "any", value: vals.join(",") }] : rest);
   };
   const memberName = (id: string) => (id === "me" ? t("fields.me") : members?.find((m) => m.user.id === id)?.user.name);
-  const activeFilters = priorities.length + severities.length + (search.channel ? 1 : 0) + (search.tag ? 1 : 0) + (search.mailbox ? 1 : 0) + fieldFilters.length;
+  // Team: any of ids, "mine" and "none".
+  const teamSel = inTeam ? [] : (search.team?.split(",").filter(Boolean) ?? []);
+  const toggleTeam = (v: string) => {
+    const next = teamSel.includes(v) ? teamSel.filter((x) => x !== v) : [...teamSel, v];
+    onSearch({ ...search, team: next.length ? next.join(",") : undefined });
+  };
+  const teamLabel = (v: string) => (v === "mine" ? t("teams.myTeams") : v === "none" ? t("props.noTeam") : (teams.team(v)?.name ?? t("teams.team")));
+  const showTeams = teams.hasTeams && !inTeam;
+  const brandSel = teams.multiBrand ? teams.brand(search.brand) : undefined;
+  const addressItems = mailboxes.map((m) => ({
+    value: m.id,
+    label: addressLabel(m),
+    keywords: [m.email, ...(m.aliases ?? [])],
+    group: teams.multiBrand ? (teams.brand(m.brand_id)?.name ?? "") : undefined,
+    icon: <TeamDot team={teams.team(m.team_id)} />,
+    hint: m.private ? <Lock className="size-3" /> : undefined,
+  }));
+  const activeMailbox = mailboxes.find((m) => m.id === search.mailbox);
+  const activeFilters =
+    priorities.length +
+    severities.length +
+    (search.channel ? 1 : 0) +
+    (search.tag ? 1 : 0) +
+    (search.mailbox ? 1 : 0) +
+    teamSel.length +
+    (brandSel ? 1 : 0) +
+    fieldFilters.length;
   const closeSearch = () => {
     setTerm("");
     setSearchOpen(false);
@@ -179,7 +216,15 @@ export function ListToolbar({
               </Button>
             </MenuTrigger>
           </Tooltip>
-          <MenuContent align="end" className="w-[210px]">
+          <MenuContent
+            align="end"
+            className="w-[210px]"
+            onCloseAutoFocus={(e) => {
+              // The address list opens next and takes the focus.
+              if (openingAddress.current) e.preventDefault();
+              openingAddress.current = false;
+            }}
+          >
             <MenuSub label={t("filter.priority")}>
               {priorityOrder.map((p) => (
                 <MenuCheckItem key={p} checked={priorities.includes(p)} onSelect={() => togglePriority(p)} icon={<PriorityIcon priority={p} />}>
@@ -224,19 +269,59 @@ export function ListToolbar({
                 {!tags?.length && <p className="px-2 py-1.5 text-xs text-fg-4">{t("filter.noTags")}</p>}
               </div>
             </MenuSub>
-            {!!mailboxes?.length && (
-              <MenuSub label={t("filter.mailbox")}>
-                {mailboxes.map((m) => (
+            {showTeams && (
+              <MenuSub label={t("filter.team")}>
+                <div className="max-h-[300px] overflow-y-auto">
+                  {teams.myTeams.size > 0 && (
+                    <MenuCheckItem checked={teamSel.includes("mine")} onSelect={() => toggleTeam("mine")} icon={<Users />}>
+                      {t("teams.myTeams")}
+                    </MenuCheckItem>
+                  )}
+                  {sortTeams(teams.teams.filter(teams.canSeeTeam), teams.myTeams).map((x) => (
+                    <MenuCheckItem key={x.id} checked={teamSel.includes(x.id)} onSelect={() => toggleTeam(x.id)} icon={<TeamDot team={x} />}>
+                      <span className="flex items-center gap-1.5">
+                        {x.name}
+                        {x.private && <Lock className="!size-3 !text-fg-4" />}
+                      </span>
+                    </MenuCheckItem>
+                  ))}
                   <MenuCheckItem
-                    key={m.id}
-                    checked={search.mailbox === m.id}
-                    onSelect={() => onSearch({ ...search, mailbox: search.mailbox === m.id ? undefined : m.id })}
-                    icon={<InboxIcon />}
+                    checked={teamSel.includes("none")}
+                    onSelect={() => toggleTeam("none")}
+                    icon={<span className="size-2 rounded-full border border-dashed border-line-strong" />}
                   >
-                    {m.name}
+                    {t("props.noTeam")}
+                  </MenuCheckItem>
+                </div>
+              </MenuSub>
+            )}
+            {teams.multiBrand && (
+              <MenuSub label={t("filter.brand")}>
+                {teams.brands.map((b) => (
+                  <MenuCheckItem
+                    key={b.id}
+                    checked={search.brand === b.id}
+                    onSelect={() => onSearch({ ...search, brand: search.brand === b.id ? undefined : b.id })}
+                    icon={<span className="size-2 rounded-[2px] bg-fg-4" style={b.color ? { backgroundColor: b.color } : undefined} />}
+                  >
+                    {b.name}
                   </MenuCheckItem>
                 ))}
               </MenuSub>
+            )}
+            {mailboxes.length > 0 && (
+              <MenuItem
+                icon={<Mail />}
+                onSelect={() => {
+                  openingAddress.current = true;
+                  setTimeout(() => setAddressOpen(true), 0);
+                }}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  {t("filter.address")}
+                  {activeMailbox && <span className="mono truncate text-[11px] text-fg-4">{activeMailbox.email}</span>}
+                </span>
+              </MenuItem>
             )}
             {pickable.length > 0 && (
               <MenuSub label={t("fields.filter")}>
@@ -273,13 +358,25 @@ export function ListToolbar({
             {activeFilters > 0 && (
               <>
                 <MenuSeparator />
-                <MenuCheckItem checked={false} onSelect={() => onSearch({ sort: search.sort, order: search.order, q: search.q })}>
+                <MenuCheckItem checked={false} onSelect={() => onSearch({ sort: search.sort, order: search.order, q: search.q, tab: search.tab })}>
                   {t("filter.clear")}
                 </MenuCheckItem>
               </>
             )}
           </MenuContent>
         </Menu>
+        <Picker
+          open={addressOpen}
+          onOpenChange={setAddressOpen}
+          align="end"
+          width={320}
+          placeholder={t("filter.searchAddresses")}
+          emptyText={t("filter.noAddresses")}
+          value={search.mailbox ?? null}
+          items={addressItems}
+          onSelect={(v) => onSearch({ ...search, mailbox: search.mailbox === v ? undefined : v })}
+          trigger={<span aria-hidden className="pointer-events-none -ml-1.5 h-7 w-0" />}
+        />
         <Menu>
           <Tooltip content={t("toolbar.sort")}>
             <MenuTrigger asChild>
@@ -337,6 +434,7 @@ export function ListToolbar({
           </>
         )}
       </div>
+      {below}
       <AnimatePresence initial={false}>
         {activeFilters > 0 && (
           <motion.div
@@ -383,8 +481,19 @@ export function ListToolbar({
                 })}
                 {search.mailbox && (
                   <Chip key="mailbox" label={t("filter.remove")} onRemove={() => onSearch({ ...search, mailbox: undefined })}>
-                    <InboxIcon />
-                    {mailboxes?.find((m) => m.id === search.mailbox)?.name ?? t("filter.mailbox")}
+                    <Mail />
+                    <span className="mono text-[11.5px]">{activeMailbox?.email ?? t("filter.address")}</span>
+                  </Chip>
+                )}
+                {teamSel.map((v) => (
+                  <Chip key={`team-${v}`} label={t("filter.remove")} onRemove={() => toggleTeam(v)}>
+                    {v === "mine" ? <Users /> : v === "none" ? <span className="size-2 rounded-full border border-dashed border-line-strong" /> : <TeamDot team={teams.team(v)} />}
+                    {teamLabel(v)}
+                  </Chip>
+                ))}
+                {brandSel && (
+                  <Chip key="brand" label={t("filter.remove")} onRemove={() => onSearch({ ...search, brand: undefined })}>
+                    <BrandChip brand={brandSel} className="-ml-1.5 h-5 bg-transparent shadow-none" />
                   </Chip>
                 )}
               </AnimatePresence>

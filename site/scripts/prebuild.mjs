@@ -10,7 +10,7 @@ const repo = join(site, '..');
 const pub = join(site, 'public');
 mkdirSync(pub, { recursive: true });
 
-// Brand: favicons, app icons and the social card. Committed copies stay in place
+// Brand: favicons and app icons. Committed copies stay in place
 // when the site is built on its own, outside the repo.
 const brand = [
   ['brand/icons/favicon.svg', 'favicon.svg'],
@@ -20,7 +20,6 @@ const brand = [
   ['brand/icons/icon-192.png', 'icon-192.png'],
   ['brand/icons/icon-512.png', 'icon-512.png'],
   ['brand/icons/apple-touch-icon.png', 'apple-touch-icon.png'],
-  ['brand/social/og.png', 'og.png'],
 ];
 for (const [from, to] of brand) {
   const src = join(repo, from);

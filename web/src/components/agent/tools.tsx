@@ -4,6 +4,8 @@
 // "Set" with a way to replace it, never its value.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { continueInBrowser } from "@/components/desktop/InBrowser";
+import { isDesktop } from "@/lib/desktop";
 import { Braces, KeyRound, ListChecks, Play } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -35,8 +37,12 @@ function urlProblem(v: string): "empty" | "invalid" | null {
   }
 }
 
-/** Starts the OAuth flow: the browser leaves for the authorization server and comes back to /settings/ai/tools. */
+/**
+ * Starts the OAuth flow: the browser leaves for the authorization server and comes back to /settings/ai/tools.
+ * The desktop app opens that page in the browser instead (contracts/native.md).
+ */
 export async function startOAuth(id: string) {
+  if (isDesktop) return continueInBrowser("/settings/ai/tools");
   const { url } = await api.ai.mcp.oauthStart(id);
   window.location.assign(url);
 }

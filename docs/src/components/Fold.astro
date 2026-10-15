@@ -1,0 +1,47 @@
+---
+/**
+ * A section of detail, closed until asked for. Write it around a heading and its
+ * content; the heading becomes the toggle and keeps its id, so the table of
+ * contents, search and #links still land on it, and following one opens the fold.
+ *
+ *   <Fold>
+ *   ## Reconnecting a mailbox
+ *   Text, lists, code...
+ *   </Fold>
+ */
+const html = await Astro.slots.render('default');
+// The first heading (Starlight wraps it with its anchor link) is the summary.
+const match = html.match(/^\s*(<div class="sl-heading-wrapper[^"]*">[\s\S]*?<\/div>|<h[2-4][^>]*>[\s\S]*?<\/h[2-4]>)/);
+const head = match?.[1] ?? '';
+const body = match ? html.slice(match[0].length) : html;
+---
+<details class="od-fold">
+  <summary>
+    <div class="od-fold-head" set:html={head} />
+    <svg class="od-fold-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+  </summary>
+  <div class="od-fold-body" set:html={body} />
+</details>
+
+<script>
+  // Following a #link into a fold opens it first; a click on the heading's own
+  // anchor toggles the fold instead of only jumping to it.
+  const reveal = () => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const target = id ? document.getElementById(id) : null;
+    const fold = target?.closest<HTMLDetailsElement>('details.od-fold');
+    if (!fold) return;
+    fold.open = true;
+    requestAnimationFrame(() => target!.scrollIntoView());
+  };
+  reveal();
+  addEventListener('hashchange', reveal);
+  document.querySelectorAll<HTMLDetailsElement>('details.od-fold').forEach((fold) => {
+    fold.querySelector('summary')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      fold.open = !fold.open;
+      const id = fold.querySelector('summary [id]')?.id;
+      if (fold.open && id) history.replaceState(null, '', `#${id}`);
+    });
+  });
+</script>

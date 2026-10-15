@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/useopendesk/opendesk/internal/ai/decide"
+	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -174,9 +176,10 @@ func (s *Service) workspaceOn(ctx context.Context, wid uuid.UUID) (hd.AISettings
 	return a, nil
 }
 
-// call is one model call billed to a feature. Credits are checked before the call and
-// charged by charge after the feature succeeded, so a failed call costs nothing. A call
-// on the workspace's own key is recorded and charges nothing.
+// call is one model call billed to a feature. The AI balance is checked against the
+// call's estimate before the call, and the real cost is charged by charge after the
+// feature succeeded, so a failed call costs nothing. A call on the workspace's own key
+// is recorded and charges nothing.
 type call struct {
 	s        *Service
 	wid      uuid.UUID
@@ -187,10 +190,10 @@ type call struct {
 	// model, when set, is used instead of the workspace's model for the feature's tier.
 	model string
 	// charged is what the last charge cost.
-	charged plan.Milli
+	charged plan.Micro
 	// rt is where the call goes (the instance's provider or the workspace's key).
 	rt *route
-	// onKey marks a call that ran on the workspace's own key: no credits.
+	// onKey marks a call that ran on the workspace's own key: nothing is charged.
 	onKey bool
 }
 
@@ -211,8 +214,9 @@ func (c *call) route(ctx context.Context) (*route, error) {
 	return rt, nil
 }
 
-// reserve checks credits before an LLM call. A workspace on its own key needs none.
-func (c *call) reserve(ctx context.Context) error {
+// reserve checks the AI balance before an LLM call on model with about in prompt tokens
+// and up to maxOut output tokens. A workspace on its own key needs none.
+func (c *call) reserve(ctx context.Context, model string, in, maxOut int) error {
 	rt, err := c.route(ctx)
 	if err != nil {
 		return err
@@ -220,15 +224,15 @@ func (c *call) reserve(ctx context.Context) error {
 	if rt.own {
 		return nil
 	}
-	return c.reserveCredits(ctx)
+	return c.reserveBalance(ctx, c.s.estimate(ctx, c.feature, model, in, maxOut))
 }
 
-// reserveCredits checks the balance covers the feature (instance calls, Jev decisions).
-func (c *call) reserveCredits(ctx context.Context) error {
+// reserveBalance checks the balance covers an estimate (instance calls, Jev decisions).
+func (c *call) reserveBalance(ctx context.Context, estimate plan.Micro) error {
 	if c.s.d.Plan == nil {
 		return nil // no plan service: unlimited
 	}
-	return c.s.d.Plan.Reserve(ctx, c.s.d.DB.Pool, c.wid, c.feature)
+	return c.s.d.Plan.Reserve(ctx, c.s.d.DB.Pool, c.wid, estimate)
 }
 
 // resolveModel picks the model of a call: an explicit override, else the workspace's
@@ -260,11 +264,11 @@ func (c *call) resolveModel(ctx context.Context, requested string) string {
 
 // run reserves and calls the model; onDelta non-nil streams.
 func (c *call) run(ctx context.Context, req Request, onDelta func(string)) (Response, error) {
-	if err := c.reserve(ctx); err != nil {
+	req.Model = c.resolveModel(ctx, req.Model)
+	if err := c.reserve(ctx, req.Model, requestTokens(req), req.MaxTokens); err != nil {
 		return Response{}, err
 	}
 	rt := c.rt
-	req.Model = c.resolveModel(ctx, req.Model)
 	var err error
 	start := time.Now()
 	if onDelta != nil {
@@ -283,7 +287,7 @@ func (c *call) run(ctx context.Context, req Request, onDelta func(string)) (Resp
 	return c.resp, err
 }
 
-// decide reserves credits and asks the decision engine. Usage is recorded by charge
+// decide reserves the feature's typical cost and asks the decision engine. Usage is recorded by charge
 // with the engine's name as the model ("jev", counts only). Jev stays on the instance and
 // is charged even for a workspace on its own key; the LLM adapter follows the workspace's
 // provider like any LLM call.
@@ -300,7 +304,7 @@ func (c *call) decide(ctx context.Context, dc decide.Decider, req decide.Request
 		}
 	}
 	if !c.onKey {
-		if err := c.reserveCredits(ctx); err != nil {
+		if err := c.reserveBalance(ctx, plan.Typical[c.feature]); err != nil {
 			return decide.Result{}, err
 		}
 	}
@@ -327,13 +331,13 @@ func decisionErr(err error) error {
 		return ErrBadOutput
 	case errors.Is(err, ErrRefused):
 		return ErrRefused
-	case isNoCredits(err), errors.Is(err, context.Canceled):
+	case isNoBalance(err), errors.Is(err, context.Canceled):
 		return err
 	}
 	return ErrUnavailable
 }
 
-// charge records usage and spends the feature's credits after it succeeded.
+// charge records usage and charges the call's cost after it succeeded.
 func (c *call) charge(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
 	var err error
@@ -391,6 +395,32 @@ func resolveTicket(ctx context.Context, q db.Querier, wid uuid.UUID, raw string)
 		return uuid.Nil, httpx.NotFound("Ticket")
 	}
 	return id, err
+}
+
+// resolveVisibleTicket is resolveTicket for a principal: a ticket p may not see (a private
+// team's, contracts/teams.md "Visibility") is not found.
+func resolveVisibleTicket(ctx context.Context, q db.Querier, p *auth.Principal, raw string) (uuid.UUID, error) {
+	id, err := resolveTicket(ctx, q, p.WorkspaceID, raw)
+	if err != nil {
+		return id, err
+	}
+	var team, assignee *uuid.UUID
+	err = q.QueryRow(ctx, `SELECT team_id, assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		p.WorkspaceID, id).Scan(&team, &assignee)
+	if db.IsNotFound(err) {
+		return uuid.Nil, httpx.NotFound("Ticket")
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	ok, err := domain.CanSee(ctx, q, p, team, assignee)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !ok {
+		return uuid.Nil, httpx.NotFound("Ticket")
+	}
+	return id, nil
 }
 
 // ticketCtx is what features read about a ticket.
@@ -457,7 +487,7 @@ func storedSummary(custom map[string]any) StoredSummary {
 	return s
 }
 
-// articleURL is the public help center link of an article.
-func (s *Service) articleURL(wsSlug, articleSlug string) string {
-	return s.d.Cfg.AppURL + "/help/" + wsSlug + "/articles/" + articleSlug
+// articleURL is the public help center link of an article on a brand's help center.
+func (s *Service) articleURL(brandSlug, articleSlug string) string {
+	return s.d.Cfg.AppURL + "/help/" + url.PathEscape(brandSlug) + "/a/" + url.PathEscape(articleSlug)
 }

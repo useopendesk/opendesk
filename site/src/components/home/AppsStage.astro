@@ -1,0 +1,15 @@
+---
+/**
+ * The desktop app and the iPhone app on one painting, on one timeline: a chat
+ * arrives and the phone takes the push. Each device lives in its own file.
+ */
+import Stage from '../Stage.astro';
+import DesktopMock from './DesktopMock.astro';
+import PhoneMock from './PhoneMock.astro';
+---
+<Stage w={1200} h={640} tone="none" mobileW={760} mobileX={420} label="The opendesk desktop app with a translucent sidebar, and the iPhone app receiving a push notification for a new chat.">
+  <div class="absolute inset-0" data-seq data-hold="4600">
+    <div class="absolute left-[60px] top-[64px] h-[540px] w-[860px]"><DesktopMock /></div>
+    <div class="absolute left-[850px] top-[78px] h-[600px] w-[292px]"><PhoneMock /></div>
+  </div>
+</Stage>

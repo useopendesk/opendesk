@@ -19,6 +19,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChannelIcon, channelLabel, PriorityPill, SlaPill, slaState, StatusPill, TicketNumber } from "./bits";
 import { Timeline } from "./detail/Timeline";
 import { useDisplay } from "./fields";
+import { TicketTeamChips, useTeamsCtx } from "./teams";
 
 const noop = () => {};
 
@@ -30,6 +31,7 @@ export function TicketPreview({ ticket: t, onOpen, onReply }: { ticket: Ticket; 
   const contact = t.contact?.name || t.contact?.email || tr("row.unknown");
   const sla = slaState(t);
   const [more, setMore] = useState(false);
+  const teams = useTeamsCtx();
 
   return (
     <div className="flex h-full min-h-0 flex-col" aria-label={tr("preview.label")}>
@@ -56,6 +58,7 @@ export function TicketPreview({ ticket: t, onOpen, onReply }: { ticket: Ticket; 
           <StatusPill status={t.status} label={display.status(t.status)} hue={display.statusTone(t.status)} />
           <PriorityPill priority={t.priority} label={display.priority(t.priority)} hue={display.priorityTone(t.priority)} />
           {sla && sla.state !== "on_track" && <SlaPill ticket={t} />}
+          <TicketTeamChips t={t} ctx={teams} />
           <span className="ml-1 flex shrink-0 items-center gap-1.5 text-xs">
             {t.assignee ? (
               <>
@@ -97,6 +100,11 @@ export function TicketPreview({ ticket: t, onOpen, onReply }: { ticket: Ticket; 
                 {t.tags.map((tag) => (
                   <TagChip key={tag.id} name={tag.name} color={tag.color} />
                 ))}
+                {teams.multiAddress && t.received_at && (
+                  <span className="mono text-[11px] text-fg-3" data-ph-mask>
+                    {tr("row.receivedAt", { address: t.received_at })}
+                  </span>
+                )}
                 <span className="text-fg-4">{tr("preview.created", { when: relLong(t.created_at) })}</span>
               </div>
             </motion.div>
@@ -111,6 +119,7 @@ export function TicketPreview({ ticket: t, onOpen, onReply }: { ticket: Ticket; 
           loading={!messages.data}
           onRetry={noop}
           contactName={t.contact?.name}
+          receivedAt={t.channel === "email" ? t.received_at : null}
         />
       </div>
     </div>

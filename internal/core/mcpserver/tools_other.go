@@ -176,6 +176,7 @@ func getContact(ctx context.Context, c *caller, raw json.RawMessage) (any, error
 			for _, t := range pg.Data {
 				out.Tickets = append(out.Tickets, compactTicket(t, false))
 			}
+			c.nameAll(ctx, out.Tickets)
 		}
 	}
 	return out, nil

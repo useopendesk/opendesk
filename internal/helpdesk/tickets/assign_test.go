@@ -138,12 +138,18 @@ func TestAssignmentRules(t *testing.T) {
 	e.Exec(`UPDATE mailboxes SET team_id = $2 WHERE id = $1`, mb, team)
 	e.Exec(`INSERT INTO assignment_rules (workspace_id, mailbox_id, mode) VALUES ($1, $2, 'load_balanced')`, ws.ID, mb)
 	e.SetSettings(ws, map[string]any{"auto_assign": "none"})
+	// The address routes the ticket to its team, whose rule wins over the mailbox's.
+	if got := assignNew(t, e, ws, 1, map[string]any{"mailbox_id": mb.String(), "channel": "api"}); got[0] != nil {
+		t.Fatal("team rule none lost to the mailbox rule")
+	}
+	e.Exec(`DELETE FROM assignment_rules WHERE workspace_id = $1 AND team_id = $2`, ws.ID, team)
 	got := assignNew(t, e, ws, 2, map[string]any{"mailbox_id": mb.String(), "channel": "api"})
 	for _, g := range got {
 		if g == nil || *g != ws.Agent.ID {
 			t.Fatalf("mailbox rule %v", got)
 		}
 	}
+	e.Exec(`INSERT INTO assignment_rules (workspace_id, team_id, mode) VALUES ($1, $2, 'none')`, ws.ID, team)
 	// Deleting the team deletes its rule.
 	e.Exec(`DELETE FROM teams WHERE id = $1`, team)
 	var n int

@@ -68,13 +68,13 @@ var tagChars = regexp.MustCompile(`^[\p{L}\p{N} _\-./:&+#]+$`)
 func CleanTagName(s string) (string, error) {
 	s = strings.Join(strings.Fields(norm.NFC.String(s)), " ")
 	if s == "" {
-		return "", httpx.Validation("tag name is required")
+		return "", httpx.Validation("label name is required")
 	}
 	if len([]rune(s)) > 50 {
-		return "", httpx.Validation("tag names must be 50 characters or less")
+		return "", httpx.Validation("label names must be 50 characters or less")
 	}
 	if !tagChars.MatchString(s) {
-		return "", httpx.Validation("tag names may contain letters, numbers, spaces and - _ . / : & + #")
+		return "", httpx.Validation("label names may contain letters, numbers, spaces and - _ . / : & + #")
 	}
 	return s, nil
 }

@@ -163,7 +163,7 @@ curl https://api.opendesk.sh/v1/tickets/1042/merge \
 
 | Type | Data |
 | --- | --- |
-| `status_changed`, `priority_changed`, `severity_changed`, `assigned` | `{ from, to }` |
+| `status_changed`, `priority_changed`, `severity_changed`, `assigned` | `{ from, to }`. A `status_changed` with `reason: "sender_unverified"` and `message_id` has `from` equal to `to`: a reply that failed sender checks left the status as it was |
 | `team_changed` | |
 | `tagged`, `untagged` | `{ tag }` |
 | `sla_breached` | `{ kind }` |

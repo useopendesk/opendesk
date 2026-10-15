@@ -20,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/email/mailhost"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/plan"
@@ -77,11 +78,19 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				if err != nil {
 					return nil, wrapMailboxErr(err)
 				}
+				// Reconnecting a mailbox that already uses this sign-in is always allowed;
+				// moving one onto it is a new connection.
+				if m.InboundKind != in.Provider && !s.oauthConnect(in.Provider) {
+					return nil, oauthDisabled(in.Provider)
+				}
 				data["mailbox_id"] = id.String()
 				if b.Email == "" {
 					b.Email = m.Email
 				}
 			} else {
+				if !s.oauthConnect(in.Provider) {
+					return nil, oauthDisabled(in.Provider)
+				}
 				if err := s.d.Plan.CheckMailbox(ctx, s.d.DB.Pool, p.WorkspaceID); err != nil {
 					return nil, httpx.Wrap(err)
 				}
@@ -114,6 +123,13 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 		})
 
 	r.Get("/v1/mailboxes/oauth/{provider}/callback", s.oauthCallback)
+}
+
+// oauthDisabled answers a new connection with a sign-in this instance does not offer
+// for mailboxes (GOOGLE_MAILBOX_OAUTH, MICROSOFT_MAILBOX_OAUTH).
+func oauthDisabled(provider string) error {
+	return httpx.E(http.StatusForbidden, "mailbox_oauth_disabled", "Connecting a new mailbox with "+providerLabel(provider)+
+		" sign-in is not available on this instance. Connect it with an app password over IMAP and SMTP, or forward its mail into opendesk.")
 }
 
 func (s *service) stateCookie(value string, maxAge int) http.Cookie {
@@ -250,7 +266,8 @@ func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, code, ver
 func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provider string, mailboxID *uuid.UUID,
 	name, email, username string, creds credentials) (uuid.UUID, error) {
 	prov := s.providers[provider]
-	cfg := MailboxConfig{IMAPHost: prov.imapHost, IMAPPort: 993, IMAPTLS: TLSImplicit, IMAPUsername: username, OAuthEmail: email}
+	cfg := MailboxConfig{IMAPHost: prov.imapHost, IMAPPort: 993, IMAPTLS: TLSImplicit, IMAPUsername: username, OAuthEmail: email,
+		MailHost: string(mailhost.ForMailbox("", provider, "", email))}
 	sealed, err := s.sealCreds(creds)
 	if err != nil {
 		return uuid.Nil, err
@@ -302,6 +319,10 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 			m.Name, m.Email, m.InboundKind, m.OutboundKind, m.Config, m.Status = name, email, provider, provider, cfg, "active"
 			if m.Name == "" {
 				m.Name = providerLabel(provider) + " mailbox"
+			}
+			// A connected mailbox starts in the default brand.
+			if err := checkAddressing(ctx, tx, m); err != nil {
+				return err
 			}
 			if err := s.insertMailbox(ctx, tx, m, slug, sealed); err != nil {
 				return err

@@ -1,11 +1,13 @@
 import { Link, Outlet } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
-import { Lockup } from "@/components/brand";
+import { useTranslation } from "react-i18next";
+import { Lockup, Mark } from "@/components/brand";
 import { PriorityIcon, SlaPill, StatusIcon } from "@/components/indicators";
 import { Avatar } from "@/components/ui/avatar";
 import { TagChip } from "@/components/ui/badge";
 import type { Priority, TicketStatus } from "@/lib/api/types";
+import { desktop } from "@/lib/desktop";
 
 /**
  * Sign-in flows and onboarding: the same layered surfaces as the app, a white
@@ -13,9 +15,11 @@ import type { Priority, TicketStatus } from "@/lib/api/types";
  * of a shared inbox filling in live.
  */
 export function AuthLayout() {
+  if (desktop) return <DesktopAuthLayout />;
   return (
-    <div className="relative flex min-h-dvh flex-col bg-chrome">
-      <header className="relative flex h-14 items-center px-6">
+    <div className="relative flex min-h-dvh flex-col bg-frame">
+      {/* In the desktop app this strip is the title bar: it drags the window and clears its controls. */}
+      <header className="window-drag relative flex h-14 items-center px-6 desktop-glass:h-12 desktop-mac:pl-(--window-inset-left) desktop-win:pr-[max(1.5rem,var(--window-inset-right))]">
         <Link to="/" aria-label="opendesk home" className="text-fg">
           <Lockup className="h-[18px]" />
         </Link>
@@ -39,10 +43,39 @@ export function AuthLayout() {
   );
 }
 
+/**
+ * The desktop app: an app window, not a web page. One quiet column on a plain surface,
+ * the mark above it, nothing in the title bar but the window controls, and which server
+ * this window is signed in to (with a way to change it) at the foot.
+ */
+function DesktopAuthLayout() {
+  const { t } = useTranslation("shell");
+  return (
+    <div className="relative flex min-h-dvh flex-col bg-surface">
+      <header aria-hidden className="window-drag h-12 shrink-0" />
+      <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-6">
+        <div className="w-full max-w-[340px] animate-rise-in motion-reduce:animate-none">
+          <div className="group mb-6 flex justify-center">
+            <Mark turn className="size-9 text-fg" />
+          </div>
+          <Outlet />
+        </div>
+      </main>
+      <footer className="flex h-12 shrink-0 items-center justify-center gap-1.5 text-[12px] text-fg-4">
+        <span className="mono">{location.host}</span>
+        <span aria-hidden>·</span>
+        <button type="button" onClick={() => desktop?.switchServer()} className="font-medium text-fg-3 transition-colors hover:text-fg">
+          {t("desktop.changeServer")}
+        </button>
+      </footer>
+    </div>
+  );
+}
+
 export function AuthHeading({ title, subtitle }: { title: string; subtitle?: React.ReactNode }) {
   return (
-    <div className="mb-7">
-      <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.03em] text-fg">{title}</h1>
+    <div className="mb-7 desktop:mb-6 desktop:text-center">
+      <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.03em] text-fg desktop:text-[20px]">{title}</h1>
       {subtitle && <p className="mt-1.5 text-[13px] leading-5 text-fg-3">{subtitle}</p>}
     </div>
   );

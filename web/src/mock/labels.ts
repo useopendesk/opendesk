@@ -37,9 +37,9 @@ const TAG_CHARS = /^[\p{L}\p{N} _\-./:&+#]+$/u;
 
 export function cleanTagName(raw: string): string {
   const name = raw.normalize("NFC").split(/\s+/).filter(Boolean).join(" ");
-  if (!name) throw invalid("tag name is required");
-  if ([...name].length > 50) throw invalid("tag names must be 50 characters or less");
-  if (!TAG_CHARS.test(name)) throw invalid("tag names may contain letters, numbers, spaces and - _ . / : & + #");
+  if (!name) throw invalid("label name is required");
+  if ([...name].length > 50) throw invalid("label names must be 50 characters or less");
+  if (!TAG_CHARS.test(name)) throw invalid("label names may contain letters, numbers, spaces and - _ . / : & + #");
   return name;
 }
 

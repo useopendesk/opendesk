@@ -1,0 +1,173 @@
+---
+title: Docker Compose
+description: The services, profiles and settings in opendesk's self-hosted docker-compose.yml.
+---
+
+import Callout from '../../../components/Callout.astro';
+import Diagram from '../../../components/Diagram.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+
+The installer is a convenience around Docker Compose. The same `docker-compose.yml` is at the root of the repository and is published with every release, so you can run it yourself.
+
+## Services
+
+| Service | Image | Role |
+| --- | --- | --- |
+| `caddy` | `caddy:2.11-alpine` | Ports 80 and 443 with automatic HTTPS. `/socket*` goes to `realtime`, everything else to `opendesk`. |
+| `opendesk` | `ghcr.io/useopendesk/opendesk:${OPENDESK_VERSION}` | The API, workers and web app (`SERVE_WEB=true`), with NATS embedded on the internal network. |
+| `realtime` | `ghcr.io/useopendesk/realtime:${OPENDESK_VERSION}` | The Phoenix gateway, connected to opendesk's NATS with `NATS_TOKEN`. |
+| `postgres` | `pgvector/pgvector:pg17` | Postgres 17 with pgvector for semantic search, data in the `postgres-data` volume. |
+
+Postgres, NATS and the app ports are on an `internal` network and are never published. Only Caddy (and the optional SMTP relay) face the host.
+
+<Diagram name="self-host" caption="Caddy is the only way in. realtime, opendesk and postgres share the internal network, and the gateway reaches opendesk's embedded NATS there." />
+
+Every service runs with `no-new-privileges`, and the app containers run with a read-only root filesystem and all Linux capabilities dropped. Logs rotate at 10 MB, five files each.
+
+## Run it
+
+<Steps>
+<Step title="Download the release files">
+
+From the GitHub release for the version you want, download `docker-compose.yml`, `Caddyfile`, `env.template`, `opendesk-ctl` and `SHA256SUMS` into one directory, then check them:
+
+```sh
+mkdir -p /opt/opendesk && cd /opt/opendesk
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+</Step>
+<Step title="Write .env">
+
+```sh
+cp env.template .env && chmod 600 .env
+```
+
+Fill in the address and generate the secrets (see [The .env file](#the-env-file)).
+
+</Step>
+<Step title="Pull the images and start">
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+</Step>
+</Steps>
+
+<Callout type="note" title="The secrets are required">
+
+Compose refuses to start without `AUTH_SECRET`, `CREDENTIALS_KEY`, `SECRET_KEY_BASE`, `NATS_TOKEN`, `INBOUND_SECRET` and `POSTGRES_PASSWORD`, rather than starting with guessable ones.
+
+</Callout>
+
+From a checkout, `make selfhost-env` writes `.env` with fresh secrets (it never overwrites one), and `docker compose up -d --build` builds the images from source instead of pulling them. Every app service has both `image:` and `build:`, so `docker compose pull && docker compose up -d` compiles nothing.
+
+## The .env file
+
+`.env` sits next to `docker-compose.yml`. The template (`deploy/self-host/.env.template`) documents each setting. The ones specific to this bundle:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENDESK_VERSION` | pinned by the installer | Release of the `opendesk` and `realtime` images. Change it, then `docker compose pull && docker compose up -d`, to upgrade. |
+| `OPENDESK_IMAGE`, `REALTIME_IMAGE` | `ghcr.io/useopendesk/...` | Image names, for a mirror. |
+| `OPENDESK_DOMAIN` | `localhost` | The hostname Caddy serves. `localhost` uses Caddy's local CA; `:80` serves plain HTTP behind another proxy. |
+| `OPENDESK_URL` | `https://localhost` | Public URL. Sets `API_URL`, `APP_URL`, `CORS_ORIGINS` and `SITE_URL`. |
+| `OPENDESK_GATEWAY_URL` | `wss://localhost/socket` | Public WebSocket URL (`GATEWAY_URL`). |
+| `CADDY_GLOBAL_OPTIONS` | empty | Caddy global options, such as `email you@example.com` for the ACME account. |
+| `HTTP_PORT`, `HTTPS_PORT` | `80`, `443` | Host ports Caddy publishes. |
+| `OPENDESK_CADDYFILE` | `./deploy/caddy/Caddyfile` | The Caddyfile to mount. |
+| `CHECK_ORIGINS` | `OPENDESK_URL` | Browser origins the gateway accepts for agent sockets. |
+| `POSTGRES_PASSWORD` | required | Password for the bundled Postgres. |
+| `SECRET_KEY_BASE` | required | The gateway's Phoenix secret. |
+| `NATS_TOKEN` | required | Authenticates the gateway to the embedded NATS. |
+| `INBOUND_SECRET` | required | Authenticates `POST /v1/inbound/email`. |
+| `COMPOSE_PROFILES` | empty | Optional services, comma separated: `minio`, `smtp-inbound`, `ollama`. |
+| `WEB_POSTHOG_KEY`, `WEB_POSTHOG_HOST` | empty | Browser-side analytics for the web app. Empty sends nothing. |
+| `OPENDESK_DATA`, `OPENDESK_PG_DATA`, `OPENDESK_S3_DATA`, `OPENDESK_OLLAMA_DATA` | named volumes | Override where data is stored, for example with a host path. |
+
+Inside the bundle, opendesk always runs with `OPENDESK_ENV=production`, `OPENDESK_ROLE=all` and `TRUST_PROXY=true` (Caddy is the only way in), and `DATABASE_URL` points at the bundled Postgres. Every other [application setting](/self-hosting/configuration/) is passed through from `.env`.
+
+## Profiles
+
+Optional services are compose profiles. Turn them on with `COMPOSE_PROFILES` in `.env`, or `--profile` on the command line.
+
+### minio
+
+S3-compatible attachment storage on the same machine, instead of the `opendesk-data` volume. It runs RustFS, which speaks the same S3 API, and an `s3-init` job creates the bucket once.
+
+```sh
+COMPOSE_PROFILES=minio
+STORAGE_DRIVER=s3
+S3_ENDPOINT=http://s3:9000
+S3_FORCE_PATH_STYLE=true
+S3_BUCKET=opendesk
+S3_REGION=us-east-1
+S3_ACCESS_KEY_ID=opendesk
+S3_SECRET_ACCESS_KEY=<a long random value>
+```
+
+It refuses to start without `S3_SECRET_ACCESS_KEY`. Attachment downloads are presigned URLs, so browsers must be able to reach `S3_ENDPOINT` too.
+
+### smtp-inbound
+
+Publishes opendesk's built-in SMTP receiver on the host, so an `MX` record for `INBOUND_DOMAIN` can point at this machine. A small TCP relay keeps opendesk itself unpublished.
+
+```sh
+COMPOSE_PROFILES=smtp-inbound
+INBOUND_SMTP_ADDR=:2525
+INBOUND_SMTP_PORT=25      # host port, default 25
+```
+
+See [Email setup](/self-hosting/email/#option-b-the-built-in-smtp-receiver).
+
+### ollama
+
+Fully local AI through Ollama's OpenAI-compatible API. Nothing leaves the machine.
+
+```sh
+COMPOSE_PROFILES=ollama
+AI_PROVIDER=openai
+OPENAI_BASE_URL=http://ollama:11434/v1
+OPENAI_API_KEY=ollama
+AI_MODEL=llama3.1:8b
+AI_FAST_MODEL=llama3.1:8b
+EMBEDDINGS_DRIVER=openai
+EMBEDDINGS_MODEL=nomic-embed-text
+```
+
+An `ollama-init` job pulls `AI_MODEL`, `AI_FAST_MODEL` and `EMBEDDINGS_MODEL` once into the `ollama-data` volume. CPU is enough for small models; a GPU needs the host's NVIDIA container toolkit. The installer's `--ollama` flag sets all of this. See [Self-hosting AI](/self-hosting/ai/).
+
+Combine profiles with commas: `COMPOSE_PROFILES=minio,ollama`.
+
+## Routing
+
+| Path | Goes to |
+| --- | --- |
+| `/socket`, `/socket/*` | `realtime:4000`, including the chat widget socket at `/socket/widget` |
+| everything else | `opendesk:8080`: the API, web app, widget script, help center, `/config.js` and `/config.json` |
+
+Caddy's access log strips the `token` query parameter and the `Authorization` and `Cookie` headers, since realtime tokens travel in `?token=`.
+
+## Volumes
+
+| Volume | Holds |
+| --- | --- |
+| `opendesk-data` | Attachments and raw email (local storage), embedded NATS data |
+| `postgres-data` | The database |
+| `caddy-data`, `caddy-config` | Certificates and Caddy state |
+| `s3-data` | The `minio` profile's objects |
+| `ollama-data` | The `ollama` profile's models |
+
+## Common commands
+
+```sh
+docker compose ps
+docker compose logs -f opendesk
+docker compose restart opendesk
+docker compose down          # stop, keep data
+```
+
+Migrations run automatically when opendesk starts. For backups and upgrades, use [`opendesk-ctl`](/self-hosting/backups-and-upgrades/).

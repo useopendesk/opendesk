@@ -2,19 +2,22 @@
 import { render } from 'astro:content';
 import Layout from '../../layouts/Layout.astro';
 import Icon from '../../components/Icon.astro';
-import CTA from '../../components/CTA.astro';
+import PaintedThumb from '../../components/pages/PaintedThumb.astro';
+import { postPainting, readingMinutes } from '../../components/pages/paint';
 import { getPublishedPosts, formatDate, type Post } from '../../lib/blog';
-import { SITE } from '../../lib/site';
+import { LINKS, SITE } from '../../lib/site';
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
-  return posts.map((post) => ({ params: { id: post.id }, props: { post } }));
+  return posts.map((post) => ({ params: { id: post.id }, props: { post, others: posts.filter((p) => p.id !== post.id).slice(0, 2) } }));
 }
 
-const { post } = Astro.props as { post: Post };
+const { post, others } = Astro.props as { post: Post; others: Post[] };
 const { Content } = await render(post);
 const url = new URL(`/blog/${post.id}/`, SITE.url).toString();
-const jsonLd = {
+const minutes = readingMinutes(post.body ?? '');
+const mark = 'M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z';
+const jsonLd = [{
   '@context': 'https://schema.org',
   '@type': 'BlogPosting',
   headline: post.data.title,
@@ -24,25 +27,114 @@ const jsonLd = {
   author: { '@type': 'Organization', name: post.data.author },
   publisher: { '@id': `${SITE.url}/#org` },
   mainEntityOfPage: url,
-  image: `${SITE.url}/og.png`,
-};
+  image: `${SITE.url}/og.jpg`,
+  keywords: post.data.tags.join(', '),
+  inLanguage: 'en',
+}, {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Blog', item: `${SITE.url}/blog/` },
+    { '@type': 'ListItem', position: 2, name: post.data.title, item: url },
+  ],
+}];
 ---
-<Layout title={post.data.title} description={post.data.description} ogType="article" jsonLd={jsonLd}>
+<Layout cta={{ painting: 'pampas' }} title={post.data.title} description={post.data.description} ogType="article" article={{ published: post.data.pubDate, modified: post.data.updatedDate, tags: post.data.tags }} jsonLd={jsonLd}>
   <article>
-    <header class="border-b border-line">
-      <div class="container-page max-w-[800px] pt-14 pb-12 md:pt-20 md:pb-14">
-        <a href="/blog/" class="inline-flex items-center gap-1.5 text-[13.5px] text-muted hover:text-fg"><Icon name="arrowRight" size={13} class="rotate-180" />Blog</a>
-        <h1 class="h-hero mt-8 !text-[40px] sm:!text-[54px]">{post.data.title}</h1>
-        <p class="lede mt-5 text-[18px] leading-[1.55]">{post.data.description}</p>
-        <div class="mt-8 flex items-center gap-3 text-[13.5px] text-subtle">
-          <span class="text-fg">{post.data.author}</span><span>·</span>
-          <time datetime={post.data.pubDate.toISOString()}>{formatDate(post.data.pubDate)}</time>
-        </div>
+    <header class="container-page pt-8 md:pt-12">
+      <div class="flex items-center gap-4 border-b border-fg pb-3 font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">
+        <a href="/blog/" class="inline-flex items-center gap-1.5 text-fg hover:underline hover:underline-offset-4"><Icon name="arrowRight" size={12} class="rotate-180" />Notes from the desk</a>
+        <span class="ml-auto">{post.data.tags.join(' · ')}</span>
+      </div>
+      <h1 class="mt-10 max-w-[18ch] text-balance text-[44px] font-semibold leading-[0.96] tracking-[-0.055em] text-fg sm:text-[72px] lg:text-[104px] md:mt-16">{post.data.title}</h1>
+      <div class="mt-10 grid gap-6 border-t border-line pt-6 md:grid-cols-12">
+        <p class="text-[20px] leading-[1.5] tracking-[-0.01em] text-body md:col-span-8 md:text-[24px]">{post.data.description}</p>
+        <dl class="grid grid-cols-3 gap-4 font-mono text-[11.5px] uppercase tracking-[0.06em] md:col-span-4 md:grid-cols-1 md:gap-3 md:border-l md:border-line md:pl-6">
+          <div><dt class="text-subtle">By</dt><dd class="mt-0.5 text-fg">{post.data.author}</dd></div>
+          <div><dt class="text-subtle">Published</dt><dd class="mt-0.5 text-fg"><time datetime={post.data.pubDate.toISOString()}>{formatDate(post.data.pubDate)}</time></dd></div>
+          <div><dt class="text-subtle">Reading</dt><dd class="mt-0.5 text-fg">{minutes} min</dd></div>
+          {post.data.updatedDate && <div><dt class="text-subtle">Updated</dt><dd class="mt-0.5 text-fg"><time datetime={post.data.updatedDate.toISOString()}>{formatDate(post.data.updatedDate)}</time></dd></div>}
+        </dl>
       </div>
     </header>
-    <div class="container-page max-w-[800px] py-12 md:py-16">
-      <div class="prose-od"><Content /></div>
+
+    <!-- The cover. -->
+    <div class="px-2 pt-10 md:px-3 md:pt-14">
+      <PaintedThumb painting={postPainting(post.id)} sizes="100vw" bare priority class="mx-auto h-[260px] max-w-[1440px] rounded-[22px] sm:h-[400px] md:h-[560px] md:rounded-[28px]" />
+    </div>
+
+    <div class="container-page max-w-[760px] pt-14 md:pt-20">
+      <div class="prose-od post-prose"><Content /></div>
+
+      <!-- The end mark, then the end card. -->
+      <div class="mt-12 flex justify-center text-fg" aria-hidden="true"><svg viewBox="0 0 64 64" class="size-5" fill="currentColor"><path d={mark} /></svg></div>
+      <footer class="mt-12 rounded-[22px] bg-surface-2 p-6 ring-1 ring-line md:p-8">
+        <div class="flex items-center gap-3">
+          <span class="flex size-10 items-center justify-center rounded-[11px] bg-fg text-bg"><svg viewBox="0 0 64 64" class="size-5" fill="currentColor" aria-hidden="true"><path d={mark} /></svg></span>
+          <div>
+            <div class="text-[15px] font-semibold tracking-[-0.015em] text-fg">{post.data.author}</div>
+            <div class="text-[13.5px] text-muted">Notes from the people building opendesk.</div>
+          </div>
+        </div>
+        <div class="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-6">
+          <a href="/blog/rss.xml" class="btn btn-primary"><Icon name="rss" size={14} />Subscribe with RSS</a>
+          <a href="/blog/" class="btn btn-ghost">All posts</a>
+          <button type="button" class="btn btn-ghost" data-copy-link={url}>
+            <Icon name="copy" size={14} class="[.is-copied_&]:hidden" /><Icon name="check" size={14} class="hidden [.is-copied_&]:block" />
+            <span class="[.is-copied_&]:hidden">Copy link</span><span class="hidden [.is-copied_&]:inline">Copied</span>
+          </button>
+        </div>
+      </footer>
     </div>
   </article>
-  <CTA />
+
+  <!-- Keep reading. -->
+  <section class="container-page mt-20 pb-4 md:mt-28" aria-label="Keep reading">
+    <div class="flex items-center gap-4 font-mono text-[11.5px] uppercase tracking-[0.08em] text-fg"><span>Keep reading</span><span class="h-px flex-1 bg-line"></span></div>
+    <div class={`mt-8 grid gap-x-10 gap-y-10 ${['md:grid-cols-2', 'md:grid-cols-3', 'md:grid-cols-2 lg:grid-cols-4'][others.length]}`}>
+      {others.map((p) => (
+        <a href={`/blog/${p.id}/`} class="group flex flex-col">
+          <PaintedThumb painting={postPainting(p.id)} sizes="(min-width: 768px) 33vw, 100vw" mark={28} class="aspect-[4/3] rounded-[18px]" />
+          <div class="mt-4 font-mono text-[11.5px] uppercase tracking-[0.06em] text-muted"><time datetime={p.data.pubDate.toISOString()}>{formatDate(p.data.pubDate)}</time></div>
+          <div class="mt-1.5 text-[20px] font-semibold leading-[1.15] tracking-[-0.03em] text-fg group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{p.data.title}</div>
+        </a>
+      ))}
+      <a href={LINKS.discord} class="group flex flex-col justify-between rounded-[18px] bg-surface-2 p-6 ring-1 ring-line transition-colors hover:ring-line-strong">
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">Talk to us</div>
+        <div class="mt-8">
+          <Icon name="discord" size={28} class="text-fg" />
+          <p class="mt-4 text-[20px] font-semibold leading-[1.2] tracking-[-0.03em] text-fg">Questions and ideas, on our Discord.</p>
+          <span class="link-arrow mt-4">Join the Discord<Icon name="arrowRight" size={14} /></span>
+        </div>
+      </a>
+      <div class="flex flex-col justify-between rounded-[18px] p-6 ring-1 ring-line">
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">Try it</div>
+        <div class="mt-8">
+          <p class="text-[20px] font-semibold leading-[1.2] tracking-[-0.03em] text-fg">The helpdesk this blog is about, free to start.</p>
+          <div class="mt-5 flex flex-wrap gap-x-5 gap-y-2"><a href={LINKS.signup} class="link-arrow">Start free<Icon name="arrowRight" size={14} /></a><a href={LINKS.selfHostQuickstart} class="link-arrow">Self-host it<Icon name="arrowRight" size={14} /></a></div>
+        </div>
+      </div>
+    </div>
+  </section>
 </Layout>
+
+<style>
+  .post-prose { font-size: 18.5px; line-height: 1.75; }
+  .post-prose :global(> p:first-child) { font-size: 22px; line-height: 1.6; color: var(--fg); letter-spacing: -0.012em; }
+  .post-prose :global(> p:first-child)::first-letter { float: left; margin: 0.06em 0.1em 0 0; font-size: 3.4em; font-weight: 600; line-height: 0.85; letter-spacing: -0.04em; }
+  .post-prose :global(h2) { font-size: 30px; font-weight: 600; letter-spacing: -0.04em; }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-link]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.copyLink ?? '');
+        b.classList.add('is-copied');
+        setTimeout(() => b.classList.remove('is-copied'), 1600);
+      } catch {
+        // Clipboard can be refused; the address bar still has the link.
+      }
+    });
+  });
+</script>

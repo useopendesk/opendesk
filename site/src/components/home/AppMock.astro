@@ -1,0 +1,185 @@
+---
+/**
+ * The opendesk app at 1280 x 800, drawn from the real inbox: grey chrome, the
+ * sidebar, the white work panel with the queue and an open ticket. On a loop a
+ * new chat lands at the top of Unassigned, a teammate opens the ticket and
+ * Ollie streams its answer once the visitor confirms. The timeline (`data-seq`)
+ * lives on the scene around it, so floating cards can share its steps.
+ */
+import Icon from '../Icon.astro';
+import Ollie from './Ollie.astro';
+
+const inbox = [
+  { icon: 'circleDashed', label: 'Unassigned', n: '20', badge: '3', active: true },
+  { icon: 'user', label: 'Mine', n: '10' },
+  { icon: 'inboxIn', label: 'All open', n: '36' },
+  { icon: 'clock', label: 'Pending', n: '15' },
+  { icon: 'checkCircle', label: 'Solved' },
+  { icon: 'archive', label: 'Spam' },
+] as const;
+const views = [['Urgent', '16'], ['Billing queue', '8'], ['Waiting on engineering', '2']];
+const workspace = [['users', 'Contacts'], ['book', 'Knowledge base'], ['chart', 'Reports']] as const;
+
+type Row = { who: string; subject: string; preview: string; time: string; tags?: [string, string][]; wait?: number; fresh?: string; person?: boolean; chat?: boolean; ollie?: boolean; pri?: 0 | 1 | 2 | 3; selected?: boolean };
+const rows: Row[] = [
+  { who: 'Freya Nilsen', subject: 'Cancel order #4821', preview: 'Ollie: Orders usually ship within 2 business days', time: '35m', wait: 2079, person: true, ollie: true, pri: 1, selected: true },
+  { who: 'Hugo Moreau', subject: 'Charged twice for my upgrade', preview: 'Is anyone there?', time: '1m', wait: 203, fresh: '2 new', person: true, tags: [['Billing', 't-green'], ['Refund', 't-pink']], pri: 3 },
+  { who: 'Julia Novak', subject: 'Do you have an education discount?', preview: 'Hello! I teach at a university and…', time: 'now', chat: true, tags: [['Question', 't-blue']], fresh: '1 new', pri: 1 },
+  { who: 'Elena Rossi', subject: 'Can’t export notebook to PDF', preview: 'When I export our “Client brief” notebook…', time: '14m', pri: 3 },
+  { who: 'Chloé Dubois', subject: 'Feature request: nested tags', preview: 'We have ~200 tags now and the sidebar…', time: '40m', chat: true, pri: 1 },
+  { who: 'Katrin Vogel', subject: 'Synchronisierung zwischen iPad und Mac', preview: 'Hallo Margin-Team, seit dem letzten Update…', time: '48m', tags: [['Translated', 't-violet']], pri: 2 },
+  { who: 'Paula Martins', subject: 'Keyboard shortcuts on Windows', preview: 'Thanks, that worked!', time: '2h', pri: 1 },
+];
+
+const bars = (n: number) => [0, 1, 2].map((i) => `<i style="height:${4 + i * 2.5}px" class="w-[2.5px] rounded-[1px] ${i < n ? (n === 3 ? 'bg-[var(--c-orange)]' : 'bg-[var(--c-blue)]') : 'bg-line-strong'}"></i>`).join('');
+---
+<div class="app-mock absolute inset-0 flex flex-col bg-surface text-left text-fg">
+  <!-- Title bar -->
+  <header class="flex h-12 shrink-0 items-center">
+    <div class="flex w-60 items-center gap-2 px-[18px]">
+      <svg viewBox="0 0 64 64" class="size-[18px]" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z"/></svg>
+      <span class="text-[15px] font-semibold tracking-[-0.035em]">opendesk</span>
+    </div>
+    <div class="flex items-center gap-1.5 text-[12.5px]">
+      <span class="flex h-7 items-center gap-2 rounded-md px-1.5"><img src="/demo/margin.svg" alt="" width="22" height="22" class="size-[22px] rounded-[5px]" /><span class="font-medium">Margin</span><Icon name="chevronDown" size={12} class="text-subtle" /></span>
+      <Icon name="chevronRight" size={13} class="text-faint" /><span class="text-muted">Inbox</span>
+      <Icon name="chevronRight" size={13} class="text-faint" /><span class="font-medium">Unassigned</span>
+    </div>
+    <div class="ml-auto flex items-center gap-1 pr-3 text-[12.5px] text-muted">
+      <span class="mx-2 size-[7px] rounded-full bg-ok"></span>
+      <span class="relative flex size-7 items-center justify-center"><Icon name="bell" size={15} /><span class="absolute right-1 top-1 size-[7px] rounded-full bg-[var(--c-blue)] ring-2 ring-[var(--surface)]"></span></span>
+      <span class="flex h-7 items-center gap-1.5 px-2 text-fg"><Ollie size={17} />Ollie</span>
+      <span class="flex h-7 items-center gap-2 px-2"><Icon name="search" size={14} />Search<span class="kbd">⌘</span><span class="kbd -ml-1">K</span></span>
+      <span class="ml-1 flex h-7 items-center gap-1.5 rounded-md bg-fg px-2.5 font-medium text-bg"><Icon name="squarePen" size={13} />New ticket</span>
+    </div>
+  </header>
+
+  <div class="flex min-h-0 flex-1">
+    <!-- Sidebar -->
+    <aside class="flex w-60 shrink-0 flex-col px-2.5 pb-3 text-[13px]">
+      <div class="px-2 pb-1.5 pt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Inbox</div>
+      <div class="waiting-row mb-1 flex h-8 items-center gap-2.5 rounded-md px-2 text-[var(--c-red)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--c-red)_28%,transparent)]">
+        <span class="size-2 rounded-full bg-[var(--c-red)] od-urgent-dot"></span>
+        <span class="font-medium"><span data-step="0" data-wait="0" data-until="1">3</span><span data-step="1" class="s-swap">4</span> waiting in chat</span>
+        <span class="ml-auto font-mono text-[11px] tabular-nums" data-clock="2079">34m 39s</span>
+      </div>
+      {inbox.map((v) => (
+        <div class={`flex h-8 items-center gap-2.5 rounded-md px-2 ${'active' in v ? 'bg-[color-mix(in_oklab,var(--fg)_6%,transparent)] font-medium text-fg' : 'text-body'}`}>
+          <Icon name={v.icon} size={15} class={'active' in v ? 'text-fg' : 'text-muted'} />{v.label}
+          {'badge' in v && <span class="ml-auto flex h-[18px] items-center gap-1 rounded-full bg-[var(--c-red)] px-1.5 font-mono text-[10.5px] text-white"><i class="size-1 rounded-full bg-white"></i>{v.badge}</span>}
+          {'n' in v && <span class={`${'badge' in v ? 'ml-1.5' : 'ml-auto'} font-mono text-[11px] tabular-nums text-muted`}>{v.n}</span>}
+        </div>
+      ))}
+      <div class="px-2 pb-1.5 pt-5 font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Views</div>
+      {views.map(([l, n]) => (
+        <div class="flex h-8 items-center gap-2.5 rounded-md px-2 text-body"><Icon name="layers" size={15} class="text-muted" />{l}<span class="ml-auto font-mono text-[11px] text-muted">{n}</span></div>
+      ))}
+      <div class="px-2 pb-1.5 pt-5 font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Workspace</div>
+      {workspace.map(([i, l]) => (
+        <div class="flex h-8 items-center gap-2.5 rounded-md px-2 text-body"><Icon name={i} size={15} class="text-muted" />{l}</div>
+      ))}
+      <div class="mt-auto flex items-center gap-2.5 px-2 pt-3">
+        <span class="relative flex size-8 items-center justify-center rounded-full bg-[#e9d5c4] text-[11px] font-semibold text-[#6b4a2f]">MC<i class="absolute -bottom-px -right-px size-2.5 rounded-full bg-ok ring-2 ring-[var(--surface)]"></i></span>
+        <div class="leading-tight"><div class="text-[12.5px] font-medium">Maya Chen</div><div class="text-[11px] text-muted">maya@margin.app</div></div>
+      </div>
+    </aside>
+
+    <!-- Work panel -->
+    <main class="flex min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-l border-t border-line bg-bg">
+      <!-- Queue -->
+      <section class="flex w-[380px] shrink-0 flex-col border-r border-line">
+        <div class="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-4">
+          <Icon name="circleDashed" size={16} class="text-muted" />
+          <span class="text-[14px] font-semibold">Unassigned</span><span class="font-mono text-[11.5px] text-muted">20</span>
+          <span class="ml-auto flex items-center gap-3 text-muted"><Icon name="search" size={14} /><Icon name="filter" size={14} /></span>
+        </div>
+        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-line px-4 text-[11.5px] text-muted">
+          <span>20 tickets</span><span class="ml-1 size-1.5 rounded-full bg-[var(--c-blue)]"></span><span><b class="font-medium text-fg">19</b> awaiting reply</span>
+          <span class="ml-1 size-1.5 rounded-[2px] bg-[var(--c-red)]"></span><span><b class="font-medium text-fg">2</b> urgent</span>
+        </div>
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <!-- The chat that arrives over the socket, pinned first. -->
+          <div data-step="1" data-wait="1600" class="s-arrive overflow-hidden" style="height:88px">
+            <div class="row-waiting relative h-[88px] border-b border-line px-4 py-2.5">
+              <div class="flex items-center gap-2"><span class="row-dot"></span><span class="text-[12.5px] font-semibold">Noah Fischer</span><span class="pill t-blue !h-[17px] !text-[10px]"><Icon name="chat" size={10} />Live chat</span><span class="ml-auto font-mono text-[10.5px] text-muted">now</span></div>
+              <div class="mt-1 flex items-center gap-2 pl-[18px] text-[12.5px] font-medium"><span class="flex items-end gap-[1.5px]" set:html={bars(2)} />Shared notebook won’t open on iPhone<span class="pill t-orange ml-auto !h-[17px] !text-[10px]">Bug</span></div>
+              <div class="mt-1 flex items-center gap-2 pl-[18px] text-[11.5px] text-muted"><span class="truncate">It just spins after the update</span><span class="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--c-red)_12%,transparent)] px-1.5 py-px font-mono text-[10px] text-[var(--c-red)]">1 new</span><span class="flex shrink-0 items-center gap-1 rounded-full bg-[var(--c-red)] px-1.5 py-px font-mono text-[10px] text-white"><i class="size-1 rounded-full bg-white"></i><span data-clock="4">0m 04s</span></span></div>
+            </div>
+          </div>
+          {rows.map((r) => (
+            <div class={`relative h-[88px] border-b border-line px-4 py-2.5 ${r.wait ? 'row-waiting' : ''} ${r.selected ? 'row-selected' : ''}`}>
+              <div class="flex items-center gap-2">
+                <span class={r.wait ? 'row-dot' : 'flex size-[10px] items-center justify-center rounded-full ring-[1.5px] ring-[var(--c-blue)]'}></span>
+                <span class="text-[12.5px] font-semibold">{r.who}</span>
+                {r.person && <span class="pill t-red !h-[17px] !text-[10px]"><Icon name="hand" size={10} />Wants a person</span>}
+                {r.chat && <span class="pill t-blue !h-[17px] !text-[10px]"><Icon name="chat" size={10} />Live chat</span>}
+                <span class="ml-auto font-mono text-[10.5px] text-muted">{r.time}</span>
+              </div>
+              <div class="mt-1 flex items-center gap-2 pl-[18px] text-[12.5px] font-medium">
+                <span class="flex items-end gap-[1.5px]" set:html={bars(r.pri ?? 1)} />
+                <span class="truncate">{r.subject}</span>
+                {r.tags && <span class="ml-auto flex shrink-0 gap-1">{r.tags.map(([t, c]) => <span class={`pill pill-dot ${c} !h-[17px] !text-[10px]`}>{t}</span>)}</span>}
+              </div>
+              <div class="mt-1 flex items-center gap-2 pl-[18px] text-[11.5px] text-muted">
+                <span class="truncate">{r.ollie ? <><span class="text-[var(--c-violet)]">Ollie:</span> {r.preview.slice(7)}</> : r.preview}</span>
+                {r.fresh && <span class={`ml-auto shrink-0 rounded-full px-1.5 py-px font-mono text-[10px] ${r.wait ? 'bg-[color-mix(in_oklab,var(--c-red)_12%,transparent)] text-[var(--c-red)]' : 'bg-[color-mix(in_oklab,var(--c-blue)_12%,transparent)] text-[var(--c-blue)]'}`}>{r.fresh}</span>}
+                {r.wait && <span class={`${r.fresh ? '' : 'ml-auto'} flex shrink-0 items-center gap-1 rounded-full bg-[var(--c-red)] px-1.5 py-px font-mono text-[10px] text-white`}><i class="size-1 rounded-full bg-white"></i><span data-clock={r.wait}>{`${Math.floor(r.wait / 60)}m ${String(r.wait % 60).padStart(2, '0')}s`}</span></span>}
+                {r.chat && !r.wait && <span class="flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--c-violet)_12%,transparent)] px-1.5 py-px text-[10px] text-[var(--c-violet)]"><Ollie size={9} eyes={false} />Ollie is replying</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <!-- Ticket -->
+      <section class="flex min-w-0 flex-1 flex-col">
+        <div class="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-5">
+          <span class="font-mono text-[11.5px] text-muted">#1078</span>
+          <span class="text-[14px] font-semibold">Cancel order #4821</span>
+          <!-- A teammate opens the same ticket: presence, so nobody answers twice. -->
+          <span data-step="2" data-wait="1400" class="s-pop ml-3 flex items-center gap-1.5 rounded-full bg-[color-mix(in_oklab,var(--c-amber)_12%,transparent)] py-0.5 pl-0.5 pr-2 text-[11px] text-[color-mix(in_oklab,var(--c-amber)_75%,var(--fg))]">
+            <span class="flex size-[18px] items-center justify-center rounded-full bg-[#1e3a5f] text-[8.5px] font-semibold text-white">LH</span>Lena is viewing
+          </span>
+          <span class="ml-auto flex items-center gap-1.5 text-[12.5px] text-muted"><Icon name="reply" size={14} />Reply</span>
+          <span class="ml-2 flex h-7 items-center rounded-md px-2.5 text-[12.5px] font-medium ring-1 ring-line-strong">Open</span>
+        </div>
+        <div class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-5 text-[11.5px]">
+          <span class="pill t-blue">Open</span><span class="pill t-blue">Normal</span>
+          <span class="ml-auto text-muted">More</span>
+        </div>
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-5 pt-4">
+          <div class="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-subtle">Today</div>
+          <div class="rounded-xl border border-line px-4 py-3">
+            <div class="flex items-center gap-2 text-[12.5px]"><span class="flex size-6 items-center justify-center rounded-full bg-surface text-[9.5px] font-semibold ring-1 ring-line">FN</span><b class="font-semibold">Freya Nilsen</b><span class="text-muted">freya@fjord.ai</span><span class="ml-auto font-mono text-[10.5px] text-muted">2:33 PM</span></div>
+            <p class="mt-2 pl-8 text-[13px] leading-relaxed">Hi, I ordered the paper notebook bundle twice by mistake. Can you cancel order #4821?</p>
+          </div>
+          <div class="rounded-xl border border-line px-4 py-3">
+            <div class="flex items-center gap-2 text-[12.5px]"><Ollie size={24} /><b class="font-semibold">Ollie</b><span class="pill t-violet !h-4 !px-1 !text-[9.5px]"><Icon name="sparkles" size={9} />AI</span><span class="text-muted">to freya@fjord.ai</span><span class="ml-auto font-mono text-[10.5px] text-muted">2:34 PM</span></div>
+            <p class="mt-2 pl-8 text-[13px] leading-relaxed">I found order #4821: the paper notebook bundle for $48.00, not shipped yet. I can cancel it and refund the card ending 4242.</p>
+            <div class="ml-8 mt-2.5 overflow-hidden rounded-lg border border-line">
+              <div class="flex items-center gap-2 px-3 py-2 text-[12px]"><Icon name="shield" size={13} class="text-[var(--c-violet)]" /><b class="font-medium">Cancel order</b>
+                <span class="ml-auto"><span data-step="0" data-wait="0" data-until="3" class="pill t-amber pill-dot">Waiting for approval</span><span data-step="3" data-wait="1200" class="s-swap pill t-green pill-dot">Confirmed</span></span>
+              </div>
+              <div class="border-t border-line px-3 py-2 text-[11.5px] text-muted">Cancel order #4821 and refund $48.00 to the card ending 4242</div>
+              <div class="flex items-center gap-1.5 border-t border-line bg-surface-2 px-3 py-1.5 text-[10.5px] text-muted"><Icon name="wrench" size={11} />Shop<span class="ml-auto">The visitor confirmed and it ran</span></div>
+            </div>
+          </div>
+          <!-- Ollie answers the follow-up, word by word. -->
+          <div data-step="4" data-wait="900" class="s-up rounded-xl border border-[color-mix(in_oklab,var(--c-violet)_30%,var(--line))] bg-[color-mix(in_oklab,var(--c-violet)_3%,var(--bg))] px-4 py-3">
+            <div class="flex items-center gap-2 text-[12.5px]"><Ollie size={24} thinking /><b class="font-semibold">Ollie</b><span class="pill t-violet !h-4 !px-1 !text-[9.5px]"><Icon name="sparkles" size={9} />AI</span><span class="text-muted">to freya@fjord.ai</span><span class="ml-auto font-mono text-[10.5px] text-muted">now</span></div>
+            <p class="mt-2 pl-8 text-[13px] leading-relaxed" data-stream="34">Done. Order #4821 is cancelled and $48.00 is on its way back to the card ending 4242. Refunds usually show within 5 to 10 business days.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<style is:global>
+  .app-mock .row-waiting { background: color-mix(in oklab, var(--c-red) 4.5%, var(--bg)); }
+  .app-mock .row-waiting::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--c-red); }
+  .app-mock .row-selected { background: color-mix(in oklab, var(--c-red) 8%, var(--bg)); }
+  .app-mock .row-dot { position: relative; width: 10px; height: 10px; border-radius: 99px; background: var(--c-red); box-shadow: 0 0 0 0 color-mix(in oklab, var(--c-red) 40%, transparent); animation: od-urgent 2.8s ease-out infinite; }
+  .app-mock .od-urgent-dot { animation: od-urgent 2.8s ease-out infinite; }
+  @keyframes od-urgent { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--c-red) 40%, transparent); } 60%, 100% { box-shadow: 0 0 0 5px transparent; } }
+</style>

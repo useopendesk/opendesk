@@ -31,9 +31,11 @@ type SlaPolicy struct {
 	Priority             *string   `json:"priority" enum:"low,normal,high,urgent"`
 	FirstResponseMinutes int       `json:"first_response_minutes"`
 	ResolutionMinutes    int       `json:"resolution_minutes"`
-	BusinessHours        bool      `json:"business_hours" doc:"Count only open business hours (GET /v1/business-hours)"`
+	BusinessHours        bool      `json:"business_hours" doc:"Count only open business hours: the team's own, else the workspace's"`
 	Enabled              bool      `json:"enabled"`
 	Position             int       `json:"position"`
+	// TeamID limits the policy to the tickets of one team; nil applies to any team.
+	TeamID *uuid.UUID `json:"team_id" doc:"Only this team's tickets; null for any"`
 }
 
 type slaPolicyWriteBody struct {
@@ -44,9 +46,24 @@ type slaPolicyWriteBody struct {
 	BusinessHours        *bool            `json:"business_hours,omitempty"`
 	Enabled              *bool            `json:"enabled,omitempty"`
 	Position             *int             `json:"position,omitempty" minimum:"0" maximum:"100000"`
+	TeamID               Nullable[string] `json:"team_id,omitempty" doc:"A team id, or null for any team"`
 }
 
-func (b *slaPolicyWriteBody) apply(s *SlaPolicy) error {
+func (b *slaPolicyWriteBody) apply(ctx context.Context, q db.Querier, wid uuid.UUID, s *SlaPolicy) error {
+	if b.TeamID.Set {
+		if b.TeamID.Null || strings.TrimSpace(b.TeamID.Value) == "" {
+			s.TeamID = nil
+		} else {
+			id, err := hd.ParseRef(b.TeamID.Value, "team_id")
+			if err != nil {
+				return err
+			}
+			if err := hd.CheckRef(ctx, q, wid, "team", id); err != nil {
+				return err
+			}
+			s.TeamID = &id
+		}
+	}
 	if b.Name != nil {
 		n, err := cleanName("name", *b.Name, 200)
 		if err != nil {
@@ -89,11 +106,11 @@ func (b *slaPolicyWriteBody) apply(s *SlaPolicy) error {
 	return nil
 }
 
-const slaSelect = `SELECT id, name, priority, first_response_minutes, resolution_minutes, business_hours, enabled, position FROM sla_policies`
+const slaSelect = `SELECT id, name, priority, first_response_minutes, resolution_minutes, business_hours, enabled, position, team_id FROM sla_policies`
 
 func scanSLA(r pgx.Row) (SlaPolicy, error) {
 	var s SlaPolicy
-	err := r.Scan(&s.ID, &s.Name, &s.Priority, &s.FirstResponseMinutes, &s.ResolutionMinutes, &s.BusinessHours, &s.Enabled, &s.Position)
+	err := r.Scan(&s.ID, &s.Name, &s.Priority, &s.FirstResponseMinutes, &s.ResolutionMinutes, &s.BusinessHours, &s.Enabled, &s.Position, &s.TeamID)
 	return s, err
 }
 
@@ -180,12 +197,23 @@ func scanAutomation(r pgx.Row) (Automation, error) {
 
 func registerSLA(d *deps.Deps, api huma.API) {
 	huma.Register(api, op("list-sla-policies", http.MethodGet, "/v1/sla-policies", "List SLA policies", "SLA policies", 0),
-		func(ctx context.Context, _ *struct{}) (*struct{ Body httpx.Page[SlaPolicy] }, error) {
+		func(ctx context.Context, in *struct {
+			TeamID string `query:"team_id" doc:"Only this team's policies"`
+		}) (*struct{ Body httpx.Page[SlaPolicy] }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeSettingsRead)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			rows, err := d.DB.Pool.Query(ctx, slaSelect+` WHERE workspace_id = $1 ORDER BY position, created_at, id`, p.WorkspaceID)
+			var teamID *uuid.UUID
+			if strings.TrimSpace(in.TeamID) != "" {
+				id, err := hd.ParseRef(in.TeamID, "team_id")
+				if err != nil {
+					return nil, err
+				}
+				teamID = &id
+			}
+			rows, err := d.DB.Pool.Query(ctx, slaSelect+` WHERE workspace_id = $1 AND ($2::uuid IS NULL OR team_id = $2)
+				ORDER BY position, created_at, id`, p.WorkspaceID, teamID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -203,18 +231,18 @@ func registerSLA(d *deps.Deps, api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			s := SlaPolicy{ID: ids.New(), Enabled: true, Position: -1}
-			if err := in.Body.apply(&s); err != nil {
-				return nil, err
-			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := in.Body.apply(ctx, tx, p.WorkspaceID, &s); err != nil {
+					return err
+				}
 				if s.Position < 0 {
 					if err := tx.QueryRow(ctx, `SELECT COALESCE(max(position) + 1, 0) FROM sla_policies WHERE workspace_id = $1`, p.WorkspaceID).Scan(&s.Position); err != nil {
 						return err
 					}
 				}
 				if _, err := tx.Exec(ctx, `INSERT INTO sla_policies (id, workspace_id, name, priority, first_response_minutes,
-					resolution_minutes, enabled, position, business_hours) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, s.ID, p.WorkspaceID, s.Name, s.Priority,
-					s.FirstResponseMinutes, s.ResolutionMinutes, s.Enabled, s.Position, s.BusinessHours); err != nil {
+					resolution_minutes, enabled, position, business_hours, team_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, s.ID, p.WorkspaceID, s.Name, s.Priority,
+					s.FirstResponseMinutes, s.ResolutionMinutes, s.Enabled, s.Position, s.BusinessHours, s.TeamID); err != nil {
 					return err
 				}
 				return settingsChanged(ctx, tx, p, "sla_policy", "created", s.ID, map[string]any{"sla_policy": s}, slaAudit(s))
@@ -268,12 +296,13 @@ func registerSLA(d *deps.Deps, api huma.API) {
 				if err != nil {
 					return err
 				}
-				if err := in.Body.apply(&s); err != nil {
+				if err := in.Body.apply(ctx, tx, p.WorkspaceID, &s); err != nil {
 					return err
 				}
 				if _, err := tx.Exec(ctx, `UPDATE sla_policies SET name = $3, priority = $4, first_response_minutes = $5,
-					resolution_minutes = $6, enabled = $7, position = $8, business_hours = $9, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
-					p.WorkspaceID, id, s.Name, s.Priority, s.FirstResponseMinutes, s.ResolutionMinutes, s.Enabled, s.Position, s.BusinessHours); err != nil {
+					resolution_minutes = $6, enabled = $7, position = $8, business_hours = $9, team_id = $10, updated_at = now()
+					WHERE workspace_id = $1 AND id = $2`,
+					p.WorkspaceID, id, s.Name, s.Priority, s.FirstResponseMinutes, s.ResolutionMinutes, s.Enabled, s.Position, s.BusinessHours, s.TeamID); err != nil {
 					return err
 				}
 				return settingsChanged(ctx, tx, p, "sla_policy", "updated", s.ID, map[string]any{"sla_policy": s}, slaAudit(s))
@@ -292,7 +321,7 @@ func registerSLA(d *deps.Deps, api huma.API) {
 
 func slaAudit(s SlaPolicy) map[string]any {
 	return map[string]any{"name": s.Name, "priority": s.Priority, "first_response_minutes": s.FirstResponseMinutes,
-		"resolution_minutes": s.ResolutionMinutes, "enabled": s.Enabled}
+		"resolution_minutes": s.ResolutionMinutes, "enabled": s.Enabled, "team_id": s.TeamID}
 }
 
 // settingsChanged publishes <kind>.<verb> and writes the audit entry in tx.

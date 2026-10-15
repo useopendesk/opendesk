@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "vite.widget.config.ts", "vitest.config.ts"]
+  "include": ["vite.config.ts", "vite.widget.config.ts", "vite.site-widget.config.ts", "vitest.config.ts"]
 }

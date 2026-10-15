@@ -143,8 +143,12 @@ func (s *svc) registerPlatform(api huma.API) {
 			if cur.T.IsZero() {
 				cur.T = time.Now().Add(time.Hour)
 			}
-			rows, err := s.d.DB.Pool.Query(ctx, `SELECT n.id, n.type, n.data, n.read_at, n.created_at, t.id, t.number, t.subject
+			// A notification about a ticket the user may no longer see names no ticket and
+			// keeps none of its content (contracts/teams.md "Visibility").
+			rows, err := s.d.DB.Pool.Query(ctx, `SELECT n.id, n.type, n.data, n.read_at, n.created_at, t.id, t.number, t.subject,
+					n.ticket_id IS NOT NULL AND t.id IS NULL
 				FROM notifications n LEFT JOIN tickets t ON t.id = n.ticket_id AND t.workspace_id = n.workspace_id AND t.deleted_at IS NULL
+					AND `+domain.VisibleToUserSQL("t", 2)+`
 				WHERE n.workspace_id = $1 AND n.user_id = $2 AND (n.created_at, n.id) < ($3, $4) AND (NOT $5 OR n.read_at IS NULL)
 				ORDER BY n.created_at DESC, n.id DESC LIMIT $6`, p.WorkspaceID, p.UserID, cur.T, cur.ID, in.Unread, in.Limit+1)
 			if err != nil {
@@ -156,12 +160,16 @@ func (s *svc) registerPlatform(api huma.API) {
 				var tid *uuid.UUID
 				var num *int64
 				var subj *string
-				if err := r.Scan(&n.ID, &n.Type, &raw, &n.ReadAt, &n.CreatedAt, &tid, &num, &subj); err != nil {
+				var gone bool
+				if err := r.Scan(&n.ID, &n.Type, &raw, &n.ReadAt, &n.CreatedAt, &tid, &num, &subj, &gone); err != nil {
 					return n, err
 				}
 				_ = json.Unmarshal(raw, &n.Data)
 				if n.Data == nil {
 					n.Data = map[string]any{}
+				}
+				if gone {
+					n.Data = withoutTicketContent(n.Data)
 				}
 				if tid != nil {
 					n.Ticket = &CoreNotificationTicket{ID: *tid, Number: *num, Subject: *subj}
@@ -191,9 +199,16 @@ func (s *svc) registerPlatform(api huma.API) {
 			if !in.Body.All && len(in.Body.IDs) == 0 {
 				return nil, httpx.Validation("Pass ids or all: true.")
 			}
-			_, err = s.d.DB.Pool.Exec(ctx, `UPDATE notifications SET read_at = now()
-				WHERE workspace_id = $1 AND user_id = $2 AND read_at IS NULL AND ($3 OR id = ANY($4))`,
-				p.WorkspaceID, p.UserID, in.Body.All, in.Body.IDs)
+			err = s.tx(ctx, func(tx pgx.Tx) error {
+				tag, err := tx.Exec(ctx, `UPDATE notifications SET read_at = now()
+					WHERE workspace_id = $1 AND user_id = $2 AND read_at IS NULL AND ($3 OR id = ANY($4))`,
+					p.WorkspaceID, p.UserID, in.Body.All, in.Body.IDs)
+				if err != nil || tag.RowsAffected() == 0 {
+					return err
+				}
+				// The phone's badge follows the unread count.
+				return s.enqueueBadge(ctx, tx, p.UserID)
+			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -210,7 +225,11 @@ func (s *svc) registerPlatform(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			evs, latest, resync, err := events.Since(ctx, s.d.DB.Pool, p.WorkspaceID, in.Since, in.Limit, true)
+			hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			evs, latest, resync, err := events.Since(ctx, s.d.DB.Pool, p.WorkspaceID, in.Since, in.Limit, true, hidden)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -248,6 +267,13 @@ func (s *svc) registerPlatform(api huma.API) {
 			default:
 				return nil, httpx.Forbidden()
 			}
+			teams, err := domain.VisibleTeams(ctx, s.d.DB.Pool, p)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			for _, t := range teams {
+				c.Teams = append(c.Teams, t.String())
+			}
 			tok, exp, err := s.d.Tokens.Sign(c, sub, auth.WSTTL)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -274,4 +300,16 @@ func requireEventsReader(ctx context.Context) (*auth.Principal, error) {
 		return p, nil
 	}
 	return auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
+}
+
+// withoutTicketContent keeps only who acted from a notification's data: what a notification
+// about a ticket the user can no longer see may still say.
+func withoutTicketContent(data map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, k := range []string{"by", "actor", "actor_type", "via", "kind"} {
+		if v, ok := data[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
 }

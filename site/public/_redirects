@@ -4,13 +4,28 @@
 /github               https://github.com/useopendesk/opendesk          302
 /app                  https://app.opendesk.sh                      302
 /login                https://app.opendesk.sh/login                302
-/signup               https://app.opendesk.sh/signup               302
+/signup               https://app.opendesk.sh/register             302
 /api                  https://docs.opendesk.sh/api/                302
 /install              /install.sh                                  302
-/self-host            /self-hosting/                               301
-/selfhost             /self-hosting/                               301
+/self-host            https://docs.opendesk.sh/self-hosting/       301
+/selfhost             https://docs.opendesk.sh/self-hosting/       301
+/self-hosting         https://docs.opendesk.sh/self-hosting/       301
+/self-hosting/        https://docs.opendesk.sh/self-hosting/       301
+/changelog            https://github.com/useopendesk/opendesk/releases 301
+/changelog/           https://github.com/useopendesk/opendesk/releases 301
+/discord              https://dc.opendesk.sh                       302
 /oss                  /open-source/                                301
 /privacy-policy       /privacy/                                    301
 /terms-of-service     /terms/                                      301
 /tos                  /terms/                                      301
 /rss.xml              /blog/rss.xml                                301
+
+# The desktop app: stable names on the rolling desktop-latest release (/download/ is the page).
+/download/mac         https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-mac.dmg               302
+/download/mac/        https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-mac.dmg               302
+/download/windows     https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-windows.exe           302
+/download/windows/    https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-windows.exe           302
+/download/linux       https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-linux-x64.AppImage    302
+/download/linux/      https://github.com/useopendesk/opendesk/releases/download/desktop-latest/opendesk-linux-x64.AppImage    302
+/desktop              /download/                                   301
+/desktop/             /download/                                   301

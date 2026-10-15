@@ -4,6 +4,7 @@
 import type {
   Action,
   Automation,
+  Brand,
   Company,
   Condition,
   Contact,
@@ -24,8 +25,11 @@ import { applyLabels, canCreateLabels, fieldFiltersFromQuery, fieldsText, matchF
 import { addActivity, publishTicketUpdated, sortTickets } from "../tickets";
 import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { aiOff } from "./ai";
+import { defaultBrand, isAdmin, teamOut } from "../teams";
 import { checkLimit } from "./billing";
+import { authRefusedCause, connectOptions, detect, mockOAuthEnabled, refusal } from "./mailhost";
 import { assign, crud } from "./crud";
+import { checkBotId } from "./bots";
 
 function contactOut(ws: WsData, c: Contact): Contact {
   c.ticket_count = ws.tickets.filter((t) => t.contact?.id === c.id && !ws.deletedTickets.has(t.id)).length;
@@ -175,9 +179,12 @@ export function registerResources() {
     label: "saved reply",
     list: (ws) => ws.savedReplies,
     sort: (a, b) => a.title.localeCompare(b.title),
-    create: (ctx, id) => ({ id, title: required(ctx, "title").slice(0, 100), shortcut: slugify(s(ctx, "shortcut") ?? "").slice(0, 30), body_html: required(ctx, "body_html"), created_at: nowIso(), updated_at: nowIso() }),
+    // A private team's replies are listed only to its members.
+    filter: (ctx, rows) => rows.filter((r) => canSeeTeamScoped(ctx.ws, r.team_id)),
+    create: (ctx, id) => ({ id, title: required(ctx, "title").slice(0, 100), shortcut: slugify(s(ctx, "shortcut") ?? "").slice(0, 30), body_html: required(ctx, "body_html"), team_id: teamRef(ctx, ctx.body.team_id), created_at: nowIso(), updated_at: nowIso() }),
     update: (ctx, row) => {
       assign(row, ctx.body, ["title", "body_html"]);
+      if ("team_id" in ctx.body) row.team_id = teamRef(ctx, ctx.body.team_id);
       if (s(ctx, "shortcut") !== undefined) row.shortcut = slugify(s(ctx, "shortcut")!).slice(0, 30);
       row.updated_at = nowIso();
     },
@@ -188,9 +195,16 @@ export function registerResources() {
     resource: "view",
     list: (ws) => ws.views,
     sort: (a, b) => a.position - b.position,
-    create: (ctx, id) => ({ id, name: required(ctx, "name").slice(0, 60), shared: ctx.body.shared === true, filters: isRecord(ctx.body.filters) ? (ctx.body.filters as TicketFilters) : {}, position: typeof ctx.body.position === "number" ? ctx.body.position : ctx.ws.views.length }),
+    // A team view is listed to that team's members (and admins, who manage them).
+    filter: (ctx, rows) => rows.filter((v) => !v.team_id || isAdmin(ctx.ws, db.meId) || !!teamOfId(ctx.ws, v.team_id, db.meId)),
+    create: (ctx, id) => {
+      const team_id = teamRef(ctx, ctx.body.team_id);
+      return { id, name: required(ctx, "name").slice(0, 60), shared: team_id ? false : ctx.body.shared === true, team_id, filters: isRecord(ctx.body.filters) ? (ctx.body.filters as TicketFilters) : {}, position: typeof ctx.body.position === "number" ? ctx.body.position : ctx.ws.views.length };
+    },
     update: (ctx, row) => {
       assign(row, ctx.body, ["name", "shared", "position"]);
+      if ("team_id" in ctx.body) row.team_id = teamRef(ctx, ctx.body.team_id);
+      if (row.team_id) row.shared = false;
       if (isRecord(ctx.body.filters)) row.filters = ctx.body.filters as TicketFilters;
     },
   });
@@ -210,9 +224,11 @@ export function registerResources() {
       business_hours: ctx.body.business_hours === true,
       enabled: ctx.body.enabled !== false,
       position: typeof ctx.body.position === "number" ? ctx.body.position : ctx.ws.sla.length,
+      team_id: teamRef(ctx, ctx.body.team_id),
     }),
     update: (ctx, row) => {
       assign(row, ctx.body, ["name", "enabled", "position", "business_hours"]);
+      if ("team_id" in ctx.body) row.team_id = teamRef(ctx, ctx.body.team_id);
       if ("priority" in ctx.body) row.priority = (s(ctx, "priority") as Priority | undefined) ?? null;
       if ("first_response_minutes" in ctx.body) row.first_response_minutes = positive(ctx.body.first_response_minutes, "first_response_minutes");
       if ("resolution_minutes" in ctx.body) row.resolution_minutes = positive(ctx.body.resolution_minutes, "resolution_minutes");
@@ -247,14 +263,28 @@ export function registerResources() {
     resource: "kb_collection",
     label: "collection",
     list: (ws) => ws.collections,
+    // ?brand_id=: that brand's own collections, or "none" for those of every brand.
+    filter: (ctx, rows) => {
+      const b = brandListFilter(ctx);
+      return b === undefined ? rows : rows.filter((c) => (c.brand_id ?? null) === b);
+    },
     sort: (a, b) => a.position - b.position,
     create: (ctx, id) => {
       const name = required(ctx, "name").slice(0, 80);
-      return { id, name, slug: uniqueSlug(ctx.ws.collections, slugify(s(ctx, "slug") || name)), description: s(ctx, "description") ?? "", position: ctx.ws.collections.length, article_count: 0 };
+      return {
+        id,
+        name,
+        slug: uniqueSlug(ctx.ws.collections, slugify(s(ctx, "slug") || name)),
+        description: s(ctx, "description") ?? "",
+        position: ctx.ws.collections.length,
+        article_count: 0,
+        brand_id: kbBrandRef(ctx, ctx.body.brand_id),
+      };
     },
     update: (ctx, row) => {
       assign(row, ctx.body, ["name", "description", "position"]);
       if (s(ctx, "slug")) row.slug = uniqueSlug(ctx.ws.collections.filter((c) => c !== row), slugify(s(ctx, "slug")!));
+      if ("brand_id" in ctx.body) row.brand_id = kbBrandRef(ctx, ctx.body.brand_id);
     },
     beforeDelete: (ctx, row) => {
       for (const a of ctx.ws.articles) if (a.collection_id === row.id) a.collection_id = null;
@@ -268,6 +298,13 @@ export function registerResources() {
     let list = ctx.ws.articles;
     if (col) list = list.filter((a) => a.collection_id === col);
     if (status) list = list.filter((a) => a.status === status);
+    const brand = brandListFilter(ctx);
+    if (brand !== undefined) list = list.filter((a) => articleBrand(ctx.ws, a) === brand);
+    const forBrand = ctx.query.get("for_brand_id");
+    if (forBrand) {
+      if (!ctx.ws.brands.some((b) => b.id === forBrand)) throw invalid("for_brand_id must be a brand of the workspace");
+      list = list.filter((a) => shownBy(ctx.ws, a, forBrand));
+    }
     if (q) list = list.filter((a) => (a.title + " " + a.excerpt + " " + a.body_html).toLowerCase().includes(q));
     return paginate(ctx, list.slice().sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)), 100);
   });
@@ -277,6 +314,7 @@ export function registerResources() {
     const status = s(ctx, "status") === "published" ? "published" : "draft";
     const a: KbArticle = {
       id: uuid(),
+      brand_id: kbBrandRef(ctx, ctx.body.brand_id),
       collection_id: s(ctx, "collection_id") ?? null,
       title,
       slug: uniqueSlug(ctx.ws.articles, slugify(s(ctx, "slug") || title)),
@@ -297,7 +335,8 @@ export function registerResources() {
     const a = findArticle(ctx);
     if ("title" in ctx.body && !s(ctx, "title")?.trim()) throw invalid("Title can't be empty");
     assign(a, ctx.body, ["title", "excerpt", "body_html"]);
-    if ("collection_id" in ctx.body) a.collection_id = s(ctx, "collection_id") ?? null;
+    if ("collection_id" in ctx.body) a.collection_id = s(ctx, "collection_id") || null;
+    if ("brand_id" in ctx.body) a.brand_id = kbBrandRef(ctx, ctx.body.brand_id);
     if (s(ctx, "slug")) a.slug = uniqueSlug(ctx.ws.articles.filter((x) => x !== a), slugify(s(ctx, "slug")!));
     const status = s(ctx, "status");
     if (status === "published" || status === "draft") {
@@ -320,17 +359,31 @@ export function registerResources() {
 
   // Mailboxes.
   get("/v1/mailboxes", (ctx) => paginate(ctx, ctx.ws.mailboxes, 100));
+  get("/v1/mailboxes/connect-options", () => connectOptions("in.opendesk.sh"));
+  get("/v1/mailboxes/detect", (ctx) => {
+    const email = (ctx.query.get("email") ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address");
+    return detect(email);
+  });
   get("/v1/mailboxes/:id", (ctx) => findMailbox(ctx));
   post("/v1/mailboxes", (ctx) => {
     checkLimit(ctx.ws, "mailbox");
     const email = required(ctx, "email").toLowerCase();
-    if (ctx.ws.mailboxes.some((m) => m.email === email)) throw new HttpError(409, "conflict", "A mailbox with this address already exists");
+    if (ctx.ws.mailboxes.some((m) => m.email === email || m.aliases.includes(email))) throw new HttpError(409, "conflict", "A mailbox with this address already exists");
     const inbound = (s(ctx, "inbound_kind") ?? "forwarding") as Mailbox["inbound_kind"];
     const outbound = (s(ctx, "outbound_kind") ?? "system") as Mailbox["outbound_kind"];
     const config = isRecord(ctx.body.config) ? (ctx.body.config as MailboxConfig) : {};
     if (inbound === "imap" && (!config.imap_host || !config.imap_username)) throw invalid("IMAP host and username are required");
     if (outbound === "smtp" && (!config.smtp_host || !config.smtp_username)) throw invalid("SMTP host and username are required");
-    const m = mailbox(ctx.ws, { name: required(ctx, "name"), email, display_name: s(ctx, "display_name") ?? "", inbound_kind: inbound, outbound_kind: outbound, config, team_id: s(ctx, "team_id") ?? null });
+    const host = config.mail_host || detect(email).host || "other";
+    if (ctx.body.verify === true && (inbound === "imap" || outbound === "smtp")) {
+      const failed = refusal(host, (inbound === "imap" ? s(ctx, "password") : s(ctx, "smtp_password")) ?? "", inbound !== "imap");
+      if (failed)
+        throw new HttpError(422, "mailbox_connection_failed", `${failed.cause.title}. Nothing was saved.`, { ...failed });
+    }
+    const m = mailbox(ctx.ws, { name: required(ctx, "name"), email, display_name: s(ctx, "display_name") ?? "", inbound_kind: inbound, outbound_kind: outbound, config: { ...config, mail_host: host }, team_id: teamRef(ctx, ctx.body.team_id) });
+    mailboxSecrets.set(m.id, { password: s(ctx, "password") ?? "", smtp: s(ctx, "smtp_password") ?? "" });
+    writeAddressing(ctx, m);
     if ((s(ctx, "password") ?? "") === "wrong" || (s(ctx, "smtp_password") ?? "") === "wrong") {
       m.status = "error";
       m.last_error = "IMAP login failed: [AUTHENTICATIONFAILED] Invalid credentials";
@@ -340,9 +393,16 @@ export function registerResources() {
   });
   patch("/v1/mailboxes/:id", (ctx) => {
     const m = findMailbox(ctx);
-    assign(m, ctx.body, ["name", "display_name", "signature_html", "auto_reply_enabled", "auto_reply_subject", "auto_reply_html", "status", "team_id"]);
-    if (isRecord(ctx.body.config)) m.config = { ...m.config, ...(ctx.body.config as MailboxConfig) };
+    assign(m, ctx.body, ["name", "display_name", "signature_html", "auto_reply_enabled", "auto_reply_subject", "auto_reply_html", "status"]);
+    const prevTeam = m.team_id;
+    if ("team_id" in ctx.body) m.team_id = teamRef(ctx, ctx.body.team_id);
+    writeAddressing(ctx, m);
+    // Teams list their addresses.
+    if (prevTeam !== m.team_id) for (const t of ctx.ws.teams) if (t.id === prevTeam || t.id === m.team_id) publish(ctx.ws, "team.updated", { team: teamOut(ctx.ws, t) });
+    patchConnection(ctx, m);
     patchMailboxAI(ctx, m);
+    patchFormSenders(ctx, m);
+    if ("bot_id" in ctx.body) m.bot_id = checkBotId(ctx.ws, ctx.body.bot_id);
     if (ctx.body.password || ctx.body.smtp_password) {
       m.status = "active";
       m.last_error = "";
@@ -358,7 +418,18 @@ export function registerResources() {
   });
   post("/v1/mailboxes/:id/test", (ctx) => {
     const m = findMailbox(ctx);
-    if (m.status === "error") return respond(200, { inbound: { ok: false, error: m.last_error || "Connection refused" }, outbound: { ok: m.outbound_kind !== "smtp", error: m.outbound_kind === "smtp" ? "SMTP authentication failed (535 5.7.8)" : "" } });
+    // Forwarding in, SMTP out: only the SMTP server signs in, with the stored password
+    // (a mailbox in error is refused as a wrong password is).
+    const sec = mailboxSecrets.get(m.id);
+    if (m.inbound_kind === "forwarding" && m.outbound_kind === "smtp" && (sec || m.status === "error")) {
+      const failed = refusal(m.config.mail_host || detect(m.email).host || "other", m.status === "error" ? "wrong" : (sec?.smtp || sec?.password) ?? "", true);
+      if (failed) return respond(200, failed);
+    } else if (m.status === "error")
+      return respond(200, {
+        inbound: { ok: false, error: "The server refused the sign-in.", detail: m.last_error || "[AUTHENTICATIONFAILED] Invalid credentials" },
+        outbound: m.outbound_kind === "smtp" ? { ok: false, error: "The server refused the sign-in.", detail: "535 5.7.8 Authentication failed" } : { ok: true, error: "" },
+        cause: authRefusedCause,
+      });
     m.last_synced_at = nowIso();
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return respond(200, { inbound: { ok: true, error: "" }, outbound: { ok: true, error: "" } });
@@ -368,9 +439,14 @@ export function registerResources() {
     if (provider !== "google" && provider !== "microsoft") throw notFound("Provider");
     const existingId = s(ctx, "mailbox_id");
     let m = existingId ? ctx.ws.mailboxes.find((x) => x.id === existingId) : undefined;
-    const email = s(ctx, "email")?.toLowerCase() || `support@${provider === "google" ? "fieldnote.app" : "fieldnote.onmicrosoft.com"}`;
+    if (!mockOAuthEnabled(provider) && m?.inbound_kind !== provider) {
+      const name = provider === "google" ? "Google" : "Microsoft";
+      throw new HttpError(403, "mailbox_oauth_disabled", `Connecting a new mailbox with ${name} sign-in is not available on this instance. Connect it with an app password over IMAP and SMTP, or forward its mail into opendesk.`);
+    }
+    const email = s(ctx, "email")?.toLowerCase() || `support@${provider === "google" ? "margin.app" : "margin.onmicrosoft.com"}`;
     if (!m) {
-      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: provider, outbound_kind: provider, config: { oauth_email: email }, team_id: null });
+      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: provider, outbound_kind: provider, config: { oauth_email: email }, team_id: teamRef(ctx, ctx.body.team_id) });
+      writeAddressing(ctx, m);
       publish(ctx.ws, "mailbox.created", { mailbox: m });
     } else {
       m.status = "active";
@@ -382,39 +458,47 @@ export function registerResources() {
     return respond(200, { url: `/settings/mailboxes?connected=${m.id}` });
   });
 
-  // Public help center.
+  // Public help center: one brand's, with its own collections and articles and those of every brand.
+  const publicArticles = (ws: WsData, brand: Brand | undefined) =>
+    ws.articles.filter((a) => a.status === "published" && (!brand || shownBy(ws, a, brand.id)));
   get("/v1/public/help/:slug", (ctx) => {
-    const ws = publicWs(ctx);
-    const published = ws.articles.filter((a) => a.status === "published");
+    const { ws, brand } = publicBrand(ctx);
+    const published = publicArticles(ws, brand);
     return {
-      title: ws.workspace.settings.help_center_title || `${ws.workspace.name} Help`,
+      title: (brand?.is_default ? ws.workspace.settings.help_center_title : brand?.help_center.title) || brand?.help_center.title || `${brand?.name ?? ws.workspace.name} Help`,
       collections: ws.collections
+        .filter((c) => !brand || !c.brand_id || c.brand_id === brand.id)
         .map((c) => ({ ...c, article_count: published.filter((a) => a.collection_id === c.id).length }))
         .filter((c) => c.article_count > 0)
         .sort((a, b) => a.position - b.position),
       featured: published.slice().sort((a, b) => b.views - a.views).slice(0, 6),
-      locale: ws.workspace.settings.locale,
+      locale: brand?.locale || ws.workspace.settings.locale,
+      // The brand's help center logo, else its logo, else the workspace's (contracts/api.md).
+      logo_url: brand?.images.help_center_logo || brand?.images.logo || ws.workspace.avatar_url || null,
+      favicon_url: brand?.images.help_center_favicon || null,
     };
   });
   get("/v1/public/help/:slug/collections/:cslug", (ctx) => {
-    const ws = publicWs(ctx);
-    const col = ws.collections.find((c) => c.slug === ctx.params.cslug);
+    const { ws, brand } = publicBrand(ctx);
+    const col = ws.collections.find((c) => c.slug === ctx.params.cslug && (!brand || !c.brand_id || c.brand_id === brand.id));
     if (!col) throw notFound("Collection");
-    const articles = ws.articles.filter((a) => a.collection_id === col.id && a.status === "published");
+    const articles = publicArticles(ws, brand).filter((a) => a.collection_id === col.id);
     return { collection: { ...col, article_count: articles.length }, articles };
   });
   get("/v1/public/help/:slug/articles/:aslug", (ctx) => {
-    const ws = publicWs(ctx);
-    const a = ws.articles.find((x) => x.slug === ctx.params.aslug && x.status === "published");
+    const { ws, brand } = publicBrand(ctx);
+    const a = publicArticles(ws, brand).find((x) => x.slug === ctx.params.aslug);
     if (!a) throw notFound("Article");
     a.views++;
     return a;
   });
   get("/v1/public/help/:slug/search", (ctx) => {
-    const ws = publicWs(ctx);
+    const { ws, brand } = publicBrand(ctx);
     const q = (ctx.query.get("q") ?? "").toLowerCase().trim();
     if (!q) return [];
-    return ws.articles.filter((a) => a.status === "published" && (a.title + " " + a.excerpt + " " + a.body_html).toLowerCase().includes(q)).slice(0, 20);
+    return publicArticles(ws, brand)
+      .filter((a) => (a.title + " " + a.excerpt + " " + a.body_html).toLowerCase().includes(q))
+      .slice(0, 20);
   });
 
   // Public CSAT.
@@ -487,9 +571,84 @@ function patchMailboxAI(ctx: Ctx, m: Mailbox) {
   if (typeof b.ai_answers_outside_hours === "boolean") m.ai_answers_outside_hours = b.ai_answers_outside_hours;
 }
 
+const FORM_DOMAIN = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const PUBLIC_MAIL = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me", "gmx.com", "gmx.net", "mail.com", "yandex.com", "yandex.ru", "zoho.com", "fastmail.com"]);
+
+/** trusted_form_senders: exact addresses or "@domain", at most 50 (contracts/api.md "Inbound email"). */
+function patchFormSenders(ctx: Ctx, m: Mailbox) {
+  if (!("trusted_form_senders" in ctx.body)) return;
+  const list = strArr(ctx.body.trusted_form_senders);
+  if (!list) throw invalid("trusted_form_senders must be a list");
+  const clean = [...new Set(list.map((a) => a.trim().toLowerCase()))];
+  if (clean.length > 50) throw invalid("A mailbox can trust at most 50 form senders.");
+  for (const e of clean) {
+    if (e.startsWith("@")) {
+      const d = e.slice(1);
+      if (!FORM_DOMAIN.test(d)) throw invalid("Enter form senders as an email address or @domain.");
+      if (PUBLIC_MAIL.has(d)) throw invalid(`@${d} is a public email provider: enter the form's exact address instead.`);
+    } else if (!ALIAS.test(e)) throw invalid("Enter form senders as an email address or @domain.");
+    if (e === m.email || m.aliases.includes(e)) throw invalid("A form sender cannot be the mailbox's own address or one of its aliases.");
+  }
+  m.trusted_form_senders = clean;
+}
+
+/** Mailbox passwords, write-only as in the API: the mock checks sign-ins against them. */
+const mailboxSecrets = new Map<string, { password: string; smtp: string }>();
+
+const IMAP_KEYS = ["imap_host", "imap_port", "imap_username", "imap_tls"] as const;
+const SMTP_KEYS = ["smtp_host", "smtp_port", "smtp_username", "smtp_tls"] as const;
+
+/**
+ * How a mailbox connects, on a PATCH: its IMAP and SMTP settings, passwords and the way
+ * replies are sent, as the API checks them. With verify, a changed server is signed in
+ * to first and a refusal stores nothing.
+ */
+function patchConnection(ctx: Ctx, m: Mailbox) {
+  const b = ctx.body;
+  const cfg = isRecord(b.config) ? (b.config as MailboxConfig) : {};
+  const outbound = (s(ctx, "outbound_kind") ?? m.outbound_kind) as Mailbox["outbound_kind"];
+  if (outbound !== m.outbound_kind && (outbound === "google" || outbound === "microsoft") && m.inbound_kind !== outbound)
+    throw invalid(`Sending through ${outbound === "google" ? "Google" : "Microsoft"} needs a mailbox connected with it.`);
+  const next: MailboxConfig = { ...m.config };
+  const take = (keys: readonly (keyof MailboxConfig)[]) => {
+    for (const k of keys) if (cfg[k] !== undefined) Object.assign(next, { [k]: cfg[k] });
+  };
+  if (m.inbound_kind === "imap") take(IMAP_KEYS);
+  if (outbound === "smtp") take(SMTP_KEYS);
+  else for (const k of SMTP_KEYS) delete next[k];
+  const prev = mailboxSecrets.get(m.id) ?? { password: "", smtp: "" };
+  const sec = { password: (s(ctx, "password") ?? prev.password).trim(), smtp: outbound === "smtp" ? (s(ctx, "smtp_password") ?? prev.smtp).trim() : "" };
+  if (outbound !== "smtp" && m.inbound_kind === "forwarding") sec.password = "";
+  if (outbound === "smtp") {
+    const host = (next.smtp_host ?? "").trim().toLowerCase();
+    if (!host) throw invalid("Enter the SMTP server host.");
+    if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(host)) throw invalid("The SMTP server must be a public address.");
+    if (next.smtp_tls === "none") throw invalid("The SMTP connection must use TLS.");
+    if (!sec.smtp && !sec.password) throw invalid("Enter the SMTP password.");
+    next.smtp_host = host;
+    next.smtp_port ||= next.smtp_tls === "tls" ? 465 : 587;
+    next.smtp_username = (next.smtp_username ?? "").trim() || m.email;
+  }
+  const smtpChanged = outbound === "smtp" && (m.outbound_kind !== "smtp" || SMTP_KEYS.some((k) => next[k] !== m.config[k]) || sec.smtp !== prev.smtp);
+  const imapChanged = m.inbound_kind === "imap" && (IMAP_KEYS.some((k) => next[k] !== m.config[k]) || sec.password !== prev.password);
+  if (b.verify === true && (smtpChanged || imapChanged)) {
+    const host = m.config.mail_host || detect(m.email).host || "other";
+    const failed = refusal(host, imapChanged ? sec.password : sec.smtp || sec.password, !imapChanged);
+    if (failed) throw new HttpError(422, "mailbox_connection_failed", `${failed.cause.title}. Nothing was saved.`, { ...failed });
+  }
+  m.outbound_kind = outbound;
+  m.config = next;
+  mailboxSecrets.set(m.id, sec);
+}
+
 function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_name" | "inbound_kind" | "outbound_kind" | "config" | "team_id">): Mailbox {
   const m: Mailbox = {
     ...init,
+    brand_id: defaultBrand(ws)?.id ?? "",
+    aliases: [],
+    trusted_form_senders: [],
+    from_name_format: "{agent} at {mailbox}",
+    private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
     id: uuid(),
     name: init.name.slice(0, 60),
     forwarding_address: `${ws.workspace.slug}-${slugify(init.name) || "inbox"}-${randomToken(4).toLowerCase().replace(/[-_]/g, "x")}@in.opendesk.sh`,
@@ -509,10 +668,97 @@ function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_nam
   return m;
 }
 
-function publicWs(ctx: Ctx): WsData {
+/** The workspace and brand of a help center slug (a brand's slug; the default brand's is the workspace slug). */
+function publicBrand(ctx: Ctx): { ws: WsData; brand: Brand | undefined } {
+  for (const ws of db.workspaces) {
+    const brand = ws.brands.find((b) => b.slug === ctx.params.slug);
+    if (brand) {
+      if (!brand.help_center.enabled) throw notFound("Help center");
+      return { ws, brand };
+    }
+  }
   const ws = db.workspaces.find((w) => w.workspace.slug === ctx.params.slug);
   if (!ws || !ws.workspace.settings.help_center_enabled) throw notFound("Help center");
-  return ws;
+  return { ws, brand: defaultBrand(ws) };
+}
+
+/** A KB brand_id from the body: a brand of the workspace, or null (""/null) for every brand. */
+function kbBrandRef(ctx: Ctx, v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v !== "string" || !ctx.ws.brands.some((b) => b.id === v)) throw invalid("brand_id must be a brand of the workspace");
+  return v;
+}
+
+/** The ?brand_id= filter of the KB lists: a brand id, null for "none" (every brand), undefined when absent. */
+function brandListFilter(ctx: Ctx): string | null | undefined {
+  const raw = (ctx.query.get("brand_id") ?? "").trim();
+  if (!raw) return undefined;
+  if (raw === "none") return null;
+  if (!ctx.ws.brands.some((b) => b.id === raw)) throw invalid("brand_id must be a brand of the workspace or none");
+  return raw;
+}
+
+/** An article's brand: its collection's when that has one, else its own; null = every brand. */
+export function articleBrand(ws: WsData, a: KbArticle): string | null {
+  const col = a.collection_id ? ws.collections.find((c) => c.id === a.collection_id) : undefined;
+  return col?.brand_id ?? a.brand_id ?? null;
+}
+
+/** Whether a brand's help center shows the article: its own, or one of every brand. */
+function shownBy(ws: WsData, a: KbArticle, brandId: string): boolean {
+  const b = articleBrand(ws, a);
+  return b === null || b === brandId;
+}
+
+/** A team id from the body that must name a team of this workspace; "" and null clear it. */
+function teamRef(ctx: Ctx, v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v !== "string" || !ctx.ws.teams.some((t) => t.id === v)) throw invalid("Unknown team");
+  return v;
+}
+
+function teamOfId(ws: WsData, id: string, userId: string) {
+  const t = ws.teams.find((x) => x.id === id);
+  return t && t.members.some((m) => m.user_id === userId) ? t : null;
+}
+
+/** Rows scoped to a private team are for its members only. */
+function canSeeTeamScoped(ws: WsData, teamId: string | null | undefined): boolean {
+  if (!teamId) return true;
+  const t = ws.teams.find((x) => x.id === teamId);
+  return !t?.private || !!teamOfId(ws, teamId, db.meId);
+}
+
+const ALIAS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** brand_id, aliases and from_name_format on a mailbox write (contracts/teams.md). */
+function writeAddressing(ctx: Ctx, m: Mailbox) {
+  const b = ctx.body;
+  if (typeof b.brand_id === "string" && b.brand_id) {
+    if (!ctx.ws.brands.some((x) => x.id === b.brand_id)) throw invalid("Unknown brand");
+    m.brand_id = b.brand_id;
+  }
+  if ("aliases" in b) {
+    const list = strArr(b.aliases);
+    if (!list) throw invalid("aliases must be a list of addresses");
+    const clean = [...new Set(list.map((a) => a.trim().toLowerCase()).filter(Boolean))];
+    if (clean.length > 20) throw invalid("Add at most 20 aliases");
+    for (const a of clean) {
+      if (!ALIAS.test(a)) throw invalid(`${a} is not an email address`);
+      if (a === m.email) throw invalid("An alias can't be the mailbox's own address");
+      if (ctx.ws.mailboxes.some((x) => x !== m && (x.email === a || x.aliases.includes(a)))) throw new HttpError(409, "conflict", `${a} already delivers into another mailbox`);
+    }
+    m.aliases = clean;
+  }
+  if ("from_name_format" in b) {
+    const f = typeof b.from_name_format === "string" ? b.from_name_format.replace(/\s+/g, " ").trim() : "";
+    if (f.length > 80) throw invalid("Keep the from name under 80 characters");
+    if (/[<>"]/.test(f)) throw invalid("The from name can't contain < > or quotes");
+    const unknown = (f.match(/\{[^}]*\}/g) ?? []).find((v) => !["{agent}", "{agent_first}", "{team}", "{brand}", "{mailbox}"].includes(v));
+    if (unknown) throw invalid(`${unknown} is not a variable. Use {agent}, {agent_first}, {team}, {brand} or {mailbox}`);
+    m.from_name_format = f || "{agent} at {mailbox}";
+  }
+  m.private = !!m.team_id && !!ctx.ws.teams.find((t) => t.id === m.team_id)?.private;
 }
 
 function findContact(ctx: Ctx): Contact {

@@ -31,8 +31,8 @@ type AIConfig struct {
 	} `json:"models"`
 	Embeddings bool               `json:"embeddings"`
 	Features   hd.AISettings      `json:"features"`
-	Costs      map[string]float64 `json:"costs" doc:"Typical credits per call, the minimum balance to start one"`
-	// Metered reports that credits follow real usage (contracts/billing.md).
+	Costs      map[string]float64 `json:"costs" doc:"What a typical call of each feature costs on the workspace's chosen models, in US dollars"`
+	// Metered reports that AI usage is charged on each call's real cost (contracts/billing.md).
 	Metered bool `json:"metered"`
 	// AssistantName is the name AI acts under: the assistant, and the actor of every
 	// change AI makes.
@@ -40,7 +40,7 @@ type AIConfig struct {
 	// Decisions is the decision engine (Jev, the LLM fallback, or none).
 	Decisions hd.DecisionEngine `json:"decisions"`
 	// OwnKey reports that the workspace's LLM calls run on its own provider key and
-	// charge no credits (GET /v1/ai/provider).
+	// charge nothing to the AI balance (GET /v1/ai/provider).
 	OwnKey bool `json:"own_key"`
 }
 
@@ -72,7 +72,7 @@ func (s *Service) register(api huma.API) {
 			out := AIConfig{Enabled: s.Enabled(), Provider: "none", Features: st.AI(), Costs: map[string]float64{}, AssistantName: AssistantName,
 				Decisions: hd.Engine(s.d.Cfg), Metered: true}
 			for k, v := range plan.Typical {
-				out.Costs[k] = v.Credits()
+				out.Costs[k] = v.USD()
 			}
 			if s.Enabled() {
 				rt, err := s.routeFor(ctx, p.WorkspaceID)
@@ -82,13 +82,14 @@ func (s *Service) register(api huma.API) {
 				out.Provider, out.OwnKey = rt.p.Name(), rt.own
 				out.Models.Default, out.Models.Fast = s.tierModelOn(ctx, rt, out.Features, tierDefault), s.tierModelOn(ctx, rt, out.Features, tierFast)
 				out.Embeddings = s.semantic()
+				s.featureCosts(ctx, out.Features, out.Costs, rt.own)
 			}
 			return &struct{ Body AIConfig }{out}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "ai-models", Method: http.MethodGet, Path: "/v1/ai/models",
-		Summary: "AI models", Description: "The models a workspace may choose, with prices in credits per million tokens when known. " +
-			"On the workspace's own key, its provider's models (no credit prices).", Tags: tags},
+		Summary: "AI models", Description: "The models a workspace may choose, with prices in US dollars per million tokens as the workspace pays them, when known. " +
+			"On the workspace's own key, its provider's models (no prices: the workspace pays its provider).", Tags: tags},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body ModelList }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeSettingsRead)
 			if err != nil {
@@ -147,7 +148,7 @@ func (s *Service) register(api huma.API) {
 			return &struct{ Body hd.AISettings }{out}, nil
 		})
 
-	streamDoc := " Send `Accept: text/event-stream` to stream `delta` events ({text}) and a final `done` event with this response; credits are spent once, at done."
+	streamDoc := " Send `Accept: text/event-stream` to stream `delta` events ({text}) and a final `done` event with this response; the call is charged once, at done."
 
 	huma.Register(api, huma.Operation{OperationID: "ai-draft-reply", Method: http.MethodPost, Path: "/v1/tickets/{id}/ai/draft",
 		Summary: "Draft a reply", Description: "Drafts a reply from the thread, the contact, saved replies and the best knowledge base matches. Not sent." + streamDoc,
@@ -180,7 +181,7 @@ func (s *Service) register(api huma.API) {
 			if !s.Enabled() {
 				return nil, errDisabled
 			}
-			tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, in.ID)
+			tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -240,7 +241,7 @@ func (s *Service) register(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.DismissSuggestion(ctx, p.WorkspaceID, in.ID, in.Field); err != nil {
+			if err := s.DismissSuggestion(ctx, p, in.ID, in.Field); err != nil {
 				return nil, apiErr(err)
 			}
 			return nil, nil

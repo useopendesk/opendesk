@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { MfaStep } from "@/components/auth/MfaStep";
 import { AuthField, completeSignIn, Notice, oauthErrorMessage, PasswordInput } from "@/components/auth/parts";
 import { api } from "@/lib/api/endpoints";
+import { takeVerifier } from "@/lib/desktop";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import type { ExchangeResponse, LinkRequired, TokenResponse } from "@/lib/api/types";
 import { track } from "@/lib/analytics";
@@ -53,7 +54,7 @@ export default function Callback() {
     if (!search.code || ran.current) return;
     ran.current = true;
     api.auth
-      .oauthExchange(search.code)
+      .oauthExchange(search.code, takeVerifier(search.code))
       .then(handle)
       .catch((e) => {
         const link = linkFromError(e);

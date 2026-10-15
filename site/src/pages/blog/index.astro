@@ -1,29 +1,96 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import PageHero from '../../components/PageHero.astro';
 import Icon from '../../components/Icon.astro';
+import PaintedThumb from '../../components/pages/PaintedThumb.astro';
+import { postPainting, readingMinutes } from '../../components/pages/paint';
 import { getPublishedPosts, formatDate } from '../../lib/blog';
+import { LINKS } from '../../lib/site';
 
 const posts = await getPublishedPosts();
+const [cover, ...rest] = posts;
+const meta = (p: (typeof posts)[number]) => ({
+  painting: postPainting(p.id),
+  minutes: readingMinutes(p.body ?? ''),
+  tag: p.data.tags[0],
+});
 ---
-<Layout title="Blog" description="Notes from the team building opendesk, the open-source helpdesk: releases, engineering and how we think about support software.">
-  <PageHero label="Blog" title="Notes from the desk." lede="Releases, engineering and how we think about support software.">
-    <a href="/blog/rss.xml" class="mt-8 inline-flex items-center gap-2 text-[14px] text-muted hover:text-fg"><Icon name="rss" size={15} />Subscribe with RSS</a>
-  </PageHero>
-  <section class="container-page py-14 md:py-20">
-    <ul class="divide-y divide-line border-y border-line">
-      {posts.map((p) => (
-        <li>
-          <a href={`/blog/${p.id}/`} class="group grid gap-3 py-8 md:grid-cols-[200px_1fr_auto] md:items-baseline md:gap-10">
-            <time datetime={p.data.pubDate.toISOString()} class="font-mono text-[12.5px] text-subtle">{formatDate(p.data.pubDate)}</time>
-            <div>
-              <h2 class="text-[22px] font-semibold tracking-[-0.02em] text-fg group-hover:underline underline-offset-4 decoration-line">{p.data.title}</h2>
-              <p class="mt-2 max-w-2xl text-[15.5px] leading-relaxed text-muted">{p.data.description}</p>
+<Layout cta={{ painting: 'pampas' }} title="Blog" description="Notes from the team building opendesk, the open-source helpdesk: releases, engineering and how we think about support software.">
+  <!-- Masthead. -->
+  <header class="container-page pt-8 md:pt-12">
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 pb-3 font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">
+      <span class="text-fg">opendesk</span>
+      <span>The blog</span>
+      {cover && <span class="ml-auto">Latest <time datetime={cover.data.pubDate.toISOString()}>{formatDate(cover.data.pubDate)}</time></span>}
+    </div>
+    <div class="border-y-[3px] border-double border-fg py-6 md:py-8">
+      <h1 class="text-[56px] font-semibold leading-[0.88] tracking-[-0.065em] text-fg sm:text-[96px] lg:text-[148px] xl:text-[176px]">Notes from the desk.</h1>
+    </div>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-line py-3 text-[14px] text-muted">
+      <span>Releases, engineering and how we think about support software.</span>
+      <a href="/blog/rss.xml" class="ml-auto inline-flex items-center gap-2 font-mono text-[12.5px] text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg"><Icon name="rss" size={13} />Subscribe with RSS</a>
+    </div>
+  </header>
+
+  {cover && (() => {
+    const m = meta(cover);
+    return (
+      <section class="container-page mt-10 md:mt-14" aria-label="Cover story">
+        <a href={`/blog/${cover.id}/`} class="group grid gap-8 lg:grid-cols-12 lg:gap-12">
+          <PaintedThumb painting={m.painting} sizes="(min-width: 1024px) 66vw, 100vw" mark={72} priority class="aspect-[4/3] rounded-[22px] sm:aspect-[16/10] lg:col-span-8 md:rounded-[28px]" />
+          <div class="flex flex-col lg:col-span-4 lg:py-2">
+            <div class="flex items-center gap-3 font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">
+              <span class="text-fg">Cover story</span>{m.tag && <span>· {m.tag}</span>}
             </div>
-            <Icon name="arrowRight" size={18} class="hidden md:block text-subtle transition-transform group-hover:translate-x-1 group-hover:text-fg" />
-          </a>
-        </li>
-      ))}
-    </ul>
+            <h2 class="mt-5 text-balance text-[40px] font-semibold leading-[0.98] tracking-[-0.05em] text-fg md:text-[56px]">{cover.data.title}</h2>
+            <p class="mt-5 text-[18px] leading-[1.55] text-body">{cover.data.description}</p>
+            <div class="mt-8 border-t border-line pt-4 font-mono text-[12px] uppercase tracking-[0.06em] text-muted lg:mt-auto">
+              {cover.data.author} · <time datetime={cover.data.pubDate.toISOString()}>{formatDate(cover.data.pubDate)}</time> · {m.minutes} min
+            </div>
+            <span class="mt-5 inline-flex items-center gap-2 text-[15px] font-medium text-fg">Read the story<Icon name="arrowRight" size={15} class="transition-transform group-hover:translate-x-1" /></span>
+          </div>
+        </a>
+      </section>
+    );
+  })()}
+
+  {rest.length > 0 && (
+    <section class="container-page mt-20 md:mt-28" aria-label="More stories">
+      <div class="flex items-center gap-4 font-mono text-[11.5px] uppercase tracking-[0.08em] text-fg"><span>More stories</span><span class="h-px flex-1 bg-line"></span></div>
+      <div class="mt-8 grid gap-x-10 gap-y-14 md:grid-cols-2 lg:grid-cols-3">
+        {rest.map((p) => {
+          const m = meta(p);
+          return (
+            <a href={`/blog/${p.id}/`} class="group flex flex-col">
+              <PaintedThumb painting={m.painting} label={m.tag} sizes="(min-width: 1024px) 440px, (min-width: 768px) 50vw, 100vw" mark={32} class="aspect-[4/3] rounded-[18px]" />
+              <div class="mt-5 font-mono text-[11.5px] uppercase tracking-[0.06em] text-muted"><time datetime={p.data.pubDate.toISOString()}>{formatDate(p.data.pubDate)}</time> · {m.minutes} min</div>
+              <h3 class="mt-2 text-balance text-[24px] font-semibold leading-[1.1] tracking-[-0.035em] text-fg group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{p.data.title}</h3>
+              <p class="mt-2 line-clamp-3 text-[15px] leading-relaxed text-muted">{p.data.description}</p>
+            </a>
+          );
+        })}
+      </div>
+    </section>
+  )}
+
+  <!-- The back pages: where to talk to us and follow along. -->
+  <section class="container-page mt-20 md:mt-28" aria-label="Also from opendesk">
+    <div class="grid border-t-[3px] border-double border-fg md:grid-cols-3 md:divide-x md:divide-line">
+      <div class="py-8 md:pr-8">
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-fg">Talk to us</div>
+        <p class="mt-6 text-[22px] font-semibold leading-[1.2] tracking-[-0.03em] text-fg">Questions, ideas and what you are building, with the team and other people running opendesk.</p>
+        <a href={LINKS.discord} class="link-arrow mt-5"><Icon name="discord" size={14} />Join the Discord<Icon name="arrowRight" size={14} /></a>
+      </div>
+      <div class="border-t border-line py-8 md:border-t-0 md:px-8">
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-fg">Read the source</div>
+        <p class="mt-6 text-[22px] font-semibold leading-[1.2] tracking-[-0.03em] text-fg">opendesk is built in public. The code behind every post is there to read and run.</p>
+        <a href={LINKS.github} class="link-arrow mt-5"><Icon name="github" size={14} />opendesk on GitHub<Icon name="arrowRight" size={14} /></a>
+      </div>
+      <div class="border-t border-line py-8 md:border-t-0 md:pl-8">
+        <div class="font-mono text-[11.5px] uppercase tracking-[0.08em] text-fg">Subscribe</div>
+        <p class="mt-6 text-[15px] leading-relaxed text-muted">New posts in your reader as they are published. No account, no email list.</p>
+        <a href="/blog/rss.xml" class="btn btn-primary mt-5"><Icon name="rss" size={14} />RSS feed</a>
+        <div class="mt-8 border-t border-line pt-5 text-[14px] text-muted">Running a support team? <a href={LINKS.signup} class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">Start free</a> or <a href={LINKS.selfHostQuickstart} class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">self-host it</a>.</div>
+      </div>
+    </div>
   </section>
 </Layout>

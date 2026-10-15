@@ -2,8 +2,9 @@
 // default (contracts/api.md "Widget"), so an older server, or a stored setting
 // without the key, reads the same as the default.
 
+import { OLLIE_LOOK, readLook, type BotLook } from "../../src/lib/botlook";
 import { contrastText, isHex } from "./html";
-import type { WidgetConfig, WidgetRadius } from "./types";
+import type { BotIdentity, BotRef, WidgetConfig, WidgetRadius } from "./types";
 
 export const BOT_NAME = "Ollie";
 
@@ -14,6 +15,48 @@ const clamp = (n: unknown, lo: number, hi: number, d: number) => {
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const oneOf = <T extends string>(v: unknown, all: readonly T[], d: T): T => (all.includes(v as T) ? (v as T) : d);
 const url = (v: unknown) => (typeof v === "string" && /^https?:\/\//i.test(v.trim()) ? v.trim() : null);
+
+/** What a message or a live event says of its bot. `look` is null when it sent none (an older server). */
+export type BotSeen = { id: string | null; name: string; avatar_url: string; look: BotLook | null };
+
+/**
+ * A bot from the server, read for display. The look always goes through
+ * readLook (unknown values take Ollie's), so only allow-listed values reach the
+ * renderer. An older server sent `{name, avatar_url}`: its picture becomes an
+ * image look.
+ */
+export function readBotRef(v: unknown): BotSeen | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const avatar = url(o.avatar_url) ?? "";
+  const look = o.look && typeof o.look === "object" ? readLook(o.look) : avatar ? { ...OLLIE_LOOK, kind: "image" as const } : null;
+  return { id: typeof o.id === "string" && o.id ? o.id : null, name: str(o.name, 40), avatar_url: avatar, look };
+}
+
+/** WidgetConfig.bot with every key filled in: Ollie when the server sent none. */
+export function readBot(v: unknown): BotIdentity {
+  const b = readBotRef(v);
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return {
+    id: b?.id ?? null,
+    name: b?.name || BOT_NAME,
+    role: str(o.role, 60),
+    avatar_url: b?.avatar_url ?? "",
+    look: b?.look ?? OLLIE_LOOK,
+    // Newlines are kept; only the ends are trimmed.
+    greeting: typeof o.greeting === "string" ? o.greeting.trim().slice(0, 300) : "",
+  };
+}
+
+/** The bot to show for a message or live reply: the one it names, else the widget's. */
+export function botShown(seen: BotSeen | null | undefined, bot: BotRef): BotRef {
+  if (!seen) return bot;
+  return {
+    id: seen.id ?? bot.id,
+    name: seen.name || bot.name,
+    ...(seen.look ? { look: seen.look, avatar_url: seen.avatar_url } : { look: bot.look, avatar_url: bot.avatar_url }),
+  };
+}
 
 /** Fill in every key with its default and keep values in their documented ranges. */
 export function resolveConfig(raw: Partial<WidgetConfig> | null | undefined): WidgetConfig {
@@ -30,9 +73,19 @@ export function resolveConfig(raw: Partial<WidgetConfig> | null | undefined): Wi
         .slice(0, 3)
         .map((m) => ({ name: m.name.trim().slice(0, 40), avatar_url: url(m.avatar_url) }))
     : [];
+  const seen = new Set<string>();
+  const topics = Array.isArray(r.topics)
+    ? r.topics
+        .filter((x) => x && typeof x.id === "string" && x.id && !seen.has(x.id) && seen.add(x.id))
+        .map((x) => ({ id: x.id, label: str(x.label, 40) }))
+        .filter((x) => x.label.length >= 2)
+        .slice(0, 8)
+    : [];
+  const brandColor = isHex(r.brand?.color) ? r.brand.color.trim() : null;
+  const brand = { name: str(r.brand?.name, 80) || str(r.workspace_name, 80), color: brandColor };
   return {
-    workspace_name: str(r.workspace_name, 80),
-    brand_color: isHex(r.brand_color) ? r.brand_color.trim() : null,
+    workspace_name: str(r.workspace_name, 80) || brand.name,
+    brand_color: isHex(r.brand_color) ? r.brand_color.trim() : brandColor,
     greeting: typeof r.greeting === "string" ? r.greeting : "",
     help_center_url: url(r.help_center_url),
     require_email: r.require_email === true,
@@ -52,7 +105,12 @@ export function resolveConfig(raw: Partial<WidgetConfig> | null | undefined): Wi
     sound: r.sound === true,
     team,
     ai_answers: r.ai_answers === true,
-    bot: { name: str(r.bot?.name, 30) || BOT_NAME, avatar_url: url(r.bot?.avatar_url) },
+    bot: readBot(r.bot),
+    topics,
+    // Older servers have no hours here: open.
+    open: r.open !== false,
+    offline_message: typeof r.offline_message === "string" ? r.offline_message.trim().slice(0, 300) : "",
+    brand,
   };
 }
 

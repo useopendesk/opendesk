@@ -19,9 +19,9 @@ import (
 
 // ProviderView is GET /v1/ai/provider: which provider the workspace's AI runs on.
 type ProviderView struct {
-	Mode             string       `json:"mode" enum:"instance,own_key" doc:"instance: the instance's provider (opendesk credits when billing is on); own_key: the workspace's key"`
+	Mode             string       `json:"mode" enum:"instance,own_key" doc:"instance: the instance's provider (charged to the AI balance when billing is on); own_key: the workspace's key"`
 	InstanceProvider string       `json:"instance_provider" doc:"The instance's provider (openrouter, anthropic, openai)"`
-	Billing          bool         `json:"billing" doc:"Calls on the instance's provider are charged in credits"`
+	Billing          bool         `json:"billing" doc:"Calls on the instance's provider are charged to the AI balance, in US dollars"`
 	Key              *ProviderKey `json:"key"`
 }
 
@@ -126,7 +126,7 @@ func (s *Service) registerProvider(api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "ai-set-provider", Method: http.MethodPut, Path: "/v1/ai/provider",
 		Summary: "Use the workspace's own AI provider key", Description: "Tests the key, then stores it encrypted. Every LLM call of the workspace then runs on it " +
-			"and charges no credits. Replaces a saved key.", Tags: tags},
+			"and charges nothing to the AI balance. Replaces a saved key.", Tags: tags},
 		func(ctx context.Context, in *struct{ Body ProviderKeyInput }) (*struct{ Body ProviderView }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
 			if err != nil {
@@ -186,7 +186,7 @@ func (s *Service) registerProvider(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "ai-remove-provider", Method: http.MethodDelete, Path: "/v1/ai/provider", DefaultStatus: http.StatusNoContent,
-		Summary: "Remove the workspace's own AI provider key", Description: "Deletes the key; AI returns to the instance's provider (opendesk credits).", Tags: tags},
+		Summary: "Remove the workspace's own AI provider key", Description: "Deletes the key; AI returns to the instance's provider (the AI balance).", Tags: tags},
 		func(ctx context.Context, _ *struct{}) (*struct{}, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
 			if err != nil {

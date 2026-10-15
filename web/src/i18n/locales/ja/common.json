@@ -9,5 +9,5 @@
     "back": "戻る",
     "continue": "続ける"
   },
-  "credits_other": "{{count}} クレジット"
+  "aboutCost": "約 {{cost}}"
 }

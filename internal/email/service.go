@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/email/mailhost"
 )
 
 // Limits on what the pipeline accepts.
@@ -24,6 +25,8 @@ type service struct {
 	http  *http.Client
 
 	providers map[string]*oauthProvider
+	// detector names a domain's mail host and servers (GET /v1/mailboxes/detect).
+	detector  *mailhost.Detector
 	gmailBase string // https://gmail.googleapis.com
 	graphBase string // https://graph.microsoft.com/v1.0
 
@@ -41,5 +44,9 @@ func newService(d *deps.Deps) *service {
 		graphBase: "https://graph.microsoft.com/v1.0",
 	}
 	s.providers = defaultProviders(d.Cfg)
+	s.detector = mailhost.NewDetector(nil, s.guard.httpClient(), mailhost.NewMemoryCache(detectCacheTTL, detectCacheMax))
+	if !d.Cfg.MailhostISPDB {
+		s.detector.WithoutISPDB()
+	}
 	return s
 }

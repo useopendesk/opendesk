@@ -43,7 +43,7 @@ func loadOnboarding(ctx context.Context, q db.Querier, wid, uid uuid.UUID, insta
 		(SELECT count(*) FROM members WHERE workspace_id = $1) > 1
 			OR EXISTS (SELECT 1 FROM invitations WHERE workspace_id = $1 AND accepted_at IS NULL AND expires_at > now()),
 		EXISTS (SELECT 1 FROM users WHERE id = $2 AND avatar_url <> ''),
-		w.widget_seen_at IS NOT NULL,
+		w.widget_seen_at IS NOT NULL OR EXISTS (SELECT 1 FROM widgets WHERE workspace_id = $1 AND seen_at IS NOT NULL),
 		EXISTS (SELECT 1 FROM kb_articles WHERE workspace_id = $1 AND status = 'published'),
 		COALESCE(w.settings ->> 'auto_assign', 'none') <> 'none'
 			OR EXISTS (SELECT 1 FROM assignment_rules WHERE workspace_id = $1 AND mode <> 'none')

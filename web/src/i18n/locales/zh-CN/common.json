@@ -9,5 +9,5 @@
     "back": "返回",
     "continue": "继续"
   },
-  "credits_other": "{{count}} 积分"
+  "aboutCost": "约 {{cost}}"
 }

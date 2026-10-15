@@ -29,6 +29,10 @@ import { useAI } from "@/lib/ai";
 import { useTranslation } from "react-i18next";
 import { AiIcon, AiTooltip } from "@/components/ai/bits";
 import { requestKbDraft } from "@/components/ai/kbDraftIntent";
+import { articleBrandId, KbBrandPick } from "@/components/kb/brand";
+import { useBrands } from "@/components/settings2/teams";
+import { BrandChip } from "@/components/tickets/teams";
+import type { Brand } from "@/lib/api/types";
 
 const route = getRouteApi("/app/kb");
 
@@ -55,10 +59,20 @@ export default function KbPage() {
     void navigate({ search: (s) => ({ ...s, q: debounced || undefined }), replace: true });
   }, [debounced, search.q, navigate]);
 
+  const { brands, multi: multiBrand, defaultBrand } = useBrands();
+  const brandOf = (id: string | null | undefined) => (id ? brands.find((b) => b.id === id) : undefined);
+  // A brand filter shows what that brand's help center shows: its own and the shared.
+  const brandFilter = brandOf(search.brand);
   const collections = useQuery(q.kbCollections());
-  const articles = useQuery(q.kbArticles({ collection_id: search.collection, status: search.status, q: search.q }));
-  const all = useQuery(q.kbArticles({}));
-  const sorted = [...(collections.data ?? [])].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+  const articles = useQuery(q.kbArticles({ collection_id: search.collection, status: search.status, q: search.q, for_brand_id: search.brand }));
+  const all = useQuery(q.kbArticles({ for_brand_id: search.brand }));
+  const sorted = [...(collections.data ?? [])]
+    .filter((c) => !search.brand || !c.brand_id || c.brand_id === search.brand)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+  // A pill names the brand of a collection or article that belongs to one, once there are two brands.
+  const pillFor = (id: string | null | undefined) => (multiBrand ? brandOf(id) : undefined);
+  const helpBrand = brandFilter ?? defaultBrand;
+  const helpHref = helpBrand?.help_center.enabled ? `/help/${helpBrand.slug}` : !brandFilter && ws?.settings.help_center_enabled ? `/help/${ws.slug}` : null;
   const current = sorted.find((c) => c.id === search.collection);
   const collectionName = (id: string | null) => sorted.find((c) => c.id === id)?.name;
   const everything = all.data ?? [];
@@ -84,9 +98,9 @@ export default function KbPage() {
         icon={<BookOpen />}
         actions={
           <>
-            {ws?.settings.help_center_enabled && (
+            {helpHref && (
               <Button asChild variant="ghost" size="sm">
-                <a href={`/help/${ws.slug}`} target="_blank" rel="noreferrer">
+                <a href={helpHref} target="_blank" rel="noreferrer">
                   <ExternalLink className="size-3.5" />
                   {t("viewHelpCenter")}
                 </a>
@@ -149,6 +163,7 @@ export default function KbPage() {
                       collection={c.id}
                       icon={<Folder />}
                       hue={collectionTone(sorted, c.id)}
+                      brand={pillFor(c.brand_id)}
                     />
                     {canEdit && (
                       <CollectionMenu
@@ -166,6 +181,14 @@ export default function KbPage() {
           <h2 className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em]">{current?.name ?? t("allArticles")}</h2>
           {articles.data && <span className="mono text-[11px] tabular-nums text-fg-4">{articles.data.length}</span>}
           <div className="ml-auto flex items-center gap-2">
+            {(multiBrand || search.brand) && (
+              <KbBrandPick
+                value={search.brand ?? null}
+                onChange={(brand) => void navigate({ search: (s) => ({ ...s, brand: brand ?? undefined }) })}
+                className="max-w-[180px]"
+                filter
+              />
+            )}
             <Segmented<StatusFilter>
               size="xs"
               value={search.status ?? "all"}
@@ -231,6 +254,7 @@ export default function KbPage() {
             <PresenceList>
               {articles.data.map((a) => {
                 const cname = collectionName(a.collection_id);
+                const pill = pillFor(articleBrandId(a, collections.data));
                 return (
                   <PresenceRow key={a.id}>
                   <div role="listitem">
@@ -241,7 +265,10 @@ export default function KbPage() {
                       className={`${cols} min-h-14 border-b border-line-soft px-4 py-2.5 transition-colors duration-100 hover:bg-sunken md:px-5`}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-medium">{a.title || t("untitled")}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-medium">{a.title || t("untitled")}</span>
+                          {pill && <BrandChip brand={pill} />}
+                        </span>
                         <span className="mt-0.5 block truncate text-xs text-fg-3">{a.excerpt || t("noExcerpt")}</span>
                       </span>
                       <span className={`min-w-0 items-center gap-2 ${md}`}>
@@ -281,7 +308,13 @@ export default function KbPage() {
         )}
       </div>
 
-      <CollectionDialog value={editing} onClose={() => setEditing(null)} onCreated={(id) => void navigate({ search: (s) => ({ ...s, collection: id }) })} />
+      <CollectionDialog
+        value={editing}
+        newBrand={search.brand ?? null}
+        showBrand={multiBrand}
+        onClose={() => setEditing(null)}
+        onCreated={(id) => void navigate({ search: (s) => ({ ...s, collection: id }) })}
+      />
     </div>
   );
 }
@@ -316,6 +349,7 @@ function CollectionTile({
   icon,
   hue,
   collection,
+  brand,
 }: {
   active: boolean;
   name: string;
@@ -326,6 +360,8 @@ function CollectionTile({
   icon: React.ReactNode;
   hue: Tone;
   collection: string | undefined;
+  /** The one brand it belongs to, as a pill. */
+  brand?: Brand;
 }) {
   const { t } = useTranslation("kb");
   return (
@@ -341,6 +377,7 @@ function CollectionTile({
       <span className="flex items-center gap-2.5 pr-6">
         <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md [&_svg]:size-3.5", tone[hue].chip)}>{icon}</span>
         <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-fg">{name}</span>
+        {brand && <BrandChip brand={brand} className="ml-auto" />}
       </span>
       <span className="mt-2 line-clamp-2 text-xs leading-[18px] text-fg-3">{description || t("noDescription")}</span>
       <span className="mt-auto flex items-center gap-3 pt-3 text-[11px] text-fg-4">
@@ -404,11 +441,26 @@ function CollectionMenu({ c, onRename, onDeleted }: { c: KbCollection; onRename:
   );
 }
 
-function CollectionDialog({ value, onClose, onCreated }: { value: KbCollection | "new" | null; onClose: () => void; onCreated: (id: string) => void }) {
+function CollectionDialog({
+  value,
+  newBrand,
+  showBrand,
+  onClose,
+  onCreated,
+}: {
+  value: KbCollection | "new" | null;
+  /** A new collection starts in this brand (the list's brand filter), or shared. */
+  newBrand: string | null;
+  /** Brand pickers show once the workspace has a second brand. */
+  showBrand: boolean;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
   const { t } = useTranslation("kb");
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [brandId, setBrandId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isNew = value === "new";
 
@@ -417,16 +469,22 @@ function CollectionDialog({ value, onClose, onCreated }: { value: KbCollection |
     setError(null);
     setName(value === "new" ? "" : value.name);
     setDescription(value === "new" ? "" : value.description);
+    setBrandId(value === "new" ? newBrand : (value.brand_id ?? null));
+    // The brand is read when the dialog opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+  const brandField = showBrand || !!brandId;
 
   const save = useMutation({
     mutationFn: () =>
       isNew
-        ? api.kb.collections.create({ name: name.trim(), description: description.trim() })
-        : api.kb.collections.update((value as KbCollection).id, { name: name.trim(), description: description.trim() }),
+        ? api.kb.collections.create({ name: name.trim(), description: description.trim(), ...(brandField ? { brand_id: brandId } : {}) })
+        : api.kb.collections.update((value as KbCollection).id, { name: name.trim(), description: description.trim(), ...(brandField ? { brand_id: brandId } : {}) }),
     onSuccess: (c) => {
       upsertInList(qc, qk.kbCollections, c);
-      toast.success(isNew ? t("collection.created") : t("collection.renamed"));
+      toast.success(isNew ? t("collection.created") : t("collection.saved"));
+      // An article's brand follows its collection's.
+      if (!isNew) void qc.invalidateQueries({ queryKey: qk.kbArticleLists });
       onClose();
       if (isNew) onCreated(c.id);
     },
@@ -468,6 +526,11 @@ function CollectionDialog({ value, onClose, onCreated }: { value: KbCollection |
         <Field label={t("collection.description")} optional hint={t("collection.descriptionHint")}>
           {(p) => <Textarea {...p} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />}
         </Field>
+        {brandField && (
+          <Field label={t("brand.label")} hint={t("brand.collectionHint")}>
+            {() => <KbBrandPick value={brandId} onChange={setBrandId} size="md" className="w-full" />}
+          </Field>
+        )}
       </form>
     </Dialog>
   );

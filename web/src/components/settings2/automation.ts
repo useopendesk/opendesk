@@ -28,7 +28,11 @@ export const triggerTone: Record<AutomationTrigger, Tone> = {
   ticket_updated: "amber",
 };
 
-const plainFields = ["subject", "body", "from_email", "channel", "mailbox_id", "priority", "severity", "status", "tag"] as const;
+const plainFields = ["subject", "body", "from_email", "channel", "mailbox_id", "received_at", "team_id", "brand_id", "widget_id", "priority", "severity", "status", "tag"] as const;
+
+/** Fields that only make sense once the workspace has teams, or a second brand (contracts/teams.md). */
+export const teamFields: ReadonlySet<ConditionField> = new Set(["team_id"]);
+export const brandFields: ReadonlySet<ConditionField> = new Set(["brand_id"]);
 export const fieldLabel: Record<ConditionField, string> = Object.defineProperties(labels(plainFields, "fields"), {
   sentiment: { get: () => i18n.t("ai:automation.sentiment"), enumerable: true },
   ai_decide: { get: () => i18n.t("ai:automation.ai_decide"), enumerable: true },
@@ -60,10 +64,11 @@ export const opLabel: Record<ConditionOp, string> = labels(["contains", "not_con
 export function opsFor(field: ConditionField): ConditionOp[] {
   if (field === "sentiment") return ["equals", "not_equals"]; // the API stores "eq" as "equals"
   if (field === "ai_decide") return ["gt", "lt"];
+  if (field === "received_at") return ["equals", "not_equals", "contains"];
   return field === "subject" || field === "body" || field === "from_email" ? ["contains", "not_contains", "equals", "not_equals"] : ["equals", "not_equals"];
 }
 
-const plainActions = ["set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "set_field", "send_reply", "add_note", "mark_spam"] as const;
+const plainActions = ["set_status", "set_priority", "set_severity", "assign_user", "assign_team", "set_reply_address", "add_tag", "remove_tag", "set_field", "send_reply", "add_note", "mark_spam"] as const;
 export const actionLabel: Record<ActionType, string> = Object.defineProperty(labels(plainActions, "actionTypes"), "ai_triage", {
   get: () => i18n.t("ai:automation.ai_triage"),
   enumerable: true,

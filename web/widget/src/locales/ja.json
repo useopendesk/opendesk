@@ -63,5 +63,10 @@
   "rateUp": "役に立った",
   "rateDown": "役に立たなかった",
   "ratedThanks": "フィードバックありがとうございます",
-  "jumpLatest": "最新へ移動"
+  "jumpLatest": "最新へ移動",
+  "topicsTitle": "どのようなご用件ですか？",
+  "topicsHint": "適切な担当者に届くよう、トピックを選んでください。",
+  "placeholderTopic": "トピックを選んで始めましょう",
+  "changeTopic": "トピックを変更",
+  "offlineDefault": "ただいま営業時間外です。メッセージを残していただければ、戻り次第お返事します。"
 }

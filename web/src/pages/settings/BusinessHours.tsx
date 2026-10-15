@@ -29,6 +29,7 @@ import { dur, springs } from "@/lib/motion";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { tone } from "@/lib/tones";
+import { DateField } from "@/components/ui/date-picker";
 
 export const WEEK: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri"];
@@ -43,7 +44,7 @@ const mins = (hhmm: string) => {
 };
 const hhmm = (n: number) => TIMES[Math.max(0, Math.min(96, Math.round(n / 15)))];
 
-function timezones(): string[] {
+export function timezones(): string[] {
   try {
     return Intl.supportedValuesOf("timeZone");
   } catch {
@@ -64,7 +65,7 @@ export function weeklyMinutes(schedule: BH["schedule"]): number {
 }
 
 /** Whether the workspace is open right now in its timezone. */
-function openNow(bh: BH, now = new Date()): boolean | null {
+export function openNow(bh: BH, now = new Date()): boolean | null {
   try {
     const parts = new Intl.DateTimeFormat("en-GB", { timeZone: bh.timezone, weekday: "short", hour: "2-digit", minute: "2-digit", year: "numeric", month: "2-digit", day: "2-digit", hourCycle: "h23" }).formatToParts(now);
     const get = (k: string) => parts.find((p) => p.type === k)?.value ?? "";
@@ -78,7 +79,7 @@ function openNow(bh: BH, now = new Date()): boolean | null {
   }
 }
 
-const norm = (b: BH): BH => ({
+export const norm = (b: BH): BH => ({
   ...b,
   schedule: Object.fromEntries(WEEK.map((d) => [d, b.schedule[d] ?? []])) as BH["schedule"],
   holidays: [...b.holidays].sort((x, y) => x.date.localeCompare(y.date)),
@@ -198,7 +199,7 @@ export default function BusinessHours() {
   );
 }
 
-function DayRow({
+export function DayRow({
   day,
   ranges,
   error,
@@ -329,7 +330,7 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function Holidays({ holidays, disabled, onChange }: { holidays: Holiday[]; disabled: boolean; onChange: (h: Holiday[]) => void }) {
+export function Holidays({ holidays, disabled, onChange }: { holidays: Holiday[]; disabled: boolean; onChange: (h: Holiday[]) => void }) {
   const { t, i18n } = useTranslation("settingsInbox");
   const reduce = useReducedMotion();
   const [adding, setAdding] = useState(false);
@@ -388,14 +389,13 @@ function Holidays({ holidays, disabled, onChange }: { holidays: Holiday[]; disab
             }}
           >
             <div className="flex flex-wrap items-start gap-2 px-4 py-3">
-              <TextInput
-                type="date"
-                inputSize="sm"
-                className="mono w-[150px]"
+              <DateField
+                size="sm"
+                className="w-[150px]"
                 aria-label={t("hours.holidays.date")}
                 value={date}
                 invalid={!!error && !date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={setDate}
                 autoFocus
               />
               <TextInput

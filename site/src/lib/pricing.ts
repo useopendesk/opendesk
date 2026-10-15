@@ -1,16 +1,23 @@
 /*
- * Plans and AI credits, from contracts/billing.md. Prices render on /pricing, the
+ * Plans and AI usage, from contracts/billing.md. Prices render on /pricing, the
  * home page teaser and the JSON-LD offers; nothing else hard-codes a price.
  *
- * PLACEHOLDER: the credit pack price is not decided (CREDIT_PACK.price). The yearly
- * Pro price is not decided either, so the site shows monthly pricing only.
+ * The yearly Pro price is not decided, so the site shows monthly pricing only.
  */
-export const PRO_PRICE = 19; // USD per seat per month, billed monthly
+import { LINKS } from './site';
 
-export const CREDIT_PACK = {
-  credits: 2000,
-  price: null as number | null, // PLACEHOLDER: pack price not decided yet
-};
+export const PRO_PRICE = 18; // USD per seat per month, billed monthly
+
+// The monthly AI usage allowance, in US dollars (contracts/billing.md, "Plans").
+export const AI_ALLOWANCE = { free: 0.5, perSeat: 10 };
+
+// An AI top-up: a one-time purchase of any amount of AI usage, dollar for dollar.
+// Top-ups never expire and are spent after the monthly allowance.
+export const AI_TOP_UP = { minUsd: 5, maxUsd: 5000 };
+
+// Auto-recharge defaults: off, and when on, $25 when the balance falls below $5,
+// up to $250 a month.
+export const AUTO_RECHARGE = { thresholdUsd: 5, amountUsd: 25, monthlyLimitUsd: 250 };
 
 export type Plan = {
   id: 'free' | 'pro' | 'self_hosted';
@@ -32,8 +39,8 @@ export const PLANS: Plan[] = [
     price: '$0',
     unit: 'forever',
     note: 'Per workspace',
-    cta: { label: 'Start for free', href: 'https://app.opendesk.sh/signup' },
-    limits: ['1 mailbox', '1 team member', '50 AI credits a month', 'Every feature'],
+    cta: { label: 'Start for free', href: LINKS.signup },
+    limits: ['1 mailbox', '1 team member', '$0.50 of AI usage per month', 'Every feature'],
   },
   {
     id: 'pro',
@@ -42,9 +49,9 @@ export const PLANS: Plan[] = [
     price: `$${PRO_PRICE}`,
     unit: 'per user / month',
     note: 'Viewers are free',
-    cta: { label: 'Start for free', href: 'https://app.opendesk.sh/signup' },
+    cta: { label: 'Start for free', href: LINKS.signup },
     featured: true,
-    limits: ['Unlimited mailboxes', 'Unlimited team members', '1,000 AI credits per seat a month, pooled', 'Every feature'],
+    limits: ['Unlimited mailboxes', 'Unlimited team members', '$10 of AI usage per seat per month, pooled', 'Every feature'],
   },
   {
     id: 'self_hosted',
@@ -53,31 +60,67 @@ export const PLANS: Plan[] = [
     price: '$0',
     unit: 'free, unlimited',
     note: 'Apache-2.0',
-    cta: { label: 'Self-hosting guide', href: '/self-hosting/' },
+    cta: { label: 'Read the install guide', href: 'https://docs.opendesk.sh/getting-started/quickstart-self-host/' },
     limits: ['Unlimited mailboxes', 'Unlimited team members', 'Unlimited AI with your own key', 'Every feature'],
   },
 ];
 
-// Every plan runs the same code, so no feature is held back by plan.
-export const ALL_FEATURES = [
-  'Shared inboxes and live chat',
-  'Knowledge base and help center',
-  'AI drafts, summaries and copilot',
-  'Translation and 13 widget languages',
-  'Automations and SLA policies',
-  'Reports and CSAT surveys',
-  'REST API, webhooks and realtime',
-  'Teams, roles, 2FA and audit log',
+// opendesk Cloud charges each AI call its provider cost times this markup
+// (AI_USAGE_MARKUP, contracts/billing.md "Metered usage"). Own key: $0.
+export const AI_MARKUP = 1.5;
+
+// A typical draft reply, the size GET /v1/ai/models prices typical_reply_usd on.
+export const TYPICAL_DRAFT = { input: 4000, output: 500 };
+
+type ModelPrice = { id: string; name: string; vendor: string; input: number; output: number; note?: string };
+
+// The default models a workspace can choose from, with the provider's list price in US
+// dollars per 1M input / output tokens. Source: OpenRouter (GET /api/v1/models), as of
+// 2026-10-12. Prices follow the provider's list price, so update them when it changes.
+const RAW_MODELS: ModelPrice[] = [
+  { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', vendor: 'Anthropic', input: 2, output: 10, note: 'Default' },
+  { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', vendor: 'Anthropic', input: 0.1, output: 0.5, note: 'Fast' },
+  { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', vendor: 'Anthropic', input: 4, output: 20 },
+  { id: 'openai/gpt-5.6-sol', name: 'GPT-5.6 Sol', vendor: 'OpenAI', input: 2, output: 10 },
+  { id: 'openai/gpt-5.6-luna', name: 'GPT-5.6 Luna', vendor: 'OpenAI', input: 0.2, output: 1.2 },
+  { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', vendor: 'Google', input: 0.75, output: 3.75 },
+  { id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', vendor: 'DeepSeek', input: 0.15, output: 0.6 },
 ];
 
-// contracts/billing.md, "Credit costs". Failed calls cost nothing.
-export const CREDIT_COSTS: { feature: string; credits: number }[] = [
-  { feature: 'Summarize a ticket', credits: 1 },
-  { feature: 'Rewrite a draft (tone, length, grammar)', credits: 1 },
-  { feature: 'Translate a message or draft', credits: 1 },
-  { feature: 'Auto-triage (tags, priority, sentiment, language)', credits: 1 },
-  { feature: 'Ask the copilot about a ticket', credits: 2 },
-  { feature: 'Draft a reply', credits: 3 },
-  { feature: 'Answer bot reply in the widget', credits: 3 },
-  { feature: 'Draft a knowledge base article from tickets', credits: 5 },
-];
+// Rounds a dollar amount to the micro-dollar, as amounts are kept.
+const micro = (usd: number) => Math.round(usd * 1e6) / 1e6;
+
+export type Model = ModelPrice & {
+  /** US dollars per 1M input / output tokens as a Cloud workspace pays them. */
+  pays: { input: number; output: number };
+  /** What a typical draft reply costs on this model, as a Cloud workspace pays it. */
+  typicalDraft: number;
+};
+
+/** What a call of this size costs a Cloud workspace on a model, in US dollars. */
+export const callCost = (m: Pick<ModelPrice, 'input' | 'output'>, input: number, output: number) =>
+  micro(((input * m.input + output * m.output) / 1e6) * AI_MARKUP);
+
+export const MODELS: Model[] = RAW_MODELS.map((m) => ({
+  ...m,
+  pays: { input: micro(m.input * AI_MARKUP), output: micro(m.output * AI_MARKUP) },
+  typicalDraft: callCost(m, TYPICAL_DRAFT.input, TYPICAL_DRAFT.output),
+}));
+
+export const model = (id: string): Model => {
+  const m = MODELS.find((x) => x.id === id);
+  if (!m) throw new Error(`unknown model ${id}`);
+  return m;
+};
+
+/** A balance or allowance: "$0.50", "$10", "$1,234.56". */
+export const usd = (n: number, cents = !Number.isInteger(n)) =>
+  `$${n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2 })}`;
+
+/** A per-call amount, to the hundredth of a cent: "$0.0195", "<$0.0001". */
+export const usdCall = (n: number) =>
+  n > 0 && n < 0.00005 ? '<$0.0001' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+
+/** A price per 1M tokens: "$3", "$0.15", "$1.125". */
+export const usdPerMTok = (n: number) =>
+  `$${n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 3 })}`;

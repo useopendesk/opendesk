@@ -169,7 +169,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 			}
 		}
 		if len(raw) > 0 && len(raw) <= maxRawBytes {
-			if _, _, err := s.ingest(ctx, m, raw, ""); err != nil {
+			if _, _, err := s.ingest(ctx, m, raw, "", nil); err != nil {
 				_ = s.saveProgress(ctx, m, int64(sel.Validity), int64(cursor))
 				return err // storage or database trouble: let River log it
 			}

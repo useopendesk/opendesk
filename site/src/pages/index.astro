@@ -1,23 +1,22 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Icon from '../components/Icon.astro';
-import CopyCommand from '../components/CopyCommand.astro';
-import SectionHead from '../components/SectionHead.astro';
 import CodeTabs from '../components/CodeTabs.astro';
-import ModuleMark from '../components/ModuleMark.astro';
+import CopyCommand from '../components/CopyCommand.astro';
 import Faq from '../components/Faq.astro';
-import CTA from '../components/CTA.astro';
-import HeroScene from '../components/scenes/HeroScene.astro';
-import ChatScene from '../components/scenes/ChatScene.astro';
-import KbScene from '../components/scenes/KbScene.astro';
-import AutomationScene from '../components/scenes/AutomationScene.astro';
-import ReportsScene from '../components/scenes/ReportsScene.astro';
-import ApiScene from '../components/scenes/ApiScene.astro';
-import AiScene from '../components/scenes/AiScene.astro';
-import InstallScene from '../components/scenes/InstallScene.astro';
+import Stage from '../components/Stage.astro';
+import Backdrop from '../components/home/Backdrop.astro';
+import HeroStage from '../components/home/HeroStage.astro';
+import Bento from '../components/home/Bento.astro';
+import Ollie from '../components/home/Ollie.astro';
+import OllieShowcase from '../components/home/OllieShowcase.astro';
+import AppsStage from '../components/home/AppsStage.astro';
+import Tile from '../components/home/Tile.astro';
 import { LINKS, SITE } from '../lib/site';
-import { PLANS, PRO_PRICE } from '../lib/pricing';
+import { PRO_PRICE } from '../lib/pricing';
+import PlanCards from '../components/PlanCards.astro';
 import { CREATE_TICKET, WEBHOOK, REALTIME } from '../lib/samples';
+
 
 const softwareJsonLd = {
   '@context': 'https://schema.org',
@@ -25,7 +24,7 @@ const softwareJsonLd = {
   name: 'opendesk',
   applicationCategory: 'BusinessApplication',
   applicationSubCategory: 'Help desk software',
-  operatingSystem: 'Web, Linux (self-hosted)',
+  operatingSystem: 'Web, macOS, Windows, Linux, iOS',
   url: SITE.url,
   description: SITE.description,
   license: 'https://www.apache.org/licenses/LICENSE-2.0',
@@ -37,38 +36,6 @@ const softwareJsonLd = {
   ],
 };
 
-const product = [
-  { scene: ChatScene, href: '/features/#chat', title: 'Live chat', body: 'A light widget for your site that speaks 13 languages, with signed identities for logged-in users. Chats land in the same queue as email.' },
-  { scene: KbScene, href: '/features/#knowledge-base', title: 'Knowledge base', body: 'Collections and articles on a public help center, searchable by meaning from the help center and the widget.' },
-  { scene: AutomationScene, href: '/features/#automations', title: 'Automations and SLAs', body: 'Route, tag and prioritise on arrival. First-reply and resolution targets per priority, with breaches flagged before they happen.' },
-  { scene: ReportsScene, href: '/features/#reports', title: 'Reports and CSAT', body: 'Volume, median response times, SLA breaches and satisfaction, by day, channel and agent.' },
-];
-
-const ai = [
-  ['sparkles', 'Drafts in your voice', 'From the thread, your saved replies and your articles.'],
-  ['fileText', 'Summaries', 'Key points and sentiment on long threads.'],
-  ['zap', 'Auto-triage', 'Tags, priority, sentiment and language on arrival.'],
-  ['globe', 'Translation', 'Both ways, so one team answers the world.'],
-  ['chat', 'Answer bot', 'Grounded only in your published articles, hands off to a person.'],
-  ['search', 'Semantic search', 'Across tickets and articles, by meaning.'],
-] as const;
-
-const steps = [
-  { title: 'Bring your mailboxes', body: 'Forward support@ to your opendesk address, or connect Google, Microsoft 365 or any IMAP account. Replies leave from your own address.' },
-  { title: 'Add chat and a help center', body: 'Drop the widget on your site and publish articles. Chats and emails land in the same inbox as tickets.' },
-  { title: 'Work it together, live', body: 'Invite the team, set roles, SLAs and rules. Every change reaches every screen at once, so nobody answers twice.' },
-];
-
-const compare = [
-  ['Price', 'Free plan, then $' + PRO_PRICE + ' per user a month', 'Free'],
-  ['Mailboxes and members', '1 and 1 on Free, unlimited on Pro', 'Unlimited'],
-  ['AI', '50 credits a month on Free, 1,000 per user on Pro', 'Your own key or a local model'],
-  ['Updates', 'Automatic, as each release ships', 'One command, when you choose'],
-  ['Where data lives', 'Our cloud: AWS, Cloudflare and Neon', 'Your servers'],
-  ['Setup', 'Sign up, about a minute', 'One command on a Linux box with Docker'],
-  ['Features', 'Every feature', 'Every feature'],
-];
-
 const faq = [
   { q: 'Is opendesk really open source?', a: 'Yes. The code is Apache-2.0 licensed and developed in public on GitHub. opendesk Cloud runs the same code that is in the repository; there is no closed edition with extra features.' },
   { q: 'What is the difference between Cloud and self-hosted?', a: 'Only who runs it. Both have every feature. Cloud is free for one mailbox and one member, and $' + PRO_PRICE + ' per user a month for unlimited everything. Self-hosted is free and unlimited on your own servers, with your own AI key or a local model.' },
@@ -77,259 +44,236 @@ const faq = [
   { q: 'Can my customers write in their own language?', a: 'Yes. The widget and help center come in 13 languages, and messages and drafts translate both ways, so agents read and reply in their language while customers get theirs.' },
   { q: 'Can I move my data out?', a: 'Yes. Everything is available through the REST API, and self-hosted data sits in Postgres in a schema you can read. You can move from Cloud to your own servers on the same code.' },
 ];
+
+const strip = [
+  ['mail', 'Google Workspace'], ['mail', 'Microsoft 365'], ['server', 'IMAP and SMTP'], ['at', 'Forwarding'],
+  ['chat', 'Live chat'], ['book', 'Help center'], ['languages', '13 languages'], ['sparkles', 'Ollie'],
+  ['plug', 'MCP tools'], ['braces', 'REST API'], ['webhook', 'Webhooks'], ['laptop', 'Desktop'], ['smartphone', 'iPhone'],
+] as const;
+
+const install = [
+  ['·', 'Finding the newest release'],
+  ['✓', 'Release files verified against SHA256SUMS'],
+  ['✓', 'Wrote .env, docker-compose.yml and Caddyfile'],
+  ['·', 'Pulling images'],
+  ['✓', 'Containers started, migrations applied'],
+  ['✓', 'opendesk is up'],
+];
 ---
-<Layout title="opendesk · The open-source helpdesk" jsonLd={[softwareJsonLd, { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) }]}>
-  <!-- Hero -->
-  <section class="relative isolate pb-16 md:pb-24">
-    <!-- A tinted band rises behind the lower half of the product frame. -->
-    <div aria-hidden="true" class="band absolute inset-x-0 bottom-0 top-[58%] -z-10 !border-t-line"></div>
-    <div class="container-page pt-12 md:pt-20">
-    <div class="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-20">
-      <div>
-        <a href={LINKS.github} class="rise group inline-flex items-center gap-2.5 label transition-colors hover:text-fg">
-          <span class="dot"></span><span class="text-fg">Open-source helpdesk</span><span class="text-faint">/</span>Apache-2.0
-          <Icon name="arrowUpRight" size={12} class="transition-transform group-hover:-translate-y-px group-hover:translate-x-px" />
+<Layout cta={{ command: true }} preload={{ name: 'roadside', sizes: '100vw' }} title="opendesk · The open-source helpdesk" jsonLd={[softwareJsonLd, { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) }]}>
+  <!-- Hero: the app standing in a painted landscape. -->
+  <section class="px-2 pt-2 md:px-3 md:pt-3" data-hero>
+    <div class="relative isolate overflow-hidden rounded-[22px] md:rounded-[28px]">
+      <div class="hero-sky absolute inset-x-0 -top-[6%] -z-10 h-[112%]">
+        <Backdrop name="roadside" priority sizes="100vw" class="h-full w-full object-[50%_22%]" />
+      </div>
+      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-[radial-gradient(70%_42%_at_50%_24%,rgb(16_46_116/0.55),transparent_75%),linear-gradient(180deg,rgb(16_46_116/0.6)_0%,rgb(16_46_116/0.32)_34%,transparent_58%)]"></div>
+
+      <div class="container-page pt-16 text-center text-white md:pt-24">
+        <a href={LINKS.github} class="group inline-flex h-8 items-center gap-2 rounded-full bg-white/12 pl-1 pr-3 text-[12.5px] text-white/90 ring-1 ring-white/25 backdrop-blur-md transition-colors hover:bg-white/20">
+          <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-white px-2.5 text-[11.5px] font-medium text-[#0a0a0a]"><Icon name="github" size={11} />Apache-2.0</span>
+          Cloud or your own servers
+          <Icon name="arrowUpRight" size={12} class="text-white/60 transition-transform group-hover:-translate-y-px group-hover:translate-x-px" />
         </a>
-        <h1 class="rise h-hero mt-7 max-w-[13ch]" style="--d:60ms">The helpdesk you can own.</h1>
-        <p class="rise lede mt-6 max-w-[560px]" style="--d:120ms">
-          Shared inboxes, live chat, a knowledge base and AI that drafts in your voice, in any language your customers write. Use opendesk Cloud, or run it on your own servers with one command.
+        <h1 class="mx-auto mt-7 max-w-[15ch] text-balance text-[44px] lg:max-w-none font-semibold leading-[1] tracking-[-0.045em] [text-shadow:0_2px_30px_rgb(10_30_80/0.35)] sm:text-[68px] lg:text-[92px]">Every customer conversation, <br class="hidden sm:block" />in one place.</h1>
+        <p class="mx-auto mt-6 max-w-[840px] text-balance text-[18px] leading-[1.5] text-white [text-shadow:0_1px_2px_rgb(10_30_80/0.35),0_2px_24px_rgb(10_30_80/0.5)] md:text-[22px]">
+          Email, live chat and your help center in one shared inbox. Ollie drafts replies in any language, and your team sees every change the moment it happens.
         </p>
-        <div class="rise mt-9 flex flex-col gap-3 sm:flex-row sm:items-center" style="--d:180ms">
-          <a href={LINKS.signup} class="btn btn-primary btn-lg">Start free<Icon name="arrowRight" size={15} /></a>
-          <CopyCommand class="sm:w-[440px]" />
+        <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a href={LINKS.signup} class="btn btn-lg bg-white text-[#0a0a0a] shadow-[0_10px_30px_-10px_rgb(10_30_80/0.5)] hover:bg-white/90">Start free<Icon name="arrowRight" size={15} /></a>
+          <CopyCommand tone="inverse" class="!h-[46px] w-full max-w-[470px] !bg-white/10 text-left !ring-white/30 backdrop-blur-md sm:w-[470px]" />
         </div>
-        <p class="rise mt-5 font-mono text-[11.5px] uppercase tracking-[0.06em] text-subtle" style="--d:220ms">Free for one mailbox · Self-hosted is free and unlimited</p>
+        <p class="mt-5 font-mono text-[11px] uppercase tracking-[0.08em] text-white/85 [text-shadow:0_1px_10px_rgb(10_30_80/0.6)]">Free for one mailbox · Self-hosted is free and unlimited</p>
       </div>
-      <div class="hidden lg:block">
-        <ModuleMark />
-      </div>
-    </div>
 
-    <!-- The product, in one module frame -->
-    <div class="rise mt-16 md:mt-20 modules" style="--d:260ms">
-      <div class="flex h-10 items-center gap-3 px-4">
-        <span class="flex gap-1.5" aria-hidden="true"><span class="size-2 rounded-[3px] bg-line-strong"></span><span class="size-2 rounded-[3px] bg-line-strong"></span><span class="size-2 rounded-full bg-line-strong"></span></span>
-        <span class="font-mono text-[11px] text-subtle">app.opendesk.sh/inbox/mine</span>
-        <span class="ml-auto hidden sm:inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-subtle"><span class="size-1.5 rounded-full bg-ok od-live"></span>Live</span>
+      <!-- Edges line up with the header: container-page, less the frame's own inset. -->
+      <div class="hero-app relative mx-auto mt-14 max-w-[1416px] px-3 md:mt-20 md:px-7">
+        <div class="-mb-[16%]"><HeroStage /></div>
       </div>
-      <div class="!bg-surface-2"><HeroScene /></div>
-      <div class="grid grid-cols-2 gap-px !bg-line md:grid-cols-4">
-      {[
-        ['Same code, everywhere', 'Cloud and self-hosted run one codebase.'],
-        ['Your mailbox, your address', 'Replies leave from your own email account.'],
-        ['Live by default', 'Every change lands on every screen at once.'],
-        ['API-first', 'The app uses the same public API you do.'],
-      ].map(([t, d], i) => (
-        <div class="snap bg-bg p-5 md:p-6" style={`--d:${i * 60}ms`}>
-          <div class="text-[14px] font-medium text-fg">{t}</div>
-          <div class="mt-1 text-[13.5px] leading-relaxed text-muted">{d}</div>
-        </div>
-      ))}
-      </div>
-    </div>
-  </div>
-  </section>
-
-  <!-- 01 Product -->
-  <section id="product" class="container-page mt-20 md:mt-28">
-    <SectionHead index="01" label="Product" title="Everything support does, in one calm place." lede="Email, chat and your help center become one queue of tickets, with the rules, targets and numbers that keep it moving." />
-    <div class="mt-12 md:mt-16 modules md:grid-cols-2">
-      {product.map((p, i) => (
-        <a href={p.href} class="snap group flex flex-col" style={`--d:${(i % 2) * 80}ms;--sx:${i % 2 ? 10 : -10}px;--sy:0px`}>
-          <div class="border-b border-line"><p.scene /></div>
-          <div class="flex flex-1 items-start gap-6 p-6 md:p-8">
-            <div class="min-w-0">
-              <h3 class="h-card">{p.title}</h3>
-              <p class="mt-2 max-w-md text-[15px] leading-relaxed text-muted">{p.body}</p>
-            </div>
-            <span class="ml-auto mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-line text-subtle transition-all group-hover:bg-fg group-hover:text-bg group-hover:ring-fg"><Icon name="arrowRight" size={14} /></span>
-          </div>
-        </a>
-      ))}
     </div>
   </section>
 
-  <!-- 02 AI -->
-  <section id="ai" class="band mt-24 md:mt-32 py-20 md:py-28">
-    <div class="container-page">
-    <SectionHead index="02" label="AI" title="AI that writes like your team." lede="Drafts in your voice, summaries, triage and translation, built into the inbox. Every suggestion is yours to review; the only thing that answers on its own is the answer bot you turn on." />
-    <div class="mt-12 md:mt-16 modules lg:grid-cols-[1.45fr_1fr]">
-      <div class="snap" style="--sx:-10px;--sy:0px"><AiScene /></div>
-      <div class="grid grid-cols-1 gap-px bg-line sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-        {ai.map(([icon, t, d], i) => (
-          <div class="snap bg-bg p-5 md:p-6" style={`--d:${i * 50}ms`}>
-            <span class="t-violet tint-bg inline-flex size-8 items-center justify-center rounded-[6px]"><Icon name={icon} size={16} /></span>
-            <div class="mt-4 text-[14.5px] font-medium text-fg">{t}</div>
-            <div class="mt-1 text-[13.5px] leading-relaxed text-muted">{d}</div>
-          </div>
+  <!-- Everything it connects, moving. -->
+  <section class="mt-10 md:mt-14" aria-label="Channels and platforms">
+    <div class="marquee relative overflow-hidden">
+      <div class="marquee-track flex w-max gap-2.5">
+        {[...strip, ...strip].map(([i, l], k) => (
+          <span class="flex h-10 items-center gap-2 rounded-full bg-surface-2 px-4 text-[13.5px] text-body ring-1 ring-line" aria-hidden={k >= strip.length ? 'true' : undefined}><Icon name={i as 'mail'} size={15} class="text-subtle" />{l}</span>
         ))}
       </div>
     </div>
-    <div class="mt-5 flex flex-wrap items-center justify-between gap-4 px-1">
-      <p class="text-[14px] text-muted">Paid for in <a href="/pricing/#ai-credits" class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">AI credits</a> on Cloud. Never used to train models.</p>
+  </section>
+
+  <!-- Product -->
+  <section id="product" class="container-page mt-24 md:mt-32">
+    <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+      <div>
+        <div class="label flex items-center gap-2"><span class="dot"></span>Product</div>
+        <h2 class="mt-5 max-w-[16ch] text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">Everything support does, in one calm place.</h2>
+      </div>
+      <div class="lg:pb-2">
+        <p class="lede max-w-[520px]">Email, chat and your help center become one queue of tickets, with the people, rules and targets that keep it moving. Nothing to stitch together.</p>
+        <a href="/features/" class="link-arrow mt-5">See every feature<Icon name="arrowRight" size={14} /></a>
+      </div>
+    </div>
+    <Bento />
+  </section>
+
+  <!-- Ollie -->
+  <section id="ollie" class="container-page mt-28 scroll-mt-24 md:mt-40">
+    <div class="flex flex-col items-center text-center">
+      <div class="relative"><span class="ollie-glow" aria-hidden="true"></span><Ollie size={64} /></div>
+      <div class="label mt-6 flex items-center gap-2 text-[var(--c-violet)]">AI teammate</div>
+      <h2 class="mt-4 text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">Meet Ollie.</h2>
+      <p class="lede mt-5 max-w-[620px]">It answers chats from your articles, drafts replies your team edits, works in the tools you connect and hands off the moment a person is needed. Everything it does is marked as Ollie.</p>
+    </div>
+    <div class="mt-12 md:mt-16"><OllieShowcase /></div>
+    <div class="mt-6 flex flex-wrap items-center justify-between gap-4 px-1">
+      <p class="text-[14px] text-muted">On Cloud you pay for <a href="/pricing/#ai-usage" class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">AI usage</a> in dollars; self-hosted runs on your own key or a local model. Never used to train models.</p>
       <a href="/features/#ai" class="link-arrow">How opendesk uses AI<Icon name="arrowRight" size={14} /></a>
     </div>
-  </div>
   </section>
 
-  <!-- 03 How it works -->
-  <section class="container-page mt-24 md:mt-32">
-    <SectionHead index="03" label="How it works" title="Live in an afternoon." lede="No migration project. Point your mail at opendesk, add the widget, invite the team." />
-    <ol class="mt-12 md:mt-16 modules md:grid-cols-3">
-      {steps.map((s, i) => (
-        <li class="snap p-6 md:p-8" style={`--d:${i * 90}ms;--sx:-12px;--sy:0px`}>
-          <span class="inline-flex size-8 items-center justify-center rounded-full ring-1 ring-fg font-mono text-[12px] text-fg">{i + 1}</span>
-          <h3 class="h-card mt-10">{s.title}</h3>
-          <p class="mt-2 text-[15px] leading-relaxed text-muted">{s.body}</p>
-        </li>
-      ))}
-      <li class="md:col-span-3 flex flex-col gap-2 px-6 py-4 font-mono text-[12px] sm:flex-row sm:items-center sm:gap-5 md:px-8">
-        <span class="uppercase tracking-[0.06em] text-subtle">Forwarding</span>
-        <span class="text-fg">support@northwind.io</span>
-        <Icon name="arrowRight" size={13} class="hidden sm:block text-subtle" />
-        <span class="text-fg">acme-x7k2@in.opendesk.sh</span>
-        <span class="sm:ml-auto inline-flex items-center gap-2 text-muted"><span class="size-1.5 rounded-full bg-ok od-live"></span>Receiving</span>
-      </li>
-    </ol>
-  </section>
-
-  <!-- 04 Self-host -->
-  <section class="band mt-24 md:mt-32 py-20 md:py-28">
-    <div class="container-page">
-    <SectionHead index="04" label="Self-hosting" title="Self-hosted in one command." lede="The same code that runs opendesk Cloud. One Go binary, the realtime gateway and Postgres behind Caddy on your own domain, with HTTPS handled for you." />
-    <div class="mt-12 md:mt-16 modules lg:grid-cols-[1fr_1.3fr]">
-      <div class="flex flex-col p-6 md:p-10">
-        <ul class="space-y-4 text-[15px] text-body">
-          {[
-            'Postgres is the only dependency. No Redis, no Kafka.',
-            'Your data and your customers’ email stay on your servers.',
-            'Apache-2.0. Read it, change it, run it anywhere.',
-            'Upgrades are a pull and a restart; migrations run on boot.',
-          ].map((b, i) => (
-            <li class="snap flex gap-3" style={`--d:${i * 60}ms`}><Icon name="check" size={16} class="mt-1 shrink-0 text-fg" />{b}</li>
-          ))}
-        </ul>
-        <div class="mt-10 lg:mt-auto lg:pt-10">
-          <CopyCommand />
-          <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-            <a href="/self-hosting/" class="link-arrow">Self-hosting guide<Icon name="arrowRight" size={14} /></a>
-            <a href={LINKS.github} class="link-arrow"><Icon name="github" size={14} />Star on GitHub</a>
-          </div>
-        </div>
+  <!-- Apps -->
+  <section class="container-page mt-28 md:mt-40">
+    <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+      <div>
+        <div class="label flex items-center gap-2"><span class="dot"></span>Apps</div>
+        <h2 class="mt-5 max-w-[15ch] text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">On your desk and in your pocket.</h2>
       </div>
-      <div class="snap" style="--sx:10px;--sy:0px"><InstallScene /></div>
+      <div class="lg:pb-2">
+        <p class="lede max-w-[520px]">A desktop app for Mac, Windows and Linux, and an iPhone app with push. Same inbox, same live updates, signed in to every workspace you work in.</p>
+        <a href="/download/" class="link-arrow mt-5">Download the desktop app<Icon name="arrowRight" size={14} /></a>
+      </div>
     </div>
-  </div>
+    <div class="relative mt-12 overflow-hidden rounded-[22px] ring-1 ring-line md:mt-16">
+      <Backdrop name="big-cloud" sizes="(min-width: 1440px) 1360px, 100vw" class="absolute inset-0 h-full w-full" />
+      <AppsStage />
+    </div>
+    <div class="mt-3 grid gap-3 md:grid-cols-3">
+      {[
+        ['laptop', 'Desktop', 'A calm window of its own, with native notifications, a dock badge and every account a shortcut away.'],
+        ['smartphone', 'iPhone', 'Push for new chats, replies and mentions, and the whole queue when you are away from your desk.'],
+        ['keyboard', 'Keyboard first', 'Jump, assign, snooze and reply without the mouse. Press ? anywhere to see every shortcut.'],
+      ].map(([i, t, d], k) => (
+        <div class="rounded-[18px] bg-surface-2 p-6 ring-1 ring-line">
+          <Icon name={i as 'laptop'} size={18} class="text-fg" />
+          <h3 class="mt-4 text-[16px] font-semibold tracking-[-0.015em] text-fg">{t}</h3>
+          <p class="mt-1.5 text-[14.5px] leading-relaxed text-muted">{d}</p>
+        </div>
+      ))}
+    </div>
   </section>
 
-  <!-- 05 Developers -->
-  <section class="container-page mt-24 md:mt-32">
-    <SectionHead index="05" label="Developers" title="Built on the API you get." lede="The web app talks to the same public REST API you can call. Scoped keys, idempotent creates, cursor pagination, signed webhooks and a realtime socket with replay." />
-    <div class="mt-12 md:mt-16 modules lg:grid-cols-[1fr_1.3fr]">
-      <div class="flex flex-col">
-        <div class="border-b border-line"><ApiScene /></div>
-        <ul class="grid gap-3 p-6 text-[14.5px] text-body md:p-8">
-          {[
-            ['key', 'API keys scoped to tickets, contacts, KB, settings or realtime'],
-            ['webhook', 'Webhooks signed with HMAC-SHA256, with delivery history'],
-            ['refresh', 'Events numbered per workspace, replayable for 7 days'],
-            ['fileText', 'An OpenAPI 3.1 spec, generated from the server'],
-          ].map(([icon, t]) => (
-            <li class="flex gap-3"><Icon name={icon as 'key'} size={16} class="mt-0.5 shrink-0 text-fg" />{t}</li>
-          ))}
-        </ul>
+  <!-- Open source and API -->
+  <section class="container-page mt-28 md:mt-40">
+    <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+      <div>
+        <div class="label flex items-center gap-2"><span class="dot"></span>Open source</div>
+        <h2 class="mt-5 max-w-[16ch] text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">Yours to read, run and change.</h2>
       </div>
-      <div class="flex min-w-0 flex-col">
-        <CodeTabs id="home-code" class="!rounded-none !border-0 !shadow-none flex-1" tabs={[
+      <p class="lede max-w-[520px] lg:pb-2">opendesk Cloud runs the code in the repository. Run the same thing on your own server with one command, and build on the API the app itself uses.</p>
+    </div>
+    <div class="mt-12 grid gap-3 md:mt-16 lg:grid-cols-12">
+      <Tile class="lg:col-span-6" icon="terminal" title="Self-hosted in one command" body="One Go binary, the realtime gateway and Postgres behind Caddy, with HTTPS handled for you. No Redis, no Kafka." photo="golden-forest" href={LINKS.selfHostQuickstart}>
+        <Stage w={600} h={400} tone="none" label="The opendesk installer running in a terminal.">
+          <div class="absolute left-[36px] top-[36px] h-[328px] w-[528px] overflow-hidden rounded-[12px] bg-[#0a0a0a]/92 font-mono text-[12px] leading-[1.95] shadow-[0_40px_80px_-30px_rgb(60_30_0/0.6)] ring-1 ring-white/10 backdrop-blur" data-seq data-hold="4200">
+            <div class="flex h-9 items-center gap-1.5 border-b border-white/10 px-4"><i class="size-2.5 rounded-full bg-[#ff5f57]"></i><i class="size-2.5 rounded-full bg-[#febc2e]"></i><i class="size-2.5 rounded-full bg-[#28c840]"></i><span class="ml-2 text-[10.5px] text-white/40">~/opendesk</span></div>
+            <div class="p-5 text-left">
+              <div class="flex gap-2"><span class="text-white/40">$</span><span class="s-fade text-white" data-step="1" data-wait="500" data-stream="60">curl -fsSL https://opendesk.sh/install.sh | sh</span></div>
+              <div class="mt-2 text-white/60">
+                {install.map(([m, t], i) => (
+                  <div class="s-fade" data-step={i + 2} data-wait={i === 3 ? 1100 : 420}><span class={m === '✓' ? 'text-[#22c55e]' : 'text-white/35'}>{m}</span> {t}</div>
+                ))}
+                <div class="s-fade mt-3 text-white" data-step="8" data-wait="500">  Open https://desk.example.com<span class="od-caret !bg-white"></span></div>
+              </div>
+            </div>
+          </div>
+        </Stage>
+      </Tile>
+      <div class="tile flex flex-col rounded-[18px] bg-bg p-2 ring-1 ring-line lg:col-span-6">
+        <div class="px-4 pb-5 pt-4 md:px-5 md:pt-5">
+          <h3 class="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.02em] text-fg"><Icon name="braces" size={16} class="text-subtle" />Built on the API you get</h3>
+          <p class="mt-1.5 max-w-[46ch] text-[14.5px] leading-relaxed text-muted">Scoped keys, idempotent creates, signed webhooks and a realtime socket with replay. An OpenAPI 3.1 spec, generated from the server.</p>
+        </div>
+        <CodeTabs id="home-code" class="flex-1 !rounded-[12px] !shadow-none" tabs={[
           { label: 'Create a ticket', lang: 'bash', code: CREATE_TICKET },
           { label: 'Webhook', lang: 'http', code: WEBHOOK },
           { label: 'Realtime', lang: 'js', code: REALTIME },
         ]} />
-        <div class="flex flex-wrap gap-3 border-t border-line p-5 md:px-6">
-          <a href={`${LINKS.docs}/api/`} class="btn btn-primary btn-sm">Read the API docs<Icon name="arrowRight" size={14} /></a>
-          <a href={LINKS.apiReference} class="btn btn-ghost btn-sm">API reference</a>
-        </div>
       </div>
     </div>
-  </section>
-
-  <!-- 06 Cloud or self-hosted -->
-  <section class="container-page mt-24 md:mt-32">
-    <SectionHead index="06" label="Compare" title="Cloud or your servers. Same product." lede="Plans differ only in limits. Pick who runs it; you can move between them on the same code." />
-    <dl class="snap mt-12 modules md:hidden">
-      {compare.map(([k, a, b]) => (
-        <div class="px-5 py-4">
-          <dt class="label">{k}</dt>
-          <dd class="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[14.5px]">
-            <span class="inline-flex items-center gap-1.5 text-muted"><Icon name="cloud" size={14} />Cloud</span><span class="text-fg">{a}</span>
-            <span class="inline-flex items-center gap-1.5 text-muted"><Icon name="server" size={14} />Self-hosted</span><span class="text-fg">{b}</span>
-          </dd>
+    <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+      {[
+        ['Apache-2.0', 'Read it, change it, run it anywhere.'],
+        ['Same code', 'Cloud and self-hosted are one codebase.'],
+        ['Postgres only', 'The one dependency. Your data stays in it.'],
+        ['One command', 'Upgrades are a pull and a restart.'],
+      ].map(([t, d], k) => (
+        <div class="rounded-[18px] bg-surface-2 p-5 ring-1 ring-line md:p-6">
+          <div class="text-[15px] font-semibold tracking-[-0.015em] text-fg">{t}</div>
+          <div class="mt-1 text-[13.5px] leading-relaxed text-muted">{d}</div>
         </div>
       ))}
-    </dl>
-    <div class="snap mt-16 hidden md:block overflow-hidden rounded-[8px] border border-line bg-bg shadow-card">
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[640px] text-left text-[14.5px]">
-          <thead>
-            <tr class="border-b border-line">
-              <th class="w-[28%] px-5 py-4 font-normal md:px-6"><span class="label">Compare</span></th>
-              <th class="border-l border-line px-5 py-4 md:px-6"><span class="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-fg"><Icon name="cloud" size={16} />opendesk Cloud</span></th>
-              <th class="border-l border-line px-5 py-4 md:px-6"><span class="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-fg"><Icon name="server" size={16} />Self-hosted</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {compare.map(([k, a, b]) => (
-              <tr class="border-b border-line last:border-0">
-                <th scope="row" class="px-5 py-3.5 font-normal text-muted md:px-6">{k}</th>
-                <td class="border-l border-line px-5 py-3.5 text-fg md:px-6">{a}</td>
-                <td class="border-l border-line px-5 py-3.5 text-fg md:px-6">{b}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   </section>
 
-  <!-- 07 Pricing -->
-  <section class="band mt-24 md:mt-32 py-20 md:py-28">
-    <div class="container-page">
-    <SectionHead index="07" label="Pricing" title="Free to start. One price to grow." lede="Every feature on every plan, AI included." />
-    <div class="mt-12 md:mt-16 modules md:grid-cols-3">
-      {PLANS.map((p, i) => {
-        const dark = p.featured;
-        return (
-          <div class={`snap relative flex flex-col p-6 md:p-8 ${dark ? '!bg-inverse text-inverse-fg' : ''}`} style={`--d:${i * 80}ms`}>
-            <div class="flex items-center gap-2.5">
-              <span class={`size-2.5 ${dark ? 'rounded-full bg-inverse-fg' : 'rounded-[3px] bg-fg'}`}></span>
-              <span class="text-[15px] font-semibold tracking-[-0.01em]">{p.name}</span>
-              {dark && <span class="ml-auto font-mono text-[10.5px] uppercase tracking-[0.06em] opacity-60">Most teams</span>}
-            </div>
-            <div class="mt-10 flex items-baseline gap-2">
-              <span class="text-[52px] font-semibold leading-none tracking-[-0.05em] tabular-nums">{p.price}</span>
-              <span class={`text-[14px] ${dark ? 'opacity-60' : 'text-muted'}`}>{p.unit}</span>
-            </div>
-            <p class={`mt-4 flex-1 text-[14.5px] leading-relaxed ${dark ? 'opacity-70' : 'text-muted'}`}>{p.blurb}</p>
-            <ul class={`mt-6 space-y-2.5 border-t pt-6 text-[14px] ${dark ? 'border-inverse-fg/15' : 'border-line text-body'}`}>
-              {p.limits.map((f) => <li class="flex gap-2.5"><Icon name="check" size={15} class="mt-0.5 shrink-0" />{f}</li>)}
-            </ul>
-            <a href={p.cta.href} class={`btn mt-8 w-full ${dark ? 'bg-inverse-fg text-inverse hover:opacity-90' : 'btn-ghost'}`}>{p.cta.label}</a>
-          </div>
-        );
-      })}
+  <!-- Pricing -->
+  <section class="container-page mt-28 md:mt-40">
+    <div class="flex flex-col items-center text-center">
+      <div class="label flex items-center gap-2"><span class="dot"></span>Pricing</div>
+      <h2 class="mt-5 text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">Free to start. One price to grow.</h2>
+      <p class="lede mt-5 max-w-[540px]">Every feature on every plan, Ollie included. Plans differ only in limits.</p>
     </div>
-    <div class="mt-5 flex flex-wrap items-center justify-between gap-4 px-1">
+    <PlanCards class="mt-12 md:mt-16" />
+    <div class="mt-8 flex flex-wrap items-center justify-between gap-4 px-1">
       <p class="text-[14px] text-muted">Pro is billed per user who answers customers. Viewers are free.</p>
-      <a href="/pricing/" class="link-arrow">Compare plans and AI credits<Icon name="arrowRight" size={14} /></a>
+      <a href="/pricing/" class="link-arrow">Compare plans and AI pricing<Icon name="arrowRight" size={14} /></a>
     </div>
-  </div>
   </section>
 
-  <!-- 08 FAQ -->
-  <section class="container-page mt-24 md:mt-32">
-    <SectionHead index="08" label="Questions" title="Asked often." />
-    <Faq items={faq} class="mt-12 md:mt-16" />
+  <!-- FAQ -->
+  <section class="container-page mt-28 md:mt-40">
+    <div class="grid gap-10 lg:grid-cols-[1fr_1.6fr]">
+      <div>
+        <div class="label flex items-center gap-2"><span class="dot"></span>Questions</div>
+        <h2 class="mt-5 text-[36px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[48px]">Asked often.</h2>
+        <p class="mt-4 max-w-[34ch] text-[15px] leading-relaxed text-muted">Something else? <a href="/contact/" class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">Write to us</a>, a person answers.</p>
+      </div>
+      <Faq items={faq} />
+    </div>
   </section>
 
-  <CTA />
 </Layout>
+
+<style is:global>
+  .marquee { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+  .marquee-track { animation: marquee 60s linear infinite; }
+  .marquee:hover .marquee-track { animation-play-state: paused; }
+  @keyframes marquee { to { transform: translateX(calc(-50% - 5px)); } }
+  .ollie-glow { position: absolute; inset: -40px; border-radius: 99px; background: radial-gradient(closest-side, color-mix(in oklab, var(--c-violet) 22%, transparent), transparent); }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track { animation: none; }
+  }
+</style>
+
+<script>
+  import { initLive } from '../lib/live';
+  initLive();
+
+  // The sky drifts a little slower than the page.
+  const hero = document.querySelector<HTMLElement>('[data-hero]');
+  const sky = hero?.querySelector<HTMLElement>('.hero-sky');
+  if (hero && sky && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const h = hero.offsetHeight;
+      const y = Math.min(Math.max(window.scrollY, 0), h);
+      sky.style.transform = `translate3d(0, ${y * 0.18}px, 0)`;
+    };
+    update();
+    addEventListener('scroll', () => { raf ||= requestAnimationFrame(update); }, { passive: true });
+    addEventListener('resize', () => { raf ||= requestAnimationFrame(update); });
+  }
+</script>

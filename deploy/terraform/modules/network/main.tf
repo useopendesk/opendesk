@@ -1,7 +1,7 @@
 # Network: one VPC with public subnets only, and no NAT Gateway.
 #
 # Why public subnets with security groups instead of private subnets + NAT:
-# every task needs general internet egress anyway (Neon, Google and Microsoft
+# every task needs general internet egress anyway (Google and Microsoft
 # OAuth, Gmail and Graph mailbox APIs, customer webhooks, PostHog), so VPC
 # interface endpoints (about $7/month each per AZ) would not remove the
 # internet path, and a NAT Gateway costs about $33/month per AZ plus

@@ -6,12 +6,13 @@
 // events streamed word by word on the contact topic, a tool call, an action
 // card the visitor confirms, ratings and a handoff to a person.
 
+import { OLLIE_LOOK, type BotLook } from "../../src/lib/botlook";
 import type { Fetcher } from "./api";
 import type { RtChannelLike, RtSocketLike, SocketFactory } from "./realtime";
-import type { AIAction, Conversation, Message, WidgetConfig } from "./types";
+import type { AIAction, BotIdentity, BotRef, Conversation, Message, WidgetConfig } from "./types";
 
 const WID = "00000000-0000-4000-8000-00000000d3e0";
-const HELP = "https://example.com/help/fieldnote/articles";
+const HELP = "https://example.com/help/margin/articles";
 
 type Copy = { q1: string; a1: string; q2: string; a2: string; subject: string; aiSso: string; s1: string; s2: string; human: string };
 const COPY: Record<string, Copy> = {
@@ -25,7 +26,7 @@ const COPY: Record<string, Copy> = {
       "Sign-in loops with SSO usually mean the identity provider's **signing certificate** changed [1]. An admin can upload the new certificate under **Settings → Security → SSO** [2], then everyone can sign in again.\n\nWhile that's sorted, admins can still sign in with email and password.",
     s1: "Set up SAML single sign-on",
     s2: "Rotate your SSO certificate",
-    human: "Hi, Priya here from the Fieldnote team. I've picked this up and I'm on it now.",
+    human: "Hi, Priya here from the Margin team. I've picked this up and I'm on it now.",
   },
   ja: {
     subject: "ノートをPDFで書き出す",
@@ -36,7 +37,7 @@ const COPY: Record<string, Copy> = {
     aiSso: "SSOでサインインが繰り返される場合、IDプロバイダーの**署名証明書**が更新された可能性があります [1]。管理者が **設定 → セキュリティ → SSO** から新しい証明書をアップロードすると [2]、再びサインインできるようになります。",
     s1: "SAMLシングルサインオンを設定する",
     s2: "SSO証明書を更新する",
-    human: "Fieldnoteサポートのプリヤです。こちらで引き継ぎました。",
+    human: "Marginサポートのプリヤです。こちらで引き継ぎました。",
   },
   ar: {
     subject: "تصدير الدفاتر بصيغة PDF",
@@ -47,25 +48,49 @@ const COPY: Record<string, Copy> = {
     aiSso: "تكرار تسجيل الدخول عبر SSO يعني غالبًا أن **شهادة التوقيع** لدى مزوّد الهوية قد تغيّرت [1]. يمكن للمسؤول رفع الشهادة الجديدة من **الإعدادات ← الأمان ← SSO** [2]، وبعدها يستطيع الجميع تسجيل الدخول مجددًا.",
     s1: "إعداد تسجيل الدخول الموحّد SAML",
     s2: "تحديث شهادة SSO",
-    human: "مرحبًا، معك بريا من فريق Fieldnote. تسلّمت محادثتك وأعمل عليها الآن.",
+    human: "مرحبًا، معك بريا من فريق Margin. تسلّمت محادثتك وأعمل عليها الآن.",
   },
 };
 
 const ORDER = {
   question: "Can you send order #4821 to my new address? It's 22 Baker Street, London.",
-  lookup: "I found order **#4821**: a Fieldnote Pro notebook set, not shipped yet, so the address can still change.\n\nShall I send it to **22 Baker Street, London** instead?",
+  lookup: "I found order **#4821**: a Margin Pro notebook set, not shipped yet, so the address can still change.\n\nShall I send it to **22 Baker Street, London** instead?",
   action: { title: "Change the delivery address", summary: "Send order #4821 to 22 Baker Street, London instead of 9 Elm Road.", tool: "Orders" },
   confirmed: "Done. Order **#4821** will now ship to 22 Baker Street, London. You'll get an updated confirmation email in a minute.",
   declined: "No problem, I've left order #4821 as it was. Anything else I can help with?",
 };
 
+const OLLIE: BotIdentity = { id: "00000000-0000-4000-8000-0000000b0700", name: "Ollie", role: "", avatar_url: "", look: OLLIE_LOOK, greeting: "" };
+const PIP_LOOK: BotLook = {
+  kind: "built",
+  shape: "squircle",
+  fill: { type: "gradient", color: "#9ff0e3", to: "#0b7f73" },
+  eyes: "happy",
+  mouth: "smile",
+  accessory: "antenna",
+  accent: "#f5a524",
+  blush: true,
+  background: "none",
+  emoji: "",
+};
+const PIP: BotIdentity = {
+  id: "00000000-0000-4000-8000-0000000b0701",
+  name: "Pip",
+  role: "Support assistant",
+  avatar_url: "",
+  look: PIP_LOOK,
+  greeting: "Hi, I'm Pip.\nAsk me about orders, delivery or your account.",
+};
+const FOX: BotIdentity = { ...PIP, id: "00000000-0000-4000-8000-0000000b0702", name: "Fox", role: "", greeting: "", look: { ...PIP_LOOK, kind: "emoji", emoji: "🦊", fill: { type: "solid", color: "#ffe2a6", to: "#c46f06" }, background: "soft" } };
+const refOf = (b: BotIdentity): BotRef => ({ id: b.id, name: b.name, avatar_url: b.avatar_url, look: b.look });
+
 /** Demo widget configs by key (?key= on demo.html). */
 export function demoConfig(key: string, params = new URLSearchParams()): WidgetConfig {
   const base: WidgetConfig = {
-    workspace_name: "Fieldnote",
+    workspace_name: "Margin",
     brand_color: null,
     greeting: "Hi there. How can we help?",
-    help_center_url: "https://example.com/help/fieldnote",
+    help_center_url: "https://example.com/help/margin",
     require_email: false,
     locale: params.get("od_ws_lang") ?? "en",
     avatar_url: null,
@@ -87,8 +112,18 @@ export function demoConfig(key: string, params = new URLSearchParams()): WidgetC
       { name: "Mei", avatar_url: null },
     ],
     ai_answers: params.get("od_bot") !== "0",
-    bot: { name: "Ollie", avatar_url: null },
+    bot: OLLIE,
+    topics: [],
+    open: params.get("od_closed") === null,
+    offline_message: "",
+    brand: { name: "Margin", color: null },
   };
+  const topics = [
+    { id: "orders", label: "Orders and delivery" },
+    { id: "billing", label: "Billing and refunds" },
+    { id: "account", label: "Account and sign-in" },
+    { id: "other", label: "Something else" },
+  ];
   const variants: Record<string, Partial<WidgetConfig>> = {
     wk_brand: { brand_color: "#3b5bdb" },
     wk_email: { require_email: true },
@@ -96,9 +131,25 @@ export function demoConfig(key: string, params = new URLSearchParams()): WidgetC
     wk_label: { launcher: "label", launcher_label: "", brand_color: "#7c3aed" },
     wk_round: { radius: "round", launcher: "label", launcher_label: "Ask us", brand_color: "#e8590c" },
     wk_square: { radius: "square", brand_color: "#111827" },
-    wk_dark: { theme: "dark", brand_color: "#a3e635", title: "Fieldnote support", subtitle: "Ask Ollie anything, day or night." },
+    wk_dark: { theme: "dark", brand_color: "#a3e635", title: "Margin support", subtitle: "Ask Ollie anything, day or night." },
     wk_light: { theme: "light" },
     wk_human: { ai_answers: false, suggestions: [] },
+    wk_bot: { bot: PIP, brand_color: "#0f766e" },
+    wk_emoji: { bot: FOX },
+    wk_topics: { topics },
+    wk_closed: { open: false, topics },
+    wk_offline: { open: false, offline_message: "We're offline for the weekend.\nLeave a message and we'll reply on Monday morning." },
+    wk_press: {
+      workspace_name: "Pressroom",
+      title: "",
+      brand_color: "#e11d48",
+      brand: { name: "Pressroom", color: "#e11d48" },
+      suggestions: ["Custom domains", "Import subscribers"],
+      topics: [
+        { id: "publishing", label: "Publishing help" },
+        { id: "payouts", label: "Payments and payouts" },
+      ],
+    },
   };
   return { ...base, ...(variants[key] ?? {}) };
 }
@@ -106,12 +157,18 @@ export function demoConfig(key: string, params = new URLSearchParams()): WidgetC
 export type MockOptions = {
   /** Language of the seeded content (?od_lang=). */
   lang?: string;
-  /** "demo": one past conversation; "preview": the dashboard preview's showcase conversation. */
-  seed?: "demo" | "preview";
+  /** "demo": one past conversation; "preview": the dashboard preview's showcase conversation; "empty": none. */
+  seed?: "demo" | "preview" | "empty";
   /** Answer GET /v1/widget/config with this (demo pages); the preview passes its config to boot. */
   config?: (key: string) => WidgetConfig;
   /** Network latency for API calls, ms. */
   latency?: number;
+  /**
+   * The bot replies and live events name. Default: the served config's bot.
+   * null names none, so the widget shows its configured bot (the dashboard
+   * preview, which follows unsaved edits).
+   */
+  bot?: BotRef | null;
 };
 
 export type Mock = {
@@ -121,6 +178,8 @@ export type Mock = {
   playShowcase(): void;
   /** Id of the seeded preview conversation. */
   showcaseId: string;
+  /** The topic_id of the last conversation started (null: none was sent). */
+  readonly lastTopic: string | null;
   dispose(): void;
 };
 
@@ -129,6 +188,8 @@ export function createMock(o: MockOptions = {}): Mock {
   const contact = { id: "00000000-0000-4000-8000-0000000c0de0", email: null as string | null, name: "", avatar_url: "" };
   const agent = { id: "u_priya", name: "Priya Raman", avatar_url: "" };
   const latency = o.latency ?? 120;
+  let served: WidgetConfig | null = null;
+  const bot = (): BotRef | null => (o.bot !== undefined ? o.bot : refOf(served?.bot ?? OLLIE));
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const later = (ms: number, f: () => void) => {
     const id = setTimeout(() => {
@@ -174,7 +235,7 @@ export function createMock(o: MockOptions = {}): Mock {
         .join("") + (sources.length ? `<ul>${sources.map((s) => `<li><a href="${s.url}">${esc(s.title)}</a></li>`).join("")}</ul>` : "");
     return {
       ...msg(tid, "outbound", clean.replace(/\*\*/g, ""), minsAgo, html),
-      author: { type: "system", user: null, contact: null },
+      author: { type: "system", user: null, contact: null, bot: bot() },
       ai: true,
       ai_action: action ? { ...action, id: uid(), status: "pending" } : null,
     };
@@ -196,7 +257,7 @@ export function createMock(o: MockOptions = {}): Mock {
     const q2 = msg(showcaseId, "inbound", ORDER.question, 1);
     conversations.push({ id: showcaseId, subject: "Changing my delivery address", status: "open", last_message_preview: ORDER.question, last_message_at: q2.created_at });
     messages[showcaseId] = [q, a, q2];
-  } else {
+  } else if (o.seed !== "empty") {
     const cv = uid();
     conversations.push({ id: cv, subject: copy.subject, status: "solved", last_message_preview: copy.a2, last_message_at: ago(60 * 26) });
     messages[cv] = [msg(cv, "inbound", copy.q1, 60 * 27), msg(cv, "outbound", "", 60 * 26.5, copy.a1), msg(cv, "inbound", copy.q2, 60 * 26.2), msg(cv, "outbound", copy.a2, 60 * 26)];
@@ -233,7 +294,7 @@ export function createMock(o: MockOptions = {}): Mock {
   ) {
     const reply = uid();
     let at = opts.delay ?? 700;
-    later(at, () => live("ai.reply.started", { reply_id: reply, ticket_id: tid, bot: { name: "Ollie" } }));
+    later(at, () => live("ai.reply.started", { reply_id: reply, ticket_id: tid, bot: bot() }));
     if (opts.tool) {
       at += 500;
       later(at, () => live("ai.reply.tool", { reply_id: reply, ticket_id: tid, tool: opts.tool, status: "running" }));
@@ -287,7 +348,7 @@ export function createMock(o: MockOptions = {}): Mock {
       });
     } else {
       stream(tid, "Thanks for the message! I can look up **orders**, change a delivery address, or point you to the right guide [1]. What do you need?", {
-        sources: [{ title: "Getting started with Fieldnote", url: `${HELP}/getting-started` }],
+        sources: [{ title: "Getting started with Margin", url: `${HELP}/getting-started` }],
       });
     }
   }
@@ -306,6 +367,7 @@ export function createMock(o: MockOptions = {}): Mock {
     later(4600, () => post(msg(tid, "outbound", replies[replyIdx++ % replies.length])));
   }
 
+  let lastTopic: string | null = null;
   const json = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const notFound = () => json({ status: 404, title: "Not found", code: "not_found" }, 404);
 
@@ -316,7 +378,10 @@ export function createMock(o: MockOptions = {}): Mock {
     const method = (init.method ?? "GET").toUpperCase();
     const body = typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
 
-    if (path === "/v1/widget/config") return json((o.config ?? ((k) => demoConfig(k, params)))(u.searchParams.get("key") ?? ""));
+    if (path === "/v1/widget/config") {
+      served = (o.config ?? ((k) => demoConfig(k, params)))(u.searchParams.get("key") ?? "");
+      return json(served);
+    }
     if (path === "/v1/widget/session") {
       if (typeof body.email === "string") contact.email = body.email;
       if (typeof body.name === "string") contact.name = body.name;
@@ -324,6 +389,11 @@ export function createMock(o: MockOptions = {}): Mock {
     }
     if (path === "/v1/widget/conversations" && method === "GET") return json({ data: conversations, next_cursor: null });
     if (path === "/v1/widget/conversations" && method === "POST") {
+      // topic_id: one of WidgetConfig.topics; ids are 1..40 of A-Z a-z 0-9 _ - (contracts/api.md).
+      if (body.topic_id !== undefined && (typeof body.topic_id !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(body.topic_id))) {
+        return json({ status: 422, title: "Unprocessable Entity", code: "validation_failed", detail: "topic_id is not a topic of this widget" }, 422);
+      }
+      lastTopic = typeof body.topic_id === "string" ? body.topic_id : null;
       const cid = uid();
       const text = String(body.body ?? "");
       const c: Conversation = { id: cid, subject: text.slice(0, 60) || "New conversation", status: "open", last_message_preview: text, last_message_at: ago(0) };
@@ -424,6 +494,9 @@ export function createMock(o: MockOptions = {}): Mock {
 
   let played = false;
   return {
+    get lastTopic() {
+      return lastTopic;
+    },
     fetch: fetcher,
     socket,
     showcaseId,

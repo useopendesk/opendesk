@@ -1,0 +1,62 @@
+---
+/**
+ * The real chat widget, live: the same UI customers embed, running against its
+ * in-memory backend (web/widget/src/site.ts, built into
+ * src/vendor/widget-demo/demo.js by `pnpm build:site-widget` in web/). It loads
+ * when it comes near the screen, plays its showcase conversation once, and
+ * then answers whatever the visitor types. With `autoplay` it plays a whole
+ * visit on a loop instead, until someone uses it. It follows the site's theme.
+ *
+ * The shop is Margin, a made-up notebook maker, with its logo as the
+ * workspace picture.
+ *
+ * The launcher and panel sit in the bottom-right corner of this box, the way
+ * they sit in the corner of a customer's page.
+ */
+interface Props {
+  scene?: 'launcher' | 'home' | 'chat';
+  /** Shown but not usable, for decorative copies (inside an aria-hidden scene). */
+  still?: boolean;
+  /** Play a visitor's visit on a loop: open, ask, confirm, close. */
+  autoplay?: boolean;
+  class?: string;
+}
+const { scene = 'chat', still = false, autoplay = false, class: className = '' } = Astro.props;
+---
+<div class={`live-widget absolute inset-0 ${className}`} data-live-widget={scene} data-autoplay={autoplay || undefined} inert={still || undefined} aria-label={still ? undefined : 'The opendesk chat widget, live. Try it.'} role={still ? undefined : 'region'}></div>
+
+<script>
+  import type { PreviewHandle, PreviewScene } from '../../vendor/widget-demo/demo';
+  const hosts = [...document.querySelectorAll<HTMLElement>('[data-live-widget]')];
+  if (hosts.length) {
+    let mod: Promise<typeof import('../../vendor/widget-demo/demo')> | null = null;
+    const load = () => (mod ??= import('../../vendor/widget-demo/demo.js'));
+    const dark = () => document.documentElement.classList.contains('dark');
+    const mounted: PreviewHandle[] = [];
+    // Margin's logo and team pictures, from public/demo (the widget takes http(s) images only).
+    const pic = (file: string) => new URL(`/demo/${file}.svg`, location.href).href;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          io.unobserve(e.target);
+          const host = e.target as HTMLElement;
+          void load().then((m) => {
+            const config = {
+              ...m.demoConfig('wk_demo'),
+              workspace_name: 'Margin',
+              avatar_url: pic('margin'),
+              brand_color: '#1f3a68',
+              suggestions: ['Where is my order?', 'Change my delivery address', 'Talk to a person'],
+              team: [{ name: 'Priya', avatar_url: pic('priya') }, { name: 'Tomás', avatar_url: pic('tomas') }, { name: 'Mei', avatar_url: pic('mei') }],
+            };
+            mounted.push(m.mountPreview(host, { config, scene: (host.dataset.liveWidget ?? 'chat') as PreviewScene, dark: dark(), autoplay: 'autoplay' in host.dataset }));
+          });
+        }
+      },
+      { rootMargin: '300px 0px' },
+    );
+    hosts.forEach((h) => io.observe(h));
+    new MutationObserver(() => mounted.forEach((p) => p.update({ dark: dark() }))).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  }
+</script>

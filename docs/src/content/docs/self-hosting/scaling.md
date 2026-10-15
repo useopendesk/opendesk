@@ -37,7 +37,7 @@ Setting `NATS_URL` turns the embedded server off. A three-node NATS cluster with
 
 ## Database
 
-- Point `DATABASE_URL` at a pooler and `DATABASE_URL_DIRECT` at the primary. See [Postgres and Neon](/self-hosting/postgres/).
+- Point `DATABASE_URL` at a pooler and `DATABASE_URL_DIRECT` at the primary. See [Postgres](/self-hosting/postgres/).
 - Workers and the event relay use the direct URL.
 
 ## Storage

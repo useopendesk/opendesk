@@ -2,10 +2,22 @@
 
 cloudflare_account_id = "0123456789abcdef0123456789abcdef"
 # cloudflare_zone_id  = "..."            # optional; looked up from cloudflare_zone_name otherwise
-# neon_org_id         = "org-..."         # required for Neon accounts with organizations
 
-aws_region  = "us-east-1"
-neon_region = "aws-us-east-1"
+aws_region = "us-east-1"
+
+# Create the database in the PlanetScale dashboard first: Postgres, AWS
+# us-east-1 (same as aws_region), the size you want, single node or HA.
+planetscale = {
+  organization = "opendesk"
+  database     = "opendesk"
+  # branch     = "main"
+}
+
+# Launch sizes are the defaults (variables.tf, "Sizes"). For no single point of failure:
+# api        = { min = 2, max = 6 }
+# gateway    = { min = 2, max = 4 }
+# worker     = { spot = false }
+# nats_nodes = 3
 
 github_repo = "opendesk/opendesk"
 # create_github_oidc_provider       = false   # if the account already has it
@@ -16,6 +28,11 @@ microsoft_client_id = ""
 github_client_id    = ""
 turnstile_site_key  = ""
 
+# Mailbox sign-in per provider (user sign-in is not affected). Match the Pages
+# variable MAILBOX_OAUTH so the wizard and the API agree.
+google_mailbox_oauth    = false
+microsoft_mailbox_oauth = true
+
 # After `aws secretsmanager put-secret-value` for each:
 # optional_secrets = [
 #   "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
@@ -23,12 +40,20 @@ turnstile_site_key  = ""
 #   "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
 #   # AI: ANTHROPIC_API_KEY sets AI_PROVIDER=anthropic, VOYAGE_API_KEY sets EMBEDDINGS_DRIVER=voyage.
 #   "ANTHROPIC_API_KEY", "VOYAGE_API_KEY",
+#   # iPhone push: the APNs auth key (.p8). Needs apns_key_id and apns_team_id.
+#   "APNS_KEY",
 # ]
 # ai_model      = "claude-sonnet-5-5"
 # ai_fast_model = "claude-haiku-4-5-20251001"
-# stripe_tax    = true
+
+# Native apps (contracts/native.md).
+# apns_key_id        = "ABC123DEFG"
+# apns_team_id       = "ABCDE12345"
+# apns_topic         = "sh.opendesk.app"
+# push_relay_serve   = true             # relay pushes for self-hosted instances that opt in
+# app_attest_app_ids = "ABCDE12345.sh.opendesk.app"
 
 # nats_mode         = "external"           # Synadia Cloud or another managed NATS
 # external_nats_url = "tls://connect.ngs.global"
 
-# dmarc_rua = "dmarc@opendesk.sh"
+# dmarc_rua = "team@opendesk.sh"

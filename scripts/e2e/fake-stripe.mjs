@@ -3,7 +3,7 @@
 // success_url so a browser comes straight back to the app.
 // Run the API with STRIPE_API_URL=http://127.0.0.1:<port> STRIPE_SECRET_KEY=sk_test_x
 // STRIPE_WEBHOOK_SECRET=whsec_x STRIPE_PRICE_PRO=price_pro STRIPE_PRICE_PRO_YEARLY=price_pro_y
-// STRIPE_PRICE_CREDITS=price_credits.
+// STRIPE_PRICE_AI_TOPUP=price_ai_topup (a one-time $10 AI top-up).
 //
 //   node fake-stripe.mjs [port]   (default 12111, on 127.0.0.1)
 
@@ -11,9 +11,9 @@ import http from "node:http";
 
 const port = Number(process.argv[2] || 12111);
 const prices = {
-  price_pro: { id: "price_pro", object: "price", unit_amount: 1900, currency: "usd", recurring: { interval: "month" } },
-  price_pro_y: { id: "price_pro_y", object: "price", unit_amount: 19000, currency: "usd", recurring: { interval: "year" } },
-  price_credits: { id: "price_credits", object: "price", unit_amount: 1000, currency: "usd", recurring: null },
+  price_pro: { id: "price_pro", object: "price", unit_amount: 1800, currency: "usd", recurring: { interval: "month" } },
+  price_pro_y: { id: "price_pro_y", object: "price", unit_amount: 18000, currency: "usd", recurring: { interval: "year" } },
+  price_ai_topup: { id: "price_ai_topup", object: "price", unit_amount: 1000, currency: "usd", recurring: null },
 };
 let n = 0;
 const id = (p) => `${p}_${++n}${Math.random().toString(36).slice(2, 10)}`;

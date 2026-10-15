@@ -32,15 +32,17 @@ type kbArticleCreate struct {
 	BodyHTML     string  `json:"body_html,omitempty" maxLength:"200000"`
 	Excerpt      *string `json:"excerpt,omitempty" maxLength:"2000" doc:"Plain text; derived from the body when empty"`
 	Status       string  `json:"status,omitempty" enum:"draft,published" default:"draft"`
+	BrandID      *string `json:"brand_id,omitempty" required:"false" nullable:"true" doc:"Brand id, or null for every brand; a collection's brand wins"`
 }
 
 type kbArticlePatch struct {
-	CollectionID *string `json:"collection_id,omitempty" doc:"Collection id; empty string removes it from its collection"`
-	Title        *string `json:"title,omitempty" minLength:"1" maxLength:"200"`
-	Slug         *string `json:"slug,omitempty" maxLength:"100"`
-	BodyHTML     *string `json:"body_html,omitempty" maxLength:"200000"`
-	Excerpt      *string `json:"excerpt,omitempty" maxLength:"2000" doc:"Plain text; empty derives it from the body"`
-	Status       *string `json:"status,omitempty" enum:"draft,published"`
+	CollectionID *string             `json:"collection_id,omitempty" doc:"Collection id; empty string removes it from its collection"`
+	Title        *string             `json:"title,omitempty" minLength:"1" maxLength:"200"`
+	Slug         *string             `json:"slug,omitempty" maxLength:"100"`
+	BodyHTML     *string             `json:"body_html,omitempty" maxLength:"200000"`
+	Excerpt      *string             `json:"excerpt,omitempty" maxLength:"2000" doc:"Plain text; empty derives it from the body"`
+	Status       *string             `json:"status,omitempty" enum:"draft,published"`
+	BrandID      hd.Nullable[string] `json:"brand_id,omitempty" doc:"Brand id, or null for every brand; a collection's brand wins"`
 }
 
 type articleOut struct{ Body KbArticle }
@@ -86,6 +88,8 @@ func registerArticles(d *deps.Deps, api huma.API) {
 		func(ctx context.Context, in *struct {
 			httpx.ListParams
 			CollectionID string `query:"collection_id" doc:"Only this collection; \"none\" for articles without one"`
+			BrandID      string `query:"brand_id" doc:"Only this brand's articles (an article in a collection with a brand is that brand's); \"none\" for those of every brand"`
+			ForBrandID   string `query:"for_brand_id" doc:"What this brand shows: its own articles and those of every brand (the composer's and assistant's scope)"`
 			Status       string `query:"status" enum:"draft,published"`
 			Q            string `query:"q" maxLength:"200"`
 		}) (*struct{ Body httpx.Page[KbArticle] }, error) {
@@ -116,6 +120,20 @@ func registerArticles(d *deps.Deps, api huma.API) {
 			}
 			if in.Status != "" {
 				where = append(where, "a.status = "+arg(in.Status))
+			}
+			bf, err := brandFilter(in.BrandID, articleBrand, arg)
+			if err != nil {
+				return nil, err
+			}
+			if bf != "" {
+				where = append(where, bf)
+			}
+			if strings.TrimSpace(in.ForBrandID) != "" {
+				bid, err := hd.ParseRef(in.ForBrandID, "for_brand_id")
+				if err != nil {
+					return nil, err
+				}
+				where = append(where, ForBrandSQL(arg(bid)))
 			}
 			if q := strings.TrimSpace(in.Q); q != "" {
 				pq := prefixQuery(q)
@@ -200,9 +218,14 @@ func registerArticles(d *deps.Deps, api huma.API) {
 			}
 			var a KbArticle
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				var cid *uuid.UUID
+				var cid, brand *uuid.UUID
 				if b.CollectionID != nil {
 					if cid, err = collectionRef(ctx, tx, p.WorkspaceID, *b.CollectionID); err != nil {
+						return err
+					}
+				}
+				if b.BrandID != nil {
+					if brand, err = brandRef(ctx, tx, p.WorkspaceID, *b.BrandID); err != nil {
 						return err
 					}
 				}
@@ -212,8 +235,8 @@ func registerArticles(d *deps.Deps, api huma.API) {
 				}
 				id := ids.New()
 				if _, err := tx.Exec(ctx, `INSERT INTO kb_articles (id, workspace_id, collection_id, title, slug, excerpt, body_html,
-					status, author_id, published_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CASE WHEN $8 = 'published' THEN now() END)`,
-					id, p.WorkspaceID, cid, title, slug, excerpt, body, status, p.ActorUserID()); err != nil {
+					status, author_id, published_at, brand_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CASE WHEN $8 = 'published' THEN now() END, $10)`,
+					id, p.WorkspaceID, cid, title, slug, excerpt, body, status, p.ActorUserID(), brand); err != nil {
 					return slugConflict(err)
 				}
 				if a, err = loadArticle(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -288,11 +311,19 @@ func registerArticles(d *deps.Deps, api huma.API) {
 				if b.Status != nil {
 					cur.Status = *b.Status
 				}
+				if b.BrandID.Set {
+					cur.BrandID = nil
+					if !b.BrandID.Null {
+						if cur.BrandID, err = brandRef(ctx, tx, p.WorkspaceID, b.BrandID.Value); err != nil {
+							return err
+						}
+					}
+				}
 				if _, err := tx.Exec(ctx, `UPDATE kb_articles SET collection_id = $3, title = $4, slug = $5, excerpt = $6,
-					body_html = $7, status = $8, updated_at = now(),
+					body_html = $7, status = $8, brand_id = $9, updated_at = now(),
 					published_at = CASE WHEN $8 = 'published' AND status <> 'published' THEN now() ELSE published_at END
 					WHERE workspace_id = $1 AND id = $2`,
-					p.WorkspaceID, id, cur.CollectionID, cur.Title, cur.Slug, cur.Excerpt, cur.BodyHTML, cur.Status); err != nil {
+					p.WorkspaceID, id, cur.CollectionID, cur.Title, cur.Slug, cur.Excerpt, cur.BodyHTML, cur.Status, cur.BrandID); err != nil {
 					return slugConflict(err)
 				}
 				if a, err = loadArticle(ctx, tx, p.WorkspaceID, id); err != nil {

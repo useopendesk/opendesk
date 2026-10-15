@@ -43,13 +43,20 @@ The common codes:
 | `mfa_required` | 403 | This action needs two-factor authentication on your account. |
 | `reauth_required` | 403 | This action needs a recent sign-in. Sign in again and retry. |
 | `plan_limit` | 402 | The workspace's plan limit is reached; `detail` names the limit. Cloud only. |
-| `no_credits` | 402 | The workspace has no AI credits left. Cloud only. |
+| `ai_balance_empty` | 402 | The workspace's AI balance does not cover the call's estimate; the model was not called. Add AI usage or upgrade. Cloud only. |
 | `not_found` | 404 | The resource does not exist in this workspace. |
 | `ai_disabled` | 404 | No AI provider is configured on this instance. |
 | `ai_key_rejected` | 502 | The workspace's own AI provider key was refused by its provider. An admin can replace it in Settings > AI. |
 | `ai_key_no_funds` | 502 | The provider account behind the workspace's own AI key is out of funds. |
 | `provider_test_failed` | 422 | A provider key failed its test call and was not saved; `detail` says why. |
 | `billing_disabled` | 404 | Billing is not enabled on this instance. |
+| `top_up_unavailable` | 422 | AI top-ups are not available on this instance. |
+| `payment_method_required` | 409 | The workspace has no saved payment method. Save one, then retry. |
+| `card_declined` | 402 | The card was declined, so nothing was charged. |
+| `authentication_required` | 402 | The bank wants the buyer to confirm the payment. Pay in Checkout instead. |
+| `recharge_too_small` | 422 | An auto-recharge would not bring the balance back above its threshold. |
+| `monthly_limit_too_small` | 422 | The auto-recharge monthly limit is below one recharge. |
+| `billing_unavailable` | 502 | The payment provider could not be reached. Retry shortly. |
 | `conflict` | 409 | The request conflicts with the current state, such as a duplicate. |
 | `idempotency_in_progress` | 409 | A request with the same [idempotency key](/api/idempotency/) is still running. Retry shortly. |
 | `idempotency_key_reused` | 422 | The idempotency key was used for a different request. Use a new key. |

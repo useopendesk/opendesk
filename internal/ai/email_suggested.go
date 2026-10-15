@@ -3,12 +3,12 @@ package ai
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -48,7 +48,7 @@ func (s *Service) registerSuggested(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, in.ID)
+			tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -67,7 +67,7 @@ func (s *Service) registerSuggested(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, in.ID)
+			tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -75,13 +75,14 @@ func (s *Service) registerSuggested(api huma.API) {
 			if !ok {
 				return nil, httpx.NotFound("Suggested reply")
 			}
-			st, err := hd.LoadSettings(ctx, s.d.DB.Pool, p.WorkspaceID)
-			if err != nil {
+			var mailbox *uuid.UUID
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id FROM tickets WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, tid).
+				Scan(&mailbox); err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			bot := strings.TrimSpace(st.WidgetOrDefault().BotName)
-			if bot == "" {
-				bot = AssistantName
+			bot, err := bots.ForMailbox(ctx, s.d.DB.Pool, p.WorkspaceID, mailbox)
+			if err != nil {
+				return nil, httpx.Wrap(err)
 			}
 			var msg domain.Message
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -98,7 +99,7 @@ func (s *Service) registerSuggested(api huma.API) {
 				}
 				msg, err = domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{WorkspaceID: p.WorkspaceID, TicketID: tid, Kind: "reply",
 					Direction: "outbound", AuthorType: "system", BodyHTML: r.BodyHTML, BodyText: hd.HTMLToText(r.BodyHTML), Subject: subject,
-					Trigger: "none", AI: true, FromName: bot, DeliveryStatus: "pending"})
+					Trigger: "none", AI: true, FromName: bot.Name, BotID: bot.IDPtr(), DeliveryStatus: "pending"})
 				if err != nil {
 					return err
 				}
@@ -124,7 +125,7 @@ func (s *Service) registerSuggested(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, in.ID)
+			tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, in.ID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

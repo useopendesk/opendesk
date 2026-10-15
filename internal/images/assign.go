@@ -47,6 +47,15 @@ func current(ctx context.Context, tx pgx.Tx, o Owner) (domain.Avatar, *string, e
 		} else {
 			err = tx.QueryRow(ctx, `SELECT COALESCE(brand_images ->> $2, '') FROM workspaces WHERE id = $1 FOR UPDATE`, o.ID, o.Slot).Scan(&val)
 		}
+	case OwnerBrand, OwnerWidget:
+		table := "brands"
+		if o.Type == OwnerWidget {
+			table = "widgets"
+		}
+		err = tx.QueryRow(ctx, `SELECT COALESCE(images ->> $3, '') FROM `+table+` WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+			*o.WorkspaceID, o.ID, o.Slot).Scan(&val)
+	case OwnerBot:
+		err = tx.QueryRow(ctx, `SELECT avatar FROM bots WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, *o.WorkspaceID, o.ID).Scan(&val)
 	default:
 		return "", nil, fmt.Errorf("images: unknown owner %q", o.Type)
 	}
@@ -88,8 +97,37 @@ func write(ctx context.Context, tx pgx.Tx, o Owner, val domain.Avatar, source *s
 			_, err = tx.Exec(ctx, `UPDATE workspaces SET brand_images = brand_images || jsonb_build_object($2::text, $3::text), updated_at = now() WHERE id = $1`,
 				o.ID, o.Slot, string(val))
 		}
+	case OwnerBot:
+		_, err = tx.Exec(ctx, `UPDATE bots SET avatar = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`, *o.WorkspaceID, o.ID, string(val))
+	case OwnerBrand, OwnerWidget:
+		table, slots := "brands", BrandSlots
+		if o.Type == OwnerWidget {
+			table, slots = "widgets", WidgetSlots
+		}
+		if !slices.Contains(slots, o.Slot) {
+			return fmt.Errorf("images: unknown slot %q", o.Slot)
+		}
+		if val == "" {
+			_, err = tx.Exec(ctx, `UPDATE `+table+` SET images = images - $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+				*o.WorkspaceID, o.ID, o.Slot)
+		} else {
+			_, err = tx.Exec(ctx, `UPDATE `+table+` SET images = images || jsonb_build_object($3::text, $4::text), updated_at = now()
+				WHERE workspace_id = $1 AND id = $2`, *o.WorkspaceID, o.ID, o.Slot, string(val))
+		}
 	}
 	return err
+}
+
+// changed runs the change hook of o, and the workspace's when o stands in for a
+// workspace slot.
+func changed(ctx context.Context, tx pgx.Tx, o Owner, moved bool) error {
+	if err := Changed(ctx, tx, o); err != nil {
+		return err
+	}
+	if moved && o.WorkspaceID != nil {
+		return Changed(ctx, tx, Owner{Type: OwnerWorkspace, ID: *o.WorkspaceID, WorkspaceID: o.WorkspaceID})
+	}
+	return nil
 }
 
 // SetOptions tune Set and Clear.
@@ -105,6 +143,10 @@ type SetOptions struct {
 // Set stores a processed picture as the owner's, replacing the previous one, and runs
 // the change hook in the same transaction.
 func Set(ctx context.Context, d *deps.Deps, o Owner, p Processed, source string, opt SetOptions) error {
+	o, moved, err := ownerOf(ctx, d.DB.Pool, o)
+	if err != nil {
+		return err
+	}
 	id, prefix, err := Put(ctx, d.Storage, o, p)
 	if err != nil {
 		return err
@@ -138,7 +180,7 @@ func Set(ctx context.Context, d *deps.Deps, o Owner, p Processed, source string,
 		if opt.Quiet {
 			return nil
 		}
-		return Changed(ctx, tx, o)
+		return changed(ctx, tx, o, moved)
 	})
 	if err != nil {
 		Discard(d.Storage, prefix)
@@ -170,6 +212,10 @@ func Clear(ctx context.Context, d *deps.Deps, o Owner, retry bool, opt SetOption
 // ClearTx is Clear inside a caller's transaction. It returns the key prefix of the
 // removed image, to Discard after commit.
 func ClearTx(ctx context.Context, tx pgx.Tx, o Owner, retry bool, opt SetOptions) (string, error) {
+	o, moved, err := ownerOf(ctx, tx, o)
+	if err != nil {
+		return "", err
+	}
 	old, oldSrc, err := current(ctx, tx, o)
 	if err != nil {
 		return "", err
@@ -216,5 +262,5 @@ func ClearTx(ctx context.Context, tx pgx.Tx, o Owner, retry bool, opt SetOptions
 	if opt.Quiet {
 		return prefix, nil
 	}
-	return prefix, Changed(ctx, tx, o)
+	return prefix, changed(ctx, tx, o, moved)
 }

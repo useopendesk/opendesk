@@ -1,10 +1,13 @@
 // Small pieces shared by the sign-in flows.
 
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
-import { forwardRef, useId, useState, type ReactNode } from "react";
+import { forwardRef, useId, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { AuthProvider, TokenResponse } from "@/lib/api/types";
 import { config } from "@/lib/config";
+import { desktop, setOAuthHandoff } from "@/lib/desktop";
 import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
 import { signIn } from "@/lib/session";
@@ -177,20 +180,65 @@ function ProviderGlyph({ id }: { id: AuthProvider["id"] }) {
   }
 }
 
+function oauthStartUrl(provider: AuthProvider["id"], next?: string | null) {
+  // redirect_to is where to land after sign-in; the API always returns to /auth/callback first.
+  const n = safeNext(next);
+  const q = n ? `?redirect_to=${encodeURIComponent(n)}` : "";
+  return new URL(`${config.apiUrl}/v1/auth/oauth/${provider}/start${q}`, location.href).toString();
+}
+
 export function startOAuth(provider: AuthProvider["id"], next?: string | null) {
   if (import.meta.env.VITE_MOCK === "1") {
     location.assign(`/auth/callback?code=mock-${provider}`);
     return;
   }
-  // redirect_to is where to land after sign-in; the API always returns to /auth/callback first.
-  const n = safeNext(next);
-  const q = n ? `?redirect_to=${encodeURIComponent(n)}` : "";
-  location.assign(`${config.apiUrl}/v1/auth/oauth/${provider}/start${q}`);
+  location.assign(oauthStartUrl(provider, next));
+}
+
+/**
+ * The desktop app runs OAuth in the default browser (contracts/native.md): the
+ * shell returns a one-time code and its PKCE verifier, and /auth/callback
+ * finishes exactly as it does for the web flow.
+ */
+async function desktopOAuth(provider: AuthProvider["id"], next: string | null | undefined): Promise<{ code: string } | { error: string }> {
+  const r = await desktop!.oauth(oauthStartUrl(provider, next));
+  if ("error" in r) return r;
+  setOAuthHandoff(r);
+  return { code: r.code };
 }
 
 export function ProviderButtons({ next, verb = "Continue" }: { next?: string | null; verb?: string }) {
   const { data, isLoading } = useQuery(q.authConfig());
+  const { t } = useTranslation("shell");
+  const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const flow = useRef(0);
+
+  const start = async (id: AuthProvider["id"]) => {
+    setPending(id);
+    setError(null);
+    if (!desktop || import.meta.env.VITE_MOCK === "1") return startOAuth(id, next);
+    const mine = ++flow.current;
+    setWaiting(true);
+    const r = await desktopOAuth(id, next);
+    if (mine !== flow.current) return;
+    setWaiting(false);
+    setPending(null);
+    if ("code" in r) {
+      const n = safeNext(next);
+      router.history.push(`/auth/callback?code=${encodeURIComponent(r.code)}${n ? `&next=${encodeURIComponent(n)}` : ""}`);
+    } else if (r.error !== "cancelled") {
+      setError(r.error === "timeout" ? t("desktop.oauthTimeout") : r.error === "browser_unavailable" ? t("desktop.oauthBrowser") : oauthErrorMessage(r.error));
+    }
+  };
+  const cancel = () => {
+    flow.current++;
+    setWaiting(false);
+    setPending(null);
+  };
+
   if (isLoading)
     return (
       <div className="flex flex-col gap-2">
@@ -200,9 +248,28 @@ export function ProviderButtons({ next, verb = "Continue" }: { next?: string | n
     );
   const providers = data?.providers ?? [];
   if (!providers.length) return null;
+  // The desktop app keeps sign-in compact: providers side by side, named only.
+  const grid = !!desktop && providers.length > 1;
   return (
     <div className="flex flex-col gap-2">
-      {providers.map((p) => (
+      {error && <Notice>{error}</Notice>}
+      {grid ? (
+        <div className="grid grid-cols-2 gap-2">
+          {providers.map((p, i) => (
+            <Button
+              key={p.id}
+              variant="secondary"
+              size="md"
+              className={cn("w-full", providers.length % 2 === 1 && i === providers.length - 1 && "col-span-2")}
+              loading={pending === p.id}
+              icon={<ProviderGlyph id={p.id} />}
+              onClick={() => void start(p.id)}
+            >
+              {p.id === "oidc" ? p.name || "SSO" : p.name}
+            </Button>
+          ))}
+        </div>
+      ) : providers.map((p) => (
         <Button
           key={p.id}
           variant="secondary"
@@ -210,14 +277,19 @@ export function ProviderButtons({ next, verb = "Continue" }: { next?: string | n
           className="w-full"
           loading={pending === p.id}
           icon={<ProviderGlyph id={p.id} />}
-          onClick={() => {
-            setPending(p.id);
-            startOAuth(p.id, next);
-          }}
+          onClick={() => void start(p.id)}
         >
           {verb} with {p.id === "oidc" ? p.name || "SSO" : p.name}
         </Button>
       ))}
+      {waiting && (
+        <Notice tone="info">
+          {t("desktop.oauthWaiting")}{" "}
+          <button type="button" onClick={cancel} className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+            {t("desktop.oauthCancel")}
+          </button>
+        </Notice>
+      )}
     </div>
   );
 }
@@ -235,6 +307,7 @@ export const oauthErrors: Record<string, string> = {
   email_unverified: "Your email is not verified with that provider. Verify it there, then try again.",
   signup_disabled: "New sign-ups are turned off on this instance. Ask an admin for an invitation.",
   server_error: "Something went wrong on our side. Try again.",
+  invalid_code: "That sign-in link expired. Start again.",
 };
 
 export function oauthErrorMessage(code: string | undefined): string | null {

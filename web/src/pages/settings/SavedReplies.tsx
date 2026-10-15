@@ -14,6 +14,7 @@ import { toast } from "@/components/ui/toast";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { ListSkeleton, MonoChip } from "@/components/settings2/bits";
 import { rowSpring } from "@/components/settings2/motion";
+import { TeamChip, TeamPick, useTeams } from "@/components/settings2/teams";
 import { api } from "@/lib/api/endpoints";
 import type { SavedReply } from "@/lib/api/types";
 import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
@@ -22,8 +23,9 @@ import { relShort } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { tone } from "@/lib/tones";
 
-type Draft = { title: string; shortcut: string; body_html: string };
-const empty: Draft = { title: "", shortcut: "", body_html: "" };
+type Draft = { title: string; shortcut: string; body_html: string; team_id: string | null };
+const empty: Draft = { title: "", shortcut: "", body_html: "", team_id: null };
+const toDraft = (r: SavedReply): Draft => ({ title: r.title, shortcut: r.shortcut, body_html: r.body_html, team_id: r.team_id ?? null });
 const NEW = "__new";
 
 function cleanShortcut(s: string) {
@@ -55,25 +57,18 @@ export default function SavedReplies() {
   }, [replies, query]);
 
   const current = replies?.find((r) => r.id === selected) ?? null;
-  const base: Draft = current
-    ? {
-        title: current.title,
-        shortcut: current.shortcut,
-        body_html: current.body_html,
-      }
-    : empty;
-  const dirty = selected !== null && (draft.title !== base.title || draft.shortcut !== base.shortcut || draft.body_html !== base.body_html);
+  const base: Draft = current ? toDraft(current) : empty;
+  const dirty = selected !== null && JSON.stringify(draft) !== JSON.stringify(base);
+  const { teams } = useTeams();
+  const { t: tt } = useTranslation("settingsTeams");
+  const teamById = new Map(teams.map((x) => [x.id, x]));
 
   // Open the first reply once the list is in.
   useEffect(() => {
     if (selected === null && replies?.length) {
       const first = [...replies].sort((a, b) => a.title.localeCompare(b.title))[0];
       setSelected(first.id);
-      setDraft({
-        title: first.title,
-        shortcut: first.shortcut,
-        body_html: first.body_html,
-      });
+      setDraft(toDraft(first));
     }
   }, [replies, selected]);
 
@@ -82,7 +77,7 @@ export default function SavedReplies() {
       setError(null);
       setSelected(id);
       const r = replies?.find((x) => x.id === id);
-      setDraft(r ? { title: r.title, shortcut: r.shortcut, body_html: r.body_html } : empty);
+      setDraft(r ? toDraft(r) : empty);
     };
     if (dirty)
       confirm.show(t("savedReplies.discardBody"), go, {
@@ -98,11 +93,7 @@ export default function SavedReplies() {
     onSuccess: (r) => {
       upsertInList(qc, qk.savedReplies, r);
       setSelected(r.id);
-      setDraft({
-        title: r.title,
-        shortcut: r.shortcut,
-        body_html: r.body_html,
-      });
+      setDraft(toDraft(r));
       toast.success(t("savedReplies.saved"));
     },
     onError: (e) => toast.error(e, t("savedReplies.saveFailed")),
@@ -225,12 +216,13 @@ export default function SavedReplies() {
                         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{r.title}</span>
                         <span className="mono shrink-0 text-[10.5px] text-fg-4">{relShort(r.updated_at)}</span>
                       </span>
-                      <span className="flex min-w-0">
+                      <span className="flex min-w-0 items-center gap-1.5">
                         {r.shortcut ? (
                           <MonoChip className={cn("max-w-full truncate", tone.blue.chip, "border-transparent")}>/{r.shortcut}</MonoChip>
                         ) : (
                           <span className="text-[11px] text-fg-4">{t("savedReplies.noShortcut")}</span>
                         )}
+                        {r.team_id && teamById.get(r.team_id) && <TeamChip team={teamById.get(r.team_id)!} size="xs" />}
                       </span>
                     </motion.button>
                   ))}
@@ -252,7 +244,7 @@ export default function SavedReplies() {
                   submit();
                 }}
               >
-                <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-[1fr_200px]">
+                <div className={cn("grid grid-cols-1 gap-3 p-5", teams.length || draft.team_id ? "sm:grid-cols-[1fr_160px_180px]" : "sm:grid-cols-[1fr_200px]")}>
                   <Field label={t("savedReplies.titleLabel")}>
                     {(f) => (
                       <TextInput
@@ -283,6 +275,11 @@ export default function SavedReplies() {
                       />
                     )}
                   </Field>
+                  {(teams.length > 0 || draft.team_id) && (
+                    <Field label={tt("scoped.replyTeam")}>
+                      {() => <TeamPick className="w-full" size="md" value={draft.team_id} noneLabel={tt("scoped.everyone")} disabled={!canEdit} onChange={(team_id) => setDraft((d) => ({ ...d, team_id }))} />}
+                    </Field>
+                  )}
                 </div>
                 <div className="mx-5 mb-5 flex min-h-[260px] flex-1 flex-col rounded-md border border-line focus-within:border-fg-3 focus-within:shadow-[0_0_0_3px_var(--focus)]">
                   <RichEditor

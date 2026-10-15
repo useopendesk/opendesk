@@ -4,14 +4,31 @@
 
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/endpoints";
-import type { Member, SuggestionField, Tag, TagGroup, TagRef, Team, Ticket, TicketPatch } from "@/lib/api/types";
+import type { Mailbox, Member, SuggestionField, Tag, TagGroup, TagRef, Team, Ticket, TicketPatch } from "@/lib/api/types";
 import { withoutSuggestion } from "@/lib/decisions";
 import { qk } from "@/lib/queries";
-import { cachedTicket, patchTicketEverywhere, removeTicketEverywhere } from "@/lib/ticketCache";
+import { cachedTicket, forgetTicket, patchTicketEverywhere, removeTicketEverywhere, teamsOf } from "@/lib/ticketCache";
+import { markHidden } from "@/lib/realtime/store";
 import { useSession } from "@/lib/session";
 import { toast } from "@/components/ui/toast";
 import { isApiError } from "@/lib/api/client";
 import { focusField, isUnknownLabel, requiredFieldKeys } from "./fields";
+import { replyAddressAfterMove } from "./teams";
+
+/** In a private team this person is not on (and not assigned to them): out of their view. */
+export function hiddenFrom(qc: QueryClient, t: Ticket, me: string) {
+  const teams = qc.getQueryData<Team[]>(qk.teams);
+  const team = teams?.find((x) => x.id === t.team_id);
+  return !!team?.private && !teamsOf(teams, me).includes(team.id) && t.assignee?.id !== me;
+}
+
+/** Apply a ticket the server answered, or let it go when it left this person's view. */
+function settle(qc: QueryClient, t: Ticket, me: string) {
+  if (hiddenFrom(qc, t, me)) {
+    forgetTicket(qc, t.id);
+    markHidden(t.id);
+  } else patchTicketEverywhere(qc, t, me);
+}
 
 /** Apply a PATCH body to a ticket locally, resolving ids to the refs the server would return. */
 export function applyPatch(qc: QueryClient, t: Ticket, p: TicketPatch): Ticket {
@@ -25,7 +42,14 @@ export function applyPatch(qc: QueryClient, t: Ticket, p: TicketPatch): Ticket {
   if (p.severity !== undefined) next.severity = p.severity;
   if (p.spam !== undefined) next.spam = p.spam;
   if (p.snoozed_until !== undefined) next.snoozed_until = p.snoozed_until;
-  if (p.team_id !== undefined) next.team_id = p.team_id;
+  if (p.team_id !== undefined && p.team_id !== t.team_id) {
+    // The reply address follows the team when the old one was the old team's (contracts/teams.md).
+    const sw = replyAddressAfterMove(t, p.team_id, qc.getQueryData<Mailbox[]>(qk.mailboxes) ?? []);
+    if (sw && p.mailbox_id === undefined) next.mailbox_id = sw.to.id;
+    next.team_id = p.team_id;
+  }
+  if (p.mailbox_id !== undefined) next.mailbox_id = p.mailbox_id;
+  if (p.brand_id !== undefined) next.brand_id = p.brand_id;
   if (p.assignee_id !== undefined) {
     if (p.assignee_id === null) next.assignee = null;
     else {
@@ -102,7 +126,7 @@ export function useUpdateTicket() {
       toast.error(e, "Couldn't update the ticket");
     },
     onSuccess: (t) => {
-      patchTicketEverywhere(qc, t, me);
+      settle(qc, t, me);
       if (t.tags.some((x) => !qc.getQueryData<Tag[]>(qk.tags)?.some((k) => k.id === x.id))) void qc.invalidateQueries({ queryKey: qk.tags });
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: qk.counts }),
@@ -125,6 +149,9 @@ export function useBulkUpdate() {
         }
       }
       return { prev };
+    },
+    onSuccess: (r) => {
+      for (const t of r?.data ?? []) settle(qc, t, me);
     },
     onError: (e, _v, ctx) => {
       ctx?.prev.forEach((t) => patchTicketEverywhere(qc, t, me));

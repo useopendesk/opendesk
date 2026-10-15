@@ -20,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/storage"
@@ -70,9 +71,11 @@ type threadMatch struct {
 // processInbound turns a stored raw email into a ticket message.
 func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) error {
 	var mailboxID uuid.UUID
-	var key, status, rcpt string
-	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to FROM inbound_emails
-		WHERE workspace_id = $1 AND id = $2`, wid, inboundID).Scan(&mailboxID, &key, &status, &rcpt)
+	var key, status, rcpt, msgIDHdr, hash string
+	var envFrom *string
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to, message_id_hdr, content_hash, envelope_from
+		FROM inbound_emails WHERE workspace_id = $1 AND id = $2`, wid, inboundID).
+		Scan(&mailboxID, &key, &status, &rcpt, &msgIDHdr, &hash, &envFrom)
 	if db.IsNotFound(err) || err == nil && status != "pending" {
 		return nil
 	}
@@ -101,32 +104,69 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	if err != nil {
 		return err
 	}
-	if reason := noiseReason(pm, own, m.Email); reason != "" {
-		if reason == "bounce" {
-			if err := s.recordBounce(ctx, wid, pm, raw); err != nil {
+	self := m.addresses()
+	null := nullSender(envFrom, pm)
+	reason := noiseReason(pm, self, m.Email, null)
+	// A trusted contact form marks its mail as generated or bulk; it is still a visitor
+	// writing in. An autoresponder through the form stays noise.
+	if (reason == "auto_submitted" || reason == "precedence") && formSenderTrusted(m.TrustedFormSenders, pm.FromAddr) && !autoresponse(pm, null) {
+		reason = ""
+	}
+	if reason != "" {
+		if reason == "bounce" && null {
+			if err := s.recordBounce(ctx, wid, m.ID, pm, raw); err != nil {
 				return err
 			}
 		}
 		return s.markInbound(ctx, wid, inboundID, "ignored", reason)
 	}
+	loop, err := s.ourLoop(ctx, wid, pm, own)
+	if err != nil {
+		return err
+	}
+	if loop {
+		return s.markInbound(ctx, wid, inboundID, "ignored", "loop")
+	}
 	sender, senderName := pm.sender()
 	if !validAddress(sender) {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "no_sender")
 	}
-	for _, a := range own {
-		if strings.EqualFold(a, sender) {
-			return s.markInbound(ctx, wid, inboundID, "ignored", "from_own_mailbox")
+	// Mail from this mailbox's own addresses, or replying through a forwarding address, is
+	// our own. Mail from another of the workspace's addresses (forwarded or sent to this
+	// one by a teammate) opens a ticket here, unless it is mail we generated.
+	if slicesContainsFold(self, sender) || strings.EqualFold(emailDomain(sender), s.inboundDomain()) {
+		return s.markInbound(ctx, wid, inboundID, "ignored", "from_own_mailbox")
+	}
+	internal := slicesContainsFold(own, sender)
+	if internal && ourMsgIDRe.MatchString(pm.MessageID) {
+		return s.markInbound(ctx, wid, inboundID, "ignored", "from_own_mailbox")
+	}
+	// A DMARC failure reported by a trusted receiving server: the From address is not
+	// the sender's own. A new ticket is marked spam; a message on an existing one is kept
+	// and flagged, and changes nothing about the ticket.
+	verdict := dmarcVerdict(raw, s.trustedAuthserv(m))
+	authFailed := verdict == authFail
+	// A website contact form the mailbox trusts, whose mail passed sender authentication,
+	// writes for the visitor its Reply-To names: the visitor is the customer.
+	formSender := ""
+	if !internal && verdict == authPass && formSenderTrusted(m.TrustedFormSenders, sender) {
+		if visitor := pm.replyTo(); s.formVisitorOK(visitor, own) {
+			formSender = sender
+			sender, senderName = visitor, pm.ReplyName
 		}
 	}
-	var blocked, dup bool
-	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT
-		EXISTS (SELECT 1 FROM contacts WHERE workspace_id = $1 AND email = $2 AND blocked),
-		EXISTS (SELECT 1 FROM messages WHERE workspace_id = $1 AND email_message_id = $3)`,
-		wid, sender, pm.MessageID).Scan(&blocked, &dup); err != nil {
+	receivedAt := receivedAddress(m, pm, rcpt)
+	var blocked bool
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts WHERE workspace_id = $1 AND email = $2 AND blocked)`,
+		wid, sender).Scan(&blocked); err != nil {
 		return err
 	}
 	if blocked {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "blocked_contact")
+	}
+	dup, taken, err := s.seenBefore(ctx, wid, inboundID, pm.MessageID, msgIDHdr, hash)
+	if err != nil {
+		return err
 	}
 	if dup {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "duplicate")
@@ -146,13 +186,26 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	for i := range atts {
 		atts[i].inline = atts[i].cid != "" && body.usedCIDs[atts[i].cid]
 	}
-	spam := dmarcFailed(pm)
-	suppressAuto := pm.header("X-Auto-Response-Suppress") != ""
+	// Nothing automatic answers automatic or list mail, a teammate's mail (so two
+	// addresses never reply to each other) or mail that failed authentication. A trusted
+	// form's mail is machine-sent by design and written for a person, so only an
+	// autoresponder or a loop marker stops an answer to its visitor.
+	automatic := automaticMail(pm, m.Email, null)
+	if formSender != "" {
+		automatic = autoresponse(pm, null)
+	}
+	noAuto := internal || authFailed || automatic || noReplySender(sender)
 
 	err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		match, err := s.findThread(ctx, tx, wid, m, pm, rcpt, sender)
 		if err != nil {
 			return err
+		}
+		if match != nil && internal {
+			// A teammate's mail threads only into a conversation they are the customer of.
+			if match, err = s.contactMatch(ctx, tx, wid, match, sender); err != nil {
+				return err
+			}
 		}
 		contactID, _, err := domain.UpsertContactByEmail(ctx, tx, wid, sender, senderName)
 		if err != nil {
@@ -180,13 +233,25 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			if subject = strings.Join(strings.Fields(subject), " "); subject == "" {
 				subject = "(no subject)"
 			}
-			ticket, err = domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: wid, Subject: subject, Channel: domain.ChannelEmail,
-				MailboxID: &m.ID, ContactID: &contactID, TeamID: m.TeamID, Custom: custom})
+			route, err := routing.Resolve(ctx, tx, routing.Input{WorkspaceID: wid, Channel: domain.ChannelEmail, BrandID: m.BrandID,
+				MailboxID: &m.ID, ReceivedAt: receivedAt, FromEmail: sender, Subject: subject, Body: body.text, ContactID: &contactID})
 			if err != nil {
 				return err
 			}
+			// Replies go out from the address the ticket arrived at.
+			ticket, err = domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: wid, Subject: subject, Channel: domain.ChannelEmail,
+				MailboxID: &m.ID, ContactID: &contactID, TeamID: route.TeamID, Routed: route.Routed, Custom: custom,
+				BrandID: &m.BrandID, OriginMailboxID: &m.ID, ReceivedAt: receivedAt})
+			if err != nil {
+				return err
+			}
+			if rule := route.RuleID(); rule != nil {
+				if err := routing.Count(ctx, tx, *rule); err != nil {
+					return err
+				}
+			}
 			created = true
-			if spam {
+			if authFailed {
 				if _, err := tx.Exec(ctx, `UPDATE tickets SET spam = true, updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, ticket.ID); err != nil {
 					return err
 				}
@@ -195,17 +260,31 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 				}
 			}
 		}
-		msgID := pm.MessageID
-		trigger := ""
-		if created {
-			trigger = jobs.TriggerTicketCreated
+		var msgID *string
+		if !taken {
+			// A Message-ID already held by a different message stays with that one.
+			msgID = &pm.MessageID
 		}
+		trigger := ""
+		switch {
+		case created:
+			trigger = jobs.TriggerTicketCreated
+		case authFailed:
+			trigger = "none" // no customer_replied automations for a sender that failed authentication
+		}
+		replyTo := pm.replyTo()
+		if formSender != "" {
+			replyTo = "" // the visitor it named is the sender
+		}
+		// A reply that failed sender authentication does not reopen the ticket
+		// (status_changed with reason "sender_unverified" records it).
 		msg, err := domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{
 			WorkspaceID: wid, TicketID: ticket.ID, Kind: "reply", Direction: "inbound", AuthorType: "contact",
 			AuthorContactID: &contactID, BodyHTML: body.html, BodyText: body.text, FullHTML: body.full,
 			Subject: pm.Subject, FromEmail: sender, FromName: displayname.Clean(senderName, displayname.Person),
-			To: pm.To, Cc: pm.Cc, EmailMessageID: &msgID, InReplyTo: pm.InReplyTo, References: pm.References,
-			InboundEmailID: &inboundID, AttachmentIDs: attIDs, Trigger: trigger,
+			To: pm.To, Cc: pm.Cc, EmailMessageID: msgID, InReplyTo: pm.InReplyTo, References: pm.References,
+			InboundEmailID: &inboundID, AttachmentIDs: attIDs, Trigger: trigger, MailboxID: &m.ID,
+			ReplyTo: replyTo, AuthFailed: authFailed, NoAutoReply: noAuto, FormSender: formSender, NoReopen: authFailed && !created,
 		})
 		if err != nil {
 			return err
@@ -214,12 +293,12 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			WHERE workspace_id = $1 AND id = $2`, wid, inboundID); err != nil {
 			return err
 		}
-		if !spam {
+		if !authFailed && !internal {
 			if err := s.queueAIAnswer(ctx, tx, m, ticket.ID, msg.ID, pm, sender); err != nil {
 				return err
 			}
 		}
-		if created && !spam && !suppressAuto {
+		if created && !noAuto {
 			return s.queueAutoReply(ctx, tx, m, ticket, sender, senderName)
 		}
 		return nil
@@ -232,6 +311,30 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 		return err
 	}
 	return nil
+}
+
+// seenBefore reports whether an inbound message was already taken in: the same message
+// (Message-ID and content) at any of the workspace's addresses, or mail we sent. taken
+// is set when a different message already holds its Message-ID.
+func (s *service) seenBefore(ctx context.Context, wid, inboundID uuid.UUID, msgID, msgIDHdr, hash string) (dup, taken bool, err error) {
+	var direction string
+	var existingHash *string
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT ms.direction, ie.content_hash FROM messages ms
+		LEFT JOIN inbound_emails ie ON ie.id = ms.inbound_email_id AND ie.workspace_id = ms.workspace_id
+		WHERE ms.workspace_id = $1 AND ms.email_message_id = $2`, wid, msgID).Scan(&direction, &existingHash)
+	switch {
+	case err == nil:
+		// Mail we sent, or the same message recorded before its content was fingerprinted.
+		if direction == "outbound" || existingHash == nil || *existingHash == "" || *existingHash == hash {
+			return true, true, nil
+		}
+		taken = true
+	case !db.IsNotFound(err):
+		return false, false, err
+	}
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM inbound_emails WHERE workspace_id = $1 AND id <> $2
+		AND message_id_hdr = $3 AND content_hash = $4 AND status = 'processed')`, wid, inboundID, msgIDHdr, hash).Scan(&dup)
+	return dup, taken, err
 }
 
 func (s *service) readObject(ctx context.Context, key string, limit int64) ([]byte, error) {
@@ -250,14 +353,101 @@ func (s *service) readObject(ctx context.Context, key string, limit int64) ([]by
 	return b, nil
 }
 
-// ownAddresses lists the workspace's mailbox addresses, for loop detection.
+// ownAddresses lists the workspace's mailbox addresses and aliases, for loop detection.
 func (s *service) ownAddresses(ctx context.Context, wid uuid.UUID) ([]string, error) {
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT lower(email::text) FROM mailboxes WHERE workspace_id = $1
-		UNION SELECT lower(config->>'oauth_email') FROM mailboxes WHERE workspace_id = $1 AND coalesce(config->>'oauth_email', '') <> ''`, wid)
+		UNION SELECT lower(config->>'oauth_email') FROM mailboxes WHERE workspace_id = $1 AND coalesce(config->>'oauth_email', '') <> ''
+		UNION SELECT lower(a) FROM mailboxes, unnest(aliases) a WHERE workspace_id = $1`, wid)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func slicesContainsFold(list []string, s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, a := range list {
+		if strings.EqualFold(a, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// ourLoop reports mail we sent coming back: every message we send carries its mailbox's
+// loop token in X-Loop, which a person's reply or forward does not carry but redirects and
+// automatic forwards keep. Mail naming one of the workspace's addresses there (as mail
+// sent before the token) counts too.
+func (s *service) ourLoop(ctx context.Context, wid uuid.UUID, pm *parsedMail, own []string) (bool, error) {
+	vals := pm.headerValues(loopHeader)
+	if len(vals) == 0 {
+		return false, nil
+	}
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id FROM mailboxes WHERE workspace_id = $1`, wid)
+	if err != nil {
+		return false, err
+	}
+	boxes, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return false, err
+	}
+	tokens := make([]string, 0, len(boxes))
+	for _, id := range boxes {
+		tokens = append(tokens, s.loopToken(id))
+	}
+	for _, v := range vals {
+		for _, a := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' || r == '<' || r == '>' }) {
+			if slicesContainsFold(own, a) || slicesContainsFold(tokens, a) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// receivedAddress is the exact address the mail was written to: the first of the
+// envelope recipient, Delivered-To, X-Original-To, To and Cc that is the mailbox's address
+// or one of its aliases, else the mailbox's address.
+func receivedAddress(m *mailboxRow, pm *parsedMail, rcpt string) string {
+	cands := []string{rcpt}
+	for _, h := range []string{"Delivered-To", "X-Original-To"} {
+		for _, v := range pm.headerValues(h) {
+			if a := looseAddrRe.FindString(v); a != "" {
+				cands = append(cands, a)
+			}
+		}
+	}
+	cands = append(cands, pm.To...)
+	cands = append(cands, pm.Cc...)
+	for _, a := range cands {
+		a = strings.ToLower(strings.Trim(strings.TrimSpace(a), "<>"))
+		if a == "" {
+			continue
+		}
+		if strings.EqualFold(a, m.Email) || m.alias(a) != "" {
+			return a
+		}
+	}
+	return strings.ToLower(m.Email)
+}
+
+// contactMatch keeps a thread match only when sender is the ticket's contact.
+func (s *service) contactMatch(ctx context.Context, tx pgx.Tx, wid uuid.UUID, t *threadMatch, sender string) (*threadMatch, error) {
+	var contactEmail *string
+	err := tx.QueryRow(ctx, `SELECT c.email FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
+		WHERE t.workspace_id = $1 AND t.id = $2`, wid, t.ticketID).Scan(&contactEmail)
+	if db.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if contactEmail == nil || !strings.EqualFold(*contactEmail, sender) {
+		return nil, nil
+	}
+	return t, nil
 }
 
 func (s *service) storeAttachments(ctx context.Context, wid uuid.UUID, pm *parsedMail) ([]preparedAttachment, error) {
@@ -355,18 +545,22 @@ func renderBody(pm *parsedMail, cidURLs map[string]string) renderedBody {
 	return out
 }
 
-// findThread matches an inbound message to a ticket: our own Message-IDs in its
-// References, then the "+t<n>" address tag, then a "[#n]" subject tag. The last two
-// are guessable, so they only match when the sender is the ticket's contact.
+// findThread matches an inbound message to a ticket, within the receiving workspace:
+// a Message-ID we stored in its References, then our own Message-ID format when it
+// proves itself (the message it names exists on that ticket, or the auto-reply id carries
+// a valid MAC), then the "+t<n>" address tag, then a "[#n]" subject tag. A ticket number
+// that is not proven is guessable, so it only matches when the sender is the ticket's
+// contact.
 func (s *service) findThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, m *mailboxRow, pm *parsedMail, rcpt, sender string) (*threadMatch, error) {
 	refs := append([]string{}, pm.References...)
 	if pm.InReplyTo != "" {
 		refs = append(refs, pm.InReplyTo)
 	}
+	var candidates []int64
 	if len(refs) > 0 {
 		var t threadMatch
 		err := tx.QueryRow(ctx, `SELECT t.id, t.number, t.status FROM messages msg
-			JOIN tickets t ON t.id = msg.ticket_id AND t.deleted_at IS NULL
+			JOIN tickets t ON t.id = msg.ticket_id AND t.workspace_id = msg.workspace_id AND t.deleted_at IS NULL
 			WHERE msg.workspace_id = $1 AND msg.email_message_id = ANY($2)
 			ORDER BY msg.created_at DESC LIMIT 1`, wid, refs).Scan(&t.ticketID, &t.number, &t.status)
 		if err == nil {
@@ -377,13 +571,18 @@ func (s *service) findThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, m *m
 		}
 		// Our own Message-ID format carries the ticket number (auto-replies are not
 		// stored as messages, and some providers re-stamp the id of what we sent).
-		for _, n := range ourTicketNumbers(refs) {
-			if t, err := s.ticketByNumber(ctx, tx, wid, n, ""); err != nil || t != nil {
+		for i := len(refs) - 1; i >= 0; i-- {
+			kind, id, n, ok := ourMessageID(refs[i])
+			if !ok {
+				continue
+			}
+			t, err := s.provenThread(ctx, tx, wid, kind, id, n)
+			if err != nil || t != nil {
 				return t, err
 			}
+			candidates = append(candidates, n)
 		}
 	}
-	var candidates []int64
 	addrs := append([]string{rcpt}, pm.To...)
 	addrs = append(addrs, pm.Cc...)
 	for _, h := range []string{"Delivered-To", "X-Original-To", "X-Forwarded-To"} {
@@ -409,11 +608,41 @@ func (s *service) findThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, m *m
 	return nil, nil
 }
 
+// provenThread returns the ticket our own Message-ID names when the id proves itself: an
+// "m_" id names a message of this workspace on ticket n, an "a_" id carries the MAC
+// autoMessageID made for this workspace and ticket n.
+func (s *service) provenThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, kind byte, id string, n int64) (*threadMatch, error) {
+	switch kind {
+	case 'm':
+		mid, err := uuid.Parse(id)
+		if err != nil {
+			return nil, nil
+		}
+		var t threadMatch
+		err = tx.QueryRow(ctx, `SELECT t.id, t.number, t.status FROM messages msg
+			JOIN tickets t ON t.id = msg.ticket_id AND t.workspace_id = msg.workspace_id AND t.deleted_at IS NULL
+			WHERE msg.workspace_id = $1 AND msg.id = $2 AND t.number = $3`, wid, mid, n).Scan(&t.ticketID, &t.number, &t.status)
+		if db.IsNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &t, nil
+	case 'a':
+		if s.verifyAutoID(wid, id, n) {
+			return s.ticketByNumber(ctx, tx, wid, n, "")
+		}
+	}
+	return nil, nil
+}
+
 // ticketByNumber loads a ticket by number; with sender set it must be the contact's.
 func (s *service) ticketByNumber(ctx context.Context, tx pgx.Tx, wid uuid.UUID, n int64, sender string) (*threadMatch, error) {
 	var t threadMatch
 	var contactEmail *string
-	err := tx.QueryRow(ctx, `SELECT t.id, t.number, t.status, c.email FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id
+	err := tx.QueryRow(ctx, `SELECT t.id, t.number, t.status, c.email FROM tickets t
+		LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.number = $2 AND t.deleted_at IS NULL`, wid, n).Scan(&t.ticketID, &t.number, &t.status, &contactEmail)
 	if db.IsNotFound(err) {
 		return nil, nil
@@ -427,16 +656,18 @@ func (s *service) ticketByNumber(ctx context.Context, tx pgx.Tx, wid uuid.UUID, 
 	return &t, nil
 }
 
-// recordBounce marks the outbound message a bounce refers to.
-func (s *service) recordBounce(ctx context.Context, wid uuid.UUID, pm *parsedMail, raw []byte) error {
+// recordBounce marks the outbound message a delivery report refers to. Only a report
+// with the null envelope sender reaches here, and it counts only for a message this
+// mailbox sent.
+func (s *service) recordBounce(ctx context.Context, wid, mailboxID uuid.UUID, pm *parsedMail, raw []byte) error {
 	refs := bounceRefs(pm, raw)
 	if len(refs) == 0 {
 		return nil
 	}
 	var msgIDs []uuid.UUID
 	for _, r := range refs {
-		if m := ourMsgIDRe.FindStringSubmatch(r); m != nil && strings.HasPrefix(r, "<m_") {
-			if id, err := uuid.Parse(m[1]); err == nil {
+		if kind, id, _, ok := ourMessageID(r); ok && kind == 'm' {
+			if id, err := uuid.Parse(id); err == nil {
 				msgIDs = append(msgIDs, id)
 			}
 		}
@@ -444,8 +675,9 @@ func (s *service) recordBounce(ctx context.Context, wid uuid.UUID, pm *parsedMai
 	detail := bounceDetail(raw)
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `UPDATE messages SET delivery_status = 'bounced', delivery_error = $4
-			WHERE workspace_id = $1 AND direction = 'outbound' AND (email_message_id = ANY($2) OR id = ANY($3))
-			RETURNING id, ticket_id`, wid, refs, msgIDs, detail)
+			WHERE workspace_id = $1 AND direction = 'outbound' AND mailbox_id = $5 AND delivery_status IN ('sent', 'pending')
+			AND (email_message_id = ANY($2) OR id = ANY($3))
+			RETURNING id, ticket_id`, wid, refs, msgIDs, detail, mailboxID)
 		if err != nil {
 			return err
 		}
@@ -462,7 +694,7 @@ func (s *service) recordBounce(ctx context.Context, wid uuid.UUID, pm *parsedMai
 			if err != nil {
 				return err
 			}
-			if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "message.updated",
+			if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "message.updated", TicketID: &h.ticket,
 				Data: map[string]any{"ticket_id": h.ticket, "message": msg}}); err != nil {
 				return err
 			}
@@ -471,17 +703,17 @@ func (s *service) recordBounce(ctx context.Context, wid uuid.UUID, pm *parsedMai
 	})
 }
 
-// queueAutoReply sends the mailbox auto-reply for a new ticket, at most once per
-// sender per window.
+// queueAutoReply sends the mailbox auto-reply for a new ticket, at most once per sender
+// and address per window, so writing to two addresses gets both.
 func (s *service) queueAutoReply(ctx context.Context, tx pgx.Tx, m *mailboxRow, t domain.Ticket, sender, senderName string) error {
 	if !m.AutoReplyEnabled || strings.TrimSpace(m.AutoReplyHTML) == "" {
 		return nil
 	}
 	var ok bool
-	err := tx.QueryRow(ctx, `INSERT INTO email_auto_replies (workspace_id, email) VALUES ($1, $2)
-		ON CONFLICT (workspace_id, email) DO UPDATE SET sent_at = now()
-		WHERE email_auto_replies.sent_at < now() - $3::interval RETURNING true`,
-		m.WorkspaceID, sender, fmt.Sprintf("%d seconds", int(autoReplyEvery.Seconds()))).Scan(&ok)
+	err := tx.QueryRow(ctx, `INSERT INTO email_auto_replies (workspace_id, mailbox_id, email) VALUES ($1, $2, $3)
+		ON CONFLICT (workspace_id, mailbox_id, email) DO UPDATE SET sent_at = now()
+		WHERE email_auto_replies.sent_at < now() - $4::interval RETURNING true`,
+		m.WorkspaceID, m.ID, sender, fmt.Sprintf("%d seconds", int(autoReplyEvery.Seconds()))).Scan(&ok)
 	if db.IsNotFound(err) {
 		return nil
 	}
@@ -492,7 +724,16 @@ func (s *service) queueAutoReply(ctx context.Context, tx pgx.Tx, m *mailboxRow, 
 	if name == "" {
 		name = displayname.FromEmail(sender)
 	}
-	vars := map[string]string{"ticket.number": itoa(t.Number), "ticket.subject": t.Subject, "contact.name": name}
+	names, err := loadSenderNames(ctx, tx, m.WorkspaceID, t.TeamID, t.BrandID)
+	if err != nil {
+		return err
+	}
+	names.mailbox = m.displayName()
+	addr := m.Email
+	if a := m.alias(t.ReceivedAt); a != "" {
+		addr = a
+	}
+	vars := templateVars(names, addr, t.Number, t.Subject, name)
 	htmlBody := fillTemplate(m.AutoReplyHTML, vars, true)
 	subject := strings.TrimSpace(fillTemplate(m.AutoReplySubject, vars, false))
 	if subject == "" {
@@ -505,7 +746,16 @@ func (s *service) queueAutoReply(ctx context.Context, tx pgx.Tx, m *mailboxRow, 
 	return err
 }
 
-// fillTemplate replaces {{ticket.number}}, {{ticket.subject}} and {{contact.name}}.
+// loadSenderNames reads the team and brand names a ticket's emails are signed with.
+func loadSenderNames(ctx context.Context, q db.Querier, wid uuid.UUID, teamID *uuid.UUID, brandID uuid.UUID) (senderNames, error) {
+	var n senderNames
+	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT name FROM teams WHERE workspace_id = $1 AND id = $2), ''),
+		COALESCE((SELECT name FROM brands WHERE workspace_id = $1 AND id = $3), '')`, wid, teamID, brandID).Scan(&n.team, &n.brand)
+	n.team, n.brand = displayname.Displayable(n.team), displayname.Displayable(n.brand)
+	return n, err
+}
+
+// fillTemplate replaces the template variables in s (templateVars), escaping them for HTML when escape is set.
 func fillTemplate(s string, vars map[string]string, escape bool) string {
 	for k, v := range vars {
 		if escape {

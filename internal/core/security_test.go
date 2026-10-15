@@ -176,7 +176,7 @@ func TestTOTPReplay(t *testing.T) {
 func TestRefreshRotation(t *testing.T) {
 	e := newEnv(t)
 	u, _ := e.signup("refresh")
-	first := u.cookie(RefreshCookie)
+	name, first := u.accountCookie()
 	if first == "" {
 		t.Fatal("no refresh cookie")
 	}
@@ -184,7 +184,7 @@ func TestRefreshRotation(t *testing.T) {
 	if r.Status != 200 || r.str("access_token") == "" {
 		t.Fatalf("refresh: %d %s", r.Status, r.Raw)
 	}
-	second := u.cookie(RefreshCookie)
+	second := u.cookie(name)
 	if second == "" || second == first {
 		t.Fatal("refresh token did not rotate")
 	}
@@ -196,7 +196,7 @@ func TestRefreshRotation(t *testing.T) {
 	}
 	// Replaying the rotated token inside the grace window is refused without ending the session.
 	old := e.client()
-	old.jar.SetCookies(mustURL(e.srv.URL+"/v1/auth"), []*http.Cookie{{Name: RefreshCookie, Value: first, Path: "/v1/auth"}})
+	old.jar.SetCookies(mustURL(e.srv.URL+"/v1/auth"), []*http.Cookie{{Name: name, Value: first, Path: "/v1/auth"}})
 	if r := old.do("POST", "/v1/auth/refresh", nil); r.Status != 401 {
 		t.Fatalf("rotated token accepted: %d", r.Status)
 	}
@@ -204,13 +204,13 @@ func TestRefreshRotation(t *testing.T) {
 		t.Fatalf("session ended by in-grace replay: %d %s", r.Status, r.Raw)
 	}
 	// After the grace window, a replay of a rotated token ends the session.
-	third := u.cookie(RefreshCookie)
+	third := u.cookie(name)
 	if _, err := e.d.DB.Pool.Exec(context.Background(), `UPDATE sessions SET rotated_at = now() - interval '5 minutes' WHERE refresh_hash = $1`,
 		crypto.HashToken(third)); err != nil {
 		t.Fatal(err)
 	}
 	old2 := e.client()
-	old2.jar.SetCookies(mustURL(e.srv.URL+"/v1/auth"), []*http.Cookie{{Name: RefreshCookie, Value: second, Path: "/v1/auth"}})
+	old2.jar.SetCookies(mustURL(e.srv.URL+"/v1/auth"), []*http.Cookie{{Name: name, Value: second, Path: "/v1/auth"}})
 	if r := old2.do("POST", "/v1/auth/refresh", nil); r.Status != 401 {
 		t.Fatalf("stale rotated token accepted: %d", r.Status)
 	}

@@ -1,11 +1,11 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { CircleCheck, CircleDashed, Clock, Inbox, Layers, ShieldAlert, User } from "lucide-react";
+import { CircleCheck, CircleDashed, Clock, Inbox, Layers, ShieldAlert, User, Users } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Ticket } from "@/lib/api/types";
-import { folderById, listQuery, type FolderId, type InboxSearch } from "@/lib/folders";
+import { folderById, listQuery, teamQuery, type FolderId, type InboxSearch } from "@/lib/folders";
 import { q } from "@/lib/queries";
 import { useHotkeys } from "@/lib/hotkeys";
 import { realtime } from "@/lib/realtime/manager";
@@ -22,12 +22,14 @@ import { BulkBar } from "@/components/tickets/BulkBar";
 import { ListToolbar, type InboxLayout } from "@/components/tickets/ListToolbar";
 import { TicketPreview } from "@/components/tickets/TicketPreview";
 import { SummaryStrip } from "@/components/tickets/SummaryStrip";
-import { WaitingBanner } from "@/components/tickets/waiting";
+import { WaitingBanner, chatWait, useAgentOn } from "@/components/tickets/waiting";
 import { useUpdateTicket } from "@/components/tickets/useTicketActions";
 import { intent } from "@/components/tickets/motion";
 import { focusField, missingForSolve, useTicketFields } from "@/components/tickets/fields";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { useDocumentTitle } from "@/app/RootLayout";
+import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
+import { TeamTabs } from "./TeamTabs";
 
 const TicketDetail = lazy(() => import("@/components/tickets/detail/TicketDetail"));
 
@@ -120,7 +122,7 @@ function DetailFallback() {
 
 export default function InboxPage() {
   const { t: tr } = useTranslation("inbox");
-  const params = useParams({ strict: false }) as { folder?: string; viewId?: string; ticketId?: string };
+  const params = useParams({ strict: false }) as { folder?: string; viewId?: string; teamId?: string; ticketId?: string };
   const search = useSearch({ strict: false }) as InboxSearch;
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -131,17 +133,42 @@ export default function InboxPage() {
   const { data: counts } = useQuery(q.counts());
   const me = useSession((s) => s.user);
 
+  const teamsCtx = useTeamsCtx();
   const folder = params.folder ? folderById(params.folder) : undefined;
   const view = params.viewId ? views?.find((v) => v.id === params.viewId) : undefined;
-  const base = folder ? folder.query : { view_id: params.viewId };
+  // A team inbox: one team, or "mine" for every team the caller is on.
+  const teamId = params.teamId;
+  const team = teamId && teamId !== "mine" ? teamsCtx.team(teamId) : undefined;
+  const tab = search.tab ?? "unassigned";
+  const base = folder ? folder.query : teamId ? teamQuery(teamId, tab) : { view_id: params.viewId };
   const query = useMemo(() => listQuery(base, search), [JSON.stringify(base), JSON.stringify(search)]); // eslint-disable-line react-hooks/exhaustive-deps
   const listKey = JSON.stringify(query);
-  const title = folder?.label ?? view?.name ?? tr("list.view");
-  const count = folder ? (counts ? folder.count(counts) : null) : params.viewId ? counts?.views?.[params.viewId] : null;
+  const teamCounts = teamId ? (teamId === "mine" ? counts?.my_teams : counts?.teams?.[teamId]) : undefined;
+  const title = folder?.label ?? view?.name ?? (teamId ? (teamId === "mine" ? tr("teams.myTeams") : (team?.name ?? tr("teams.team"))) : tr("list.view"));
+  const count = folder
+    ? counts
+      ? folder.count(counts)
+      : null
+    : params.viewId
+      ? counts?.views?.[params.viewId]
+      : teamCounts && (tab === "unassigned" || tab === "open")
+        ? teamCounts[tab]
+        : null;
   useDocumentTitle(params.ticketId ? null : title);
 
   const list = useInfiniteQuery(q.tickets(query));
-  const tickets = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
+  const agentOn = useAgentOn();
+  // Unassigned in its default order puts visitors waiting in live chat first, longest
+  // wait first: they are on the page now, and email can wait a minute.
+  const pinChats = params.folder === "unassigned" && !search.sort;
+  const tickets = useMemo(() => {
+    const all = list.data?.pages.flatMap((p) => p.data) ?? [];
+    if (!pinChats) return all;
+    const now = Date.now();
+    const waits = new Map(all.map((t) => [t.id, chatWait(t, agentOn, now)]));
+    const waiting = all.filter((t) => waits.get(t.id)).sort((a, b) => waits.get(a.id)!.since - waits.get(b.id)!.since);
+    return waiting.length ? [...waiting, ...all.filter((t) => !waits.get(t.id))] : all;
+  }, [list.data, pinChats, agentOn]);
   const openId = params.ticketId;
   // Rows newer than this arrived live; they get a short tint.
   const shownAt = useMemo(() => Date.now(), [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -172,7 +199,7 @@ export default function InboxPage() {
   useEffect(() => {
     setSelected(new Set());
     setFocusIdx(0);
-  }, [params.folder, params.viewId]);
+  }, [params.folder, params.viewId, params.teamId, tab]);
 
   // Drop selections that left the list (solved elsewhere, deleted), and keep
   // the focus in range when rows leave.
@@ -204,25 +231,23 @@ export default function InboxPage() {
   }, [tickets]);
   useEffect(() => () => realtime()?.setWatched([]), []);
 
-  const open = useCallback(
-    (t: Ticket | undefined) => {
-      if (!t) return;
-      if (params.viewId)
-        void navigate({ to: "/views/$viewId/{-$ticketId}", params: { viewId: params.viewId, ticketId: t.id }, search: (s) => s });
-      else void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: params.folder!, ticketId: t.id }, search: (s) => s });
+  // The same list page serves folders, views and team inboxes.
+  const go = useCallback(
+    (ticketId: string | undefined, search: InboxSearch | true, replace?: boolean) => {
+      if (params.viewId) void navigate({ to: "/views/$viewId/{-$ticketId}", params: { viewId: params.viewId, ticketId }, search, replace });
+      else if (params.teamId) void navigate({ to: "/teams/$teamId/{-$ticketId}", params: { teamId: params.teamId, ticketId }, search, replace });
+      else void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: params.folder!, ticketId }, search, replace });
     },
-    [navigate, params.folder, params.viewId],
+    [navigate, params.folder, params.viewId, params.teamId],
   );
-
-  const close = useCallback(() => {
-    if (params.viewId) void navigate({ to: "/views/$viewId/{-$ticketId}", params: { viewId: params.viewId, ticketId: undefined }, search: (s) => s });
-    else void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: params.folder!, ticketId: undefined }, search: (s) => s });
-  }, [navigate, params.folder, params.viewId]);
+  const open = useCallback((t: Ticket | undefined) => t && go(t.id, true), [go]);
+  const close = useCallback(() => go(undefined, true), [go]);
 
   const setSearch = (s: InboxSearch) => {
-    const clean = Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined && v !== ""));
-    if (params.viewId) void navigate({ to: "/views/$viewId/{-$ticketId}", params: { viewId: params.viewId, ticketId: params.ticketId }, search: clean, replace: true });
-    else void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: params.folder!, ticketId: params.ticketId }, search: clean, replace: true });
+    const clean = Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined && v !== "")) as InboxSearch;
+    // Filters keep the team inbox's tab.
+    if (params.teamId && search.tab && !("tab" in s)) clean.tab = search.tab;
+    go(params.ticketId, clean, true);
   };
 
   const toggle = useCallback(
@@ -364,7 +389,7 @@ export default function InboxPage() {
     [focusIdx, focusIdx + 1].forEach((i) => tickets[i] && prefetch(tickets[i]));
   }, [previewing, focusIdx, tickets, prefetch]);
 
-  const fid = folder?.id ?? "view";
+  const fid = folder?.id ?? (teamId ? "team" : "view");
   const selecting = selected.size > 0;
   const idx = tickets.findIndex((t) => t.id === openId || String(t.number) === openId);
   const focusedTicket = tickets[focusIdx];
@@ -398,8 +423,18 @@ export default function InboxPage() {
       >
         <ListToolbar
           title={title}
-          icon={folder ? folderIcon[folder.id] : <Layers />}
+          icon={folder ? folderIcon[folder.id] : team ? <TeamDot team={team} className="size-2.5" /> : teamId ? <Users /> : <Layers />}
           count={count}
+          inTeam={!!teamId}
+          below={
+            teamId ? (
+              <TeamTabs
+                tab={tab}
+                counts={teamCounts}
+                onTab={(next) => go(params.ticketId, { ...search, tab: next === "unassigned" ? undefined : next }, true)}
+              />
+            ) : undefined
+          }
           search={search}
           onSearch={setSearch}
           searchRef={searchRef}
@@ -420,7 +455,7 @@ export default function InboxPage() {
               action={<Button onClick={() => void list.refetch()}>{tr("error.retry")}</Button>}
             />
           ) : !tickets.length ? (
-            <InboxEmpty folder={fid} counts={counts} search={search} onSearch={setSearch} viewId={params.viewId} />
+            <InboxEmpty folder={fid} counts={counts} search={search} onSearch={setSearch} viewId={params.viewId} teamName={teamId ? title : undefined} tab={tab} />
           ) : (
             <div ref={rowsRef} className="relative shrink-0">
               <FocusGlide listRef={rowsRef} rows={tickets} id={focusedTicket?.id} active={!!focusedTicket && (focusedTicket.id === openId || String(focusedTicket.number) === openId)} />

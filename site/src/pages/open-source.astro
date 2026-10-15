@@ -1,10 +1,12 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import PageHero from '../components/PageHero.astro';
 import Icon from '../components/Icon.astro';
-import CTA from '../components/CTA.astro';
-import { LINKS } from '../lib/site';
+import RepoView from '../components/open-source/RepoView.astro';
+import OsHead from '../components/open-source/OsHead.astro';
+import SameCode from '../components/open-source/SameCode.astro';
+import { LINKS, SITE } from '../lib/site';
 import { getRepoStars } from '../lib/github';
+import type { IconName } from '../lib/icons';
 
 const stars = await getRepoStars();
 
@@ -15,6 +17,19 @@ const reasons = [
   ['scale', 'One product, not two', 'There is no community edition with the good parts removed. The cloud runs the code in the repository.'],
 ] as const;
 
+const parts: { path: string; icon: IconName; title: string; body: string; tech: string }[] = [
+  { path: 'cmd/opendesk, internal/', icon: 'server', title: 'API and workers', body: 'The REST API and background jobs in one binary, with NATS embedded for self-hosters.', tech: 'Go' },
+  { path: 'realtime/', icon: 'radio', title: 'Realtime gateway', body: 'Channels, presence and live updates for every open tab. It holds no database.', tech: 'Elixir and Phoenix' },
+  { path: 'web/', icon: 'monitor', title: 'Web app and help center', body: 'The app your team works in, and the help center your customers search.', tech: 'React' },
+  { path: 'web/widget/', icon: 'chat', title: 'Chat widget', body: 'The embeddable chat bundle for your site, in 13 languages.', tech: 'TypeScript' },
+  { path: 'desktop/', icon: 'laptop', title: 'Desktop', body: 'Loads your instance’s web app, with notifications, a dock badge and deep links.', tech: 'Electron' },
+  { path: 'ios/', icon: 'smartphone', title: 'iPhone', body: 'A native app with push, for Cloud or any self-hosted instance.', tech: 'SwiftUI' },
+  { path: 'contracts/', icon: 'fileText', title: 'Contracts', body: 'The API, events, realtime protocol and tokens, written down before they are built.', tech: 'Markdown' },
+  { path: 'migrations/', icon: 'database', title: 'Migrations', body: 'SQL migrations embedded in the binary and applied at boot.', tech: 'SQL' },
+  { path: 'deploy/', icon: 'cloud', title: 'Deploy', body: 'Dockerfiles, the self-host bundle with Caddy, Terraform and the Cloudflare Email Worker.', tech: 'Docker and Terraform' },
+  { path: 'docs/, site/', icon: 'book', title: 'Docs and this site', body: 'docs.opendesk.sh and opendesk.sh, in the same repository as the code.', tech: 'Astro' },
+];
+
 const stack = [
   ['Go', 'API and background workers, one binary'],
   ['Elixir and Phoenix', 'Realtime gateway, channels and presence'],
@@ -23,81 +38,179 @@ const stack = [
   ['NATS', 'Event bus, embedded or clustered'],
   ['Caddy', 'HTTPS for self-hosted installs'],
 ];
----
-<Layout title="Open source" description="opendesk is open source under the Apache-2.0 license. The hosted service and the self-hosted build are the same code, developed in public on GitHub.">
-  <PageHero label="Open source" title="Built in the open.<br/>Licensed Apache-2.0." lede="opendesk is developed in public. The code that runs opendesk Cloud is the code in the repository, and you can run, change and ship it under a permissive license.">
-    <div class="mt-10 flex flex-wrap gap-3">
-      <a href={LINKS.github} class="btn btn-primary btn-lg"><Icon name="github" size={17} />opendesk/opendesk{stars && <span class="ml-1 inline-flex items-center gap-1 rounded-full bg-bg/15 px-2 py-0.5 font-mono text-[12px]"><Icon name="star" size={11} />{stars}</span>}</a>
-      <a href={`${LINKS.docs}/contributing/`} class="btn btn-ghost btn-lg">How to contribute</a>
-    </div>
-  </PageHero>
 
-  <section class="container-page py-20 md:py-28">
-    <div class="grid gap-4 md:grid-cols-2">
+const license: { title: string; tone: 'green' | 'blue' | 'red'; icon: IconName; items: string[] }[] = [
+  { title: 'Permissions', tone: 'green', icon: 'check', items: ['Commercial use', 'Modification', 'Distribution', 'Patent grant', 'Private use'] },
+  { title: 'Conditions', tone: 'blue', icon: 'info', items: ['License and copyright notice', 'State changes'] },
+  { title: 'Limitations', tone: 'red', icon: 'x', items: ['Trademark use', 'Liability', 'Warranty'] },
+];
+
+const local = [
+  ['cp .env.example .env', ''],
+  ['make dev-db', 'Postgres on localhost:55432'],
+  ['make api', 'the Go API and workers, with embedded NATS on :4222'],
+  ['make realtime', 'the Elixir gateway on :4000'],
+  ['make web', 'the web app on :5173'],
+];
+
+const conventions = ['gofmt, go vet and go test', 'Writes publish events in the same transaction', 'Stable error codes, never raw errors', 'One-line commit messages', 'Sentence case, plain words'];
+
+const sourceJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareSourceCode',
+  name: 'opendesk',
+  description: SITE.description,
+  codeRepository: LINKS.github,
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  programmingLanguage: ['Go', 'Elixir', 'TypeScript', 'Swift'],
+};
+---
+<Layout cta={{ painting: 'autumn-hills', secondary: { href: 'https://github.com/useopendesk/opendesk', label: 'Star it on GitHub' } }} title="Open source" description="opendesk is open source under the Apache-2.0 license. The hosted service and the self-hosted build are the same code, developed in public on GitHub." jsonLd={sourceJsonLd}>
+  <!-- Hero: the repository -->
+  <section class="graph border-b border-line">
+    <div class="container-page pb-14 pt-12 md:pb-20 md:pt-16">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[12px] text-muted">
+        <Icon name="github" size={14} class="text-fg" /><span>useopendesk</span><span class="text-subtle">/</span><span class="text-fg">opendesk</span>
+        <span class="h-px w-6 bg-line-strong"></span><span>Apache-2.0</span><span class="hidden text-subtle sm:inline">·</span><span class="hidden sm:inline">main</span>
+      </div>
+      <div class="mt-8 grid gap-8 lg:grid-cols-[1.7fr_1fr] lg:items-end">
+        <h1 class="text-[44px] font-semibold leading-[0.98] tracking-[-0.05em] text-fg sm:text-[64px] lg:text-[80px]">Built in the open.<br />Licensed Apache&#8209;2.0.</h1>
+        <div class="lg:pb-3">
+          <p class="max-w-[460px] text-[16.5px] leading-relaxed text-muted md:text-[18px]">opendesk is developed in public. The code that runs opendesk Cloud is the code in the repository, and you can run, change and ship it under a permissive license.</p>
+          <div class="mt-6 flex flex-wrap gap-3">
+            <a href={LINKS.github} class="btn btn-lg btn-primary"><Icon name="github" size={16} />useopendesk/opendesk{stars && <span class="ml-1 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 font-mono text-[12px] dark:bg-black/10"><Icon name="star" size={11} />{stars}</span>}</a>
+            <a href={`${LINKS.docs}/contributing/`} class="btn btn-lg btn-ghost"><Icon name="gitPullRequest" size={15} />How to contribute</a>
+          </div>
+        </div>
+      </div>
+      <div class="mt-12 md:mt-16"><RepoView /></div>
+    </div>
+  </section>
+
+  <!-- 01 Why -->
+  <section id="why" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <OsHead n="01" title="Why open source" lede="Support software sits between you and every customer. It should be something you can check, move and fix yourself." />
+    <ul class="mt-10 grid overflow-hidden rounded-[14px] bg-bg ring-1 ring-line md:mt-12 md:grid-cols-2">
       {reasons.map(([icon, t, d], i) => (
-        <div class="reveal card p-7 md:p-8" style={`--d:${(i % 2) * 60}ms`}>
-          <span class="flex size-9 items-center justify-center rounded-[5px] bg-fg text-bg"><Icon name={icon} size={17} /></span>
-          <h2 class="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-fg">{t}</h2>
-          <p class="mt-2.5 text-[15px] leading-relaxed text-muted">{d}</p>
+        <li class={`flex gap-5 p-6 md:p-8 ${i > 0 ? 'border-t border-line' : ''} ${i === 1 ? 'md:border-t-0 md:border-l' : ''} ${i === 3 ? 'md:border-l' : ''}`}>
+          <span class="mt-0.5 font-mono text-[13px] text-[var(--c-green)]">[x]</span>
+          <div>
+            <h3 class="flex items-center gap-2.5 text-[18px] font-semibold tracking-[-0.02em] text-fg"><Icon name={icon} size={16} class="hidden shrink-0 text-subtle sm:block" />{t}</h3>
+            <p class="mt-2 max-w-[52ch] text-[15px] leading-relaxed text-muted">{d}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <!-- 02 Same code -->
+  <section id="same-code" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <OsHead n="02" title="The cloud is the self&#8209;host, plus configuration" lede="opendesk Cloud and your server run the same build. What differs is a handful of settings: billing turns on with a Stripe key, AI with a provider key. Without them, every workspace is self-hosted with no limits.">
+      <a href={`${LINKS.docs}/cloud/architecture/`} class="link-arrow shrink-0">How the cloud is laid out<Icon name="arrowUpRight" size={14} /></a>
+    </OsHead>
+    <div class="mt-10 md:mt-12"><SameCode /></div>
+  </section>
+
+  <!-- 03 The repository -->
+  <section id="repository" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <OsHead n="03" title="What is in the repository" lede="One repository holds the server, the realtime gateway, every client, the docs and the deploy files. The contracts between them are written down before they are built.">
+      <a href={LINKS.github} class="link-arrow shrink-0">Browse it on GitHub<Icon name="arrowUpRight" size={14} /></a>
+    </OsHead>
+    <div class="mt-10 overflow-hidden rounded-[14px] bg-bg ring-1 ring-line md:mt-12">
+      <div class="hidden grid-cols-[230px_1fr_200px] gap-6 border-b border-line bg-surface-2 px-6 py-3 font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle md:grid">
+        <span>Path</span><span>What it is</span><span class="text-right">Built with</span>
+      </div>
+      {parts.map((p, i) => (
+        <div class={`grid gap-1.5 px-5 py-4 transition-colors hover:bg-surface-2 md:grid-cols-[230px_1fr_200px] md:items-center md:gap-6 md:px-6 ${i ? 'border-t border-line' : ''}`}>
+          <span class="flex items-center gap-2.5 font-mono text-[13px] text-fg"><Icon name="folder" size={14} class="shrink-0 text-[#54aeff]" />{p.path}</span>
+          <span class="text-[14.5px] text-body"><b class="font-medium text-fg">{p.title}.</b> <span class="text-muted">{p.body}</span></span>
+          <span class="font-mono text-[11.5px] text-subtle md:text-right">{p.tech}</span>
         </div>
       ))}
     </div>
-  </section>
-
-  <section class="border-y border-line bg-surface-2">
-    <div class="container-page grid gap-12 py-20 md:py-28 lg:grid-cols-2 lg:items-start">
-      <div class="reveal">
-        <div class="label">License</div>
-        <h2 class="h-section mt-4">Apache-2.0, without asterisks.</h2>
-        <p class="lede mt-5 text-[17px] leading-[1.65]">Use opendesk commercially, modify it, run it for your clients, and keep your changes private if you want to. The license includes an explicit patent grant. Keep the notices, and say what you changed.</p>
-        <a href={LINKS.license} class="mt-7 inline-flex items-center gap-1.5 text-[14.5px] font-medium text-fg hover:underline underline-offset-4">Read the license<Icon name="arrowUpRight" size={14} /></a>
+    <div class="mt-3 rounded-[14px] border border-dashed border-line-strong p-6 md:p-7">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        <h3 class="font-mono text-[13px] text-fg"><span class="text-subtle">### </span>Boring parts, on purpose</h3>
+        <span class="font-mono text-[12px] text-muted">No Redis, no Kafka.</span>
       </div>
-      <div class="reveal grid grid-cols-1 gap-px overflow-hidden rounded-[8px] border border-line bg-line sm:grid-cols-2" style="--d:80ms">
-        {[
-          ['Commercial use', true], ['Modification', true], ['Distribution', true], ['Patent grant', true], ['Private use', true], ['Trademark use', false],
-        ].map(([k, ok]) => (
-          <div class="flex items-center gap-3 bg-bg px-5 py-4 text-[14.5px]">
-            <span class={`flex size-5 items-center justify-center rounded-full ${ok ? 'bg-fg text-bg' : 'ring-1 ring-line text-subtle'}`}><Icon name={ok ? 'check' : 'x'} size={12} stroke={2.25} /></span>
-            <span class={ok ? 'text-fg' : 'text-muted'}>{k}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <section class="container-page py-20 md:py-28">
-    <div class="grid gap-12 lg:grid-cols-[0.8fr_1.2fr]">
-      <div class="reveal">
-        <div class="label">Stack</div>
-        <h2 class="h-section mt-4">Boring parts, on purpose.</h2>
-        <p class="lede mt-5 text-[17px] leading-[1.65]">Proven tools, few moving parts. Contracts between the pieces live in the repository, so the API, events and realtime protocol are written down before they are built.</p>
-      </div>
-      <dl class="reveal divide-y divide-line border-y border-line" style="--d:80ms">
+      <dl class="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-6">
         {stack.map(([k, v]) => (
-          <div class="flex items-baseline justify-between gap-6 py-4">
-            <dt class="text-[15.5px] font-medium text-fg">{k}</dt>
-            <dd class="text-right text-[14.5px] text-muted">{v}</dd>
+          <div>
+            <dt class="text-[14.5px] font-medium text-fg">{k}</dt>
+            <dd class="mt-1 text-[13px] leading-snug text-muted">{v}</dd>
           </div>
         ))}
       </dl>
     </div>
   </section>
 
-  <section class="container-page">
-    <div class="reveal grid gap-4 md:grid-cols-3">
-      {[
-        ['bug', 'Report a bug', 'Open an issue with steps to reproduce and your version.', LINKS.githubIssues],
-        ['gitBranch', 'Send a change', 'Read the contributing guide, then open a pull request.', `${LINKS.docs}/contributing/`],
-        ['shield', 'Report a vulnerability', 'Privately, to security@opendesk.sh. Never in a public issue.', '/security/#disclosure'],
-      ].map(([icon, t, d, href]) => (
-        <a href={href} class="group card p-6 transition-colors hover:border-fg/25">
-          <Icon name={icon as 'bug'} size={18} class="text-fg" />
-          <div class="mt-4 flex items-center gap-1.5 text-[16px] font-medium text-fg">{t}<Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></div>
-          <p class="mt-1.5 text-[14.5px] text-muted">{d}</p>
-        </a>
-      ))}
+  <!-- 04 License -->
+  <section id="license" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <OsHead n="04" title="Apache&#8209;2.0, without asterisks" lede="Use opendesk commercially, modify it, run it for your clients, and keep your changes private if you want to. The license includes an explicit patent grant. Keep the notices, and say what you changed.">
+      <a href={LINKS.license} class="link-arrow shrink-0">Read the license<Icon name="arrowUpRight" size={14} /></a>
+    </OsHead>
+    <div class="mt-10 overflow-hidden rounded-[14px] bg-bg ring-1 ring-line md:mt-12">
+      <div class="flex flex-wrap items-center gap-3 border-b border-line bg-surface-2 px-5 py-3 md:px-6">
+        <Icon name="scale" size={15} class="text-fg" />
+        <span class="font-mono text-[13px] text-fg">LICENSE</span>
+        <span class="text-[13px] text-muted">Apache License, Version 2.0</span>
+        <span class="ml-auto font-mono text-[11.5px] text-subtle">No license key, no separate commercial edition</span>
+      </div>
+      <div class="grid md:grid-cols-3">
+        {license.map((g, i) => (
+          <div class={`p-6 md:p-7 ${i ? 'border-t border-line md:border-l md:border-t-0' : ''}`}>
+            <div class="font-mono text-[11px] uppercase tracking-[0.1em] text-subtle">{g.title}</div>
+            <ul class="mt-4 space-y-3 text-[14.5px]">
+              {g.items.map((it) => (
+                <li class="flex items-center gap-3">
+                  <span class="flex size-5 shrink-0 items-center justify-center rounded-full" style={`background:color-mix(in oklab, var(--c-${g.tone}) 14%, transparent);color:var(--c-${g.tone})`}><Icon name={g.icon} size={11} stroke={2.5} /></span>
+                  <span class="text-fg">{it}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   </section>
 
-  <CTA />
+  <!-- 05 Contributing -->
+  <section id="contributing" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <OsHead n="05" title="Contributing" lede="Issues, discussions and pull requests are welcome. Read AGENTS.md and the files in contracts/ before changing an interface between parts.">
+      <a href={`${LINKS.docs}/contributing/`} class="link-arrow shrink-0">Read the contributing guide<Icon name="arrowUpRight" size={14} /></a>
+    </OsHead>
+    <div class="mt-10 grid gap-3 md:mt-12 lg:grid-cols-12">
+      <div class="flex flex-col overflow-hidden rounded-[14px] bg-[#0a0a0a] ring-1 ring-white/10 lg:col-span-7">
+        <div class="flex h-10 items-center gap-1.5 border-b border-white/10 px-4"><i class="size-2.5 rounded-full bg-[#ff5f57]"></i><i class="size-2.5 rounded-full bg-[#febc2e]"></i><i class="size-2.5 rounded-full bg-[#28c840]"></i><span class="ml-2 font-mono text-[11px] text-white/45">Run it locally</span></div>
+        <div class="overflow-x-auto px-5 py-5 font-mono text-[12.5px] leading-[2] md:px-6">
+          {local.map(([c, note]) => (
+            <div class="whitespace-nowrap"><span class="text-white/40">$ </span><span class="text-white">{c}</span>{note && <span class="text-white/40">  # {note}</span>}</div>
+          ))}
+        </div>
+        <div class="mt-auto border-t border-white/10 px-5 py-4 md:px-6">
+          <div class="font-mono text-[10.5px] uppercase tracking-[0.1em] text-white/45">You need Go, Node.js with pnpm, Elixir and Docker</div>
+          <ul class="mt-3 flex flex-wrap gap-2">
+            {conventions.map((c) => <li class="flex h-7 items-center rounded-full bg-white/[0.07] px-3 text-[12px] text-white/75 ring-1 ring-white/10">{c}</li>)}
+          </ul>
+        </div>
+      </div>
+      <div class="grid overflow-hidden rounded-[14px] bg-bg ring-1 ring-line lg:col-span-5">
+        {[
+          ['bug', 'Report a bug', 'Open an issue with steps to reproduce and your version.', LINKS.githubIssues],
+          ['gitPullRequest', 'Send a change', 'Read the contributing guide, then open a pull request.', `${LINKS.docs}/contributing/`],
+          ['shield', 'Report a vulnerability', 'Privately, to team@opendesk.sh. Never in a public issue.', '/security/#disclosure'],
+        ].map(([icon, t, d, href], i) => (
+          <a href={href} class={`group flex items-start gap-4 p-6 transition-colors hover:bg-surface-2 ${i ? 'border-t border-line' : ''}`}>
+            <span class="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-surface text-fg ring-1 ring-line"><Icon name={icon as IconName} size={16} /></span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[16px] font-semibold tracking-[-0.015em] text-fg">{t}</div>
+              <p class="mt-1 text-[14px] leading-relaxed text-muted">{d}</p>
+            </div>
+            <Icon name="arrowRight" size={15} class="mt-1 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
 </Layout>

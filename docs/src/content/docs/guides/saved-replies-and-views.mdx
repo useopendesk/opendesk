@@ -1,0 +1,144 @@
+---
+title: Saved replies and views
+description: Reuse answers to common questions, and save ticket filters as views, for everyone or for one team.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+A **saved reply** is an answer your team sends often, ready to insert with a slash. A **view** is a saved set of ticket filters that sits in the sidebar with a live count. Both can belong to the whole workspace or to one [team](/guides/teams-and-roles/), so the Billing team gets its own refund answer and its own queue without cluttering everyone else's.
+
+<Screenshot src="/guides/replies-views/replies" alt="The Saved replies settings page: the list of replies ringed as 1, the Title and Shortcut fields ringed as 2, the Offered on picker ringed as 3, and the reply text editor ringed as 4" />
+
+<Legend>
+
+1. **Replies**: every saved reply, with its shortcut and, for a team's reply, the team. Search by title or shortcut.
+2. **Title** and **Shortcut**: the shortcut is what you type after <kbd>/</kbd> in the composer. It is optional, and two replies cannot share one.
+3. **Offered on**: **Everyone**, or one team. A team's reply is offered only on that team's tickets.
+4. **Reply text**: the body, with bold, italic, links and lists. You can edit it in the composer before sending.
+
+</Legend>
+
+## Create a saved reply
+
+<Steps>
+<Step title="Open Settings, then Saved replies">
+
+**Saved replies** is in the **Inbox** group of the settings menu. Click **New reply**.
+
+</Step>
+<Step title="Give it a title, a shortcut and the text">
+
+A short title says what the reply is for, like "Ask for steps to reproduce". Add a shortcut, like `repro`, if you want to insert it by typing. Write the reply text, then click **Save**.
+
+</Step>
+<Step title="Choose who it is offered to">
+
+Leave **Offered on** at **Everyone**, or pick a team. A private team (shown with a lock) keeps its replies to its own members.
+
+<Screenshot src="/guides/replies-views/offered-on" alt="The Offered on picker ringed as 1, open with its list of choices ringed as 2: Everyone, Support, Billing, Legal and Security with a lock, and Partnerships" />
+
+</Step>
+</Steps>
+
+<Callout type="tip" title="Write replies that age well">
+
+Start with the answer, keep it short, and link to a [help article](/guides/knowledge-base/) for the detail. Then the article is the one place to update when something changes.
+
+</Callout>
+
+## Insert a saved reply
+
+<Steps>
+<Step title="Type a slash in the reply box">
+
+Type <kbd>/</kbd> in a reply or a note, at the start or after a space. The list shows the replies offered on this ticket; keep typing a title or shortcut to narrow it, then press <kbd>enter</kbd>.
+
+<Screenshot src="/guides/replies-views/composer-slash" alt="The reply box with a slash typed and the Saved replies list ringed as 1, showing each reply's title and shortcut" />
+
+</Step>
+<Step title="Or pick one from the toolbar">
+
+The **Saved replies** button at the bottom of the reply box opens the same list with a search box.
+
+<Screenshot src="/guides/replies-views/composer-button" alt="The Saved replies button in the reply box toolbar ringed as 1, and the picker it opens ringed as 2, with a search box and the list of replies" />
+
+</Step>
+</Steps>
+
+The reply lands in the editor, where you can change it before sending. On a ticket of the Billing team you see the replies for everyone and Billing's own; Support's replies are not offered there. [Ollie's drafts](/guides/ollie/) use the same rule: only the replies the composer offers on that ticket.
+
+## Views
+
+A view is a saved filter, like "urgent and open" or "waiting on billing". It appears in the sidebar under **Views** with a live count, in the order set in **Settings**, **Views**.
+
+<Screenshot src="/guides/replies-views/views" alt="The Views settings page: the New view button ringed as 1, the Shared badge ringed as 2, the Only you badge ringed as 3, a Legal team chip with a lock ringed as 4, and the switch that shows a view to everyone ringed as 5" />
+
+<Legend>
+
+1. **New view**: create a view.
+2. **Shared**: everyone in the workspace sees this view in their sidebar.
+3. **Only you**: a personal view, in your sidebar only.
+4. **A team**: the view is shared with the team's members. A lock means the team is private.
+5. **Show to everyone**: turns one of your views into a shared one, or back. Team views have no switch: they are shared with their team.
+
+</Legend>
+
+<Steps>
+<Step title="Click New view and name it">
+
+Give the view a short name, like "Billing queue". It is the label in the sidebar.
+
+</Step>
+<Step title="Choose who sees it, and set the filters">
+
+Under **Who sees this view**, pick **Only me**, **A team** (then the team) or **Everyone**. Under **Show tickets where**, set any of the filters. Fields you leave on "Any" do not filter.
+
+<Screenshot src="/guides/replies-views/view-editor" alt="The New view drawer: Who sees this view ringed as 1, with A team chosen and Support picked, the filter rows from Status to Keyword ringed as 2, and the Create view button ringed as 3" />
+
+</Step>
+<Step title="Find it in the sidebar">
+
+Click **Create view**. The view appears under **Views** in the sidebar, with the number of tickets that match, kept live as tickets change.
+
+<Screenshot src="/guides/replies-views/sidebar" alt="The inbox sidebar with the Views list ringed as 1: Urgent, Billing queue, Waiting on engineering and Legal requests due, each with a count" />
+
+</Step>
+</Steps>
+
+<Callout type="note" title="Who can change a view">
+
+Agents make views for themselves. Admins make views for everyone. A team's views are made by admins and the team's leads; the team's other members see them but do not change them.
+
+</Callout>
+
+<Fold>
+
+## Filters a view can use
+
+- **Status**, **Priority** and **Severity**: one or more of each. Severity can include **No severity**.
+- **Assignee**: **The person viewing** (so one view works as "mine" for everyone), **Unassigned**, or a member.
+- **Team**, **Mailbox**, **Tag** and **Channel**.
+- **Keyword**: matches the subject, the contact or the text.
+
+Views made through the API can also filter on [custom fields](/guides/labels-and-custom-fields/#custom-fields). A view never shows tickets you cannot see: tickets of a [private team](/guides/teams-and-roles/#private-teams) you are not on are left out of its list and its count.
+
+</Fold>
+
+<Fold>
+
+## Order and defaults
+
+Drag views on the **Views** settings page to set their order, or focus the handle and hold <kbd>alt</kbd> with the arrow keys. The order there is the order in the sidebar. New workspaces start with a few views that you can edit or delete. Deleting a view removes it from every sidebar; the tickets are not affected.
+
+</Fold>
+
+## Related
+
+- [Inbox and tickets](/guides/inbox-and-tickets/)
+- [Teams and roles](/guides/teams-and-roles/)
+- [Saved replies and views API](/api/resources/organization/)

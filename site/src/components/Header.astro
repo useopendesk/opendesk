@@ -31,10 +31,10 @@ const productActive = path.startsWith('/features/');
           <Icon name="chevronDown" size={13} class="mega-caret text-subtle transition-transform duration-200" />
         </button>
         <div id="mega-product" class="mega-panel absolute left-0 top-[calc(100%+12px)] w-[760px] opacity-0 pointer-events-none" data-mega-panel>
-          <div class="modules grid-cols-3 !rounded-[8px] !border-line-strong !bg-line">
+          <div class="grid grid-cols-3 gap-1 rounded-[16px] bg-bg p-2 ring-1 ring-line shadow-[0_24px_60px_-24px_rgb(0_0_0/0.25)]">
             {PRODUCT_NAV.map((it, i) => (
-              <a href={it.href} class="mega-item group flex items-start gap-3 p-4 transition-colors hover:!bg-surface-2" style={`--i:${i}`}>
-                <Icon name={it.icon} size={16} class="mt-0.5 shrink-0 text-subtle transition-colors group-hover:text-fg" />
+              <a href={it.href} class="mega-item group flex items-start gap-3 rounded-[10px] p-3.5 transition-colors hover:bg-surface-2" style={`--i:${i}`}>
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-surface-2 text-subtle ring-1 ring-line transition-colors group-hover:bg-bg group-hover:text-fg"><Icon name={it.icon} size={15} /></span>
                 <span class="min-w-0">
                   <span class="block text-[14px] font-medium text-fg">{it.title}</span>
                   <span class="mt-0.5 block text-[12.5px] leading-snug text-muted">{it.desc}</span>
@@ -62,6 +62,14 @@ const productActive = path.startsWith('/features/');
         <Icon name="github" size={15} />
         {stars ? <span class="font-mono text-[12px] tabular-nums">{stars}</span> : <span>GitHub</span>}
       </a>
+      <a
+        href={LINKS.discord}
+        class="hidden md:inline-flex size-8 items-center justify-center rounded-[5px] text-muted transition-colors hover:bg-surface hover:text-fg"
+        aria-label="opendesk on Discord"
+        title="Discord"
+      >
+        <Icon name="discord" size={16} />
+      </a>
       <span class="mx-1.5 hidden md:block h-4 w-px bg-line"></span>
       <a href={LINKS.login} class="hidden sm:inline-flex h-8 items-center rounded-[5px] px-2.5 text-[14px] text-muted transition-colors hover:bg-surface hover:text-fg">Log in</a>
       <a href={LINKS.signup} class="btn btn-primary btn-sm ml-1">Start free</a>
@@ -75,9 +83,9 @@ const productActive = path.startsWith('/features/');
   <div id="mobile-nav" class="mobile-menu lg:hidden fixed inset-x-0 top-[60px] bottom-0 overflow-y-auto bg-bg" data-menu>
     <nav class="container-page flex flex-col pb-10 pt-6" aria-label="Mobile">
       <div class="label mb-3">Product</div>
-      <div class="modules grid-cols-2">
+      <div class="grid grid-cols-2 gap-2">
         {PRODUCT_NAV.map((it) => (
-          <a href={it.href} class="flex items-center gap-2.5 px-3.5 py-3.5 text-[14.5px] text-fg active:!bg-surface">
+          <a href={it.href} class="flex items-center gap-2.5 rounded-[12px] bg-surface-2 px-3.5 py-3.5 text-[14.5px] text-fg ring-1 ring-line active:bg-surface">
             <Icon name={it.icon} size={15} class="shrink-0 text-subtle" />{it.title}
           </a>
         ))}
@@ -87,6 +95,7 @@ const productActive = path.startsWith('/features/');
           <a href={n.href} class="flex items-center justify-between border-b border-line py-4 text-[17px] font-medium tracking-[-0.01em] text-fg">{n.label}<Icon name="arrowRight" size={16} class="text-subtle" /></a>
         ))}
         <a href={LINKS.github} class="flex items-center justify-between border-b border-line py-4 text-[17px] font-medium tracking-[-0.01em] text-fg">GitHub<Icon name="github" size={16} class="text-subtle" /></a>
+        <a href={LINKS.discord} class="flex items-center justify-between border-b border-line py-4 text-[17px] font-medium tracking-[-0.01em] text-fg">Discord<Icon name="discord" size={16} class="text-subtle" /></a>
       </div>
       <div class="mt-6 grid grid-cols-2 gap-2">
         <a href={LINKS.login} class="btn btn-ghost btn-lg">Log in</a>
@@ -100,7 +109,7 @@ const productActive = path.startsWith('/features/');
   .mega-panel { transform: translateY(-4px); transition: opacity 180ms ease, transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
   [data-mega].is-open .mega-panel { opacity: 1; pointer-events: auto; transform: none; }
   [data-mega].is-open .mega-caret { transform: rotate(180deg); }
-  /* Cells settle in one after another, like modules snapping into a grid. */
+  /* Items settle in one after another as the menu opens. */
   .mega-item { opacity: 0; transform: translateY(4px); transition: opacity 220ms ease, transform 320ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms ease; transition-delay: calc(var(--i) * 18ms); }
   [data-mega].is-open .mega-item { opacity: 1; transform: none; }
   .mobile-menu { visibility: hidden; opacity: 0; transform: translateY(-6px); transition: opacity 200ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 300ms; }

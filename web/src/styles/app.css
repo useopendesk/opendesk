@@ -5,6 +5,19 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
+ * The desktop app (src/lib/desktop.ts sets <html data-desktop>). `desktop` is any
+ * platform; `desktop-glass` the frameless, translucent windows (macOS vibrancy,
+ * Windows mica); `desktop-mac` and `desktop-win` one each. Linux keeps its
+ * native title bar and the opaque chrome.
+ */
+@custom-variant desktop (&:where([data-desktop] *));
+@custom-variant desktop-glass (&:where([data-desktop="darwin"] *, [data-desktop="win32"] *));
+@custom-variant desktop-mac (&:where([data-desktop="darwin"] *));
+/* The desktop window is full screen (the macOS traffic lights are hidden). */
+@custom-variant window-full (&:where([data-fullscreen] *));
+@custom-variant desktop-win (&:where([data-desktop="win32"] *));
+
+/*
  * opendesk theme. Monochrome: paper, mist, ash, smoke, graphite, charcoal,
  * coal, ink. Status hues exist only for small semantic dots and badges.
  * Every colour is a variable so the light and dark themes swap in one place.
@@ -16,6 +29,14 @@
   --chrome-hover: rgb(10 10 10 / 0.045);
   --chrome-active: rgb(10 10 10 / 0.075);
   --chrome-line: rgb(10 10 10 / 0.07);
+  /* The window frame behind the sidebar and header: the chrome grey, or a light
+     tint over the translucent desktop window. */
+  --frame: var(--chrome);
+  /* The work panel's edge where it sits inset in the frame. */
+  --panel-line: var(--line);
+  /* Room kept clear for the window controls (traffic lights, caption buttons). */
+  --window-inset-left: 0px;
+  --window-inset-right: 0px;
   --canvas: #f5f5f5;
   --surface: #ffffff;
   --raised: #ffffff;
@@ -110,19 +131,19 @@
 
 .dark {
   color-scheme: dark;
-  --chrome: #080808;
-  --chrome-hover: rgb(255 255 255 / 0.045);
-  --chrome-active: rgb(255 255 255 / 0.08);
-  --chrome-line: rgb(255 255 255 / 0.07);
-  --canvas: #080808;
-  --surface: #111111;
-  --raised: #191919;
-  --sunken: #0d0d0d;
-  --hover: #1a1a1a;
-  --active: #232323;
-  --line: #262626;
-  --line-soft: #1c1c1c;
-  --line-strong: #353535;
+  --chrome: #141416;
+  --chrome-hover: rgb(255 255 255 / 0.05);
+  --chrome-active: rgb(255 255 255 / 0.085);
+  --chrome-line: rgb(255 255 255 / 0.075);
+  --canvas: #141416;
+  --surface: #1b1c1f;
+  --raised: #232427;
+  --sunken: #17181a;
+  --hover: #232427;
+  --active: #2b2c30;
+  --line: #2e2f33;
+  --line-soft: #252629;
+  --line-strong: #3c3d42;
   --fg: #f7f7f7;
   --fg-2: #c4c4c4;
   --fg-3: #8f8f8f;
@@ -130,8 +151,8 @@
   --inverse: #f7f7f7;
   --inverse-hover: #e4e4e4;
   --inverse-fg: #0a0a0a;
-  --note: #151515;
-  --note-line: #3a3a3a;
+  --note: #1f2023;
+  --note-line: #45464b;
   --focus: rgb(255 255 255 / 0.16);
   --focus-line: #6b6b6b;
   --ok: #22c55e;
@@ -206,6 +227,31 @@
   --tone-rose: color-mix(in oklab, var(--tone-rose-solid) 82%, var(--fg));
 }
 
+/* Desktop app: the frame turns translucent so vibrancy or mica shows through,
+   with a tint that keeps the sidebar legible; the work panel sits inset. */
+[data-desktop] {
+  --panel-line: rgb(10 10 10 / 0.09);
+}
+[data-desktop].dark {
+  --panel-line: rgb(255 255 255 / 0.075);
+}
+[data-desktop="darwin"],
+[data-desktop="win32"] {
+  --frame: rgb(246 246 246 / 0.5);
+}
+[data-desktop="darwin"].dark,
+[data-desktop="win32"].dark {
+  --frame: rgb(20 20 22 / 0.42);
+}
+[data-desktop="darwin"] {
+  /* The traffic lights: 18px in, three 12px buttons 8px apart, then air. */
+  --window-inset-left: 86px;
+}
+[data-desktop="win32"] {
+  /* The caption buttons of the title bar overlay. */
+  --window-inset-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
 @theme inline {
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, monospace;
@@ -214,6 +260,8 @@
   --color-chrome-hover: var(--chrome-hover);
   --color-chrome-active: var(--chrome-active);
   --color-chrome-line: var(--chrome-line);
+  --color-frame: var(--frame);
+  --color-panel-line: var(--panel-line);
   --color-focus-line: var(--focus-line);
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -274,9 +322,9 @@
   --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
   /* A customer waiting in live chat with nobody on it: a slow red wash (under one cycle a
      second, far from flashing), a glowing edge and a ping on the timer dot. */
-  --animate-urgent-wash: urgent-wash 1.6s ease-in-out infinite;
-  --animate-urgent-edge: urgent-edge 1.6s ease-in-out infinite;
-  --animate-urgent-ping: urgent-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-urgent-wash: urgent-wash 2.8s ease-in-out infinite;
+  --animate-urgent-edge: urgent-edge 2.8s ease-in-out infinite;
+  --animate-urgent-ping: urgent-ping 2.8s cubic-bezier(0, 0, 0.2, 1) infinite;
   --animate-module-snap: module-snap 220ms var(--ease-out-expo) both;
   --animate-pop-out: pop-out 120ms ease-in forwards;
   --animate-dialog-out: dialog-out 140ms ease-in forwards;
@@ -458,17 +506,18 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
+/* A slow breath rather than a blink: the tint never leaves, it only deepens a little. */
 @keyframes urgent-wash {
-  0%, 100% { background-color: color-mix(in oklab, var(--tone-red-solid) 5%, transparent); }
-  50% { background-color: color-mix(in oklab, var(--tone-red-solid) 17%, transparent); }
+  0%, 100% { background-color: color-mix(in oklab, var(--tone-red-solid) 6%, transparent); }
+  50% { background-color: color-mix(in oklab, var(--tone-red-solid) 11%, transparent); }
 }
 @keyframes urgent-edge {
-  0%, 100% { opacity: 0.55; box-shadow: 0 0 0 0 transparent; }
-  50% { opacity: 1; box-shadow: 0 0 10px 1px color-mix(in oklab, var(--tone-red-solid) 55%, transparent); }
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 @keyframes urgent-ping {
-  0% { transform: scale(1); opacity: 0.7; }
-  75%, 100% { transform: scale(2.6); opacity: 0; }
+  0% { transform: scale(1); opacity: 0.5; }
+  70%, 100% { transform: scale(2.2); opacity: 0; }
 }
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
@@ -491,6 +540,23 @@
     line-height: 20px;
     background: var(--canvas);
     min-height: 100dvh;
+  }
+  /* The translucent desktop window shows through the page. */
+  [data-desktop="darwin"],
+  [data-desktop="win32"],
+  [data-desktop="darwin"] body,
+  [data-desktop="win32"] body {
+    background: transparent;
+  }
+  /* Frameless desktop windows move by their top strips; what is clickable in them stays clickable. */
+  [data-desktop="darwin"] .window-drag,
+  [data-desktop="win32"] .window-drag {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  [data-desktop="darwin"] .window-drag :is(a, button, input, textarea, select, label, [role="button"], [role="combobox"], [role="menu"], [tabindex]),
+  [data-desktop="win32"] .window-drag :is(a, button, input, textarea, select, label, [role="button"], [role="combobox"], [role="menu"], [tabindex]) {
+    -webkit-app-region: no-drag;
   }
   ::selection {
     background: color-mix(in srgb, var(--fg) 14%, transparent);

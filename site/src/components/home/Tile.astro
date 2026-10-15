@@ -1,0 +1,39 @@
+---
+/**
+ * One bento tile: the words on top, then the scene in an inset frame, either
+ * over a painting or on the plain grey the app's chrome uses.
+ */
+import Backdrop from './Backdrop.astro';
+import Icon from '../Icon.astro';
+import type { IconName } from '../../lib/icons';
+
+interface Props {
+  title: string;
+  body: string;
+  icon?: IconName;
+  href?: string;
+  photo?: string;
+  /** Grid placement, e.g. "lg:col-span-7". */
+  class?: string;
+  /** Frame skin when there is no painting. */
+  skin?: 'plain' | 'graph' | 'violet';
+}
+const { title, body, icon, href, photo, class: className = '', skin = 'plain' } = Astro.props;
+const frame = photo ? '' : { plain: 'bg-surface', graph: 'graph', violet: 'tile-violet' }[skin];
+const Tag = href ? 'a' : 'div';
+---
+<Tag href={href} class={`tile group relative flex flex-col rounded-[18px] bg-bg p-2 ring-1 ring-line ${className}`}>
+  <div class="flex items-start gap-4 px-4 pb-5 pt-4 md:px-5 md:pt-5">
+    <div class="min-w-0">
+      <h3 class="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.02em] text-fg">
+        {icon && <Icon name={icon} size={16} class="text-subtle" />}{title}
+      </h3>
+      <p class="mt-1.5 max-w-[46ch] text-[14.5px] leading-relaxed text-muted">{body}</p>
+    </div>
+    {href && <span class="ml-auto mt-0.5 hidden size-7 shrink-0 items-center justify-center rounded-full text-subtle ring-1 ring-line transition-all group-hover:bg-fg group-hover:text-bg group-hover:ring-fg sm:inline-flex"><Icon name="arrowRight" size={13} /></span>}
+  </div>
+  <div class={`tile-frame relative flex flex-1 flex-col justify-center overflow-hidden rounded-[12px] ${frame}`}>
+    {photo && <Backdrop name={photo} sizes="(min-width: 1024px) 50vw, 100vw" class="absolute inset-0 h-full w-full transition-transform duration-[1400ms] ease-out group-hover:scale-[1.035]" />}
+    <div class="relative"><slot /></div>
+  </div>
+</Tag>

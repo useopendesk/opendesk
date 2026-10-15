@@ -105,6 +105,7 @@ type env struct {
 	*hdtest.Env
 	M  *model
 	WS hdtest.WS
+	S  *Service
 }
 
 func newEnv(t *testing.T, billing bool) *env {
@@ -127,10 +128,11 @@ func newEnv(t *testing.T, billing bool) *env {
 	core.Register(&d, api, r)
 	helpdesk.Register(&d, api, r)
 	integrations.Register(&d, api, r)
-	New(&d, svc, api.Adapter()).register(api)
+	as := New(&d, svc, api.Adapter())
+	as.register(api)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
-	e := &env{Env: &hdtest.Env{T: t, D: &d, Srv: srv, Ctx: context.Background()}, M: m}
+	e := &env{Env: &hdtest.Env{T: t, D: &d, Srv: srv, Ctx: context.Background()}, M: m, S: as}
 	e.WS = e.NewWorkspace()
 	return e
 }
@@ -269,7 +271,7 @@ func TestReadToolsAndContainment(t *testing.T) {
 	}
 	// Usage rows hold counts only.
 	var n int
-	e.Scalar(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'assistant' AND millicredits = 2000`, &n, e.WS.ID)
+	e.Scalar(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'assistant' AND micro_usd = 20000`, &n, e.WS.ID)
 	if n != 2 {
 		t.Fatalf("usage rows %d", n)
 	}
@@ -456,16 +458,16 @@ func TestBulkIsCappedAndExact(t *testing.T) {
 	}
 }
 
-func TestOffAndCredits(t *testing.T) {
+func TestOffAndBalance(t *testing.T) {
 	e := newEnv(t, true)
 	agent := e.WS.Agent.As(e.WS)
 	sid := e.session(agent)
-	// Credits used up: refused before the model is called.
-	e.Exec(`INSERT INTO ai_credits (workspace_id, included_used_milli, period_start) VALUES ($1, 1000000000, date_trunc('month', now() AT TIME ZONE 'utc'))
-		ON CONFLICT (workspace_id) DO UPDATE SET included_used_milli = 1000000000`, e.WS.ID)
+	// AI balance used up: refused before the model is called.
+	e.Exec(`INSERT INTO ai_balances (workspace_id, included_used_micro_usd, period_start) VALUES ($1, 10000000000, date_trunc('month', now() AT TIME ZONE 'utc'))
+		ON CONFLICT (workspace_id) DO UPDATE SET included_used_micro_usd = 10000000000`, e.WS.ID)
 	st, _, body := e.stream("/v1/assistant/sessions/"+sid+"/messages", agent, map[string]any{"text": "Hi"})
-	if st != 402 || !strings.Contains(body, "no_credits") {
-		t.Fatalf("credits: %d %s", st, body)
+	if st != 402 || !strings.Contains(body, "ai_balance_empty") {
+		t.Fatalf("balance: %d %s", st, body)
 	}
 	e.Exec(`UPDATE workspaces SET settings = jsonb_set(settings, '{ai}', '{"assistant": false}') WHERE id = $1`, e.WS.ID)
 	e.Do("GET", "/v1/assistant/sessions", agent, nil).Want(t, 403)
@@ -484,5 +486,64 @@ func TestTips(t *testing.T) {
 	}
 	if !keys["unassigned_old"] || !keys["sla_breached"] {
 		t.Fatalf("tips %+v", out.Tips)
+	}
+}
+
+func TestTipsLeaveOutPrivateTeams(t *testing.T) {
+	e := newEnv(t, false)
+	e.Exec(`INSERT INTO brands (workspace_id, name, slug, is_default) SELECT w.id, w.name, w.slug, true FROM workspaces w
+		WHERE w.id = $1 AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.workspace_id = w.id AND b.is_default)`, e.WS.ID)
+	team := ids.New()
+	e.Exec(`INSERT INTO teams (id, workspace_id, name, private) VALUES ($1, $2, 'Security', true)`, team, e.WS.ID)
+	e.Exec(`INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member')`, team, e.WS.Admin.ID)
+	tk := e.ticket("Old one", "help")
+	e.Exec(`UPDATE tickets SET created_at = now() - interval '2 days', resolution_due_at = now() - interval '1 hour',
+		sla_policy_id = NULL, team_id = $2 WHERE id = $1`, tk.ID, team)
+	tips := func(a hdtest.Auth) map[string]int {
+		var out TipList
+		e.Do("GET", "/v1/assistant/tips", a, nil).Want(t, 200).JSON(t, &out)
+		got := map[string]int{}
+		for _, tp := range out.Tips {
+			got[tp.Key] = tp.Count
+		}
+		return got
+	}
+	if got := tips(e.WS.Agent.As(e.WS)); got["sla_breached"] != 0 || got["unassigned_old"] != 0 {
+		t.Fatalf("an agent off the team was tipped about its ticket: %v", got)
+	}
+	if got := tips(e.WS.Admin.As(e.WS)); got["sla_breached"] != 1 || got["unassigned_old"] != 1 {
+		t.Fatalf("member tips %v", got)
+	}
+}
+
+// The team's workload counts only the tickets the caller may see.
+func TestListTeamWorkloadLeavesOutPrivateTeams(t *testing.T) {
+	e := newEnv(t, false)
+	team := ids.New()
+	e.Exec(`INSERT INTO teams (id, workspace_id, name, private) VALUES ($1, $2, 'Security', true)`, team, e.WS.ID)
+	e.Exec(`INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member'), ($1, $3, 'member')`, team, e.WS.Admin.ID, e.WS.Owner.ID)
+	for i := 0; i < 3; i++ {
+		tk := e.ticket("Incident", "help")
+		e.Exec(`UPDATE tickets SET team_id = $2, assignee_id = $3, priority = 'urgent' WHERE id = $1`, tk.ID, team, e.WS.Admin.ID)
+	}
+	load := func(u hdtest.User, role auth.Role) string {
+		p := &auth.Principal{Kind: auth.KindUser, WorkspaceID: e.WS.ID, UserID: u.ID, Role: role}
+		out, err := listTeam(e.Ctx, e.S.newRun(e.Ctx, p, nil), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(out.Content, "\n") {
+			if strings.Contains(line, e.WS.Admin.Name) {
+				return line
+			}
+		}
+		t.Fatalf("no line for the admin: %s", out.Content)
+		return ""
+	}
+	if line := load(e.WS.Agent, auth.RoleAgent); !strings.Contains(line, "0 open") || !strings.Contains(line, "0 urgent") {
+		t.Fatalf("an agent off the team counted its tickets: %s", line)
+	}
+	if line := load(e.WS.Owner, auth.RoleOwner); !strings.Contains(line, "3 open") || !strings.Contains(line, "3 urgent") {
+		t.Fatalf("a member's view: %s", line)
 	}
 }

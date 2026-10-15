@@ -1,5 +1,5 @@
 // "Draft article from tickets" (contracts/ai.md, POST /v1/kb/articles/ai/draft,
-// 5 credits). Pick conversations and/or describe a topic; the draft is handed
+// about $0.05 on the default model). Pick conversations and/or describe a topic; the draft is handed
 // back to the editor, never saved here. Progress shows as task rows adapted
 // from Beautiful UI (MIT, see web/THIRD_PARTY_NOTICES.md and ./ui/TaskRows).
 
@@ -15,7 +15,7 @@ import { StatusIcon } from "@/components/tickets/bits";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isPlanLimit } from "@/lib/api/client";
 import type { KBArticleDraft, Ticket } from "@/lib/api/types";
-import { AiIcon, useCreditLabel } from "./bits";
+import { AiIcon, useCostLabel } from "./bits";
 import { TaskRows, type TaskRow, type TaskStatus } from "./ui/TaskRows";
 
 /** The server drafts from at most 10 tickets. */
@@ -34,7 +34,7 @@ export function KbDraftDialog({
 }) {
   const { t } = useTranslation("ai");
   const { t: tc } = useTranslation();
-  const credits = useCreditLabel()("kb_draft");
+  const cost = useCostLabel()("kb_draft");
   const [picked, setPicked] = useState<Ticket[]>(initialTickets);
   const [topic, setTopic] = useState("");
   const [query, setQuery] = useState("");
@@ -113,7 +113,7 @@ export function KbDraftDialog({
           </Button>
           <Button variant="primary" onClick={submit} loading={draft.isPending} icon={<AiIcon />}>
             {draft.isPending ? t("kb_draft.generating") : t("kb_draft.generate")}
-            {credits && !draft.isPending && <span className="mono ml-1 text-[10.5px] opacity-60">{credits}</span>}
+            {cost && !draft.isPending && <span className="mono ml-1 text-[10.5px] opacity-60">{cost}</span>}
           </Button>
         </>
       }

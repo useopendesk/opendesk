@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
@@ -44,6 +46,10 @@ type createMailboxInput struct {
 		AutoReplyEnabled bool          `json:"auto_reply_enabled,omitempty"`
 		AutoReplySubject string        `json:"auto_reply_subject,omitempty" maxLength:"200"`
 		AutoReplyHTML    string        `json:"auto_reply_html,omitempty"`
+		BrandID          *uuid.UUID    `json:"brand_id,omitempty" doc:"The brand the address belongs to; default: the default brand"`
+		Aliases          []string      `json:"aliases,omitempty" maxItems:"20" doc:"Other addresses that deliver into this mailbox"`
+		FromNameFormat   string        `json:"from_name_format,omitempty" maxLength:"200" doc:"{agent}, {agent_first}, {team}, {brand}, {mailbox}; default \"{agent} at {mailbox}\""`
+		Verify           bool          `json:"verify,omitempty" doc:"Sign in to the IMAP and SMTP servers first; a refusal is 422 mailbox_connection_failed and nothing is saved"`
 	}
 }
 
@@ -78,23 +84,21 @@ type updateMailboxInput struct {
 		AIAnswers             *bool   `json:"ai_answers,omitempty" doc:"Ollie answers emails to this mailbox; needs AI on"`
 		AIAnswersMode         *string `json:"ai_answers_mode,omitempty" enum:"draft,send" doc:"draft: a suggested reply a teammate sends; send: Ollie replies"`
 		AIAnswersOutsideHours *bool   `json:"ai_answers_outside_hours,omitempty" doc:"Only outside business hours (while business hours are on)"`
+		// Addresses and brands (contracts/teams.md).
+		BrandID        *string   `json:"brand_id,omitempty" doc:"Move the address to another brand of the workspace"`
+		Aliases        *[]string `json:"aliases,omitempty" maxItems:"20" doc:"Replaces the aliases"`
+		FromNameFormat *string   `json:"from_name_format,omitempty" maxLength:"200" doc:"\"\" resets to \"{agent} at {mailbox}\""`
+		// Website contact forms whose authenticated mail is from the visitor in Reply-To.
+		TrustedFormSenders *[]string `json:"trusted_form_senders,omitempty" maxItems:"50" doc:"Replaces the list: email addresses or @domain entries"`
+		Verify             bool      `json:"verify,omitempty" doc:"When the IMAP or SMTP settings, a password or the way replies are sent change, sign in to the changed servers first; a refusal is 422 mailbox_connection_failed and nothing is saved"`
+
+		// The bot the AI agent answers as here (contracts/bots.md).
+		BotID bots.Assignment `json:"bot_id,omitempty" doc:"A bot of the workspace, or null for the default bot"`
 	}
 }
 
 type idInput struct {
 	ID string `path:"id"`
-}
-
-type mailboxTestResult struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error"`
-}
-
-type mailboxTestOutput struct {
-	Body struct {
-		Inbound  mailboxTestResult `json:"inbound"`
-		Outbound mailboxTestResult `json:"outbound"`
-	}
 }
 
 func parseID(s string) (uuid.UUID, error) {
@@ -182,9 +186,16 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			m.Name, m.Email, m.DisplayName = b.Name, b.Email, b.DisplayName
 			m.InboundKind, m.OutboundKind, m.Config, m.TeamID = b.InboundKind, b.OutboundKind, b.Config, b.TeamID
 			m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML = b.SignatureHTML, b.AutoReplyEnabled, b.AutoReplySubject, b.AutoReplyHTML
+			m.Aliases, m.FromNameFormat = b.Aliases, b.FromNameFormat
+			if b.BrandID != nil {
+				m.BrandID = *b.BrandID
+			}
 			m.Status = "active"
 			creds := credentials{Password: b.Password, SMTPPassword: b.SMTPPassword}
 			if err := s.validateMailbox(m, creds); err != nil {
+				return nil, err
+			}
+			if err := s.beforeCreate(ctx, m, &creds, b.Verify); err != nil {
 				return nil, err
 			}
 			sealed, err := s.sealCreds(creds)
@@ -193,6 +204,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				if err := checkTeam(ctx, tx, p.WorkspaceID, m.TeamID); err != nil {
+					return err
+				}
+				if err := checkAddressing(ctx, tx, m); err != nil {
 					return err
 				}
 				if err := s.d.Plan.CheckMailbox(ctx, tx, p.WorkspaceID); err != nil {
@@ -235,6 +249,14 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			// The sign-in check runs before the transaction: it can take as long as a
+			// slow server, and no row stays locked meanwhile.
+			var verified verifiedPatch
+			if in.Body.Verify {
+				if verified, err = s.verifyPatch(ctx, p.WorkspaceID, id, in); err != nil {
+					return nil, err
+				}
+			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				m, err := scanMailbox(tx.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, p.WorkspaceID, id))
 				if err != nil {
@@ -245,13 +267,30 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					return err
 				}
 				changes, resetSync := applyPatch(m, &creds, in)
+				if in.Body.BotID.Set {
+					bot, err := bots.ParseRef(ctx, tx, p.WorkspaceID, in.Body.BotID.Value)
+					if err != nil {
+						return err
+					}
+					if !bots.Same(bot, m.BotID) {
+						m.BotID = bot
+						changes = append(changes, "bot_id")
+					}
+				}
 				if len(changes) == 0 {
 					return nil
 				}
 				if err := s.validateMailbox(m, creds); err != nil {
 					return err
 				}
+				prepareMailbox(m, &creds, in.Body.Password != nil || in.Body.SMTPPassword != nil)
+				if verified.smtpPort != 0 && m.OutboundKind == OutboundSMTP && strings.EqualFold(m.Config.SMTPHost, verified.smtpHost) {
+					m.Config.SMTPPort, m.Config.SMTPTLS = verified.smtpPort, TLSStart
+				}
 				if err := checkTeam(ctx, tx, p.WorkspaceID, m.TeamID); err != nil {
+					return err
+				}
+				if err := checkAddressing(ctx, tx, m); err != nil {
 					return err
 				}
 				if m.AIAnswers && contains(changes, "ai_answers") {
@@ -273,11 +312,12 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					imap_uid_validity = CASE WHEN $16 THEN 0 ELSE imap_uid_validity END,
 					imap_last_uid = CASE WHEN $16 THEN 0 ELSE imap_last_uid END,
 					ai_answers = $17, ai_answers_mode = $18, ai_answers_outside_hours = $19,
+					brand_id = $20, aliases = $21, from_name_format = $22, trusted_form_senders = $23, bot_id = $24,
 					updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 					p.WorkspaceID, id, m.Name, m.Email, m.DisplayName, m.OutboundKind, m.Config, sealed, m.TeamID,
 					m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
 					reactivate || resetSync || contains(changes, "credentials"), resetSync,
-					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours)
+					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID)
 				if err != nil {
 					return err
 				}
@@ -285,8 +325,31 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					return err
 				}
 				data := map[string]any{"changes": changes}
+				if contains(changes, "brand_id") {
+					data["brand_id"] = m.BrandID
+				}
+				if contains(changes, "aliases") {
+					data["aliases"] = m.Aliases
+				}
+				if contains(changes, "trusted_form_senders") {
+					data["trusted_form_senders"] = m.TrustedFormSenders
+				}
+				if contains(changes, "bot_id") {
+					data["bot_id"] = m.BotID
+				}
 				if contains(changes, "ai_answers") || contains(changes, "ai_answers_mode") || contains(changes, "ai_answers_outside_hours") {
 					data["ai_answers"] = map[string]any{"enabled": m.AIAnswers, "mode": m.AIAnswersMode, "outside_hours": m.AIAnswersOutsideHours}
+				}
+				if contains(changes, "outbound_kind") || contains(changes, "config") || contains(changes, "credentials") {
+					// How the mailbox connects; never a password.
+					conn := map[string]any{"outbound_kind": m.OutboundKind, "verified": verified.checked}
+					if m.InboundKind == InboundIMAP {
+						conn["imap"] = map[string]any{"host": m.Config.IMAPHost, "port": m.Config.IMAPPort, "tls": m.Config.IMAPTLS}
+					}
+					if m.OutboundKind == OutboundSMTP {
+						conn["smtp"] = map[string]any{"host": m.Config.SMTPHost, "port": m.Config.SMTPPort, "tls": m.Config.SMTPTLS}
+					}
+					data["connection"] = conn
 				}
 				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "mailbox.updated", "mailbox", &id, data); err != nil {
 					return err
@@ -349,7 +412,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "test-mailbox", Method: http.MethodPost, Path: "/v1/mailboxes/{id}/test",
-		Summary: "Test a mailbox connection", Description: "Checks the IMAP login and the SMTP login or provider token. Nothing is sent.",
+		Summary: "Test a mailbox connection", Description: "Checks the IMAP login and the SMTP login or provider token, and names the cause and a fix when one fails. Nothing is sent.",
 		Tags: tags},
 		func(ctx context.Context, in *idInput) (*mailboxTestOutput, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
@@ -364,18 +427,8 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, wrapMailboxErr(err)
 			}
-			out := &mailboxTestOutput{}
-			out.Body.Inbound = result(s.testInbound(ctx, m))
-			out.Body.Outbound = result(s.testOutbound(ctx, m))
-			return out, nil
+			return s.testMailbox(ctx, m)
 		})
-}
-
-func result(err error) mailboxTestResult {
-	if err == nil {
-		return mailboxTestResult{OK: true}
-	}
-	return mailboxTestResult{Error: safeError(err)}
 }
 
 func canSeeConfig(p *auth.Principal) bool {
@@ -425,8 +478,61 @@ func checkTeam(ctx context.Context, q db.Querier, wid uuid.UUID, team *uuid.UUID
 	return nil
 }
 
+// checkAddressing checks what a mailbox shares with the rest of the workspace: its brand is
+// one of the workspace's (unset: the default brand), and no other mailbox uses one of its
+// aliases or has its address as an alias.
+func checkAddressing(ctx context.Context, tx pgx.Tx, m *mailboxRow) error {
+	if m.BrandID == uuid.Nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM brands WHERE workspace_id = $1 AND is_default`, m.WorkspaceID).Scan(&m.BrandID); err != nil {
+			return fmt.Errorf("default brand: %w", err)
+		}
+	} else {
+		var ok bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM brands WHERE workspace_id = $1 AND id = $2)`, m.WorkspaceID, m.BrandID).Scan(&ok); err != nil {
+			return err
+		}
+		if !ok {
+			return httpx.Validation("brand_id is not a brand of this workspace")
+		}
+	}
+	all := append([]string{strings.ToLower(m.Email)}, m.Aliases...)
+	var taken bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes WHERE workspace_id = $1 AND id <> $2
+		AND (lower(email::text) = ANY($3) OR aliases && $4))`, m.WorkspaceID, m.ID, m.Aliases, all).Scan(&taken); err != nil {
+		return err
+	}
+	if taken {
+		return httpx.Validation("Another mailbox in this workspace already uses one of these addresses.")
+	}
+	return nil
+}
+
+func sameAliases(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(strings.TrimSpace(a[i]), b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // insertMailbox inserts with a fresh forwarding token, retrying on the rare collision.
 func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, slug string, sealed []byte) error {
+	if m.BrandID == uuid.Nil {
+		// A new address belongs to the default brand unless another was chosen.
+		if err := tx.QueryRow(ctx, `SELECT id FROM brands WHERE workspace_id = $1 AND is_default`, m.WorkspaceID).Scan(&m.BrandID); err != nil {
+			return fmt.Errorf("default brand: %w", err)
+		}
+	}
+	if m.Aliases == nil {
+		m.Aliases = []string{}
+	}
+	if m.FromNameFormat == "" {
+		m.FromNameFormat = defaultFromNameFormat
+	}
 	for attempt := 0; ; attempt++ {
 		m.ForwardingToken = newForwardingToken(slug)
 		_, err := tx.Exec(ctx, `SAVEPOINT mbx_insert`)
@@ -434,10 +540,12 @@ func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, s
 			return err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token,
-			outbound_kind, config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+			outbound_kind, config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html, status,
+			brand_id, aliases, from_name_format)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 			m.ID, m.WorkspaceID, m.Name, m.Email, m.DisplayName, m.InboundKind, m.ForwardingToken, m.OutboundKind, m.Config,
-			sealed, m.TeamID, m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status)
+			sealed, m.TeamID, m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
+			m.BrandID, m.Aliases, m.FromNameFormat)
 		if err == nil {
 			_, err = tx.Exec(ctx, `RELEASE SAVEPOINT mbx_insert`)
 			return err
@@ -480,6 +588,7 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 		changes = append(changes, "email")
 	}
 	set("display_name", &m.DisplayName, b.DisplayName)
+	prevOutbound := m.OutboundKind
 	set("outbound_kind", &m.OutboundKind, b.OutboundKind)
 	set("signature_html", &m.SignatureHTML, b.SignatureHTML)
 	set("auto_reply_subject", &m.AutoReplySubject, b.AutoReplySubject)
@@ -514,6 +623,31 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 			changes = append(changes, "team_id")
 		}
 	}
+	if b.BrandID != nil {
+		next := uuid.Max // not a brand: refused by checkAddressing
+		if id, ok := ids.Parse(*b.BrandID); ok {
+			next = id
+		}
+		if next != m.BrandID {
+			m.BrandID = next
+			changes = append(changes, "brand_id")
+		}
+	}
+	if b.Aliases != nil && !sameAliases(*b.Aliases, m.Aliases) {
+		m.Aliases = *b.Aliases
+		changes = append(changes, "aliases")
+	}
+	if b.TrustedFormSenders != nil && !sameAliases(*b.TrustedFormSenders, m.TrustedFormSenders) {
+		m.TrustedFormSenders = *b.TrustedFormSenders
+		changes = append(changes, "trusted_form_senders")
+	}
+	if b.FromNameFormat != nil {
+		v := *b.FromNameFormat
+		if strings.TrimSpace(v) == "" {
+			v = defaultFromNameFormat
+		}
+		set("from_name_format", &m.FromNameFormat, &v)
+	}
 	if c := b.Config; c != nil {
 		before := m.Config
 		cfg := &m.Config
@@ -543,6 +677,15 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 		}
 	}
 	credsChanged := false
+	if prevOutbound == OutboundSMTP && m.OutboundKind != OutboundSMTP {
+		// The SMTP password is not kept once replies stop going through that server.
+		if creds.SMTPPassword != "" {
+			creds.SMTPPassword, credsChanged = "", true
+		}
+		if m.InboundKind == InboundForwarding && creds.Password != "" {
+			creds.Password, credsChanged = "", true
+		}
+	}
 	if b.Password != nil && *b.Password != creds.Password {
 		creds.Password = *b.Password
 		credsChanged = true
@@ -584,6 +727,15 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		return httpx.Validation("Signature and auto-reply are limited to 64 KB.")
 	}
 	m.AutoReplySubject = strings.TrimSpace(strings.Map(dropControl, m.AutoReplySubject))
+	if m.Aliases, err = s.cleanAliases(m.Email, m.Aliases); err != nil {
+		return err
+	}
+	if m.FromNameFormat, err = cleanFromNameFormat(m.FromNameFormat); err != nil {
+		return err
+	}
+	if m.TrustedFormSenders, err = cleanFormSenders(m.TrustedFormSenders, append([]string{m.Email}, m.Aliases...)); err != nil {
+		return err
+	}
 	cfg := &m.Config
 
 	switch m.InboundKind {

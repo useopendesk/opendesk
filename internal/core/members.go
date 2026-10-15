@@ -146,6 +146,11 @@ func (s *svc) registerMembers(api huma.API) {
 				if _, err := tx.Exec(ctx, `UPDATE members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`, p.WorkspaceID, uid, next); err != nil {
 					return err
 				}
+				if next == auth.RoleViewer {
+					if err := observeTeams(ctx, tx, p, uid); err != nil {
+						return err
+					}
+				}
 				if m, err = loadMember(ctx, tx, p.WorkspaceID, uid); err != nil {
 					return err
 				}
@@ -177,6 +182,7 @@ func (s *svc) registerMembers(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			var lapsedKeys []uuid.UUID
 			err = s.tx(ctx, func(tx pgx.Tx) error {
 				var cur string
 				if err := tx.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`, p.WorkspaceID, uid).Scan(&cur); err != nil {
@@ -192,41 +198,92 @@ func (s *svc) registerMembers(api huma.API) {
 				case !self && !canManage(p.Role, auth.Role(cur)):
 					return httpx.Forbidden()
 				}
-				return s.removeMember(ctx, tx, p, p.WorkspaceID, uid, cur, map[bool]string{true: "member.left", false: "member.removed"}[self])
+				var err error
+				lapsedKeys, err = s.removeMember(ctx, tx, p, p.WorkspaceID, uid, cur, map[bool]string{true: "member.left", false: "member.removed"}[self])
+				return err
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			s.disconnect(uid, uuid.Nil)
+			s.disconnectAll(lapsedKeys)
 			return nil, nil
 		})
 }
 
 // removeMember deletes a membership and the user's team seats in that workspace.
-func (s *svc) removeMember(ctx context.Context, tx pgx.Tx, p *auth.Principal, wid, uid uuid.UUID, role, action string) error {
-	if _, err := tx.Exec(ctx, `DELETE FROM team_members tm USING teams t WHERE tm.team_id = t.id AND t.workspace_id = $1 AND tm.user_id = $2`,
-		wid, uid); err != nil {
-		return err
+// Their tickets in private teams are unassigned: those teams' tickets are assigned only to
+// their members. The private teams they granted to API keys and webhooks leave those keys
+// and webhooks; it returns the keys changed, whose sockets reconnect after the commit.
+func (s *svc) removeMember(ctx context.Context, tx pgx.Tx, p *auth.Principal, wid, uid uuid.UUID, role, action string) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `DELETE FROM team_members tm USING teams t WHERE tm.team_id = t.id AND t.workspace_id = $1 AND tm.user_id = $2
+		RETURNING CASE WHEN t.private THEN t.id END`, wid, uid)
+	if err != nil {
+		return nil, err
+	}
+	seats, err := pgx.CollectRows(rows, pgx.RowTo[*uuid.UUID])
+	if err != nil {
+		return nil, err
+	}
+	for _, team := range seats {
+		if team != nil {
+			if err := s.unassignOffTeam(ctx, tx, p, wid, *team); err != nil {
+				return nil, err
+			}
+		}
+	}
+	keys, err := dropLapsedGrants(ctx, tx, p, wid)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM views WHERE workspace_id = $1 AND user_id = $2`, wid, uid); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_id = $1 AND user_id = $2`, wid, uid); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM members WHERE workspace_id = $1 AND user_id = $2`, wid, uid); err != nil {
-		return err
+		return nil, err
 	}
 	// AI clients the member connected over OAuth lose access with the membership.
 	if _, err := oauthgrant.Revoke(ctx, tx, p, uid, wid, uuid.Nil, oauthgrant.ReasonMemberRemoved); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "member.removed",
 		Topics: []string{events.UserTopic(uid)}, Data: map[string]any{"user_id": uid}}); err != nil {
-		return err
+		return nil, err
 	}
 	if err := billing.EnqueueSeatSync(ctx, s.d, tx, wid); err != nil {
+		return nil, err
+	}
+	return keys, audit.Log(ctx, tx, p, wid, action, "user", &uid, map[string]any{"role": role})
+}
+
+// observeTeams makes a viewer an observer of every team they lead or are a member of: a
+// viewer reads only. The teams they see are unchanged, so their sockets stay connected.
+func observeTeams(ctx context.Context, tx pgx.Tx, p *auth.Principal, uid uuid.UUID) error {
+	rows, err := tx.Query(ctx, `UPDATE team_members tm SET role = 'observer' FROM teams t
+		WHERE t.id = tm.team_id AND t.workspace_id = $1 AND tm.user_id = $2 AND tm.role <> 'observer'
+		RETURNING tm.team_id`, p.WorkspaceID, uid)
+	if err != nil {
 		return err
 	}
-	return audit.Log(ctx, tx, p, wid, action, "user", &uid, map[string]any{"role": role})
+	teams, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return err
+	}
+	for _, id := range teams {
+		t, err := loadTeam(ctx, tx, p.WorkspaceID, id)
+		if err != nil {
+			return err
+		}
+		if err := publishTeam(ctx, tx, p.WorkspaceID, "updated", t); err != nil {
+			return err
+		}
+		if err := audit.Log(ctx, tx, p, p.WorkspaceID, "team.updated", "team", &id, map[string]any{
+			"changes": []string{"members"}, "members": memberDiff{Changed: []uuid.UUID{uid}}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

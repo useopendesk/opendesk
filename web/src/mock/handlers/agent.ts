@@ -3,11 +3,12 @@
 // from the last visitor message: order lookups, a confirm-first cancel action,
 // handoffs, blocked topics, else the best KB articles and knowledge sources.
 
-import type { AgentReport, AgentSource, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
+import type { AgentReport, AgentSource, Bot, BotDraft, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
+import { botsOf, defaultBot } from "../bots";
 import { db, type WsData } from "../db";
-import { DEFAULT_MODEL, effectiveModels, offersModel, reserve, round3, spend } from "../credits";
+import { DEFAULT_MODEL, effectiveModels, fromMicro, offersModel, reserve, spend } from "../aiBalance";
 import { chunk, eventStream, get, invalid, post, wantsStream, type Ctx } from "../router";
-import { DAY, isRecord, markdownToHtml, stripHtml } from "../util";
+import { DAY, htmlToProse, isRecord, markdownToHtml } from "../util";
 import { assertAi, requireAiAdmin, score, terms } from "./ai";
 import { knowledgeDocs } from "./knowledge";
 import { mcpTool } from "./mcp";
@@ -36,7 +37,7 @@ const GAPS: [string, number][] = [
   ["Do you ship notebooks to Australia?", 5],
   ["Why was I charged twice this month?", 5],
   ["Can I move notes between workspaces?", 4],
-  ["Is Fieldnote HIPAA compliant?", 3],
+  ["Is Margin HIPAA compliant?", 3],
   ["My order says delivered but I never got it", 3],
   ["Can I change the name on my account?", 2],
 ];
@@ -53,11 +54,11 @@ function reportRange(ctx: Ctx) {
 export function agentReport(ws: WsData, from: string, to: string, today = new Date().toISOString().slice(0, 10)): AgentReport {
   const start = Date.parse(`${from}T00:00:00Z`);
   const end = Date.parse(`${to}T00:00:00Z`) + DAY;
-  const empty: AgentReport = { from: new Date(start).toISOString(), to: new Date(end).toISOString(), conversations: 0, replies: 0, resolved: 0, handoffs: 0, ratings: { up: 0, down: 0 }, credits: 0, by_day: [], tools: [], gaps: [] };
-  // Only workspaces that use the agent have history: Fieldnote, or one that turned it on.
+  const empty: AgentReport = { from: new Date(start).toISOString(), to: new Date(end).toISOString(), conversations: 0, replies: 0, resolved: 0, handoffs: 0, ratings: { up: 0, down: 0 }, usd: 0, by_day: [], tools: [], gaps: [] };
+  // Only workspaces that use the agent have history: Margin, or one that turned it on.
   if (ws !== db.workspaces[0] && !ws.ai.widget_answers) return empty;
   const r = empty;
-  let credits = 0;
+  let micro = 0;
   for (let t = start; t < end; t += DAY) {
     const date = new Date(t).toISOString().slice(0, 10);
     if (date > today) break;
@@ -75,10 +76,10 @@ export function agentReport(ws: WsData, from: string, to: string, today = new Da
     r.handoffs += handoffs;
     r.ratings.up += Math.round(replies * (0.1 + rnd() * 0.05));
     r.ratings.down += Math.round(replies * rnd() * 0.03);
-    // Replies on the widget model, plus a Jev relevance check per visitor message.
-    credits += replies * (2.4 + rnd() * 1.3) + conversations * 0.006;
+    // Replies on the widget model, plus a Jev relevance check per visitor message (micro-dollars).
+    micro += Math.round(replies * (16_000 + rnd() * 9_000) + conversations * 750);
   }
-  r.credits = round3(credits);
+  r.usd = fromMicro(micro);
   if (!r.conversations) return r;
   const c = r.conversations;
   r.tools = [
@@ -97,7 +98,53 @@ export function agentReport(ws: WsData, from: string, to: string, today = new Da
 // ─── Playground ────────────────────────────────────────────────────────────
 
 export type Visitor = { name?: string; email?: string; verified?: boolean; user_id?: string };
-export type Overrides = { widget_model?: string; widget_instructions?: string; widget_blocked_topics?: string[]; tone?: string; reply_language?: string; instructions?: string };
+export type Overrides = {
+  widget_model?: string;
+  widget_blocked_topics?: string[];
+  tone?: string;
+  reply_language?: string;
+  instructions?: string;
+  /** Answer as this bot (contracts/bots.md); default the default bot. */
+  bot_id?: string;
+  /** Unsaved edits of that bot. */
+  bot?: BotDraft;
+};
+
+const TONES = ["friendly", "professional", "playful", "concise", "warm", "custom"];
+
+/** The bot a trial answers as, with the draft's edits (contracts/agent.md "Playground"). */
+export function trialBot(ws: WsData, o: Overrides): Bot {
+  const saved = o.bot_id ? botsOf(ws).find((b) => b.id === o.bot_id) : defaultBot(ws);
+  if (!saved) throw invalid("bot_id must be a bot of this workspace");
+  const d = o.bot ?? {};
+  return { ...saved, name: d.name?.trim() || saved.name, role: d.role ?? saved.role, language: d.language ?? saved.language, personality: { ...saved.personality, ...d.personality } };
+}
+
+/** Checks the bot settings of a playground or test run body. */
+export function checkTrialBot(ws: WsData, o: Overrides) {
+  const b = trialBot(ws, o);
+  if (!TONES.includes(b.personality.tone)) throw invalid(`settings.bot.personality.tone must be one of ${TONES.join(", ")}`);
+  if (b.personality.instructions.length > 4000) throw invalid("settings.bot.personality.instructions must be 4000 characters or less");
+}
+
+const EMOJI_END: Record<string, string> = { some: " 🙂", lots: " ✨🙌" };
+
+/** The bot's voice on a planned reply: its handoff line, greeting style and emoji. */
+function voiced(p: Plan, bot: Bot): Plan {
+  let text = p.text;
+  const v = bot.personality;
+  if (p.handoff && v.handoff_message.trim()) text = v.handoff_message.trim();
+  if (v.tone === "professional") text = text.replace(/^Hi ([^!]+)! /, "Hello $1, ");
+  if (v.tone === "playful") text = text.replace(/^Hi ([^!]+)! /, "Hey $1! ");
+  if (v.reply_length === "detailed" && p.sources.length && !p.handoff) text += "\n\nIf any step doesn't match what you see, tell me where you're stuck and I'll walk you through it.";
+  if (EMOJI_END[v.emoji]) {
+    const paras = text.split("\n\n");
+    paras[0] = paras[0].replace(/([.!?])(\s*\[\d\])?$/, (m) => m + EMOJI_END[v.emoji]);
+    if (v.emoji === "lots") text = `👋 ${paras.join("\n\n")}`;
+    else text = paras.join("\n\n");
+  }
+  return { ...p, text };
+}
 export type Plan = {
   tools: PlaygroundToolEvent[];
   sources: AgentSource[];
@@ -121,6 +168,7 @@ function parseBody(ctx: Ctx): { messages: PlaygroundMessage[]; settings: Overrid
   const settings: Overrides = isRecord(b.settings) ? (b.settings as Overrides) : {};
   if (settings.widget_model !== undefined && settings.widget_model !== "" && !offersModel(ctx.ws, settings.widget_model)) throw invalid("widget_model must be empty or one of the offered models");
   if (settings.widget_blocked_topics !== undefined && (!Array.isArray(settings.widget_blocked_topics) || settings.widget_blocked_topics.some((x) => typeof x !== "string"))) throw invalid("widget_blocked_topics must be a list of topics");
+  checkTrialBot(ctx.ws, settings);
   const visitor: Visitor = isRecord(b.visitor) ? (b.visitor as Visitor) : {};
   return { messages, settings, visitor };
 }
@@ -137,15 +185,16 @@ export function retrieve(ws: WsData, query: string, limit = 3): { source: AgentS
   const articles = ws.articles
     .filter((a) => a.status === "published")
     .map((a) => {
-      const body = stripHtml(a.body_html);
-      return { source: { kind: "article", id: a.id, title: a.title, url: `/help/${ws.workspace.slug}/a/${a.slug}` } as AgentSource, text: `${a.excerpt} ${body}`, s: score(query, a.title, `${a.excerpt} ${body}`) };
+      // The passage is the article's own prose; the summary only helps it rank.
+      const body = htmlToProse(a.body_html);
+      return { source: { kind: "article", id: a.id, title: a.title, url: `/help/${ws.workspace.slug}/a/${a.slug}` } as AgentSource, text: body, s: score(query, a.title, `${a.excerpt} ${body}`) };
     })
     .filter((x) => x.s >= 0.35);
   const docs = knowledgeDocs(ws)
     .map(({ source, doc }) => {
       const text = source.snippet?.answer ?? "";
       const kind: AgentSource["kind"] = source.kind === "snippet" ? "snippet" : source.kind === "file" ? "file" : "page";
-      return { source: { kind, id: doc.id, title: doc.title.replace(/ \| Fieldnote Docs$/, ""), url: doc.url } as AgentSource, text, s: score(query, doc.title, text) * (kind === "snippet" ? 1.2 : 1) };
+      return { source: { kind, id: doc.id, title: doc.title.replace(/ \| Margin Docs$/, ""), url: doc.url } as AgentSource, text, s: score(query, doc.title, text) * (kind === "snippet" ? 1.2 : 1) };
     })
     .filter((x) => x.s >= 0.4);
   return [...articles, ...docs].sort((a, b) => b.s - a.s).slice(0, limit);
@@ -175,12 +224,17 @@ const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const HUMAN = /\b(human|real person|a person|someone|representative|live agent|an agent|support agent|talk to (the )?team|mensch|persona|humain)\b/i;
 
 export function plan(ws: WsData, messages: PlaygroundMessage[], o: Overrides, visitor: Visitor): Plan {
+  return voiced(planned(ws, messages, o, visitor), trialBot(ws, o));
+}
+
+function planned(ws: WsData, messages: PlaygroundMessage[], o: Overrides, visitor: Visitor): Plan {
   const last = messages[messages.length - 1].text;
   const lower = last.toLowerCase();
   const first = (visitor.name ?? "").trim().split(/\s+/)[0] ?? "";
   const hi = first && messages.filter((m) => m.role === "visitor").length === 1 ? `Hi ${first}! ` : "";
-  const concise = (o.tone ?? ws.ai.tone).toLowerCase().includes("concise");
-  const blocked = o.widget_blocked_topics ?? ws.ai.widget_blocked_topics ?? [];
+  const bot = trialBot(ws, o);
+  const concise = bot.personality.tone === "concise" || (o.tone ?? ws.ai.tone).toLowerCase().includes("concise");
+  const blocked = [...(o.widget_blocked_topics ?? ws.ai.widget_blocked_topics ?? []), ...bot.personality.blocked_topics];
   const base: Plan = { tools: [], sources: [], text: "", handoff: false, action: null, metered: true };
   const orderNo = /#\s?(\d{3,})/.exec(last)?.[1] ?? /\border\s+(?:number\s+)?(\d{3,})/i.exec(last)?.[1] ?? "4821";
   const shop = (name: string) => (mcpTool(ws, "shop", name) ? `shop__${name}` : null);
@@ -262,7 +316,7 @@ export function registerAgent() {
       sources: p.sources,
       handoff: p.handoff,
       action: p.action,
-      credits: p.metered ? spend(ctx.ws, "playground", db.meId, model) : 0,
+      usd: p.metered ? spend(ctx.ws, "playground", db.meId, model) : 0,
     });
     if (!wantsStream(ctx)) return finish();
     return eventStream(async (emit, wait) => {

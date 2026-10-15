@@ -3,7 +3,7 @@ title: AI
 description: Turn on opendesk's AI features with Anthropic, OpenAI or a local model, and set up semantic search.
 ---
 
-AI features are off until you configure a provider. Self-hosted instances have no credit limits: you pay your provider directly, or nothing at all with a local model. Workspace admins can still turn AI off for their workspace. See [AI features](/guides/ai/).
+AI features are off until you configure a provider. Self-hosted instances have no AI balance or usage limits: you pay your provider directly, or nothing at all with a local model. Workspace admins can still turn AI off for their workspace. See [AI features](/guides/ai/).
 
 ## Anthropic
 
@@ -62,7 +62,7 @@ Set `EMBEDDINGS_MODEL` to choose the model. Changing the embeddings model reinde
 
 ### pgvector
 
-Embeddings are stored in Postgres and need the `vector` extension (pgvector). Neon has it, and so does the `pgvector/pgvector:pg17` image. On a Postgres without it, opendesk keeps working and semantic search uses full-text search instead.
+Embeddings are stored in Postgres and need the `vector` extension (pgvector). Managed services such as PlanetScale and Neon have it, and so does the `pgvector/pgvector:pg17` image. On a Postgres without it, opendesk keeps working and semantic search uses full-text search instead.
 
 ## Decisions with Jev
 

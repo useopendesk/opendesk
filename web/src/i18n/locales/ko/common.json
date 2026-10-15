@@ -9,5 +9,5 @@
     "back": "뒤로",
     "continue": "계속"
   },
-  "credits_other": "{{count}}크레딧"
+  "aboutCost": "약 {{cost}}"
 }

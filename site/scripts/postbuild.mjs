@@ -1,7 +1,7 @@
 // After `astro build`: hash every inline executable script in the output and write
 // the CSP into dist/_headers, so the policy allows exactly what this build ships.
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,3 +49,13 @@ const headers = readFileSync(headersPath, 'utf8')
 writeFileSync(headersPath, headers);
 console.log(`[postbuild] CSP written with ${hashes.size} inline script hash(es) across ${files.length} pages`);
 if (headers.includes('__')) throw new Error('[postbuild] an unfilled placeholder is left in dist/_headers');
+
+// Before the first desktop release, the short download links lead to /download/,
+// which says the app is coming, instead of to files that do not exist yet.
+const download = join(dist, 'download/index.html');
+const redirectsPath = join(dist, '_redirects');
+if (existsSync(download) && readFileSync(download, 'utf8').includes('data-desktop-unpublished')) {
+  const redirects = readFileSync(redirectsPath, 'utf8').replace(/https:\/\/github\.com\/\S+\/releases\/download\/desktop-latest\/\S+/g, '/download/');
+  writeFileSync(redirectsPath, redirects);
+  console.log('[postbuild] no desktop release yet: /download/<os> leads to /download/');
+}

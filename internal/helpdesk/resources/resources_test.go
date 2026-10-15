@@ -69,7 +69,7 @@ func TestTags(t *testing.T) {
 
 	// Usage counts, then delete cascades to tickets.
 	tid := ids.New()
-	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel) VALUES ($1, $2, 1, 'api')`, tid, ws.ID)
+	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel, brand_id) VALUES ($1, $2, 1, 'api', $3)`, tid, ws.ID, ws.BrandID)
 	e.Exec(`INSERT INTO ticket_tags (ticket_id, tag_id) VALUES ($1, $2)`, tid, bug.ID)
 	var got tag
 	e.Do("GET", "/v1/tags/"+bug.ID, ws.Viewer.As(ws), nil).Want(t, 200).JSON(t, &got)
@@ -156,7 +156,7 @@ func TestTagGroupsReorderAndMerge(t *testing.T) {
 	e.Exec(`INSERT INTO views (id, workspace_id, name, filters, position) VALUES ($1, $2, 'v', '{"tag":"Defect"}', 0)`, vid, ws.ID)
 	// A ticket with Defect and Question: after merging into Bug (exclusive Type), it keeps only Bug.
 	tid := ids.New()
-	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel) VALUES ($1, $2, 1, 'api')`, tid, ws.ID)
+	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel, brand_id) VALUES ($1, $2, 1, 'api', $3)`, tid, ws.ID, ws.BrandID)
 	e.Exec(`INSERT INTO ticket_tags (ticket_id, tag_id) VALUES ($1, $2), ($1, $3)`, tid, defect.ID, question.ID)
 
 	e.Do("POST", "/v1/tags/"+defect.ID+"/merge", a, map[string]any{"into": defect.ID}).Want(t, 422)
@@ -244,7 +244,7 @@ func TestCustomFields(t *testing.T) {
 
 	// Removing an option clears it from stored values.
 	tid := ids.New()
-	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel, fields) VALUES ($1, $2, 1, 'api', '{"plan": "free"}')`, tid, ws.ID)
+	e.Exec(`INSERT INTO tickets (id, workspace_id, number, channel, fields, brand_id) VALUES ($1, $2, 1, 'api', '{"plan": "free"}', $3)`, tid, ws.ID, ws.BrandID)
 	e.Do("PATCH", "/v1/custom-fields/"+plan.ID, a, map[string]any{"options": []map[string]any{{"id": "pro-plan", "label": "Pro"}}}).Want(t, 200)
 	var fields string
 	e.Scalar(`SELECT fields::text FROM tickets WHERE id = $1`, &fields, tid)

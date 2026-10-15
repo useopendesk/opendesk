@@ -1,0 +1,87 @@
+---
+title: CSAT
+description: Ask customers to rate their conversation after it is solved, and see the scores on tickets and in reports.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+Customer satisfaction (CSAT) asks the customer to rate a conversation once it is solved, on a scale of 1 to 5, with an optional comment. The score shows on the ticket and adds up in [reports](/guides/reports/), so you can see how the team is doing and which conversations went wrong.
+
+<Screenshot src="/guides/csat/survey" alt="The survey page a customer sees: the five choices from Very poor to Great ringed as 1, with Great picked, the optional comment box ringed as 2, and the Send feedback button ringed as 3" />
+
+<Legend>
+
+1. **The score**: Very poor, Poor, Okay, Good or Great, for 1 to 5.
+2. **A comment**: optional, for anything the customer wants to add.
+3. **Send feedback**: saves the comment, and the score if they changed it.
+
+</Legend>
+
+## Turn on the survey
+
+<Steps>
+<Step title="Open Settings, then General">
+
+The survey setting is in the **Conversations** section of the workspace's general settings. You need the admin role.
+
+</Step>
+<Step title="Switch on Satisfaction survey">
+
+From then on, solving a ticket asks the customer to rate it.
+
+<Screenshot src="/guides/csat/setting" alt="The Conversations section of the workspace settings, with the Satisfaction survey switch ringed as 1, on" />
+
+</Step>
+</Steps>
+
+## What the customer sees
+
+<Steps>
+<Step title="An email after the ticket is solved">
+
+When a ticket is solved, the customer gets a short email from the address the conversation used, asking how it went, with five links from 1 to 5. No account or sign in is needed.
+
+</Step>
+<Step title="One click records the score">
+
+Clicking a score saves it straight away and opens the survey page, with the score picked. There the customer can change it and add a comment.
+
+</Step>
+</Steps>
+
+<Callout type="note" title="When no survey is sent">
+
+The survey goes by email, so the ticket's contact needs an email address. It is not sent for spam, for a ticket that was already rated, or when a survey for the same ticket went out in the last 24 hours, so reopening and solving again does not flood the customer. A survey link works for 30 days.
+
+</Callout>
+
+## See the results
+
+On the ticket, the **Satisfaction** section of the details panel shows the stars and the comment, and the timeline records the rating.
+
+<Screenshot src="/guides/csat/ticket" alt="The details panel of a solved ticket, with the Satisfaction section ringed as 1: five stars, 5/5, and the comment Super quick, thanks Sam!" />
+
+In **Reports**, the **CSAT** tile shows the average score out of 5 for the period, how many ratings it is based on, and the change from the period before.
+
+<Screenshot src="/guides/csat/report" alt="The overview tiles of Reports, with the CSAT tile ringed as 1: 4.3 out of 5 from 261 ratings" />
+
+<Fold>
+
+## Using the results
+
+- Low scores are worth a follow-up from a team lead: the comment often says what went wrong.
+- Filter reports by team or brand to compare how each one is doing.
+- A rating counts in the period in which its ticket was solved.
+
+</Fold>
+
+## Related
+
+- [Reports](/guides/reports/)
+- [Inbox and tickets](/guides/inbox-and-tickets/)
+- [Public CSAT API](/api/resources/public/#csat)

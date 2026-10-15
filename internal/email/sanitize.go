@@ -7,36 +7,17 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/microcosm-cc/bluemonday"
 	xhtml "golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
 
-// emailPolicy is the strict policy for every stored email body: no scripts, styles,
-// event handlers, forms or frames; links get rel="nofollow noopener" and open in a new
-// tab; images are allowed (http, https and data: images).
-var emailPolicy = func() *bluemonday.Policy {
-	p := bluemonday.UGCPolicy()
-	p.AllowRelativeURLs(false)
-	p.RequireNoFollowOnLinks(true)
-	p.AddTargetBlankToFullyQualifiedLinks(true)
-	p.AllowDataURIImages()
-	p.AllowAttrs("align").Matching(regexp.MustCompile(`(?i)^(left|right|center|justify)$`)).OnElements("p", "div", "td", "th", "table", "img")
-	return p
-}()
-
-// sanitizeHTML is the only way email HTML reaches the database.
-func sanitizeHTML(s string) string {
-	return strings.TrimSpace(emailPolicy.Sanitize(s))
-}
+// sanitizeHTML is the only way email HTML reaches the database (hd.SanitizeEmailHTML).
+func sanitizeHTML(s string) string { return hd.SanitizeEmailHTML(s) }
 
 // sanitizeSettingsHTML cleans signatures and auto-replies written by admins.
-func sanitizeSettingsHTML(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return ""
-	}
-	return sanitizeHTML(s)
-}
+func sanitizeSettingsHTML(s string) string { return hd.SanitizeSignature(s) }
 
 // htmlToText renders HTML as plain text: block elements become line breaks, list
 // items get a dash, whitespace collapses outside <pre>.

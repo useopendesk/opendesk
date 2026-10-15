@@ -1,0 +1,138 @@
+---
+title: Install script
+description: What the opendesk installer does, every flag it accepts, and how to verify it first.
+---
+
+import Callout from '../../../components/Callout.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+
+```sh
+curl -fsSL https://opendesk.sh/install.sh | sh
+```
+
+The installer sets up opendesk with Docker, behind automatic HTTPS. Nothing is compiled on your machine.
+
+## What it does
+
+1. Checks for Docker and the Compose plugin. On Linux, if Docker is missing, it offers to download Docker's own install script to a file and run it with `sudo` after you say yes. On macOS it asks you to install Docker Desktop.
+2. Creates one directory (default `/opt/opendesk`) and writes only inside it.
+3. Generates every secret with `openssl` (or `/dev/urandom`) and writes `.env` with mode `0600`.
+4. Resolves the release once and **pins** it in `.env` as `OPENDESK_VERSION`. It never installs "latest" floating.
+5. Downloads `docker-compose.yml`, `Caddyfile`, `env.template` and `opendesk-ctl` from that release, and refuses any file whose entry in the release's `SHA256SUMS` differs.
+6. Runs `docker compose pull` and `docker compose up -d`, then waits for opendesk to answer.
+
+<Callout type="warning" title="Run it as yourself">
+
+It asks for `sudo` only for the steps that need it, and says which. Do not pipe it into `sudo`.
+
+</Callout>
+
+When it finishes, open your domain and sign up. The first account becomes the workspace owner.
+
+## Flags
+
+Pass flags after `sh -s --`:
+
+```sh
+curl -fsSL https://opendesk.sh/install.sh | sh -s -- --domain desk.example.com --email you@example.com
+```
+
+Each flag also has an environment variable.
+
+| Flag | Variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `--domain HOST` | `OPENDESK_DOMAIN` | asked, or `localhost` | Public hostname |
+| `--email ADDRESS` | `OPENDESK_EMAIL` | | ACME account email for the certificate |
+| `--dir PATH` | `OPENDESK_DIR` | `/opt/opendesk` | Install directory |
+| `--version TAG` | `OPENDESK_VERSION` | newest release | Release to install |
+| `--no-start` | `OPENDESK_NO_START=1` | | Write the files and pull nothing; start later yourself |
+| `--wizard` | `OPENDESK_WIZARD=1` | | Also ask about email, storage, inbound mail and sign-ups |
+| `-y`, `--yes` | `OPENDESK_YES=1` | | Ask nothing and take defaults (and install Docker if missing) |
+| `--registry PREFIX` | `OPENDESK_REGISTRY` | `ghcr.io/useopendesk` | Image namespace |
+| `--ai-key KEY` | `OPENDESK_AI_KEY` | | Anthropic API key, or the key for `--ai-url`. Prefer the variable, so the key stays out of your shell history. |
+| `--ai-url URL` | `OPENDESK_AI_URL` | | An OpenAI-compatible endpoint instead of Anthropic (OpenAI, vLLM, your own Ollama). |
+| `--ai-model NAME` | `OPENDESK_AI_MODEL` | provider default | Model name. With `--ollama`, the model to pull (default `llama3.1:8b`). |
+| `--ollama` | `OPENDESK_AI=ollama` | | Run models locally in an `ollama` container. |
+| `--no-ai` | `OPENDESK_AI=none` | | Turn AI off. |
+| `--dry-run` | | | Print the `.env` it would write and stop |
+| `--print-env` | | | Same, without the banner (for scripts) |
+| `--force` | | | Install into a non-empty directory this installer did not create |
+| `--no-color` | | | Plain output |
+| `-h`, `--help` | | | Show help |
+
+### Domain values
+
+| `--domain` | Result |
+| --- | --- |
+| `desk.example.com` | A Let's Encrypt (or ZeroSSL) certificate as soon as DNS points at the server and ports 80 and 443 are open. |
+| `localhost` | A certificate from Caddy's local certificate authority, for trying it out. |
+| `:80` | Plain HTTP, for when another proxy in front terminates TLS. |
+
+### The wizard
+
+`--wizard` also asks about:
+
+- **Platform email:** SMTP host, port, TLS, username, password and from address. Without it, emails are printed to the opendesk log.
+- **Attachments:** a local volume, or a bundled S3-compatible store.
+- **Inbound email:** the inbound domain (default `in.<your domain>`) and whether to receive mail on port 25.
+- **AI:** none, an Anthropic key, an OpenAI-compatible endpoint, or local models with Ollama.
+- **Sign-ups:** whether anyone may sign up. Close sign-ups after you create your account.
+
+### AI
+
+AI is optional. Choose one:
+
+| You pass | Result |
+| --- | --- |
+| `--ai-key` alone | Anthropic, with its default models. |
+| `--ai-url` (and `--ai-key` if the endpoint needs one) | Any OpenAI-compatible endpoint. Set `--ai-model` to a model it serves. |
+| `--ollama` | Turns on the `ollama` [compose profile](/self-hosting/docker-compose/#profiles): models run in a container on this machine, and nothing leaves it. Plan for 8 GB of RAM or more. |
+| `--no-ai` | AI features off. |
+
+```sh
+OPENDESK_AI_KEY=sk-ant-... sh install.sh --domain desk.example.com
+sh install.sh --domain desk.example.com --ollama --ai-model llama3.1:8b
+sh install.sh --domain desk.example.com --ai-url http://192.168.1.10:8000/v1 --ai-model my-model
+```
+
+With `--ollama`, the models are pulled on first start; follow progress with `docker compose logs -f ollama-init`. See [Self-hosting AI](/self-hosting/ai/).
+
+## Running it again
+
+Running the installer again on an existing install **reconfigures it in place**. Pass `--version` to move to a specific release.
+
+<Callout type="note" title="Secrets are kept">
+
+A second run keeps every secret in `.env` and never generates new ones: a new `CREDENTIALS_KEY` would make every stored mailbox credential unreadable.
+
+</Callout>
+
+## Verify before running
+
+<Steps>
+<Step title="Download the script and its checksum">
+
+```sh
+curl -fsSLO https://opendesk.sh/install.sh
+curl -fsSLO https://opendesk.sh/install.sh.sha256
+```
+
+</Step>
+<Step title="Check the checksum">
+
+```sh
+sha256sum -c install.sh.sha256        # macOS: shasum -a 256 -c install.sh.sha256
+```
+
+</Step>
+<Step title="Read it, then run it">
+
+```sh
+less install.sh && sh install.sh
+```
+
+</Step>
+</Steps>
+
+The script is written as functions with `main` called on the last line, so a download cut off half way runs nothing.

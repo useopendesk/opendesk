@@ -1,0 +1,41 @@
+---
+/**
+ * A painted backdrop from src/assets/backdrops, in AVIF (WebP for the rest) at a
+ * few widths so each screen downloads only what it draws. A tiny blurred copy is
+ * inlined as its background, so the painting is there before the file arrives
+ * (src/lib/backdrops.ts). Above the fold, pass `priority` here and the same
+ * `preload` to Layout.
+ */
+import { backdrop } from '../../lib/backdrops';
+
+interface Props {
+  name: string;
+  /** The rendered width at each breakpoint, as an <img sizes> list. */
+  sizes: string;
+  /** Above the fold: load first instead of lazily. */
+  priority?: boolean;
+  class?: string;
+  style?: string;
+}
+const { name, sizes, priority = false, class: className = '', style = '' } = Astro.props;
+const b = await backdrop(name);
+// The inline copy sits where the painting will: same focus as object-position.
+const focus = style.match(/object-position:\s*([^;]+)/)?.[1] ?? className.match(/object-\[([^\]]+)\]/)?.[1]?.replace(/_/g, ' ');
+---
+<picture>
+  <source type="image/avif" srcset={b.avif} sizes={sizes} />
+  <source type="image/webp" srcset={b.webp} sizes={sizes} />
+  <img
+    src={b.src}
+    width={b.width}
+    height={b.height}
+    alt=""
+    aria-hidden="true"
+    loading={priority ? 'eager' : 'lazy'}
+    fetchpriority={priority ? 'high' : 'auto'}
+    decoding={priority ? 'sync' : 'async'}
+    draggable="false"
+    class={`select-none pointer-events-none object-cover ${className}`}
+    style={`${b.placeholder}${focus ? `background-position:${focus};` : ''}${style}`}
+  />
+</picture>

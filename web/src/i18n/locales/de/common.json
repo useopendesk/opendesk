@@ -9,6 +9,5 @@
     "back": "Zurück",
     "continue": "Weiter"
   },
-  "credits_one": "{{count}} Credit",
-  "credits_other": "{{count}} Credits"
+  "aboutCost": "etwa {{cost}}"
 }

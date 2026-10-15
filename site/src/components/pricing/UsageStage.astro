@@ -1,0 +1,191 @@
+---
+/**
+ * AI usage being spent, as Settings > Plan and billing shows it: the balance in
+ * US dollars with its monthly meter on one side, Ollie's work arriving on the
+ * other. Each call takes what it really cost on its model (metered,
+ * contracts/billing.md, priced from src/lib/pricing.ts), the balance follows, and
+ * a failed call takes nothing. Loops while on screen.
+ */
+import Icon from '../Icon.astro';
+import Backdrop from '../home/Backdrop.astro';
+import Ollie from '../home/Ollie.astro';
+import type { IconName } from '../../lib/icons';
+import { AI_ALLOWANCE, AUTO_RECHARGE, callCost, model, usd, usdCall } from '../../lib/pricing';
+
+const SEATS = 6; // a Pro workspace with 6 paid users
+const MONTHLY = SEATS * AI_ALLOWANCE.perSeat;
+const USED = 41.37;
+const PURCHASED = AUTO_RECHARGE.amountUsd;
+
+const sonnet = model('anthropic/claude-sonnet-5.5');
+const haiku = model('anthropic/claude-haiku-5.5');
+// A call on a model, sized in input / output tokens, priced as the workspace pays it.
+// The feed names the model without its family prefix, so the row fits a phone.
+const on = (m: typeof sonnet, input: number, output: number) => ({ cost: callCost(m, input, output), model: m.name.replace(/^Claude /, '') });
+
+type Call = { icon: IconName; what: string; where: string; cost: number; model?: string; failed?: boolean };
+// Newest first. The first five arrive on the loop; the rest were already there.
+// Triage and automation conditions run as decisions, priced per call.
+const arriving: Call[] = [
+  { icon: 'sparkles', what: 'Looked up order #4822 in Shop', where: 'Assistant', ...on(sonnet, 6400, 380) },
+  { icon: 'fileText', what: 'Summarized the ticket for Maya', where: 'Summary', ...on(sonnet, 2900, 300) },
+  { icon: 'squarePen', what: 'Draft reply failed, nothing charged', where: 'Draft reply', ...on(sonnet, 0, 0), failed: true },
+  { icon: 'tag', what: 'Triaged as Billing, urgent', where: 'Triage', cost: 0.0003 },
+  { icon: 'chat', what: 'Answered Katrin’s chat in German', where: 'Chat answer', ...on(sonnet, 5200, 420) },
+];
+const earlier: Call[] = [
+  { icon: 'languages', what: 'Translated a reply to Japanese', where: 'Translation', ...on(haiku, 800, 500) },
+  { icon: 'squarePen', what: 'Drafted a reply to Hugo', where: 'Draft reply', ...on(sonnet, 4000, 500) },
+  { icon: 'mail', what: 'Answered an email about refunds', where: 'Email reply', ...on(sonnet, 5000, 500) },
+  { icon: 'zap', what: 'Checked an automation condition', where: 'Automation decision', cost: 0.0002 },
+  { icon: 'squarePen', what: 'Rewrote a draft, friendlier', where: 'Rewrite', ...on(haiku, 800, 400) },
+  { icon: 'fileText', what: 'Summarized a long email thread', where: 'Summary', ...on(sonnet, 4800, 320) },
+  { icon: 'chat', what: 'Answered a chat about shipping', where: 'Chat answer', ...on(sonnet, 5000, 400) },
+];
+// The month so far, as the usage report splits it.
+const byFeature: [string, number, number][] = [
+  ['Chat answers', 38, 100],
+  ['Draft replies', 24, 80],
+  ['Email answers', 17, 62],
+  ['Assistant', 11, 46],
+  ['Summaries', 6, 34],
+  ['Other', 4, 24],
+];
+const spent = arriving.reduce((s, c) => s + c.cost, 0);
+const end = { used: USED + spent, remaining: MONTHLY - USED - spent + PURCHASED };
+---
+<div class="relative h-full overflow-hidden rounded-[22px] ring-1 ring-line" data-live data-usage data-monthly={MONTHLY} data-used={USED} data-purchased={PURCHASED}>
+  <Backdrop name="autumn-hills" sizes="(min-width: 1024px) 60vw, 100vw" class="absolute inset-0 h-full w-full" style="object-position:50% 60%" />
+  <div class="relative grid h-full content-center gap-3 p-3 sm:p-6 md:grid-cols-2 md:p-8 lg:p-10" data-seq data-hold="5200" role="img" aria-label="An AI balance in US dollars going down as Ollie answers a chat, triages, summarizes and looks up an order. A failed draft costs nothing.">
+    <!-- The balance, as in Settings > Plan and billing. -->
+    <div class="flex flex-col rounded-[16px] bg-bg text-left shadow-[0_30px_60px_-30px_rgb(80_30_20/0.45)] ring-1 ring-line" aria-hidden="true">
+      <div class="border-b border-line px-5 py-4">
+        <div class="text-[14px] font-semibold tracking-[-0.01em] text-fg">AI usage</div>
+        <div class="mt-0.5 text-[12px] leading-[17px] text-muted">The monthly allowance resets each period; AI usage you add is spent after it and never expires.</div>
+      </div>
+      <div class="flex-1 px-5 py-5">
+        <div class="flex items-center gap-3">
+          <span class="flex size-9 items-center justify-center rounded-[9px] bg-[color-mix(in_oklab,var(--c-violet)_12%,transparent)] text-[var(--c-violet)]"><Icon name="sparkles" size={17} /></span>
+          <span class="text-[30px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-fg" data-cr-remaining>{usd(end.remaining, true)}</span>
+          <span class="text-[12.5px] text-muted">remaining</span>
+        </div>
+        <div class="mt-6">
+          <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px]">
+            <span class="text-body">Monthly allowance</span>
+            <span class="font-mono tabular-nums text-muted"><span data-cr-used>{usd(end.used, true)}</span> of {usd(MONTHLY)} used</span>
+          </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-[color-mix(in_oklab,var(--fg)_7%,transparent)]">
+            <div class="cr-bar h-full rounded-full bg-[var(--c-green)]" style={`width:${(end.used / MONTHLY) * 100}%`} data-cr-bar></div>
+          </div>
+          <div class="mt-2 font-mono text-[11px] text-subtle">Resets Nov 1</div>
+        </div>
+        <div class="mt-6 hidden border-t border-line pt-5 lg:block">
+          <div class="font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">This month by feature</div>
+          <ul class="mt-3 space-y-2.5 text-[12px]">
+            {byFeature.map(([f, pct, shade]) => (
+              <li class="grid grid-cols-[110px_1fr_36px] items-center gap-3">
+                <span class="truncate text-body">{f}</span>
+                <span class="h-1.5 overflow-hidden rounded-full bg-[color-mix(in_oklab,var(--fg)_6%,transparent)]"><span class="block h-full rounded-full" style={`width:${pct}%;background:color-mix(in oklab, var(--c-violet) ${shade}%, var(--bg))`}></span></span>
+                <span class="text-right font-mono tabular-nums text-muted">{pct}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div class="mt-6 grid grid-cols-2 gap-4 border-t border-line pt-5">
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Top-ups</div>
+            <div class="mt-1 font-mono text-[13px] text-fg">{usd(PURCHASED, true)}</div>
+            <div class="mt-0.5 text-[11.5px] text-muted">Never expire</div>
+          </div>
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">Paid users</div>
+            <div class="mt-1 font-mono text-[13px] text-fg">{SEATS} × {usd(AI_ALLOWANCE.perSeat)}</div>
+            <div class="mt-0.5 text-[11.5px] text-muted">Pooled for the team</div>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2.5 rounded-b-[16px] border-t border-line bg-surface-2 px-5 py-3 text-[12px]">
+        <Icon name="refresh" size={13} class="text-muted" />
+        <span class="whitespace-nowrap font-medium text-fg">Auto-recharge</span>
+        <span class="pill t-green pill-dot !h-5 !text-[10.5px]">On</span>
+        <span class="ml-auto truncate text-muted">{usd(AUTO_RECHARGE.amountUsd)} below {usd(AUTO_RECHARGE.thresholdUsd)}</span>
+      </div>
+    </div>
+
+    <!-- Ollie's work, each call with what it cost. -->
+    <div class="flex flex-col overflow-hidden rounded-[16px] bg-bg text-left shadow-[0_30px_60px_-30px_rgb(80_30_20/0.45)] ring-1 ring-line" aria-hidden="true">
+      <div class="flex items-center gap-2.5 border-b border-line px-5 py-4">
+        <Ollie size={22} thinking />
+        <div class="leading-tight">
+          <div class="text-[14px] font-semibold tracking-[-0.01em] text-fg">Ollie</div>
+          <div class="mt-0.5 text-[12px] text-muted">AI usage today</div>
+        </div>
+        <span class="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted"><span class="size-1.5 rounded-full bg-[var(--c-green)] od-live"></span>Live</span>
+      </div>
+      <!-- The rows sit out of flow, so calls arriving never grow the card. -->
+      <div class="cr-feed relative min-h-[300px] flex-1 overflow-hidden">
+        <div class="absolute inset-x-0 top-0">
+        {[...arriving.map((c, i) => ({ ...c, step: arriving.length - i })), ...earlier.map((c) => ({ ...c, step: 0 }))].map((c) => (
+          <div class={c.step ? 's-arrive overflow-hidden' : ''} style="height:60px" data-step={c.step || undefined} data-wait={c.step ? (c.step === 1 ? 900 : 1500) : undefined} data-cost={c.step ? c.cost : undefined}>
+            <div class="flex h-[60px] items-center gap-3 border-b border-line px-5">
+              <span class={`flex size-7 shrink-0 items-center justify-center rounded-[8px] ${c.failed ? 'bg-surface text-subtle' : 'bg-[color-mix(in_oklab,var(--c-violet)_11%,transparent)] text-[var(--c-violet)]'}`}><Icon name={c.icon} size={14} /></span>
+              <div class="min-w-0 flex-1 leading-tight">
+                <div class={`truncate text-[12.5px] ${c.failed ? 'text-muted' : 'text-fg'}`}>{c.what}</div>
+                <div class="mt-1 truncate font-mono text-[10.5px] text-subtle">{c.model ? `${c.where} · ${c.model}` : c.where}</div>
+              </div>
+              {c.failed
+                ? <span class="pill t-grey !h-5 shrink-0 font-mono !text-[10.5px]">$0</span>
+                : <span class="shrink-0 font-mono text-[12px] tabular-nums text-[var(--c-violet)]">−{usdCall(c.cost)}</span>}
+            </div>
+          </div>
+        ))}
+        </div>
+        <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--bg)] to-transparent"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .cr-bar { transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @media (prefers-reduced-motion: reduce) { .cr-bar { transition: none; } }
+</style>
+
+<script>
+  // The balance follows the calls that have arrived: each row's cost comes off
+  // as it lands, and it all comes back when the loop starts again.
+  const nf = (n: number) => `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(Math.max(n, 0))}`;
+  document.querySelectorAll<HTMLElement>('[data-usage]').forEach((root) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const monthly = Number(root.dataset.monthly);
+    const used0 = Number(root.dataset.used);
+    const purchased = Number(root.dataset.purchased);
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-cost]')];
+    const remainingEl = root.querySelector<HTMLElement>('[data-cr-remaining]');
+    const usedEl = root.querySelector<HTMLElement>('[data-cr-used]');
+    const bar = root.querySelector<HTMLElement>('[data-cr-bar]');
+    let shown = monthly - used0 + purchased;
+    let target = shown;
+    let raf = 0;
+    const paint = (remaining: number) => {
+      const used = monthly + purchased - remaining;
+      if (remainingEl) remainingEl.textContent = nf(remaining);
+      if (usedEl) usedEl.textContent = nf(used);
+    };
+    const tick = () => {
+      const d = target - shown;
+      shown = Math.abs(d) < 0.0005 ? target : shown + d * 0.12;
+      paint(shown);
+      raf = shown === target ? 0 : requestAnimationFrame(tick);
+    };
+    const update = () => {
+      const spent = rows.filter((r) => r.classList.contains('on')).reduce((s, r) => s + Number(r.dataset.cost), 0);
+      target = monthly - used0 - spent + purchased;
+      if (bar) bar.style.width = `${((used0 + spent) / monthly) * 100}%`;
+      raf ||= requestAnimationFrame(tick);
+    };
+    const mo = new MutationObserver(update);
+    rows.forEach((r) => mo.observe(r, { attributes: true, attributeFilter: ['class'] }));
+    update();
+  });
+</script>

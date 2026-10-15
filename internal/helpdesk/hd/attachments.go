@@ -118,6 +118,7 @@ func DetectType(head []byte, filename string) string {
 type Upload struct {
 	WorkspaceID       uuid.UUID
 	UploadedBy        *uuid.UUID // agent
+	UploadedByAPIKey  *uuid.UUID // API key
 	UploadedByContact *uuid.UUID // widget visitor
 	Filename          string
 	Size              int64
@@ -156,8 +157,8 @@ func SaveUpload(ctx context.Context, st storage.Storage, q db.Querier, up Upload
 		return domain.Attachment{}, httpx.E(413, "too_large", "Files can be at most 25 MB.")
 	}
 	if _, err := q.Exec(ctx, `INSERT INTO attachments (id, workspace_id, filename, content_type, size_bytes, storage_key,
-		uploaded_by, uploaded_by_contact_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		id, up.WorkspaceID, filename, ct, counter.n, key, up.UploadedBy, up.UploadedByContact); err != nil {
+		uploaded_by, uploaded_by_contact_id, uploaded_by_api_key_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		id, up.WorkspaceID, filename, ct, counter.n, key, up.UploadedBy, up.UploadedByContact, up.UploadedByAPIKey); err != nil {
 		_ = st.Delete(context.WithoutCancel(ctx), key)
 		return domain.Attachment{}, fmt.Errorf("insert attachment: %w", err)
 	}
@@ -193,15 +194,21 @@ func ParseAttachmentIDs(raw []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
-// CheckAttachments confirms every id is an unattached upload in the workspace. When
-// contactID is set (widget), each must also have been uploaded by that contact.
-func CheckAttachments(ctx context.Context, q db.Querier, wid uuid.UUID, attIDs []uuid.UUID, contactID *uuid.UUID) error {
+// Uploader is who made an upload: an agent, an API key or a widget visitor.
+type Uploader struct {
+	User, APIKey, Contact *uuid.UUID
+}
+
+// CheckAttachments confirms every id is an unattached upload in the workspace made by by:
+// the same agent, API key or visitor (contracts/api.md "Attachments").
+func CheckAttachments(ctx context.Context, q db.Querier, wid uuid.UUID, attIDs []uuid.UUID, by Uploader) error {
 	if len(attIDs) == 0 {
 		return nil
 	}
 	var n int
 	if err := q.QueryRow(ctx, `SELECT count(*) FROM attachments WHERE workspace_id = $1 AND id = ANY($2) AND message_id IS NULL
-		AND ($3::uuid IS NULL OR uploaded_by_contact_id = $3)`, wid, attIDs, contactID).Scan(&n); err != nil {
+		AND uploaded_by IS NOT DISTINCT FROM $3 AND uploaded_by_api_key_id IS NOT DISTINCT FROM $4
+		AND uploaded_by_contact_id IS NOT DISTINCT FROM $5`, wid, attIDs, by.User, by.APIKey, by.Contact).Scan(&n); err != nil {
 		return err
 	}
 	if n != len(attIDs) {

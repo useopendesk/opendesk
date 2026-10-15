@@ -1,0 +1,66 @@
+---
+/**
+ * A message to team@ as it looks in the team's opendesk inbox: the question
+ * arrives, someone starts replying (everyone else sees it), and the answer
+ * goes out, on a loop while on screen. Styled after the ticket view in the
+ * app (web/src), standing on a tall painted panel.
+ */
+import Stage from '../Stage.astro';
+import Icon from '../Icon.astro';
+import Backdrop from '../home/Backdrop.astro';
+import { EMAIL } from '../../lib/site';
+
+interface Props {
+  painting?: string;
+  class?: string;
+}
+const { painting = 'big-cloud', class: className = '' } = Astro.props;
+const mark = 'M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z';
+---
+<div class={`relative isolate overflow-hidden rounded-[22px] md:rounded-[28px] ${className}`}>
+  <Backdrop name={painting} priority sizes="(min-width: 1024px) 50vw, 100vw" class="absolute inset-0 -z-10 h-full w-full" style="object-position:50% 30%" />
+  <div class="flex h-full items-center px-3 py-8 sm:px-8 md:py-12">
+    <Stage w={560} h={560} tone="none" label={`A question to ${EMAIL} arriving in the opendesk inbox, and the team answering it.`}>
+      <div class="float-card left-[20px] top-[20px] flex h-[520px] w-[520px] flex-col text-left !rounded-[14px]" data-seq data-hold="5200">
+        <!-- Ticket header, as in the app. -->
+        <div class="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-5">
+          <span class="font-mono text-[11.5px] text-muted">#2041</span>
+          <span class="truncate text-[14px] font-semibold text-fg">Moving to our own servers later</span>
+          <span data-step="2" data-wait="900" data-until="5" class="s-pop ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-[color-mix(in_oklab,var(--c-amber)_12%,transparent)] py-0.5 pl-0.5 pr-2 text-[11px] text-[color-mix(in_oklab,var(--c-amber)_75%,var(--fg))]">
+            <span class="flex size-[18px] items-center justify-center rounded-full bg-fg text-bg"><svg viewBox="0 0 64 64" class="size-2.5" fill="currentColor" aria-hidden="true"><path d={mark} /></svg></span>Replying
+          </span>
+        </div>
+        <div class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-5 text-[11.5px]">
+          <span><span data-step="0" data-wait="0" data-until="5" class="pill t-blue pill-dot">Open</span><span data-step="5" data-wait="300" class="s-swap pill t-amber pill-dot">Pending</span></span>
+          <span class="pill t-grey">Normal</span>
+          <span class="pill t-blue pill-dot">Sales</span>
+          <span class="ml-auto flex items-center gap-1.5 text-muted"><Icon name="mail" size={12} />{EMAIL}</span>
+        </div>
+
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-5 pt-4">
+          <div class="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-subtle">Today</div>
+          <!-- The question. -->
+          <div class="s-up rounded-xl border border-line px-4 py-3" data-step="1" data-wait="700">
+            <div class="flex items-center gap-2 text-[12.5px]"><span class="flex size-6 items-center justify-center rounded-full bg-surface text-[9.5px] font-semibold text-fg ring-1 ring-line">JW</span><b class="font-semibold text-fg">Jonas Weber</b><span class="truncate text-muted">jonas@northwind.example</span><span class="ml-auto shrink-0 font-mono text-[10.5px] text-muted">9:12 AM</span></div>
+            <p class="mt-2 pl-8 text-[13px] leading-relaxed text-body">Hi! We would like to start on Cloud, but we may need to run opendesk on our own servers next year. Is that possible, and do we keep our tickets?</p>
+          </div>
+          <!-- Someone is writing back; the whole team sees it. -->
+          <div class="s-up flex items-center gap-2 self-start rounded-full bg-surface px-3 py-1.5 text-[11.5px] text-muted ring-1 ring-line" data-step="3" data-wait="1100" data-until="4">
+            <span class="flex size-4 items-center justify-center rounded-full bg-fg text-bg"><svg viewBox="0 0 64 64" class="size-2" fill="currentColor" aria-hidden="true"><path d={mark} /></svg></span>
+            The opendesk team is replying<span class="ml-0.5 flex gap-0.5"><i class="od-dot"></i><i class="od-dot"></i><i class="od-dot"></i></span>
+          </div>
+          <!-- The answer, from a person. -->
+          <div class="s-up rounded-xl border border-line bg-surface-2 px-4 py-3" data-step="4" data-wait="300">
+            <div class="flex items-center gap-2 text-[12.5px]"><span class="flex size-6 items-center justify-center rounded-full bg-fg text-bg"><svg viewBox="0 0 64 64" class="size-3" fill="currentColor" aria-hidden="true"><path d={mark} /></svg></span><b class="font-semibold text-fg">opendesk team</b><span class="text-muted">to Jonas</span><span class="ml-auto font-mono text-[10.5px] text-muted">9:40 AM</span></div>
+            <p class="mt-2 pl-8 text-[13px] leading-relaxed text-body" data-stream="32">Yes. Cloud and self-hosted are the same code, and everything is available through the REST API, so you can move whenever you are ready. The self-hosting guide walks through it, and we are happy to help.</p>
+          </div>
+        </div>
+
+        <div class="m-3 mt-2 flex shrink-0 items-center gap-2 rounded-xl border border-line px-3.5 py-2.5 text-[12px] text-subtle">
+          <Icon name="reply" size={13} />Reply to Jonas
+          <span class="ml-auto flex items-center gap-2"><Icon name="paperclip" size={13} /><span class="inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-fg px-2.5 text-[11.5px] font-medium text-bg"><Icon name="send" size={11} />Send</span></span>
+        </div>
+      </div>
+    </Stage>
+  </div>
+</div>

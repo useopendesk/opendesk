@@ -113,8 +113,8 @@ func TestJevTriageGatesOnConfidence(t *testing.T) {
 	if data["model"] != "jev" || data["confidence"] != 0.86 || data["via"] != "auto_triage" {
 		t.Fatalf("activity %v", data)
 	}
-	// Usage: one triage credit, recorded with model jev.
-	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'triage' AND model = 'jev' AND millicredits = 1000`, e.WS.ID); n != 1 {
+	// Usage: one triage call at its typical $0.01, recorded with model jev.
+	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'triage' AND model = 'jev' AND micro_usd = 10000`, e.WS.ID); n != 1 {
 		t.Fatalf("usage %d", n)
 	}
 
@@ -203,7 +203,7 @@ func TestNoKeyUsesLLMTriageWithSeverity(t *testing.T) {
 	}
 	var cfg AIConfig
 	e.Do("GET", "/v1/ai/config", e.viewer(), nil).Want(t, 200).JSON(t, &cfg)
-	if cfg.Decisions.Provider != "llm" || cfg.Costs["decide"] != 1 || cfg.Costs["answer_check"] != 0.1 {
+	if cfg.Decisions.Provider != "llm" || cfg.Costs["decide"] != 0.01 || cfg.Costs["answer_check"] != 0.001 {
 		t.Fatalf("config %+v", cfg)
 	}
 }

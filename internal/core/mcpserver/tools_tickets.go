@@ -62,7 +62,8 @@ func ticketTools() []*tool {
 		},
 		{
 			Name: "get_ticket", Title: "Get a ticket", Scopes: []string{auth.ScopeTicketsRead}, ReadOnly: true, Idempotent: true,
-			Description: "Read one ticket: its fields, SLA, labels and its thread as plain text, customer messages, team replies and internal notes " +
+			Description: "Read one ticket: its fields, team, brand, the address the customer wrote to (received_at) and the one replies go out from " +
+				"(reply_from), SLA, labels and its thread as plain text, customer messages, team replies and internal notes " +
 				"(kind note) in order. Long threads keep the latest 50 messages.",
 			Schema: obj(map[string]any{"ticket": str(ticketArg)}, "ticket"),
 			Run:    getTicket,
@@ -246,6 +247,7 @@ func searchTickets(ctx context.Context, c *caller, raw json.RawMessage) (any, er
 			out.Tickets = append(out.Tickets, compactTicket(t, false))
 		}
 		out.Count = len(out.Tickets)
+		c.nameAll(ctx, out.Tickets)
 		return out, nil
 	}
 
@@ -288,6 +290,7 @@ func searchTickets(ctx context.Context, c *caller, raw json.RawMessage) (any, er
 		out.Note = "searched the newest " + strconv.Itoa(scanMax) + " tickets in the range; narrow the dates for older ones"
 	}
 	out.Count = len(out.Tickets)
+	c.nameAll(ctx, out.Tickets)
 	return out, nil
 }
 
@@ -299,6 +302,9 @@ type apiMessage struct {
 		Type    string      `json:"type"`
 		User    *userRef    `json:"user"`
 		Contact *contactRef `json:"contact"`
+		Bot     *struct {
+			Name string `json:"name"`
+		} `json:"bot"`
 	} `json:"author"`
 	BodyText    string   `json:"body_text"`
 	FromEmail   string   `json:"from_email"`
@@ -365,6 +371,8 @@ func getTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, error)
 		return nil, err
 	}
 	out := threadOut{Ticket: compactTicket(t, true), Messages: []outMessage{}}
+	c.name(ctx, &out.Ticket)
+	c.replyAddress(ctx, &out.Ticket)
 	list := msgs.Data
 	if len(list) > threadMessages {
 		out.EarlierOmitted = len(list) - threadMessages
@@ -412,6 +420,12 @@ func authorOf(m apiMessage) outAuthor {
 		}
 	case m.Author.User != nil:
 		a.Name, a.Email = m.Author.User.Name, m.Author.User.Email
+	case m.AI:
+		// The AI's replies are its bot's (contracts/bots.md), else Ollie's.
+		a.Name = ai.AssistantName
+		if m.Author.Bot != nil && m.Author.Bot.Name != "" {
+			a.Name = m.Author.Bot.Name
+		}
 	default:
 		a.Name = m.FromName
 		if m.Direction == "inbound" {
@@ -604,7 +618,9 @@ func updateTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, err
 	if err := c.do(ctx, http.MethodPatch, "/v1/tickets/"+ref, nil, body, &t); err != nil {
 		return nil, err
 	}
-	return compactTicket(t, false), nil
+	o := compactTicket(t, false)
+	c.name(ctx, &o)
+	return o, nil
 }
 
 func createTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
@@ -699,7 +715,9 @@ func createTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, err
 	if err := c.do(ctx, http.MethodPost, "/v1/tickets", nil, body, &t); err != nil {
 		return nil, err
 	}
-	return compactTicket(t, false), nil
+	o := compactTicket(t, false)
+	c.name(ctx, &o)
+	return o, nil
 }
 
 func nullable(id string) any {

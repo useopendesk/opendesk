@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Row, Section, SettingsPage } from "@/components/layout";
-import { AiIcon } from "@/components/ai/bits";
+import { AiIcon, useCostText } from "@/components/ai/bits";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Segmented } from "@/components/ui/tabs";
@@ -284,7 +284,7 @@ export default function AiSettings() {
                   <tr key={f} className="border-b border-line-soft last:border-0">
                     <td className="px-4 py-2.5 text-fg-2">{t(`features.${f}`)}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <CreditChip n={config.costs[f]!} label={config.metered ? t("settings.about_credits", { count: config.costs[f]! }) : undefined} />
+                      <CostChip usd={config.costs[f]!} />
                     </td>
                   </tr>
                 ))}
@@ -323,8 +323,6 @@ function FeatureRow({
   disabled: boolean;
   onChange: (v: boolean) => void;
 }) {
-  const { t } = useTranslation();
-  const { t: tai } = useTranslation("ai");
   const { data: config } = useQuery(q.aiConfig());
   return (
     <Row
@@ -332,7 +330,7 @@ function FeatureRow({
       description={
         <>
           {description}
-          {cost !== undefined && !config?.own_key && <CreditChip n={cost} className="ml-1.5 align-[1px]" label={config?.metered ? tai("settings.about_credits", { count: cost }) : t("credits", { count: cost })} />}
+          {cost !== undefined && !config?.own_key && <CostChip usd={cost} className="ml-1.5 align-[1px]" />}
         </>
       }
     >
@@ -341,11 +339,10 @@ function FeatureRow({
   );
 }
 
-/** A credit cost in the AI hue. */
-function CreditChip({ n, label, className }: { n: number; label?: string; className?: string }) {
-  return (
-    <span className={cn("mono inline-flex h-[18px] items-center rounded-sm px-1.5 text-[10.5px] tabular-nums", tone[AI_TONE].chip, className)}>{label ?? n}</span>
-  );
+/** A typical cost in US dollars, in the AI hue: "about $0.0135" when each call is charged on what it uses. */
+function CostChip({ usd, className }: { usd: number; className?: string }) {
+  const text = useCostText();
+  return <span className={cn("mono inline-flex h-[18px] items-center rounded-sm px-1.5 text-[10.5px] tabular-nums", tone[AI_TONE].chip, className)}>{text(usd)}</span>;
 }
 
 function Counter({ n, max }: { n: number; max: number }) {

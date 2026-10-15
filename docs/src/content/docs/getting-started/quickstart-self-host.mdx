@@ -1,40 +1,92 @@
 ---
 title: Quickstart (self-host)
-description: Install opendesk on your own server with one command.
+description: Install opendesk on your own server with one command, then create the first account and set up email.
 ---
 
-import { Steps, Aside } from '@astrojs/starlight/components';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Diagram from '../../../components/Diagram.astro';
 
-Self-hosted opendesk is free forever and runs the same code as the hosted service. One command installs it with Docker, generates every secret and serves it over HTTPS.
+Self-hosted opendesk is free forever and runs the same code as the hosted service. One command installs it with Docker, generates every secret and serves it over HTTPS. When it is done, your server runs this:
+
+<Diagram name="self-host" />
 
 <Steps>
+<Step title="Get a server">
 
-1. **Get a server.** Any Linux machine (amd64 or arm64) with Docker works. See [Requirements](/self-hosting/requirements/).
+Any Linux machine on amd64 or arm64 with Docker works; 2 vCPUs and 4 GB of RAM is a good start for a small team. The installer offers to install Docker if it is missing. See [Requirements](/self-hosting/requirements/).
 
-2. **Point a domain at it.** Create a DNS `A` (and `AAAA`) record such as `desk.example.com` for the server, and open ports 80 and 443.
+```sh
+docker compose version     # Docker with the Compose plugin
+```
 
-3. **Run the installer.**
+</Step>
+<Step title="Point a domain at it">
 
-   ```sh
-   curl -fsSL https://opendesk.sh/install.sh | sh
-   ```
+Create a DNS `A` record (and `AAAA` for IPv6), such as `desk.example.com`, with the server's address, and open ports 80 and 443. Caddy needs both to get and renew the certificate.
 
-   It asks for your domain and an email address for the TLS certificate. To answer up front:
+```sh
+dig +short desk.example.com      # should print the server's address
+```
 
-   ```sh
-   curl -fsSL https://opendesk.sh/install.sh | sh -s -- --domain desk.example.com --email you@example.com
-   ```
+</Step>
+<Step title="Run the installer">
 
-4. **Open your domain** and create the first account. Then create a workspace and [connect a mailbox](/guides/mailboxes/).
+```sh
+curl -fsSL https://opendesk.sh/install.sh | sh
+```
 
+It asks for your domain and an email address for the TLS certificate. To answer up front:
+
+```sh
+curl -fsSL https://opendesk.sh/install.sh | sh -s -- --domain desk.example.com --email you@example.com
+```
+
+To read the script before running it, see [Verify before running](/self-hosting/install-script/#verify-before-running).
+
+</Step>
+<Step title="Check that it is up">
+
+The installer waits for opendesk to answer, then prints its address. `opendesk-ctl` shows the containers and their health:
+
+```sh
+/opt/opendesk/opendesk-ctl status
+```
+
+</Step>
+<Step title="Create the first account">
+
+Open `https://desk.example.com` and sign up. The first account becomes the workspace owner. Then name your workspace and [connect a mailbox](/guides/mailboxes/), as in the [Cloud quickstart](/getting-started/quickstart-cloud/), which shows each screen.
+
+</Step>
+<Step title="Set up email">
+
+Until you configure it, verification, password reset and invitation emails are printed to the log instead of sent:
+
+```sh
+/opt/opendesk/opendesk-ctl logs opendesk
+```
+
+Set `MAIL_DRIVER` and your SMTP server in `/opt/opendesk/.env`, then apply it with `opendesk-ctl start`. See [Email setup](/self-hosting/email/).
+
+</Step>
 </Steps>
 
-<Aside type="caution" title="Back up your .env">
-The installer writes `/opt/opendesk/.env` with fresh secrets. It holds the only copy of `CREDENTIALS_KEY`, which encrypts mailbox credentials. Losing it makes every stored mailbox credential unreadable.
-</Aside>
+<Callout type="warning" title="Back up your .env">
+
+The installer writes `/opt/opendesk/.env` with fresh secrets. It holds the only copy of `CREDENTIALS_KEY`, which encrypts mailbox credentials. Losing it makes every stored mailbox credential unreadable. `opendesk-ctl backup` saves it with the database.
+
+</Callout>
+
+<Callout title="Close sign-ups">
+
+Once your account exists, set `SIGNUP_ENABLED=false` in `.env` so only people you invite can create an account.
+
+</Callout>
 
 ## Next steps
 
-- Read the [install script](/self-hosting/install-script/) reference for every flag.
-- Set up [system email](/self-hosting/email/) so password resets and invites are delivered.
-- Configure [Google and Microsoft OAuth](/self-hosting/oauth-apps/) if you want one-click mailbox connections or social sign-in.
+- Read the [install script](/self-hosting/install-script/) reference for every flag, including `--wizard`.
+- Configure [Google and Microsoft OAuth](/self-hosting/oauth-apps/) for one-click mailbox connections and sign-in.
+- Plan [backups and upgrades](/self-hosting/backups-and-upgrades/).

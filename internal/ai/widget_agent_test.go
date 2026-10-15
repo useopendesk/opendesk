@@ -97,7 +97,7 @@ func TestWidgetAgent(t *testing.T) {
 	}
 	ms := publicMessages(e, tid)
 	if len(ms) != 2 || !ms[1].AI || ms[1].Author.Type != "system" || ms[1].Direction != "outbound" || ms[1].FromName != "Ollie" ||
-		!strings.Contains(ms[1].BodyHTML, "sign-in page") || !strings.Contains(ms[1].BodyHTML, "/articles/") || strings.Contains(ms[1].BodyHTML, "[1]") {
+		!strings.Contains(ms[1].BodyHTML, "sign-in page") || !strings.Contains(ms[1].BodyHTML, "/help/"+e.WS.Slug+"/a/") || strings.Contains(ms[1].BodyHTML, "[1]") {
 		t.Fatalf("%+v", ms)
 	}
 	req := e.F.last()
@@ -112,7 +112,7 @@ func TestWidgetAgent(t *testing.T) {
 	if !answered {
 		t.Fatal("marker")
 	}
-	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'answer' AND millicredits = 3000`, e.WS.ID); n != 1 {
+	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'answer' AND micro_usd = 30000`, e.WS.ID); n != 1 {
 		t.Fatalf("usage %d", n)
 	}
 	var act map[string]any
@@ -253,7 +253,7 @@ func TestWidgetAgent(t *testing.T) {
 	e.settings(map[string]any{"widget_max_replies": 20})
 
 	// The monthly cap stops the agent and notifies owners and admins once.
-	e.settings(map[string]any{"widget_monthly_cap": 1})
+	e.settings(map[string]any{"widget_monthly_cap_usd": 0.01})
 	for i := 0; i < 2; i++ {
 		_, tid9, _ := widgetConversation(e, "How do I reset my password?")
 		before = e.F.calls()
@@ -270,7 +270,7 @@ func TestWidgetAgent(t *testing.T) {
 	var rep AgentReport
 	e.Do("GET", "/v1/ai/agent/report", e.agent(), nil).Want(t, 403)
 	e.Do("GET", "/v1/ai/agent/report", e.admin(), nil).Want(t, 200).JSON(t, &rep)
-	if rep.Replies < 5 || rep.Conversations < 4 || rep.Handoffs < 3 || rep.Credits <= 0 || len(rep.ByDay) == 0 ||
+	if rep.Replies < 5 || rep.Conversations < 4 || rep.Handoffs < 3 || rep.USD <= 0 || len(rep.ByDay) == 0 ||
 		len(rep.Tools) == 0 || rep.Tools[0].Calls == 0 || len(rep.Gaps) == 0 {
 		t.Fatalf("report %+v", rep)
 	}
@@ -293,7 +293,7 @@ func TestWidgetAgentOnJev(t *testing.T) {
 	if q := e.TS.last().Questions; q["needs_human"]["type"] != "noul" {
 		t.Fatalf("questions %v", q)
 	}
-	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'answer_check' AND model = 'jev' AND millicredits = 100`, e.WS.ID); n != 1 {
+	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'answer_check' AND model = 'jev' AND micro_usd = 1000`, e.WS.ID); n != 1 {
 		t.Fatalf("check usage %d", n)
 	}
 	// Jev says a person is needed: the agent is asked to hand off.
@@ -316,12 +316,12 @@ func TestAgentPlayground(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := map[string]any{"messages": []any{map[string]any{"role": "visitor", "text": "How do I reset my password?"}},
-		"settings": map[string]any{"widget_instructions": "Always mention the Forgot password link."}}
+		"settings": map[string]any{"bot": map[string]any{"personality": map[string]any{"instructions": "Always mention the Forgot password link."}}}}
 	e.Do("POST", "/v1/ai/agent/playground", e.agent(), body).Want(t, 403)
 	e.Do("POST", "/v1/ai/agent/playground", e.admin(), map[string]any{"messages": []any{map[string]any{"role": "agent", "text": "Hi"}}}).Want(t, 422)
 	var out PlaygroundOutput
 	e.Do("POST", "/v1/ai/agent/playground", e.admin(), body).Want(t, 200).JSON(t, &out)
-	if !strings.Contains(out.TextHTML, "sign-in page") || len(out.Sources) != 1 || out.Credits != 3 || out.Action != nil {
+	if !strings.Contains(out.TextHTML, "sign-in page") || len(out.Sources) != 1 || out.USD != 0.03 || out.Action != nil {
 		t.Fatalf("%+v", out)
 	}
 	if sys, _ := json.Marshal(e.F.last()["system"]); !strings.Contains(string(sys), "Forgot password link") {

@@ -72,7 +72,9 @@ export function Segmented<V extends string>({
   const id = useId();
   const reduce = useReducedMotion();
   return (
-    <div role="radiogroup" className={cn("inline-flex items-center rounded-md bg-hover p-0.5", className)}>
+    // Dark mode tints the track with white so it shows on any surface: dialogs and popovers sit on
+    // --raised, which is the same grey as --hover.
+    <div role="radiogroup" className={cn("inline-flex items-center rounded-md bg-hover p-0.5 dark:bg-white/[0.07] dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.05)]", className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -90,7 +92,7 @@ export function Segmented<V extends string>({
             <motion.span
               layoutId={reduce ? undefined : `seg-${id}`}
               transition={spring}
-              className="absolute inset-0 rounded-md bg-surface shadow-[0_0_0_1px_var(--line),0_1px_2px_rgb(0_0_0/0.06)]"
+              className="absolute inset-0 rounded-md bg-surface shadow-[0_0_0_1px_var(--line),0_1px_2px_rgb(0_0_0/0.06)] dark:bg-white/[0.11] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_1px_2px_rgb(0_0_0/0.3)]"
             />
           )}
           <span className="relative inline-flex items-center gap-1.5">

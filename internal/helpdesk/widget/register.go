@@ -1,5 +1,7 @@
 // Package widget is the chat widget API (visitor sessions, conversations, uploads), the
-// admin-side widget settings and the attachment routes shared by agents and visitors.
+// admin-side widgets and their settings, and the attachment routes shared by agents and
+// visitors. A workspace has any number of widgets, one per website, each in a brand
+// (contracts/teams.md).
 package widget
 
 import (
@@ -17,6 +19,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	h.registerConversations(api)
 	h.registerAgentRoutes(api)
 	h.registerSettings(api)
+	h.registerWidgets(api)
 }
 
 type handler struct {

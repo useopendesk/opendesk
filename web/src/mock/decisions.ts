@@ -33,7 +33,12 @@ type Proposal = { priority: Priority; severity: Severity; tags: string[]; team_i
  * triage_fields, unless `force`) are written as Ollie, the rest become
  * suggestions. Returns the decisions and suggestions stored on the ticket.
  */
-export function applyDecisions(ws: WsData, t: Ticket, p: Proposal, opts: { via: string; force?: boolean; publish?: boolean; at?: string } = { via: "auto_triage" }) {
+export function applyDecisions(
+  ws: WsData,
+  t: Ticket,
+  p: Proposal,
+  opts: { via: string; force?: boolean; publish?: boolean; at?: string; confidence?: Partial<Record<"priority" | "severity" | "label" | "team" | "sentiment", number>> } = { via: "auto_triage" },
+) {
   const threshold = ws.routing.triageThreshold ?? 0.7;
   const allowed = new Set(opts.force ? ["priority", "severity", "labels", "team"] : ws.routing.triageFields);
   const at = opts.at ?? nowIso();
@@ -43,6 +48,7 @@ export function applyDecisions(ws: WsData, t: Ticket, p: Proposal, opts: { via: 
     label: confidenceOf(t, "label"),
     team: confidenceOf(t, "team", 0.45, 0.95),
     sentiment: confidenceOf(t, "sentiment", 0.7, 0.99),
+    ...opts.confidence,
   };
   const ok = (f: "priority" | "severity" | "labels" | "team", c: number) => allowed.has(f) && (opts.force || c >= threshold);
   const suggestions: AISuggestions = {};

@@ -33,45 +33,46 @@ func newURL(u string) *urlBody {
 
 // UsageReport is the GET /v1/billing/usage body.
 type UsageReport struct {
-	From         time.Time     `json:"from"`
-	To           time.Time     `json:"to"`
-	TotalCredits float64       `json:"total_credits"`
-	TotalCalls   int           `json:"total_calls"`
-	ByFeature    []FeatureUse  `json:"by_feature"`
-	ByDay        []DayUse      `json:"by_day"`
-	ByMember     []MemberUsage `json:"by_member"`
-	ByModel      []ModelUse    `json:"by_model"`
-	// OwnKeyCalls counts calls made on the workspace's own AI provider key (0 credits).
+	From       time.Time     `json:"from"`
+	To         time.Time     `json:"to"`
+	TotalUSD   float64       `json:"total_usd"`
+	TotalCalls int           `json:"total_calls"`
+	ByFeature  []FeatureUse  `json:"by_feature"`
+	ByDay      []DayUse      `json:"by_day"`
+	ByMember   []MemberUsage `json:"by_member"`
+	ByModel    []ModelUse    `json:"by_model"`
+	// OwnKeyCalls counts calls made on the workspace's own AI provider key ($0 each).
 	OwnKeyCalls int `json:"own_key_calls"`
 }
 
 type FeatureUse struct {
 	Feature string  `json:"feature"`
-	Credits float64 `json:"credits"`
+	USD     float64 `json:"usd"`
 	Calls   int     `json:"calls"`
 }
 
 type DayUse struct {
 	Date      string             `json:"date" doc:"YYYY-MM-DD, UTC"`
-	Credits   float64            `json:"credits"`
+	USD       float64            `json:"usd"`
 	Calls     int                `json:"calls"`
-	ByFeature map[string]float64 `json:"by_feature" doc:"Credits per feature that day"`
+	ByFeature map[string]float64 `json:"by_feature" doc:"US dollars per feature that day"`
 }
 
 type MemberUsage struct {
-	User    *domain.UserRef `json:"user" doc:"null for calls without a user (widget agent, automations)"`
-	Credits float64         `json:"credits"`
-	Calls   int             `json:"calls"`
+	User  *domain.UserRef `json:"user" doc:"null for calls without a user (widget agent, automations)"`
+	USD   float64         `json:"usd"`
+	Calls int             `json:"calls"`
 }
 
 type ModelUse struct {
 	Model        string  `json:"model"`
-	Credits      float64 `json:"credits"`
+	USD          float64 `json:"usd"`
 	Calls        int     `json:"calls"`
 	InputTokens  int64   `json:"input_tokens"`
 	OutputTokens int64   `json:"output_tokens"`
-	// Source is who paid: "credits" (the instance's provider) or "own_key" (the workspace's key).
-	Source string `json:"source" enum:"credits,own_key"`
+	// Source is who paid: "instance" (the instance's provider, charged to the AI balance)
+	// or "own_key" (the workspace's key).
+	Source string `json:"source" enum:"instance,own_key"`
 }
 
 // requireBillingAdmin is the gate for routes that open Stripe: a signed-in owner or admin.
@@ -90,7 +91,7 @@ func (s *svc) registerAPI(api huma.API) {
 	tags := []string{"Billing"}
 
 	huma.Register(api, huma.Operation{OperationID: "get-billing", Method: http.MethodGet, Path: "/v1/billing",
-		Summary: "Get the workspace plan, limits, credits and prices", Tags: tags},
+		Summary: "Get the workspace plan, limits, AI balance and prices", Tags: tags},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body Billing }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeSettingsRead)
 			if err != nil {
@@ -155,7 +156,7 @@ func (s *svc) registerAPI(api huma.API) {
 				Metadata:            meta,
 				SubscriptionData:    &stripe.CheckoutSessionCreateSubscriptionDataParams{Metadata: meta},
 			}
-			s.applyTax(params)
+			forBusiness(params)
 			sess, err := s.sc.V1CheckoutSessions.Create(ctx, params)
 			if err != nil {
 				return nil, s.wrapStripe(err)
@@ -179,7 +180,7 @@ func (s *svc) registerAPI(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			if cus == nil {
-				return nil, httpx.E(409, "no_billing_account", "This workspace has no billing account yet. Upgrade or buy credits first.")
+				return nil, httpx.E(409, "no_billing_account", "This workspace has no billing account yet. Upgrade or add an AI top-up first.")
 			}
 			sess, err := s.sc.V1BillingPortalSessions.Create(ctx, &stripe.BillingPortalSessionCreateParams{
 				Customer: cus, ReturnURL: stripe.String(s.d.Cfg.AppURL + "/settings/billing")})
@@ -189,11 +190,12 @@ func (s *svc) registerAPI(api huma.API) {
 			return newURL(sess.URL), nil
 		})
 
-	huma.Register(api, huma.Operation{OperationID: "create-credits-checkout", Method: http.MethodPost, Path: "/v1/billing/credits/checkout",
-		Summary: "Start a Stripe Checkout for AI credit packs", Tags: tags},
+	huma.Register(api, huma.Operation{OperationID: "create-top-up-checkout", Method: http.MethodPost, Path: "/v1/billing/top-up/checkout",
+		Summary: "Start a Stripe Checkout for AI usage", Tags: tags},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Packs int `json:"packs" minimum:"1" maximum:"20" doc:"Number of credit packs to buy"`
+				AmountUSD *float64 `json:"amount_usd,omitempty" minimum:"5" maximum:"5000" doc:"AI usage to buy, in US dollars (rounded to cents), charged dollar for dollar"`
+				TopUps    *int     `json:"top_ups,omitempty" minimum:"1" maximum:"20" doc:"Deprecated: $10 of AI usage each. Use amount_usd"`
 			}
 		}) (*urlBody, error) {
 			if !s.enabled() {
@@ -203,34 +205,59 @@ func (s *svc) registerAPI(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			if s.d.Cfg.StripePriceCredits == "" {
-				return nil, httpx.E(422, "credits_unavailable", "Credit packs are not available.")
+			var usd plan.Micro
+			switch {
+			case in.Body.AmountUSD != nil:
+				if usd, err = topUpAmount(*in.Body.AmountUSD, "amount_usd"); err != nil {
+					return nil, err
+				}
+			case in.Body.TopUps != nil:
+				usd = plan.TopUpUSD * plan.Micro(*in.Body.TopUps)
+			default:
+				return nil, httpx.Validation("amount_usd is required.")
+			}
+			if s.d.Cfg.StripePriceTopUp == "" {
+				return nil, errTopUpUnavailable()
 			}
 			if !s.d.Limiter.Allow("billing:checkout:"+p.WorkspaceID.String(), 30, time.Hour) {
 				return nil, httpx.RateLimited()
+			}
+			price := s.pricesFor(ctx).AITopUp
+			if price == nil || price.UnitAmount <= 0 {
+				return nil, httpx.E(http.StatusBadGateway, "billing_unavailable", "The billing provider is unavailable. Try again in a moment.")
 			}
 			cus, err := s.customer(ctx, p.WorkspaceID)
 			if err != nil {
 				return nil, s.wrapStripe(err)
 			}
 			wid := p.WorkspaceID.String()
-			meta := map[string]string{"workspace_id": wid, "kind": "credits", "packs": strconv.Itoa(in.Body.Packs)}
+			meta := map[string]string{"workspace_id": wid, "kind": topUpKind, "micro_usd": strconv.FormatInt(int64(usd), 10)}
+			// Any amount: priced on the top-up price's product, dollar for dollar.
+			line := &stripe.CheckoutSessionCreateLineItemPriceDataParams{Currency: stripe.String(price.Currency),
+				UnitAmount: stripe.Int64(amountFor(usd, price)), TaxBehavior: stripe.String("exclusive")}
+			if price.Product != "" {
+				line.Product = stripe.String(price.Product)
+			} else {
+				line.ProductData = &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{Name: stripe.String("AI usage top-up")}
+			}
+			text := "AI usage top-up, " + usdText(usd)
 			params := &stripe.CheckoutSessionCreateParams{
 				Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
 				Customer:          stripe.String(cus),
 				ClientReferenceID: stripe.String(wid),
-				LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{Price: stripe.String(s.d.Cfg.StripePriceCredits),
-					Quantity: stripe.Int64(int64(in.Body.Packs))}},
-				SuccessURL:      stripe.String(s.appURL("credits", "success")),
-				CancelURL:       stripe.String(s.appURL("credits", "canceled")),
-				AdaptivePricing: &stripe.CheckoutSessionCreateAdaptivePricingParams{Enabled: stripe.Bool(true)},
-				InvoiceCreation: &stripe.CheckoutSessionCreateInvoiceCreationParams{Enabled: stripe.Bool(true)},
-				Metadata:        meta,
-				// Save the card for off-session use, so auto-recharge can charge it later.
-				PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{Metadata: meta,
+				LineItems:         []*stripe.CheckoutSessionCreateLineItemParams{{PriceData: line, Quantity: stripe.Int64(1)}},
+				SuccessURL:        stripe.String(s.appURL("top_up", "success")),
+				CancelURL:         stripe.String(s.appURL("top_up", "canceled")),
+				AdaptivePricing:   &stripe.CheckoutSessionCreateAdaptivePricingParams{Enabled: stripe.Bool(true)},
+				InvoiceCreation: &stripe.CheckoutSessionCreateInvoiceCreationParams{Enabled: stripe.Bool(true),
+					InvoiceData: &stripe.CheckoutSessionCreateInvoiceCreationInvoiceDataParams{Description: stripe.String(text),
+						Metadata: map[string]string{"workspace_id": wid, "kind": topUpKind}}},
+				Metadata: meta,
+				// Save the card for off-session use, so auto-recharge and one-click top-ups can charge it.
+				PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{Metadata: meta, Description: stripe.String(text),
 					SetupFutureUsage: stripe.String("off_session")},
 			}
-			s.applyTax(params)
+			forBusiness(params)
 			sess, err := s.sc.V1CheckoutSessions.Create(ctx, params)
 			if err != nil {
 				return nil, s.wrapStripe(err)
@@ -239,7 +266,7 @@ func (s *svc) registerAPI(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "get-billing-usage", Method: http.MethodGet, Path: "/v1/billing/usage",
-		Summary: "AI credit usage by feature, day and member", Tags: tags},
+		Summary: "AI usage in US dollars by feature, day, member and model", Tags: tags},
 		func(ctx context.Context, in *struct {
 			From string `query:"from" doc:"RFC 3339 time or YYYY-MM-DD (default: start of this month, UTC)"`
 			To   string `query:"to" doc:"RFC 3339 time (exclusive) or YYYY-MM-DD (that day included) (default: now)"`
@@ -287,54 +314,54 @@ func parseTime(v string) (time.Time, error) {
 func usageReport(ctx context.Context, q db.Querier, wid uuid.UUID, from, to time.Time) (UsageReport, error) {
 	r := UsageReport{From: from, To: to, ByFeature: []FeatureUse{}, ByDay: []DayUse{}, ByMember: []MemberUsage{}, ByModel: []ModelUse{}}
 	const where = ` FROM ai_usage a WHERE a.workspace_id = $1 AND a.created_at >= $2 AND a.created_at < $3`
-	var total plan.Milli
-	rows, err := q.Query(ctx, `SELECT a.feature, sum(a.millicredits)::bigint, count(*)::int`+where+` GROUP BY a.feature ORDER BY 2 DESC, 1`, wid, from, to)
+	var total plan.Micro
+	rows, err := q.Query(ctx, `SELECT a.feature, sum(a.micro_usd)::bigint, count(*)::int`+where+` GROUP BY a.feature ORDER BY 2 DESC, 1`, wid, from, to)
 	if err != nil {
 		return r, err
 	}
 	if r.ByFeature, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (FeatureUse, error) {
 		var f FeatureUse
-		var m plan.Milli
+		var m plan.Micro
 		err := row.Scan(&f.Feature, &m, &f.Calls)
-		f.Credits = m.Credits()
+		f.USD = m.USD()
 		total += m
 		return f, err
 	}); err != nil {
 		return r, err
 	}
-	r.TotalCredits = total.Credits()
+	r.TotalUSD = total.USD()
 	for _, f := range r.ByFeature {
 		r.TotalCalls += f.Calls
 	}
-	rows, err = q.Query(ctx, `SELECT to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') d, a.feature, sum(a.millicredits)::bigint, count(*)::int`+where+
+	rows, err = q.Query(ctx, `SELECT to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') d, a.feature, sum(a.micro_usd)::bigint, count(*)::int`+where+
 		` GROUP BY d, a.feature ORDER BY d, a.feature`, wid, from, to)
 	if err != nil {
 		return r, err
 	}
 	type dayFeature struct {
 		day, feature string
-		milli        plan.Milli
+		usd          plan.Micro
 		calls        int
 	}
 	parts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (dayFeature, error) {
 		var x dayFeature
-		return x, row.Scan(&x.day, &x.feature, &x.milli, &x.calls)
+		return x, row.Scan(&x.day, &x.feature, &x.usd, &x.calls)
 	})
 	if err != nil {
 		return r, err
 	}
-	dayMilli := map[string]plan.Milli{}
+	dayUSD := map[string]plan.Micro{}
 	for _, x := range parts {
 		if n := len(r.ByDay); n == 0 || r.ByDay[n-1].Date != x.day {
 			r.ByDay = append(r.ByDay, DayUse{Date: x.day, ByFeature: map[string]float64{}})
 		}
 		d := &r.ByDay[len(r.ByDay)-1]
-		dayMilli[x.day] += x.milli
-		d.Credits = dayMilli[x.day].Credits()
+		dayUSD[x.day] += x.usd
+		d.USD = dayUSD[x.day].USD()
 		d.Calls += x.calls
-		d.ByFeature[x.feature] = x.milli.Credits()
+		d.ByFeature[x.feature] = x.usd.USD()
 	}
-	rows, err = q.Query(ctx, `SELECT u.id, u.name, u.email, u.avatar_url, sum(a.millicredits)::bigint, count(*)::int
+	rows, err = q.Query(ctx, `SELECT u.id, u.name, u.email, u.avatar_url, sum(a.micro_usd)::bigint, count(*)::int
 		FROM ai_usage a LEFT JOIN users u ON u.id = a.user_id
 		WHERE a.workspace_id = $1 AND a.created_at >= $2 AND a.created_at < $3
 		GROUP BY u.id, u.name, u.email, u.avatar_url ORDER BY 5 DESC LIMIT 500`, wid, from, to)
@@ -345,11 +372,11 @@ func usageReport(ctx context.Context, q db.Querier, wid uuid.UUID, from, to time
 		var m MemberUsage
 		var id *uuid.UUID
 		var name, email, avatar *string
-		var milli plan.Milli
-		if err := row.Scan(&id, &name, &email, &avatar, &milli, &m.Calls); err != nil {
+		var usd plan.Micro
+		if err := row.Scan(&id, &name, &email, &avatar, &usd, &m.Calls); err != nil {
 			return m, err
 		}
-		m.Credits = milli.Credits()
+		m.USD = usd.USD()
 		if id != nil {
 			m.User = &domain.UserRef{ID: *id, Name: *name, Email: *email, AvatarURL: domain.Avatar(*avatar)}
 		}
@@ -358,16 +385,16 @@ func usageReport(ctx context.Context, q db.Querier, wid uuid.UUID, from, to time
 	if err != nil {
 		return r, err
 	}
-	rows, err = q.Query(ctx, `SELECT a.model, a.source, sum(a.millicredits)::bigint, count(*)::int, sum(a.input_tokens)::bigint, sum(a.output_tokens)::bigint`+where+
+	rows, err = q.Query(ctx, `SELECT a.model, a.source, sum(a.micro_usd)::bigint, count(*)::int, sum(a.input_tokens)::bigint, sum(a.output_tokens)::bigint`+where+
 		` GROUP BY a.model, a.source ORDER BY 3 DESC, 4 DESC, 1 LIMIT 100`, wid, from, to)
 	if err != nil {
 		return r, err
 	}
 	r.ByModel, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (ModelUse, error) {
 		var m ModelUse
-		var milli plan.Milli
-		err := row.Scan(&m.Model, &m.Source, &milli, &m.Calls, &m.InputTokens, &m.OutputTokens)
-		m.Credits = milli.Credits()
+		var usd plan.Micro
+		err := row.Scan(&m.Model, &m.Source, &usd, &m.Calls, &m.InputTokens, &m.OutputTokens)
+		m.USD = usd.USD()
 		return m, err
 	})
 	if err != nil {
@@ -381,14 +408,22 @@ func (s *svc) appURL(key, value string) string {
 	return s.d.Cfg.AppURL + "/settings/billing?" + key + "=" + value
 }
 
-// applyTax turns on Stripe Tax for a Checkout Session when STRIPE_TAX is set.
-func (s *svc) applyTax(p *stripe.CheckoutSessionCreateParams) {
-	if !s.d.Cfg.StripeTax {
-		return
-	}
-	p.AutomaticTax = &stripe.CheckoutSessionCreateAutomaticTaxParams{Enabled: stripe.Bool(true)}
-	p.CustomerUpdate = &stripe.CheckoutSessionCreateCustomerUpdateParams{Address: stripe.String("auto"), Name: stripe.String("auto")}
+// businessCheckoutNotice is shown above the pay button of every purchase.
+const businessCheckoutNotice = "opendesk is sold to businesses for business use only. Prices exclude taxes: where we do not charge tax, your business accounts for any tax due in its own country, for example under the reverse charge."
+
+// forBusiness sets up a Checkout Session as a business purchase: the company's legal
+// name and billing address are required and its tax ID is collected, so they go on the
+// invoice, and the buyer sees that opendesk is sold to businesses. Tax is not computed
+// at checkout (contracts/billing.md "Tax").
+func forBusiness(p *stripe.CheckoutSessionCreateParams) {
+	p.BillingAddressCollection = stripe.String(string(stripe.CheckoutSessionBillingAddressCollectionRequired))
+	p.NameCollection = &stripe.CheckoutSessionCreateNameCollectionParams{
+		Business: &stripe.CheckoutSessionCreateNameCollectionBusinessParams{Enabled: stripe.Bool(true), Optional: stripe.Bool(false)}}
 	p.TaxIDCollection = &stripe.CheckoutSessionCreateTaxIDCollectionParams{Enabled: stripe.Bool(true)}
+	// Saves what the buyer enters on the workspace's existing customer, for later invoices.
+	p.CustomerUpdate = &stripe.CheckoutSessionCreateCustomerUpdateParams{Address: stripe.String("auto"), Name: stripe.String("auto")}
+	p.CustomText = &stripe.CheckoutSessionCreateCustomTextParams{
+		Submit: &stripe.CheckoutSessionCreateCustomTextSubmitParams{Message: stripe.String(businessCheckoutNotice)}}
 }
 
 // wrapStripe logs a Stripe failure (without request details) and answers 502.

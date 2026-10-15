@@ -1,11 +1,11 @@
 // Settings > Plan and billing (contracts/billing.md): the plan, seats, limits,
-// AI credits and usage. Stripe Checkout and the billing portal are hosted by
+// the AI balance (US dollars) and usage. Stripe Checkout and the billing portal are hosted by
 // Stripe; this page only starts them and reflects billing.updated live.
 
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
-import { ArrowUpRight, Check, CreditCard, Server, Sparkles } from "lucide-react";
+import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
+import { ArrowUpRight, Check, CreditCard, Gauge, KeyRound, Server, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Section, SettingsPage } from "@/components/layout";
@@ -18,12 +18,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
-import { RESUME_AUTO_RECHARGE_KEY, useBilling, useBuyCredits, useCanManageBilling, useCheckout, useFmt, usePortal } from "@/components/billing/hooks";
+import { RESUME_AUTO_RECHARGE_KEY, useBilling, useCanManageBilling, useCheckout, useFmt, usePortal } from "@/components/billing/hooks";
 import { AutoRechargeSection } from "@/components/billing/AutoRecharge";
-import { Stepper } from "@/components/settings2/Stepper";
+import { PaymentAndInvoices } from "@/components/billing/Invoices";
+import { TopUpPanel } from "@/components/billing/TopUp";
 import { api } from "@/lib/api/endpoints";
 import { Meter } from "@/components/billing/Meter";
-import { creditBreakdown, formatMoney, formatPrice, hasSubscription, isSelfHosted, limitState, stackDays, yearlySavings } from "@/components/billing/model";
+import { balanceBreakdown, formatMoney, formatPrice, hasSubscription, isSelfHosted, limitState, stackDays, yearlySavings } from "@/components/billing/model";
 import { UsageChart, UsageDayTable, UsageLegend, shadeOf } from "@/components/billing/UsageChart";
 import { isApiError } from "@/lib/api/client";
 import type { AutoRechargePatch, Billing, BillingStatus, ReportsRange } from "@/lib/api/types";
@@ -60,8 +61,9 @@ export default function BillingPage() {
           <PlanCard b={b} />
           {b.plan === "free" && <Upgrade b={b} />}
           {b.plan === "free" && <Limits b={b} />}
-          <Credits b={b} />
+          <AiBalance b={b} />
           <AutoRechargeSection b={b} />
+          <PaymentAndInvoices b={b} />
           <Usage />
         </>
       )}
@@ -71,30 +73,30 @@ export default function BillingPage() {
 
 // ─── Returning from Stripe ─────────────────────────────────────────────────
 
-/** Handles ?checkout= and ?credits=, then waits for billing.updated to confirm. */
+/** Handles ?checkout= and ?top_up=, then waits for billing.updated to confirm. */
 function useCheckoutReturn(b: Billing | undefined) {
   const { t } = useTranslation("billing");
   const search = useSearch({ from: "/app/settings/billing" });
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const creditsBase = useRef<number | null>(null);
+  const topUpBase = useRef<number | null>(null);
   const handled = useRef(false);
 
   useEffect(() => {
-    if (handled.current || (!search.checkout && !search.credits && !search.payment_method)) return;
+    if (handled.current || (!search.checkout && !search.top_up && !search.payment_method)) return;
     handled.current = true;
     if (search.checkout === "success") setConfirming(true);
     else if (search.checkout === "canceled") toast.info(t("toast.checkoutCancel"));
-    if (search.credits === "canceled") toast.info(t("toast.checkoutCancel"));
-    if (search.credits === "success") {
-      creditsBase.current = qc.getQueryData<Billing>(qk.billing)?.credits.purchased ?? 0;
-      toast.info(t("toast.creditsPending"));
+    if (search.top_up === "canceled") toast.info(t("toast.checkoutCancel"));
+    if (search.top_up === "success") {
+      topUpBase.current = qc.getQueryData<Billing>(qk.billing)?.ai.purchased_usd ?? 0;
+      toast.info(t("toast.topUpPending"));
     }
     if (search.payment_method) resumeAutoRecharge(search.payment_method === "success", qc, t);
     void qc.invalidateQueries({ queryKey: qk.billing });
     void navigate({ to: "/settings/billing", search: {}, replace: true });
-  }, [search.checkout, search.credits, search.payment_method, navigate, qc, t]);
+  }, [search.checkout, search.top_up, search.payment_method, navigate, qc, t]);
 
   // The webhook may land after the customer is back; billing.updated (or a refetch) confirms it.
   useEffect(() => {
@@ -103,9 +105,9 @@ function useCheckoutReturn(b: Billing | undefined) {
       setConfirming(false);
       toast.success(t("toast.pro"), { description: t("toast.proBody") });
     }
-    if (creditsBase.current !== null && b.credits.purchased > creditsBase.current) {
-      creditsBase.current = null;
-      toast.success(t("toast.credits"), { description: t("toast.creditsBody") });
+    if (topUpBase.current !== null && b.ai.purchased_usd > topUpBase.current) {
+      topUpBase.current = null;
+      toast.success(t("toast.topUp"), { description: t("toast.topUpBody") });
     }
   }, [b, confirming, t]);
 
@@ -148,7 +150,7 @@ function resumeAutoRecharge(saved: boolean, qc: QueryClient, t: TFunction<"billi
     .catch((e: unknown) => toast.error(e));
 }
 
-/** Scrolls to #credits or #auto-recharge (the app banner links there) once the page has rendered. */
+/** Scrolls to #ai-balance or #auto-recharge (the app banner links there) once the page has rendered. */
 function useScrollToHash(ready: boolean) {
   const hash = useRouterState({ select: (s) => s.location.hash });
   useEffect(() => {
@@ -367,9 +369,9 @@ function Upgrade({ b }: { b: Billing }) {
           </div>
         </div>
         <ul className="flex flex-col justify-center gap-2.5 border-t border-line-soft bg-sunken/50 px-5 py-4 sm:border-l sm:border-t-0 sm:pr-8">
-          {(["mailboxes", "members", "credits", "same"] as const).map((k) => (
+          {(["mailboxes", "members", "ai", "same"] as const).map((k) => (
             <li key={k} className="flex items-center gap-2.5 text-[12.5px] text-fg-2">
-              <BenefitIcon ai={k === "credits"} />
+              <BenefitIcon ai={k === "ai"} />
               {t(`upgrade.benefit.${k}`)}
             </li>
           ))}
@@ -406,19 +408,15 @@ function Limits({ b }: { b: Billing }) {
   );
 }
 
-function Credits({ b }: { b: Billing }) {
+function AiBalance({ b }: { b: Billing }) {
   const { t } = useTranslation("billing");
   const fmt = useFmt();
   const canManage = useCanManageBilling();
-  const buy = useBuyCredits();
-  const [packs, setPacks] = useState(1);
-  const c = creditBreakdown(b.credits, b.auto_recharge?.low_at);
-  const pack = b.prices.credit_pack;
-  const perPack = pack?.credits ?? 2000;
+  const c = balanceBreakdown(b.ai, b.auto_recharge?.low_at_usd);
 
   return (
-    <div id="credits" className="scroll-mt-6">
-      <Section title={t("credits.title")} description={t("credits.description")} flush>
+    <div id="ai-balance" className="scroll-mt-6">
+      <Section title={t("balance.title")} description={t("balance.description")} flush>
         <div className="grid gap-5 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
@@ -426,49 +424,36 @@ function Credits({ b }: { b: Billing }) {
                 <Sparkles strokeWidth={1.75} />
               </IconTile>
               <div className="flex items-baseline gap-2">
-                <span className="text-[28px] font-semibold leading-none tracking-[-0.03em] tabular-nums">{fmt.credits(c.remaining)}</span>
-                <span className="text-[12.5px] text-fg-3">{t("credits.remaining")}</span>
+                <span className="text-[28px] font-semibold leading-none tracking-[-0.03em] tabular-nums">{fmt.usd(c.remaining)}</span>
+                <span className="text-[12.5px] text-fg-3">{t("balance.remaining")}</span>
                 {c.low && <span className="size-1.5 self-center animate-pulse-soft rounded-full bg-tone-amber-solid motion-reduce:animate-none" aria-hidden />}
               </div>
             </div>
             <div className="mt-4">
               <div className="mb-1.5 flex items-baseline justify-between gap-3 text-[12px]">
-                <span className="text-fg-2">{t("credits.monthly")}</span>
-                <span className="mono text-fg-3 tabular-nums">{t("credits.monthlyUsed", { used: fmt.credits(c.monthlyUsed), total: fmt.credits(c.monthly) })}</span>
+                <span className="text-fg-2">{t("balance.monthly")}</span>
+                <span className="mono text-fg-3 tabular-nums">{t("balance.monthlyUsed", { used: fmt.usd(c.monthlyUsed), total: fmt.usd(c.monthly) })}</span>
               </div>
-              <Meter value={c.monthlyUsed} max={c.monthly} label={t("credits.meterLabel", { used: c.monthlyUsed, total: c.monthly })} className="h-1.5" />
-              <div className="mono mt-1.5 text-[11px] text-fg-4">{t("credits.resets", { date: fmt.date(b.credits.period_end) })}</div>
+              <Meter value={c.monthlyUsed} max={c.monthly} label={t("balance.meterLabel", { used: fmt.usd(c.monthlyUsed), total: fmt.usd(c.monthly) })} className="h-1.5" />
+              <div className="mono mt-1.5 text-[11px] text-fg-4">{t("balance.resets", { date: fmt.date(b.ai.period_end) })}</div>
             </div>
-            {c.low && <p className="mt-3 text-[12.5px] text-tone-amber">{t("credits.low")}</p>}
+            {c.low && <p className="mt-3 text-[12.5px] text-tone-amber">{t("balance.low")}</p>}
           </div>
           <div className="flex gap-6 sm:flex-col sm:gap-3 sm:border-l sm:border-line-soft sm:pl-6">
-            <Fact label={t("credits.purchased")} value={fmt.credits(c.purchased)} hint={t("credits.purchasedHint")} />
+            <Fact label={t("balance.monthlyLeft")} value={fmt.usd(c.monthlyLeft)} hint={t("balance.monthlyLeftHint")} />
+            <Fact label={t("balance.purchased")} value={fmt.usd(c.purchased)} hint={t("balance.purchasedHint")} />
           </div>
         </div>
-        {canManage && pack && (
-          <div className="flex flex-wrap items-center gap-3 border-t border-line-soft bg-sunken/50 px-5 py-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium">{t("credits.buyTitle")}</div>
-              <div className="mono mt-0.5 text-[11.5px] text-fg-3">{t("credits.packSize", { credits: fmt.num(perPack) })}</div>
-            </div>
-            <Stepper
-              value={packs}
-              onChange={setPacks}
-              min={1}
-              max={20}
-              aria-label={t("credits.packs")}
-              decLabel={t("credits.packsDec")}
-              incLabel={t("credits.packsInc")}
-              className="w-[104px]"
-            />
-            <span className="mono whitespace-nowrap text-right text-[12px] text-fg-2 tabular-nums">
-              {t("credits.packTotal", { credits: fmt.num(perPack * packs), price: formatPrice(pack, fmt.locale, packs) })}
-            </span>
-            <Button loading={buy.isPending} onClick={() => buy.mutate(packs)}>
-              {t("credits.buy")}
-            </Button>
-          </div>
-        )}
+        <p className="flex items-start gap-2 border-t border-line-soft px-5 py-2.5 text-[12px] leading-[18px] text-fg-3">
+          <Gauge className="mt-[2px] size-3.5 shrink-0 text-fg-4" strokeWidth={1.75} aria-hidden />
+          <span>
+            {t("balance.usageBased")}{" "}
+            <Link to="/settings/ai" className="text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg">
+              {t("balance.chooseModels")}
+            </Link>
+          </span>
+        </p>
+        {canManage && b.prices.ai_top_up && <TopUpPanel b={b} />}
       </Section>
     </div>
   );
@@ -512,10 +497,10 @@ function SelfHosted({ b }: { b: Billing }) {
           { label: t("selfHosted.usedMailboxes"), value: fmt.num(b.usage.mailboxes), hint: t("selfHosted.noLimit") },
           { label: t("selfHosted.usedMembers"), value: fmt.num(b.usage.members), hint: t("selfHosted.noLimit") },
           {
-            label: t("selfHosted.usedCredits"),
-            value: fmt.credits(b.credits.used),
+            label: t("selfHosted.usedAi"),
+            value: fmt.usd(b.ai.used_usd, { tiny: true }),
             tone: AI_TONE,
-            hint: b.credits.period_end ? t("credits.resets", { date: fmt.date(b.credits.period_end) }) : t("selfHosted.noLimit"),
+            hint: b.ai.period_end ? t("balance.resets", { date: fmt.date(b.ai.period_end) }) : t("selfHosted.noLimit"),
           },
         ]}
       />
@@ -540,7 +525,7 @@ function Usage() {
   // Usage is served on every instance (self-hosted too); an older server may answer 404 billing_disabled.
   if (isError && isApiError(error, "billing_disabled")) return null;
 
-  const total = data?.total_credits ?? 0;
+  const total = data?.total_usd ?? 0;
   return (
     <Section
       title={t("usage.title")}
@@ -564,7 +549,7 @@ function Usage() {
               <div className="flex items-baseline gap-5">
                 <div>
                   <div className="label-caps mb-1">{t("usage.total")}</div>
-                  <div className="text-[20px] font-semibold leading-6 tracking-[-0.02em] tabular-nums">{fmt.credits(total)}</div>
+                  <div className="text-[20px] font-semibold leading-6 tracking-[-0.02em] tabular-nums">{fmt.usd(total, { tiny: true })}</div>
                 </div>
                 <div>
                   <div className="label-caps mb-1">{t("usage.calls")}</div>
@@ -593,7 +578,7 @@ function Usage() {
                 key: f.feature,
                 label: t(`features.${f.feature}`),
                 calls: f.calls,
-                credits: f.credits,
+                usd: f.usd,
                 color: shadeOf(stacked.series, stacked.series.includes(f.feature) ? f.feature : "other"),
               }))}
               total={total}
@@ -613,7 +598,7 @@ function Usage() {
                 ),
                 color: toneVar(m.user ? toneFor(m.user.name) : "teal"),
                 calls: m.calls,
-                credits: m.credits,
+                usd: m.usd,
               }))}
               total={total}
             />
@@ -626,12 +611,13 @@ function Usage() {
                 const known = models?.data.find((x) => x.id === m.model);
                 const vendor = known?.vendor || (m.model.includes("/") ? m.model.split("/")[0] : "");
                 return {
-                  key: `${m.source ?? "credits"}:${m.model}`,
-                  label: (m.model === "jev" ? t("usage.decisionModel") : modelName(m.model, models?.data)) + (m.source === "own_key" ? ` · ${t("usage.ownKeyTag")}` : ""),
+                  key: `${m.source ?? "instance"}:${m.model}`,
+                  label: m.model === "jev" ? t("usage.decisionModel") : modelName(m.model, models?.data),
                   icon: <VendorMark vendor={m.model === "jev" ? "" : vendor} className="size-4 text-[9px]" />,
                   color: toneVar(SERIES[i % SERIES.length]),
                   calls: m.calls,
-                  credits: m.credits,
+                  usd: m.usd,
+                  ownKey: m.source === "own_key",
                 };
               })}
               total={total}
@@ -650,13 +636,13 @@ function Breakdown({
   className,
 }: {
   title: string;
-  rows: { key: string; label: string; icon?: ReactNode; calls: number; credits: number; color?: string }[];
+  rows: { key: string; label: string; icon?: ReactNode; calls: number; usd: number; color?: string; ownKey?: boolean }[];
   total: number;
   className?: string;
 }) {
   const { t } = useTranslation("billing");
   const fmt = useFmt();
-  const max = Math.max(1, ...rows.map((r) => r.credits));
+  const max = Math.max(0, ...rows.map((r) => r.usd));
   return (
     <div className={cn("min-w-0 px-5 py-3.5", className)}>
       <table className="w-full text-[12.5px]">
@@ -672,7 +658,7 @@ function Breakdown({
         </thead>
         <tbody>
           {rows.slice(0, 8).map((r) => (
-            <tr key={r.key} title={`${r.label}: ${total ? Math.round((r.credits / total) * 100) : 0}%`}>
+            <tr key={r.key} title={r.ownKey ? `${r.label}: ${t("usage.ownKeyHint")}` : `${r.label}: ${total ? Math.round((r.usd / total) * 100) : 0}%`}>
               <td className="max-w-0 py-1.5 pr-3">
                 <span className="flex min-w-0 items-center gap-2">
                   {r.icon}
@@ -681,12 +667,21 @@ function Breakdown({
                 <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-hover">
                   <div
                     className="h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                    style={{ width: `${(r.credits / max) * 100}%`, background: r.color ?? toneVar(SERIES[0]) }}
+                    style={{ width: `${max > 0 ? (r.usd / max) * 100 : 0}%`, background: r.color ?? toneVar(SERIES[0]) }}
                   />
                 </div>
               </td>
               <td className="mono py-1.5 text-right align-top tabular-nums text-fg-4">{fmt.num(r.calls)}</td>
-              <td className="mono py-1.5 text-right align-top tabular-nums">{fmt.credits(r.credits)}</td>
+              <td className="mono whitespace-nowrap py-1.5 text-right align-top tabular-nums">
+                {r.ownKey && r.usd === 0 ? (
+                  <span className="inline-flex items-center gap-1 text-fg-3">
+                    <KeyRound className="size-3" strokeWidth={1.75} aria-hidden />
+                    {t("usage.ownKeyTag")}
+                  </span>
+                ) : (
+                  fmt.usd(r.usd, { tiny: true })
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

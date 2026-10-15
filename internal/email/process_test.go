@@ -47,10 +47,10 @@ func TestProcessNewTicketPlain(t *testing.T) {
 	}
 	// The same message again is deduped at ingest.
 	raw := fixture(t, "new_plain.eml", "{{FROM}}", from, "{{TO}}", w.forwardAddr(m, ""), "{{ID}}", "x")
-	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), ""); dup {
+	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil); dup {
 		t.Fatal("different id should not be a dup")
 	}
-	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), ""); !dup {
+	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil); !dup {
 		t.Fatal("redelivery should dedupe")
 	}
 }
@@ -64,7 +64,7 @@ func firstTicket(t *testing.T, w *world, m *mailboxRow, from string) (domain.Tic
 	tk := w.ticket(msg.TicketID)
 	reply := w.agentReply(tk.ID, "Please unplug it right away.", "")
 	ours := messageIDFor("m", reply, tk.Number, m)
-	mustExec(t, w.d, `UPDATE messages SET email_message_id = $1, delivery_status = 'sent' WHERE id = $2`, ours, reply)
+	mustExec(t, w.d, `UPDATE messages SET email_message_id = $1, delivery_status = 'sent', mailbox_id = $3 WHERE id = $2`, ours, reply, m.ID)
 	return tk, ours
 }
 

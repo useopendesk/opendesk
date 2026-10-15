@@ -59,6 +59,8 @@ type runCtx struct {
 	// ext are the workspace's connected tools, loaded once per run.
 	ext      map[string]*tool
 	extOrder []string
+	// names are the workspace's team and brand names, loaded once per run.
+	names *refNames
 }
 
 type tool struct {
@@ -124,6 +126,7 @@ func ticketFilterProps() map[string]any {
 		"created_after":  str("Only tickets created at or after this time: RFC 3339 or YYYY-MM-DD."),
 		"created_before": str("Only tickets created before this time: RFC 3339 or YYYY-MM-DD."),
 		"sla":            enum(`"breached" for tickets past an SLA target, "due_soon" for targets in the next hour.`, "breached", "due_soon"),
+		"team":           str(`A team name or id, "mine" for the user's teams, or "none" for tickets without a team.`),
 		"view_id":        str("Apply a saved view's filters."),
 	}
 }
@@ -159,11 +162,15 @@ type ticket struct {
 		Name  string  `json:"name"`
 		Email *string `json:"email"`
 	} `json:"contact"`
-	Assignee *userRef       `json:"assignee"`
-	TeamID   *string        `json:"team_id"`
-	Tags     []tagRef       `json:"tags"`
-	Fields   map[string]any `json:"fields"`
-	SLA      *struct {
+	Assignee *userRef `json:"assignee"`
+	TeamID   *string  `json:"team_id"`
+	BrandID  string   `json:"brand_id"`
+	// ReceivedAt is the address the customer wrote to; MailboxID the one replies go out from.
+	ReceivedAt string         `json:"received_at"`
+	MailboxID  *string        `json:"mailbox_id"`
+	Tags       []tagRef       `json:"tags"`
+	Fields     map[string]any `json:"fields"`
+	SLA        *struct {
 		FirstResponseDueAt *time.Time `json:"first_response_due_at"`
 		ResolutionDueAt    *time.Time `json:"resolution_due_at"`
 		Breached           bool       `json:"breached"`
@@ -174,6 +181,8 @@ type ticket struct {
 	MessageCount     int            `json:"message_count"`
 	CreatedAt        time.Time      `json:"created_at"`
 	Custom           map[string]any `json:"custom"`
+	// Filled in by runCtx.describe: names the model reads instead of ids.
+	teamName, brandName, replyFrom string
 }
 
 type page[T any] struct {
@@ -216,6 +225,21 @@ func (t ticket) line() string {
 		fmt.Fprintf(&b, "; assignee: %s", t.Assignee.Name)
 	} else {
 		b.WriteString("; unassigned")
+	}
+	switch {
+	case t.teamName != "":
+		fmt.Fprintf(&b, "; team: %s", t.teamName)
+	case t.TeamID != nil:
+		fmt.Fprintf(&b, "; team id: %s", *t.TeamID)
+	}
+	if t.brandName != "" {
+		fmt.Fprintf(&b, "; brand: %s", t.brandName)
+	}
+	if t.ReceivedAt != "" {
+		fmt.Fprintf(&b, "; written to: %s", t.ReceivedAt)
+	}
+	if t.replyFrom != "" {
+		fmt.Fprintf(&b, "; replies from: %s", t.replyFrom)
 	}
 	if len(t.Tags) > 0 {
 		names := make([]string, 0, len(t.Tags))
@@ -319,8 +343,102 @@ func (rc *runCtx) getTicket(ctx context.Context, raw string) (ticket, error) {
 		return ticket{}, err
 	}
 	var t ticket
-	err = rc.read.get(ctx, "/v1/tickets/"+ref, nil, &t)
-	return t, err
+	if err = rc.read.get(ctx, "/v1/tickets/"+ref, nil, &t); err != nil {
+		return t, err
+	}
+	rc.describe(ctx, &t)
+	return t, nil
+}
+
+// refNames are the team and brand names of the workspace, as the user may list them.
+type refNames struct {
+	teams, brands map[string]string
+}
+
+// loadNames reads the team and brand lists once per run. A list the user may not read
+// leaves its names empty; tickets then show ids.
+func (rc *runCtx) loadNames(ctx context.Context) *refNames {
+	if rc.names != nil {
+		return rc.names
+	}
+	n := &refNames{teams: map[string]string{}, brands: map[string]string{}}
+	var teams page[struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}]
+	if rc.read.get(ctx, "/v1/teams", url.Values{"limit": {"100"}}, &teams) == nil {
+		for _, t := range teams.Data {
+			n.teams[t.ID] = t.Name
+		}
+	}
+	var raw json.RawMessage
+	if rc.read.get(ctx, "/v1/brands", url.Values{"limit": {"100"}}, &raw) == nil {
+		type named struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		var list []named
+		if json.Unmarshal(raw, &list) != nil {
+			var pg page[named]
+			_ = json.Unmarshal(raw, &pg)
+			list = pg.Data
+		}
+		for _, b := range list {
+			n.brands[b.ID] = b.Name
+		}
+	}
+	rc.names = n
+	return n
+}
+
+// describe fills in a ticket's team and brand names. The brand is named only when the
+// workspace has more than one.
+func (rc *runCtx) describe(ctx context.Context, ts ...*ticket) {
+	n := rc.loadNames(ctx)
+	for _, t := range ts {
+		if t.TeamID != nil {
+			t.teamName = n.teams[*t.TeamID]
+		}
+		if len(n.brands) > 1 {
+			t.brandName = n.brands[t.BrandID]
+		}
+	}
+}
+
+// replyAddress fills in the address a ticket's replies go out from, when the user may
+// read the mailbox.
+func (rc *runCtx) replyAddress(ctx context.Context, t *ticket) {
+	if t.MailboxID == nil || !uuidOK(*t.MailboxID) {
+		return
+	}
+	var m struct {
+		Email string `json:"email"`
+	}
+	if rc.read.get(ctx, "/v1/mailboxes/"+*t.MailboxID, nil, &m) == nil {
+		t.replyFrom = m.Email
+	}
+}
+
+// resolveTeam turns "none", a team id or a team name into a team id ("" for none) and
+// its name.
+func (rc *runCtx) resolveTeam(ctx context.Context, raw string) (id string, name string, err error) {
+	v := strings.TrimSpace(raw)
+	switch strings.ToLower(v) {
+	case "":
+		return "", "", httpx.Validation("team is empty")
+	case "none", "no team", "null":
+		return "", "No team", nil
+	}
+	n := rc.loadNames(ctx)
+	if _, ok := n.teams[v]; ok {
+		return v, n.teams[v], nil
+	}
+	for tid, tname := range n.teams {
+		if strings.EqualFold(tname, v) {
+			return tid, tname, nil
+		}
+	}
+	return "", "", httpx.Validation(fmt.Sprintf("no team is named %q; list_views lists the teams", raw))
 }
 
 type ticketFilter struct {
@@ -334,11 +452,12 @@ type ticketFilter struct {
 	CreatedBefore string   `json:"created_before"`
 	SLA           string   `json:"sla"`
 	ViewID        string   `json:"view_id"`
+	Team          string   `json:"team"`
 }
 
 func (f ticketFilter) empty() bool {
 	return f.Query == "" && len(f.Status) == 0 && len(f.Priority) == 0 && f.Assignee == "" && f.Label == "" &&
-		f.Channel == "" && f.CreatedAfter == "" && f.CreatedBefore == "" && f.SLA == "" && f.ViewID == ""
+		f.Channel == "" && f.CreatedAfter == "" && f.CreatedBefore == "" && f.SLA == "" && f.ViewID == "" && f.Team == ""
 }
 
 // findTickets lists tickets matching f through GET /v1/tickets, applying the time and
@@ -381,6 +500,21 @@ func (rc *runCtx) findTickets(ctx context.Context, f ticketFilter, limit, scanMa
 			return nil, 0, err
 		}
 		q.Set("view_id", id)
+	}
+	if team := strings.TrimSpace(f.Team); team != "" {
+		switch strings.ToLower(team) {
+		case "mine", "my teams":
+			q.Set("team_id", "mine")
+		default:
+			id, _, err := rc.resolveTeam(ctx, team)
+			if err != nil {
+				return nil, 0, err
+			}
+			if id == "" {
+				id = "none"
+			}
+			q.Set("team_id", id)
+		}
 	}
 	after, err := parseTime(f.CreatedAfter, false)
 	if err != nil {
@@ -425,6 +559,7 @@ func (rc *runCtx) findTickets(ctx context.Context, f ticketFilter, limit, scanMa
 			}
 			matched++
 			if len(out) < limit {
+				rc.describe(ctx, &t)
 				out = append(out, t)
 			}
 		}

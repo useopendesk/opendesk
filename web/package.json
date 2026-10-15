@@ -11,6 +11,7 @@
     "build": "pnpm build:app && pnpm build:widget",
     "build:app": "tsc -b && vite build",
     "build:widget": "vite build --config vite.widget.config.ts",
+    "build:site-widget": "vite build --config vite.site-widget.config.ts",
     "build:pages": "pnpm build && cp ../deploy/cloudflare/pages/app/_headers ../deploy/cloudflare/pages/app/_redirects dist/ && node ../deploy/cloudflare/pages/app/write-config.mjs dist",
     "preview": "vite preview",
     "typecheck": "tsc -b",

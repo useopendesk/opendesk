@@ -4,7 +4,7 @@
 
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { TicketListQuery } from "./api/endpoints";
-import type { Page, Priority, Severity, Ticket, TicketFilters, View } from "./api/types";
+import type { Page, Priority, Severity, Team, Ticket, TicketFilters, View } from "./api/types";
 import { qk } from "./queries";
 
 export type TicketPages = InfiniteData<Page<Ticket>, string | null>;
@@ -23,8 +23,28 @@ export function effectiveFilters(query: TicketListQuery, views: View[] | undefin
   return query;
 }
 
+/** The teams someone is on (any role). */
+export function teamsOf(teams: Team[] | undefined, me: string): string[] {
+  return (teams ?? []).filter((x) => x.member_ids.includes(me) || x.members?.some((m) => m.user_id === me)).map((x) => x.id);
+}
+
+/** A team filter: ids, "mine" (the caller's teams) and "none", comma separated. */
+export function teamFilterMatches(filter: string, teamId: string | null, myTeams: string[] | null): boolean | null {
+  const parts = filter.split(",").filter(Boolean);
+  if (!parts.length) return true;
+  for (const p of parts) {
+    if (p === "none" && !teamId) return true;
+    if (p === "mine") {
+      if (myTeams === null) return null;
+      if (teamId && myTeams.includes(teamId)) return true;
+    }
+    if (p === teamId) return true;
+  }
+  return false;
+}
+
 /** Whether a ticket belongs in a list. `null` means "can't tell", so refetch. */
-export function ticketMatches(query: TicketListQuery, t: Ticket, me: string, views?: View[]): boolean | null {
+export function ticketMatches(query: TicketListQuery, t: Ticket, me: string, views?: View[], myTeams: string[] | null = null): boolean | null {
   const f = effectiveFilters(query, views);
   if (!f) return null;
   if (f.q || f.contact_id) {
@@ -42,8 +62,14 @@ export function ticketMatches(query: TicketListQuery, t: Ticket, me: string, vie
     if (f.assignee === "none" && t.assignee) return false;
     if (f.assignee !== "me" && f.assignee !== "none" && t.assignee?.id !== f.assignee) return false;
   }
-  if (f.team_id && t.team_id !== f.team_id) return false;
+  if (f.team_id) {
+    const m = teamFilterMatches(f.team_id, t.team_id, myTeams);
+    if (m === null) return null;
+    if (!m) return false;
+  }
   if (f.mailbox_id && t.mailbox_id !== f.mailbox_id) return false;
+  if (f.brand_id && t.brand_id !== f.brand_id) return false;
+  if (f.widget_id && t.widget_id !== f.widget_id) return false;
   if (f.channel && t.channel !== f.channel) return false;
   if (f.tag && !t.tags.some((x) => x.name.toLowerCase() === f.tag!.toLowerCase())) return false;
   return true;
@@ -118,10 +144,12 @@ export function patchTicketEverywhere(qc: QueryClient, t: Ticket, me: string) {
     qc.setQueryData(qk.ticket(alias), (old: Ticket | undefined) => (old ? t : old));
   }
   const views = qc.getQueryData<View[]>(qk.views);
+  const teams = qc.getQueryData<Team[]>(qk.teams);
+  const myTeams = teams ? teamsOf(teams, me) : null;
   for (const [key, data] of qc.getQueriesData<TicketPages>({ queryKey: qk.ticketLists })) {
     if (!data) continue;
     const query = (key[2] ?? {}) as TicketListQuery;
-    const match = ticketMatches(query, t, me, views);
+    const match = ticketMatches(query, t, me, views, myTeams);
     if (match === null) {
       if (findTicket(data, t.id)) qc.setQueryData<TicketPages>(key, placeOrReplace(data, t));
       else qc.invalidateQueries({ queryKey: key, exact: true });
@@ -139,6 +167,22 @@ export function removeTicketEverywhere(qc: QueryClient, id: string) {
   for (const [key, data] of qc.getQueriesData<TicketPages>({ queryKey: qk.ticketLists })) {
     if (data) qc.setQueryData<TicketPages>(key, dropTicket(data, id));
   }
+}
+
+/**
+ * A ticket this person may no longer see (it moved to a private team they are not on):
+ * out of every list, and its detail, messages and activities dropped. Detail caches
+ * opened by number are found through the cached ticket.
+ */
+export function forgetTicket(qc: QueryClient, id: string) {
+  const known = cachedTicket(qc, id);
+  removeTicketEverywhere(qc, id);
+  const keys = [id, ...(known ? [String(known.number), `#${known.number}`] : [])];
+  for (const k of keys) qc.removeQueries({ queryKey: qk.ticket(k), exact: true });
+  qc.removeQueries({ queryKey: qk.messages(id), exact: true });
+  qc.removeQueries({ queryKey: qk.activities(id), exact: true });
+  qc.removeQueries({ queryKey: qk.suggestedReply(id), exact: true });
+  qc.removeQueries({ queryKey: qk.ticketLinks(id), exact: true });
 }
 
 /** Every loaded ticket across lists, for optimistic bulk edits. */

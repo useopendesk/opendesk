@@ -88,6 +88,32 @@ export function slugify(s: string): string {
     .slice(0, 80);
 }
 
+/**
+ * Article HTML as running prose: headings dropped, and every paragraph and list item
+ * ends as a sentence, so a passage can be quoted whole.
+ */
+export function htmlToProse(html: string): string {
+  return html
+    .replace(/<h\d[^>]*>[\s\S]*?<\/h\d>/gi, " ")
+    .split(/<\/(?:p|li|div|blockquote)>/i)
+    .map((b) => stripHtml(b))
+    .filter(Boolean)
+    .map((b) => (/[.!?:]$/.test(b) ? b : `${b}.`))
+    .join(" ");
+}
+
+/** Whole sentences of `text`, as many as fit in `max` characters (at least the first). */
+export function sentencesUpTo(text: string, max: number): string {
+  const out: string[] = [];
+  let len = 0;
+  for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+    if (out.length && len + sentence.length + 1 > max) break;
+    out.push(sentence);
+    len += sentence.length + 1;
+  }
+  return out.join(" ");
+}
+
 export function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, " ")

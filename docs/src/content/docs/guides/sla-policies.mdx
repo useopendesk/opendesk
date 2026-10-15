@@ -1,0 +1,151 @@
+---
+title: SLA policies
+description: Set first response and resolution targets per priority and per team, count them in business hours, and see breaches before they happen.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+An **SLA policy** sets how quickly your team should first respond to a ticket and how quickly it should be solved. opendesk picks a policy for every new ticket, shows the time left on the ticket and in the list, and tells the assignee when a target is missed. Policies can be limited to a priority, to a [team](/guides/teams-and-roles/), or both, and can count only your business hours.
+
+<Screenshot src="/guides/sla/policies" alt="The SLA policies settings page: the New policy button ringed as 1, the position numbers 1 to 5 ringed as 2, the Urgent priority chip ringed as 3, the Legal team chip with a lock ringed as 4, the Business hours chip ringed as 5, and a policy's on and off switch ringed as 6" />
+
+<Legend>
+
+1. **New policy**: create a policy. Managing SLA policies needs the admin role.
+2. **Order**: policies are checked from top to bottom. Drag a row to move it.
+3. **Priority**: the policy applies only to tickets of this priority. **All priorities** applies to any.
+4. **Team**: the policy applies only to this team's tickets. A lock means the team is private.
+5. **Business hours**: the clock runs only while you are open. Without it, every minute counts.
+6. **Enabled**: switch a policy off to stop it applying to new tickets, without deleting it.
+
+</Legend>
+
+## Create a policy
+
+<Steps>
+<Step title="Open Settings, then SLA policies">
+
+**SLA policies** is in the **Inbox** group of the settings menu. Click **New policy**.
+
+</Step>
+<Step title="Name it and choose what it applies to">
+
+Pick a priority under **Applies to**, or leave **Any priority**. Pick a **Team** to limit it to that team's tickets, or leave **Any team**.
+
+<Screenshot src="/guides/sla/new-policy" alt="The New SLA policy dialog: Applies to and Team ringed as 1, the First response within and Resolve within targets ringed as 2, and the Count business hours only switch ringed as 3" />
+
+</Step>
+<Step title="Set the two targets">
+
+**First response within** is how long until the first agent reply. **Resolve within** is how long until the ticket is solved. Enter a number and choose **Minutes**, **Hours** or **Days**; the line under each shows the total.
+
+</Step>
+<Step title="Decide whether nights and weekends count">
+
+Turn on **Count business hours only** to pause the clock outside your hours and on holidays. Then click **Create policy**, and drag it to the right place in the list.
+
+</Step>
+</Steps>
+
+<Callout type="tip" title="Put the specific policies first">
+
+The first enabled policy that fits a ticket wins, so order them from most specific to most general: urgent, then a team's own policies, then a catch-all such as **Standard** with any priority and any team at the bottom. A ticket that matches no policy has no SLA.
+
+</Callout>
+
+## Which policy a ticket gets
+
+opendesk goes down the list and takes the first enabled policy whose priority is the ticket's priority (or any) and whose team is the ticket's team (or any). It sets two due times from when the ticket was created:
+
+- **First response due** is met by the first agent reply.
+- **Resolution due** is met when the ticket is solved.
+
+The policy is picked again when the ticket's priority or team changes, and the due times are worked out again from the ticket's creation. Disabling or editing a policy does not change the due times of tickets it was already applied to until one of those changes.
+
+## Business hours
+
+A policy that counts business hours uses the hours of the ticket's team when the team has its own, else the workspace's. Set the workspace hours in **Settings**, **Business hours**.
+
+<Screenshot src="/guides/sla/business-hours" alt="The Business hours settings page: the switch to use business hours and the time zone ringed as 1, the weekly hours from Monday to Sunday ringed as 2, and the Holidays section ringed as 3" />
+
+<Legend>
+
+1. **Use business hours** and the **Time zone** the hours are in.
+2. **Weekly hours**: switch each day on or off and set up to three ranges a day, on the quarter hour.
+3. **Holidays**: dates when you are closed all day, up to 100.
+
+</Legend>
+
+A team that works other hours, like a support team in another time zone, can have its own. Open the team in **Settings**, **Teams**, and under **Hours** choose **Own schedule** instead of **Workspace hours**.
+
+<Screenshot src="/guides/sla/team-hours" alt="A team's Hours section: the Workspace hours and Own schedule choice ringed as 1, with Own schedule picked, and the team's own time zone and weekly hours ringed as 2" />
+
+A team's hours are used for its SLA timers, for whether the chat widget shows as open, and for Ollie's answers outside hours.
+
+<Callout type="note" title="An example">
+
+Hours are 9:00 to 17:00, Monday to Friday. A ticket arrives at 16:00 on a Friday under a policy with a 4 hour first response target that counts business hours only. One hour runs on Friday, the clock stops for the weekend, and the reply is due at 12:00 on Monday.
+
+</Callout>
+
+## Watch what is due
+
+<Steps>
+<Step title="Sort the list by SLA due">
+
+Click the sort button at the top of the ticket list and choose **SLA due**. The tickets closest to missing a target come first.
+
+<Screenshot src="/guides/sla/sort-due" alt="The sort button at the top of the ticket list ringed as 1, with its menu open and SLA due ringed as 2" />
+
+</Step>
+<Step title="Read the pills in the list">
+
+A ticket shows a pill only when it needs attention: amber when a target is due within the hour, red with how long ago it passed, like **5d 4h over**.
+
+<Screenshot src="/guides/sla/due-list" alt="The ticket list sorted by SLA due: the sort button ringed as 1 and the red pills showing how long a target is overdue ringed as 2" />
+
+</Step>
+<Step title="Open a ticket for the details">
+
+The **SLA** section at the foot of the details panel names the policy and shows each target: the time left, how far over it is, **Met** or **Missed**.
+
+<Screenshot src="/guides/sla/ticket-sla" alt="The SLA section of a ticket's details panel under the Standard policy, with First response 5d 4h over and Resolution 2d 12h over" />
+
+</Step>
+</Steps>
+
+<Fold>
+
+## When a target is missed
+
+When a target passes unmet, the ticket is marked as breached:
+
+- an activity is added to the timeline, such as "First response target was missed";
+- the assignee gets an **SLA breached** [notification](/guides/notifications/);
+- the breach counts in [reports](/guides/reports/), under **SLA breached**.
+
+[Automations](/guides/automations/) can react to tickets as they change, for example raising the priority of a ticket in a queue that is falling behind.
+
+</Fold>
+
+<Fold>
+
+## Defaults and limits
+
+- New workspaces start with a policy you can edit or delete.
+- Targets are stored in minutes. **Days** are 24 hours, or 24 open hours when the policy counts business hours.
+- A policy for a private team appears with a lock. Its tickets are visible only to the team's members, and so are their SLA pills.
+
+</Fold>
+
+## Related
+
+- [Triage and assignment](/guides/triage-and-assignment/)
+- [Teams and roles](/guides/teams-and-roles/)
+- [Automations](/guides/automations/)
+- [SLA policies API](/api/resources/automations-sla/)

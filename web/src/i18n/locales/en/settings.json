@@ -238,6 +238,19 @@
     "save": "Save changes",
     "appearance": "Appearance",
     "appearanceHint": "Applies to this browser.",
+    "sounds": {
+      "title": "Sounds",
+      "hint": "Applies to this browser. Live chat has a brighter chime; everything else is quiet.",
+      "preview": "Play this sound",
+      "chat": "Live chat waiting",
+      "chatHint": "A visitor waits with nobody on the chat, with a softer reminder each minute until someone picks it up.",
+      "ticket": "New conversations",
+      "ticketHint": "A customer writes in by email or the help center, unassigned or to you.",
+      "reply": "Customer replies",
+      "replyHint": "A customer answers on one of your tickets, unless you are looking at it.",
+      "assigned": "Assigned and mentions",
+      "assignedHint": "Something is assigned to you, someone mentions you, or an SLA is breached on your ticket."
+    },
     "theme": {
       "label": "Theme",
       "light": "Light",
@@ -408,6 +421,148 @@
       "save": "Save field",
       "nameRequired": "Give the field a name.",
       "optionsRequired": "Add at least one option."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "description": "Choose what reaches you outside the app, and how often. Everything always shows under the bell.",
+    "saveFailed": "Couldn't save your notification settings",
+    "email": {
+      "title": "Email schedule",
+      "description": "How notification emails are sent. Applies to every workspace you are in.",
+      "digestAt": "Send the digest at",
+      "digestAtHint": "In your time zone. Each workspace sends its own digest.",
+      "timezone": "Time zone",
+      "limits": "Never more than {{perHour}} emails an hour or {{perDay}} a day. Nothing is emailed while you are using opendesk in this workspace, and what you read in the app is never emailed. Several notifications come together in one email.",
+      "sentTo": "Sent to",
+      "confirmed": "Confirmed",
+      "notConfirmed": "Not confirmed",
+      "unverifiedHint": "Notification emails go only to a confirmed address.",
+      "confirmLink": "Confirm it in Profile",
+      "unverified": "Confirm your email address first. Notification emails go only to a confirmed address.",
+      "test": "Send me a test email",
+      "testSent": "Test email sent",
+      "testSentHint": "Check {{email}} in a minute or two."
+    },
+    "cadence": {
+      "instant": "Right away",
+      "instantPaced_one": "The first email about {{count}} minute after something happens. While more keeps coming, at most one every {{gap}}, urgent ones sooner.",
+      "instantPaced_other": "The first email about {{count}} minutes after something happens. While more keeps coming, at most one every {{gap}}, urgent ones sooner.",
+      "instantHint_one": "About {{count}} minute after it happens, unless you have read it in the app by then.",
+      "instantHint_other": "About {{count}} minutes after it happens, unless you have read it in the app by then.",
+      "hourly": "Hourly digest",
+      "hourlyHint": "One email an hour with what you have not read yet.",
+      "daily": "Daily digest",
+      "dailyHint": "One email a day at the hour you choose, with what you have not read yet.",
+      "off": "Off",
+      "offHint": "No notification emails. You still see everything in the app."
+    },
+    "pause": {
+      "title": "Pause notifications",
+      "description": "Stops email, phone and desktop notifications for a while. Everything still shows under the bell, and nothing is sent later.",
+      "off": "Not paused",
+      "offHint": "Pause for an hour, until tomorrow morning or for a week.",
+      "until": "Paused until {{when}}",
+      "onHint": "Nothing reaches your email, phone or desktop until then.",
+      "pause": "Pause",
+      "change": "Change",
+      "resume": "Resume",
+      "hour": "For 1 hour",
+      "tomorrow": "Until tomorrow morning",
+      "week": "For 1 week"
+    },
+    "channels": {
+      "app": "In the app",
+      "email": "Email",
+      "push": "Phone",
+      "desktop": "Desktop app"
+    },
+    "groups": {
+      "tickets": "Tickets",
+      "team": "Team",
+      "ai_billing": "AI and billing"
+    },
+    "types": {
+      "title": "What reaches you where",
+      "description": "For {{workspace}} only. Each workspace keeps its own choices.",
+      "thisWorkspace": "this workspace",
+      "type": "Notification",
+      "alwaysOn": "Always on in the app",
+      "emailOffShort": "off",
+      "emailOff": "Notification emails are off. Choose a schedule above to send them again. Your choices here are kept.",
+      "phoneHint": "Phone: the opendesk iPhone app. Each phone can also mute types of its own, in the app's settings.",
+      "desktopHint": "Desktop app: applies only in the opendesk desktop app, while its window is in the background.",
+      "urgent": "Urgent",
+      "urgentHint": "Can be emailed sooner, at most every {{gap}}"
+    },
+    "kinds": {
+      "assigned": {
+        "label": "Assigned to you",
+        "hint": "A ticket is assigned to you"
+      },
+      "mentioned": {
+        "label": "Mentions",
+        "hint": "Someone mentions you in a note"
+      },
+      "customer_replied": {
+        "label": "Customer replies",
+        "hint": "On tickets assigned to you"
+      },
+      "sla_breached": {
+        "label": "SLA breaches",
+        "hint": "A ticket assigned to you misses a target"
+      },
+      "ai_handoff": {
+        "label": "Handoffs to a person",
+        "hint": "Ollie hands a conversation to the team"
+      },
+      "team_joined": {
+        "label": "Team changes",
+        "hint": "An admin joins a team you lead"
+      },
+      "ai_cap_reached": {
+        "label": "AI agent cap reached",
+        "hint": "Ollie reached this month's spending cap"
+      },
+      "ai_key_failed": {
+        "label": "AI key problems",
+        "hint": "The workspace's own AI key stopped working"
+      },
+      "ai_balance_low": {
+        "label": "AI balance low",
+        "hint": "The AI balance is running low"
+      },
+      "ai_balance_out": {
+        "label": "AI balance used up",
+        "hint": "Ollie pauses until AI usage is added"
+      },
+      "auto_recharge_failed": {
+        "label": "Auto-recharge failed",
+        "hint": "An auto-recharge payment failed"
+      }
+    },
+    "gap": {
+      "hour": "hour",
+      "hours_one": "{{count}} hour",
+      "hours_other": "{{count}} hours",
+      "minutes_one": "{{count}} minute",
+      "minutes_other": "{{count}} minutes"
+    },
+    "holds": {
+      "unsubscribed": "Notification emails from {{workspace}} are off",
+      "unsubscribedHint": "You used the unsubscribe link in one of our emails. Turning email back on restores the choices you had before.",
+      "turnEmailOn": "Turn email back on",
+      "resubscribed": "Notification emails are back on",
+      "paused": "Notifications are paused until {{when}}",
+      "pausedHint": "Nothing reaches your email, phone or desktop until then. Everything still shows under the bell.",
+      "resume": "Resume now",
+      "emailOff": "Notification emails are off",
+      "emailOffHint": "You still see everything in the app. Turning email back on sends it right away, paced so it never floods your inbox."
+    },
+    "desktop": {
+      "blocked": "Notifications are blocked for opendesk on this computer. Allow them in your system settings: on a Mac, System Settings, Notifications, opendesk; on Windows, Settings, System, Notifications.",
+      "ask": "opendesk has not asked this computer for permission to show notifications yet.",
+      "allow": "Allow notifications"
     }
   }
 }

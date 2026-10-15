@@ -42,7 +42,12 @@ type CoreWebhook struct {
 	Description string    `json:"description"`
 	Events      []string  `json:"events"`
 	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"created_at"`
+	// PrivateTeamIDs are the private teams whose events this webhook receives
+	// (contracts/teams.md "Visibility").
+	PrivateTeamIDs []uuid.UUID `json:"private_team_ids"`
+	// PrivateTeams are the same teams, by name, with who granted each.
+	PrivateTeams []PrivateTeamGrant `json:"private_teams"`
+	CreatedAt    time.Time          `json:"created_at"`
 }
 
 type CoreWebhookWithSecret struct {
@@ -61,11 +66,21 @@ type CoreWebhookDelivery struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-const webhookSelect = `SELECT id, url, description, events, enabled, created_at FROM webhooks`
+var webhookSelect = `SELECT id, url, description, events, enabled, created_at, ` +
+	grantedTeamsSQL("webhooks.private_team_ids", "webhooks.workspace_id") + `, ` +
+	teamGrantsSQL("webhooks.private_team_ids", "webhooks.workspace_id", grantWebhook, "webhooks.id") + ` FROM webhooks`
 
 func scanWebhook(r pgx.Row) (CoreWebhook, error) {
 	var w CoreWebhook
-	err := r.Scan(&w.ID, &w.URL, &w.Description, &w.Events, &w.Enabled, &w.CreatedAt)
+	var grants []byte
+	if err := r.Scan(&w.ID, &w.URL, &w.Description, &w.Events, &w.Enabled, &w.CreatedAt, &w.PrivateTeamIDs, &grants); err != nil {
+		return w, err
+	}
+	if w.PrivateTeamIDs == nil {
+		w.PrivateTeamIDs = []uuid.UUID{}
+	}
+	var err error
+	w.PrivateTeams, err = scanGrants(grants)
 	return w, err
 }
 
@@ -102,6 +117,12 @@ func validEvents(in []string) ([]string, error) {
 // eventMatches reports whether a webhook filter selects an event type.
 func eventMatches(filter []string, typ string) bool {
 	return slices.Contains(filter, "*") || slices.Contains(filter, typ)
+}
+
+// webhookSeesTeam reports whether a webhook granted teams receives an event of team (nil for
+// events outside a private team).
+func webhookSeesTeam(teams []uuid.UUID, team *uuid.UUID) bool {
+	return team == nil || slices.Contains(teams, *team)
 }
 
 // signWebhook returns the OD-Signature header value for body at t.
@@ -188,6 +209,8 @@ func (s *svc) registerWebhooks(api huma.API) {
 				Description string   `json:"description,omitempty" maxLength:"500"`
 				Events      []string `json:"events,omitempty" maxItems:"100"`
 				Enabled     *bool    `json:"enabled,omitempty"`
+				// PrivateTeamIDs: private teams whose events it receives; only their members add them.
+				PrivateTeamIDs []string `json:"private_team_ids,omitempty" maxItems:"200"`
 			}
 		}) (*struct {
 			CacheControl string `header:"Cache-Control"`
@@ -223,10 +246,17 @@ func (s *svc) registerWebhooks(api huma.API) {
 				if n >= 50 {
 					return httpx.Conflict("A workspace can have at most 50 webhooks.")
 				}
+				teams, err := checkPrivateTeams(ctx, tx, p, nil, in.Body.PrivateTeamIDs)
+				if err != nil {
+					return err
+				}
 				id := ids.New()
-				if _, err := tx.Exec(ctx, `INSERT INTO webhooks (id, workspace_id, url, description, secret_enc, events, enabled, created_by)
-					VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, id, p.WorkspaceID, u, cleanDescription(in.Body.Description), sealed, evs, enabled,
-					p.ActorUserID()); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO webhooks (id, workspace_id, url, description, secret_enc, events, enabled, created_by, private_team_ids)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, p.WorkspaceID, u, cleanDescription(in.Body.Description), sealed, evs, enabled,
+					p.ActorUserID(), teams); err != nil {
+					return err
+				}
+				if err := saveGrants(ctx, tx, p, grantWebhook, id, teams); err != nil {
 					return err
 				}
 				if w, err = loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -235,7 +265,8 @@ func (s *svc) registerWebhooks(api huma.API) {
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.created", Data: map[string]any{"webhook": w}}); err != nil {
 					return err
 				}
-				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.created", "webhook", &id, map[string]any{"url": u, "events": evs})
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.created", "webhook", &id,
+					map[string]any{"url": u, "events": evs, "private_team_ids": uuidStrings(teams)})
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -260,6 +291,8 @@ func (s *svc) registerWebhooks(api huma.API) {
 				Description *string   `json:"description,omitempty" maxLength:"500"`
 				Events      *[]string `json:"events,omitempty" maxItems:"100"`
 				Enabled     *bool     `json:"enabled,omitempty"`
+				// PrivateTeamIDs replaces the list. Only a team's members add it; admins may remove any.
+				PrivateTeamIDs *[]string `json:"private_team_ids,omitempty" maxItems:"200"`
 			}
 		}) (*struct{ Body CoreWebhook }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
@@ -289,14 +322,46 @@ func (s *svc) registerWebhooks(api huma.API) {
 			}
 			var w CoreWebhook
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, `UPDATE webhooks SET url = COALESCE($3, url), description = COALESCE($4, description),
-					events = COALESCE($5, events), enabled = COALESCE($6, enabled), updated_at = now()
-					WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, u, desc, evs, in.Body.Enabled)
+				var current, curEvents []string
+				var curURL string
+				var curEnabled bool
+				err := tx.QueryRow(ctx, `SELECT private_team_ids::text[], url, events, enabled FROM webhooks
+					WHERE id = $1 AND workspace_id = $2 FOR UPDATE`, id, p.WorkspaceID).Scan(&current, &curURL, &curEvents, &curEnabled)
+				if db.IsNotFound(err) {
+					return httpx.NotFound("Webhook")
+				}
 				if err != nil {
 					return err
 				}
-				if tag.RowsAffected() == 0 {
-					return httpx.NotFound("Webhook")
+				var teams []uuid.UUID
+				if in.Body.PrivateTeamIDs != nil {
+					if teams, err = checkPrivateTeams(ctx, tx, p, current, *in.Body.PrivateTeamIDs); err != nil {
+						return err
+					}
+				}
+				// A webhook granted private teams sends their tickets to its URL: only someone on
+				// every one of those teams may point it elsewhere, widen its events or turn it back on.
+				granted := teams
+				if in.Body.PrivateTeamIDs == nil {
+					if granted, err = grantedTeams(ctx, tx, p.WorkspaceID, current); err != nil {
+						return err
+					}
+				}
+				if (u != nil && *u != curURL) || (evs != nil && eventsWiden(curEvents, evs)) ||
+					(in.Body.Enabled != nil && *in.Body.Enabled && !curEnabled) {
+					if err := requireOnTeams(ctx, tx, p, granted); err != nil {
+						return err
+					}
+				}
+				if _, err := tx.Exec(ctx, `UPDATE webhooks SET url = COALESCE($3, url), description = COALESCE($4, description),
+					events = COALESCE($5, events), enabled = COALESCE($6, enabled), private_team_ids = COALESCE($7, private_team_ids),
+					updated_at = now() WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, u, desc, evs, in.Body.Enabled, teams); err != nil {
+					return err
+				}
+				if in.Body.PrivateTeamIDs != nil {
+					if err := saveGrants(ctx, tx, p, grantWebhook, id, teams); err != nil {
+						return err
+					}
 				}
 				if w, err = loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
 					return err
@@ -305,7 +370,7 @@ func (s *svc) registerWebhooks(api huma.API) {
 					return err
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.updated", "webhook", &id,
-					map[string]any{"url": w.URL, "events": w.Events, "enabled": w.Enabled})
+					map[string]any{"url": w.URL, "events": w.Events, "enabled": w.Enabled, "private_team_ids": uuidStrings(w.PrivateTeamIDs)})
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -472,9 +537,10 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDi
 	a := job.Args
 	return w.s.tx(ctx, func(tx pgx.Tx) error {
 		var pl webhookPayload
-		err := tx.QueryRow(ctx, `SELECT id, seq, workspace_id, type, visibility, data, created_at FROM events
+		var team *uuid.UUID
+		err := tx.QueryRow(ctx, `SELECT id, seq, workspace_id, type, visibility, data, created_at, team_id FROM events
 			WHERE workspace_id = $1 AND seq = $2`, a.WorkspaceID, a.EventSeq).
-			Scan(&pl.ID, &pl.Seq, &pl.WorkspaceID, &pl.Type, &pl.Visibility, &pl.Data, &pl.OccurredAt)
+			Scan(&pl.ID, &pl.Seq, &pl.WorkspaceID, &pl.Type, &pl.Visibility, &pl.Data, &pl.OccurredAt, &team)
 		if db.IsNotFound(err) {
 			return nil // pruned or workspace deleted
 		}
@@ -482,24 +548,25 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDi
 			return err
 		}
 		pl.OccurredAt = pl.OccurredAt.UTC()
-		rows, err := tx.Query(ctx, `SELECT id, events FROM webhooks WHERE workspace_id = $1 AND enabled`, a.WorkspaceID)
+		rows, err := tx.Query(ctx, `SELECT id, events, private_team_ids FROM webhooks WHERE workspace_id = $1 AND enabled`, a.WorkspaceID)
 		if err != nil {
 			return err
 		}
 		type hook struct {
 			id     uuid.UUID
 			filter []string
+			teams  []uuid.UUID
 		}
 		hooks, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (hook, error) {
 			var h hook
-			err := r.Scan(&h.id, &h.filter)
+			err := r.Scan(&h.id, &h.filter, &h.teams)
 			return h, err
 		})
 		if err != nil {
 			return err
 		}
 		for _, h := range hooks {
-			if !eventMatches(h.filter, pl.Type) {
+			if !eventMatches(h.filter, pl.Type) || !webhookSeesTeam(h.teams, team) {
 				continue
 			}
 			var exists bool

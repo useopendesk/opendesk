@@ -1,37 +1,92 @@
 ---
 /**
- * Long-form legal pages. The table of contents comes from the page's own
- * section list so headings and anchors stay in one place.
+ * Long-form legal pages as a plain document across the page width: the title,
+ * the date, then the text beside a table of contents that marks the section
+ * being read. The table of contents comes from the page's own section list so
+ * headings and anchors stay in one place.
  */
 import Layout from './Layout.astro';
+import { EMAIL } from '../lib/site';
 
 interface Props {
   title: string;
   description: string;
   updated: string;
   toc: { id: string; label: string }[];
+  /** Where questions about this page go. */
+  email?: string;
 }
-const { title, description, updated, toc } = Astro.props;
+const { title, description, updated, toc, email = EMAIL } = Astro.props;
+const here = Astro.url.pathname.replace(/\/?$/, '/');
+const docs = [
+  ['/privacy/', 'Privacy policy'],
+  ['/terms/', 'Terms of service'],
+] as const;
 ---
-<Layout title={title} description={description}>
-  <section class="border-b border-line">
-    <div class="container-page pt-16 pb-12 md:pt-24 md:pb-16">
-      <div class="label">Legal</div>
-      <h1 class="h-hero mt-5">{title}</h1>
-      <p class="mt-5 text-[15px] text-muted">Last updated {updated}</p>
+<Layout title={title} description={description} cta={{ painting: 'golden-forest' }}>
+  <div class="container-page">
+    <header class="border-b border-line pb-10 pt-14 md:pb-14 md:pt-20">
+      <nav class="flex gap-5 text-[14px]" aria-label="Legal documents">
+        {docs.map(([h, l]) => (
+          <a href={h} aria-current={here === h ? 'page' : undefined} class={`transition-colors ${here === h ? 'text-fg' : 'text-muted hover:text-fg'}`}>{l}</a>
+        ))}
+      </nav>
+      <h1 class="mt-8 text-[40px] font-semibold leading-[1.02] tracking-[-0.045em] text-fg md:text-[56px]">{title}</h1>
+      <p class="mt-4 text-[15px] text-muted">Last updated {updated}. Questions go to <a href={`mailto:${email}`} class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">{email}</a>.</p>
+    </header>
+
+    <div class="grid gap-10 pb-24 pt-10 md:pt-14 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-20">
+      <aside class="hidden lg:block">
+        <nav class="sticky top-24" aria-label="On this page">
+          <div class="text-[13px] font-medium text-fg">On this page</div>
+          <ol class="mt-4 max-h-[calc(100dvh-160px)] space-y-0.5 overflow-y-auto text-[13.5px]" data-toc>
+            {toc.map((t) => (
+              <li><a href={`#${t.id}`} data-toc-link={t.id} class="toc-link block border-l border-line py-1.5 pl-4 text-muted transition-colors hover:text-fg">{t.label}</a></li>
+            ))}
+          </ol>
+        </nav>
+      </aside>
+      <article class="prose-od legal-prose min-w-0 max-w-[760px]">
+        <slot />
+      </article>
     </div>
-  </section>
-  <div class="container-page grid gap-12 py-14 md:py-20 lg:grid-cols-[220px_1fr] lg:gap-20">
-    <nav class="hidden lg:block" aria-label="On this page">
-      <div class="sticky top-24">
-        <div class="label mb-4">On this page</div>
-        <ol class="space-y-2 text-[13.5px]">
-          {toc.map((t) => <li><a href={`#${t.id}`} class="text-muted transition-colors hover:text-fg">{t.label}</a></li>)}
-        </ol>
-      </div>
-    </nav>
-    <article class="prose-od max-w-[720px]">
-      <slot />
-    </article>
   </div>
 </Layout>
+
+<style>
+  .toc-link.is-active { color: var(--fg); border-color: var(--fg); }
+  .legal-prose :global(h2) { padding-top: 1.6em; font-weight: 600; letter-spacing: -0.03em; }
+  .legal-prose :global(h2:first-of-type) { padding-top: 0; }
+</style>
+
+<script>
+  // Marks the section being read in the table of contents.
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')];
+  const heads = links.map((a) => document.getElementById(a.dataset.tocLink ?? '')).filter((h): h is HTMLElement => !!h);
+  if (heads.length) {
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      let current = heads[0];
+      for (const h of heads) if (h.getBoundingClientRect().top < 140) current = h;
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) current = heads[heads.length - 1];
+      for (const a of links) {
+        const on = a.dataset.tocLink === current.id;
+        a.classList.toggle('is-active', on);
+        if (on) {
+          a.setAttribute('aria-current', 'location');
+          // Keep the active entry in view when the list scrolls on short screens.
+          const list = a.closest<HTMLElement>('[data-toc]');
+          if (list) {
+            const top = a.offsetTop - list.offsetTop;
+            if (top < list.scrollTop) list.scrollTop = top - 8;
+            else if (top + a.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + a.offsetHeight - list.clientHeight + 8;
+          }
+        } else a.removeAttribute('aria-current');
+      }
+    };
+    update();
+    addEventListener('scroll', () => { raf ||= requestAnimationFrame(update); }, { passive: true });
+    addEventListener('resize', () => { raf ||= requestAnimationFrame(update); });
+  }
+</script>

@@ -1,28 +1,46 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, MessageCircle, Volume2, VolumeX } from "lucide-react";
+import { ArrowRight, Hand, MessageCircle, Volume2, VolumeX } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Ticket } from "@/lib/api/types";
 import { playAlert, setAlertSound, useAlertSound } from "@/lib/alertSound";
 import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
+import { viewers, type PresenceState } from "@/lib/realtime/presence";
+import { useRealtime } from "@/lib/realtime/store";
+import { useSession } from "@/lib/session";
 import { useNow } from "@/lib/useNow";
+import { useAssistantName } from "@/components/assistant/name";
 
 // Live chat visitors waiting for a reply. A chat nobody is on, where the visitor waits
 // for a person (Ollie handed off, or the agent is off), is urgent: the row washes red
 // with a live timer. While Ollie is handling it the state is calm and violet, and turns
-// urgent if Ollie has not answered within a minute.
+// urgent if Ollie has not answered within a minute. Once a person has it (open, viewing
+// or replying, or assigned) it is handled: amber, quiet, and out of the alerts.
 
 /** How long Ollie may take before a waiting visitor needs a person. */
 const OLLIE_GRACE_MS = 60_000;
 
+/** Who has a waiting chat: you with it open, a teammate on it, or its assignee. */
+export type Handler = { me: boolean; name: string; how: "open" | "replying" | "viewing" | "assigned" };
+
 export type ChatWait = {
   /** When the visitor started waiting. */
   since: number;
-  /** urgent: a person must answer now. ollie: Ollie is on it. */
-  state: "urgent" | "ollie";
+  /** urgent: a person must answer now. ollie: Ollie is on it. handled: a person has it. */
+  state: "urgent" | "ollie" | "handled";
   /** Ollie handed the conversation to the team. */
   handedOff: boolean;
+  handler?: Handler;
 };
+
+/** Who is on this ticket right now, from presence, the open ticket and the assignee. */
+export function handlerOf(t: Ticket, presence: PresenceState | undefined, me: string | undefined, active: string | null): Handler | null {
+  if (active === t.id) return { me: true, name: "", how: "open" };
+  const v = presence ? viewers(presence, me).find((x) => x.state !== "idle") : undefined;
+  if (v) return { me: false, name: v.name, how: v.state === "replying" ? "replying" : "viewing" };
+  if (t.assignee) return { me: t.assignee.id === me, name: t.assignee.name, how: "assigned" };
+  return null;
+}
 
 /** Whether the widget agent answers visitors in this workspace. */
 export function useAgentOn(): boolean {
@@ -31,7 +49,7 @@ export function useAgentOn(): boolean {
 }
 
 /** The visitor's wait on an open chat, or null when nobody is waiting. */
-export function chatWait(t: Ticket, agentOn: boolean, now: number): ChatWait | null {
+export function chatWait(t: Ticket, agentOn: boolean, now: number, handler?: Handler | null): ChatWait | null {
   if (t.channel !== "chat" || t.spam || (t.status !== "open" && t.status !== "pending")) return null;
   const handedOff = t.custom?.ai_handoff === true;
   const handoffAt = typeof t.custom?.ai_handoff_at === "string" ? Date.parse(t.custom.ai_handoff_at) : NaN;
@@ -44,8 +62,9 @@ export function chatWait(t: Ticket, agentOn: boolean, now: number): ChatWait | n
   }
   if (Number.isNaN(since)) return null;
   const ollieOn = agentOn && !handedOff && !t.assignee;
-  const state = ollieOn && now - since < OLLIE_GRACE_MS ? "ollie" : "urgent";
-  return { since, state, handedOff };
+  if (ollieOn && now - since < OLLIE_GRACE_MS) return { since, state: "ollie", handedOff };
+  if (handler) return { since, state: "handled", handedOff, handler };
+  return { since, state: "urgent", handedOff };
 }
 
 /** 45s, 3m 12s, 1h 04m, 2d 3h. */
@@ -79,6 +98,25 @@ export function WaitPill({ wait, compact }: { wait: ChatWait; compact?: boolean 
   const { t } = useTranslation("inbox");
   const now = useNow();
   const elapsed = formatWait(now - wait.since);
+  if (wait.state === "handled" && wait.handler) {
+    const h = wait.handler;
+    const who =
+      h.how === "open" ? t("waiting.byYou")
+      : h.how === "assigned" ? (h.me ? t("waiting.yours") : t("waiting.with", { name: h.name }))
+      : t(h.how === "replying" ? "waiting.replying" : "waiting.viewing", { name: h.name });
+    return (
+      <span
+        role="timer"
+        aria-label={`${who}. ${t("waiting.aria", { time: elapsed })}`}
+        className={cn("inline-flex h-5 min-w-0 shrink items-center gap-1.5 rounded-full bg-tone-amber-soft px-2 font-medium text-tone-amber", compact ? "text-[10.5px]" : "text-[11px]")}
+        title={t("waiting.handledHint")}
+      >
+        <span className="size-1.5 shrink-0 rounded-full bg-tone-amber-solid" />
+        <span className="truncate">{who}</span>
+        <span className="mono shrink-0 tabular-nums opacity-80">{elapsed}</span>
+      </span>
+    );
+  }
   if (wait.state === "ollie") {
     return (
       <span
@@ -108,19 +146,47 @@ export function WaitPill({ wait, compact }: { wait: ChatWait; compact?: boolean 
   );
 }
 
-/** Marks a ticket from the website chat widget, so it is never mistaken for email. */
-export function LiveChatBadge({ urgent }: { urgent?: boolean }) {
+/** The bot that handed this chat to the team, else the assistant (older handoffs). */
+export function useHandoffBot(t: Ticket): string {
+  const assistant = useAssistantName();
+  const bot = t.custom?.ai_handoff_bot;
+  return typeof bot === "string" && bot ? bot : assistant;
+}
+
+/**
+ * Marks a ticket from the website chat widget, so it is never mistaken for email. A
+ * visitor the bot handed to the team reads "Wants a person" instead.
+ */
+export function LiveChatBadge({ urgent, handedOff, bot }: { urgent?: boolean; handedOff?: boolean; bot?: string }) {
   const { t } = useTranslation("inbox");
+  const Icon = handedOff ? Hand : MessageCircle;
   return (
     <span
       className={cn(
         "inline-flex h-[18px] shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-[10.5px] font-medium",
         urgent ? "bg-tone-red-soft text-tone-red" : "bg-tone-blue-soft text-tone-blue",
       )}
-      title={t("waiting.chatHint")}
+      title={handedOff ? t("waiting.handoffHint", { name: bot }) : t("waiting.chatHint")}
     >
-      <MessageCircle className="size-3" strokeWidth={2.2} />
-      {t("waiting.chat")}
+      <Icon className="size-3" strokeWidth={2.2} />
+      {t(handedOff ? "waiting.handoff" : "waiting.chat")}
+    </span>
+  );
+}
+
+/** How many messages the customer sent since the last reply: what a person has to catch up on. */
+export function NewCount({ count, urgent }: { count: number; urgent?: boolean }) {
+  const { t } = useTranslation("inbox");
+  if (count < 1) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums",
+        urgent ? "bg-tone-red-soft text-tone-red" : "bg-tone-blue-soft text-tone-blue",
+      )}
+      title={t("waiting.newHint", { count })}
+    >
+      {t("waiting.new", { count })}
     </span>
   );
 }
@@ -137,7 +203,10 @@ export function UrgentEdge() {
 export function useChatWait(t: Ticket): ChatWait | null {
   const agentOn = useAgentOn();
   const now = useNow(t.channel === "chat");
-  return chatWait(t, agentOn, now || Date.now());
+  const presence = useRealtime((s) => s.presence[t.id]);
+  const active = useRealtime((s) => s.active);
+  const me = useSession((s) => s.user?.id);
+  return chatWait(t, agentOn, now || Date.now(), handlerOf(t, presence, me, active));
 }
 
 /**
@@ -149,9 +218,12 @@ export function WaitingBanner({ tickets, onOpen }: { tickets: Ticket[]; onOpen: 
   const agentOn = useAgentOn();
   const now = useNow();
   const sound = useAlertSound();
+  const presence = useRealtime((s) => s.presence);
+  const active = useRealtime((s) => s.active);
+  const me = useSession((s) => s.user?.id);
   const urgent = tickets
     .filter((x) => !x.assignee)
-    .map((x) => ({ ticket: x, wait: chatWait(x, agentOn, now) }))
+    .map((x) => ({ ticket: x, wait: chatWait(x, agentOn, now, handlerOf(x, presence[x.id], me, active)) }))
     .filter((x): x is { ticket: Ticket; wait: ChatWait } => x.wait?.state === "urgent")
     .sort((a, b) => a.wait.since - b.wait.since);
   if (!urgent.length) return null;

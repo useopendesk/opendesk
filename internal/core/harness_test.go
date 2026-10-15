@@ -164,6 +164,23 @@ func (c *client) cookie(name string) string {
 	return ""
 }
 
+// accountCookie returns the name and value of the client's account refresh cookie (the
+// first, when it holds several).
+func (c *client) accountCookie() (string, string) {
+	for _, ck := range c.cookies() {
+		if strings.HasPrefix(ck.Name, RefreshCookiePrefix) {
+			return ck.Name, ck.Value
+		}
+	}
+	return "", ""
+}
+
+// cookies lists the cookies the client sends to the auth routes.
+func (c *client) cookies() []*http.Cookie {
+	req, _ := http.NewRequest(http.MethodGet, c.e.srv.URL+"/v1/auth/refresh", nil)
+	return c.jar.Cookies(req.URL)
+}
+
 func (r resp) str(path ...string) string {
 	var v any = r.Body
 	for _, p := range path {

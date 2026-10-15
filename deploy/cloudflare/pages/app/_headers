@@ -21,6 +21,16 @@
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=300
 
-# Written at deploy time by write-config.mjs.
+# Written at deploy time by write-config.mjs. config.json is the same object
+# for the desktop and iPhone apps (contracts/native.md).
 /config.js
   Cache-Control: no-store
+
+/config.json
+  Cache-Control: no-store
+
+# Written by write-config.mjs when APPLE_APP_IDS is set. The file has no
+# extension, and Apple reads it only as JSON.
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600

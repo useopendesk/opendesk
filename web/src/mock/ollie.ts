@@ -5,15 +5,15 @@
 
 import type { NotificationType, Ticket } from "@/lib/api/types";
 import { db, type WsData } from "./db";
-import { reserve, spend } from "./credits";
+import { fromMicro, reserve, spend, toMicro } from "./aiBalance";
 import { activeTicketIds, emitOnTicket, publish } from "./gateway";
 import { aiOff } from "./handlers/ai";
-import { botName } from "./handlers/aiTicket";
 import { retrieve } from "./handlers/agent";
 import { customerReply } from "./handlers/tickets";
 import { chunk } from "./router";
 import { addMessage, findTicket, OPENISH } from "./tickets";
 import { escapeHtml, markdownToHtml, nowIso, textToHtml, uuid } from "./util";
+import { botForTicket, botRef } from "./bots";
 
 type Script = { question: string; tool: string | null; answer: string };
 
@@ -34,30 +34,30 @@ const SCRIPTS: Script[] = [
     answer: "Yes. Open the notebook, choose **Export**, then **Markdown** [1]. You get a .zip with one file per note, and the images in a separate folder.",
   },
   {
-    question: "Is there a way to use Fieldnote offline on my phone?",
+    question: "Is there a way to use Margin offline on my phone?",
     tool: "Knowledge",
     answer: "Yes. Notes you opened recently are available offline on iOS and Android [1]. To keep a whole notebook offline, open it and turn on **Available offline** in its menu.",
   },
 ];
 
-/** Credits the agent used this calendar month (UTC): features answer and answer_check. */
-export function agentCreditsThisMonth(ws: WsData, now = new Date()): number {
+/** US dollars of AI balance the agent spent this calendar month (UTC): features answer and answer_check. */
+export function agentSpendThisMonth(ws: WsData, now = new Date()): number {
   const month = now.toISOString().slice(0, 7);
-  const used = ws.aiUsage.filter((u) => (u.feature === "answer" || u.feature === "answer_check") && u.at.startsWith(month)).reduce((n, u) => n + u.credits, 0);
-  return Math.round(used * 1000) / 1000;
+  const used = ws.aiUsage.filter((u) => (u.feature === "answer" || u.feature === "answer_check") && u.at.startsWith(month)).reduce((n, u) => n + u.micro_usd, 0);
+  return fromMicro(used);
 }
 
 const capNotified = new Set<string>();
 
 /** At the monthly cap the agent stays silent; owners and admins hear about it once a month. */
 function capReached(ws: WsData): boolean {
-  const cap = ws.ai.widget_monthly_cap ?? 0;
-  if (!cap || agentCreditsThisMonth(ws) < cap) return false;
+  const cap = ws.ai.widget_monthly_cap_usd ?? 0;
+  if (!cap || toMicro(agentSpendThisMonth(ws)) < toMicro(cap)) return false;
   const key = `${ws.workspace.id}:${new Date().toISOString().slice(0, 7)}`;
   const role = ws.members.find((m) => m.user_id === db.meId)?.role;
   if (!capNotified.has(key) && (role === "owner" || role === "admin")) {
     capNotified.add(key);
-    const n = { id: uuid(), type: "ai_cap_reached" as string as NotificationType, ticket: null, data: { cap }, read_at: null, created_at: nowIso() };
+    const n = { id: uuid(), type: "ai_cap_reached" as string as NotificationType, ticket: null, data: { cap_usd: cap }, read_at: null, created_at: nowIso() };
     ws.notifications.unshift(n);
     publish(ws, "notification.created", { notification: n }, { topics: [`user:${db.meId}`] });
   }
@@ -87,26 +87,27 @@ export function chatTicket(ws: WsData, idOrNumber?: string): Ticket | undefined 
 
 /**
  * The visitor asks, Ollie streams a reply and posts it. Resolves with the
- * posted message id, or null when nothing was posted (no credits, busy).
+ * posted message id, or null when nothing was posted (AI balance too low, busy).
  */
 export async function ollieReply(ws: WsData, t: Ticket, opts: { deltaMs?: number } = {}): Promise<string | null> {
   if (busy.has(t.id) || capReached(ws)) return null;
   try {
     reserve(ws, "answer");
   } catch {
-    return null; // out of credits: the agent stays silent and the team takes over
+    return null; // AI balance too low: the agent stays silent and the team takes over
   }
   busy.add(t.id);
   try {
     const script = SCRIPTS[next++ % SCRIPTS.length];
-    const bot = botName(ws);
+    const b = botForTicket(ws, t);
+    const bot = b.name;
     emitOnTicket(t.id, "customer_typing", { ticket_id: t.id, contact_id: t.contact?.id });
     await wait(900);
     customerReply(ws, t, textToHtml(script.question));
     // The job runs 1.5 s after the visitor's message.
     await wait(1500);
     const reply_id = uuid();
-    liveOn(t, "ai.reply.started", { reply_id, bot: { name: bot } });
+    liveOn(t, "ai.reply.started", { reply_id, bot: botRef(ws, b) });
     if (script.tool) {
       await wait(300);
       liveOn(t, "ai.reply.tool", { reply_id, tool: script.tool, status: "running" });

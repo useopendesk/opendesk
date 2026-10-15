@@ -81,7 +81,8 @@
     "namePlaceholder": "Getting started",
     "nameRequired": "Add a name.",
     "description": "Description",
-    "descriptionHint": "Shown under the collection title in your help center."
+    "descriptionHint": "Shown under the collection title in your help center.",
+    "saved": "Collection saved"
   },
   "toast": {
     "published": "Article published",
@@ -137,5 +138,17 @@
     "fewerWords": "Try fewer or broader words",
     "collections": "Group articles into collections",
     "publish": "Publish to show it in your help center"
+  },
+  "brand": {
+    "label": "Brand",
+    "all": "All brands",
+    "allHint": "Shared",
+    "search": "Search brands",
+    "filter": "Brand: {{value}}",
+    "filterHint": "Its own articles and shared ones",
+    "collectionHint": "Which help centers show this collection. All brands shares it with every brand.",
+    "articleHint": "Which help centers show this article.",
+    "fromCollection": "Follows its collection, {{name}}.",
+    "only": "Only in the {{name}} help center"
   }
 }

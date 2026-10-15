@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/appattest"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/core/oauthgrant"
 	"github.com/useopendesk/opendesk/internal/crypto"
@@ -51,20 +52,36 @@ type coreAuthConfig struct {
 	SignupEnabled    bool               `json:"signup_enabled"`
 	Passkeys         bool               `json:"passkeys" doc:"Passkey sign-in is available"`
 	TurnstileSiteKey *string            `json:"turnstile_site_key"`
+	Native           coreNativeConfig   `json:"native" doc:"What the native apps need to sign in and receive pushes"`
+}
+
+type coreNativeConfig struct {
+	AppAttest bool    `json:"app_attest" doc:"App Attest proofs are accepted in place of Turnstile"`
+	Push      string  `json:"push" enum:"direct,relay,off" doc:"How this instance reaches iPhones"`
+	RelayURL  *string `json:"relay_url" doc:"The push relay origin when push is relay"`
 }
 
 type coreLoginBody struct {
-	Email          string `json:"email" maxLength:"320"`
-	Password       string `json:"password" maxLength:"1024"`
-	TurnstileToken string `json:"turnstile_token,omitempty" maxLength:"4096"`
+	Email          string          `json:"email" maxLength:"320"`
+	Password       string          `json:"password" maxLength:"1024"`
+	TurnstileToken string          `json:"turnstile_token,omitempty" maxLength:"4096"`
+	AppAttest      *appAttestProof `json:"app_attest,omitempty" doc:"Native requests: an App Attest proof in place of turnstile_token"`
 }
 
 type coreRegisterBody struct {
-	Email          string `json:"email" maxLength:"320"`
-	Password       string `json:"password" maxLength:"1024"`
-	Name           string `json:"name" maxLength:"200"`
-	TurnstileToken string `json:"turnstile_token,omitempty" maxLength:"4096"`
-	InviteToken    string `json:"invite_token,omitempty" maxLength:"200" doc:"Invitation token; lets an invited person register when public signup is off"`
+	Email          string          `json:"email" maxLength:"320"`
+	Password       string          `json:"password" maxLength:"1024"`
+	Name           string          `json:"name" maxLength:"200"`
+	TurnstileToken string          `json:"turnstile_token,omitempty" maxLength:"4096"`
+	AppAttest      *appAttestProof `json:"app_attest,omitempty" doc:"Native requests: an App Attest proof in place of turnstile_token"`
+	InviteToken    string          `json:"invite_token,omitempty" maxLength:"200" doc:"Invitation token; lets an invited person register when public signup is off"`
+}
+
+// refreshBody names the account to refresh (browsers, which send its cookie) or carries a
+// native client's refresh token.
+type refreshBody struct {
+	RefreshToken string `json:"refresh_token,omitempty" maxLength:"200" doc:"Native requests, which have no refresh cookie"`
+	UserID       string `json:"user_id,omitempty" maxLength:"36" doc:"The account to refresh when the browser is signed in to several; defaults to the one used most recently"`
 }
 
 func (s *svc) registerAuth(api huma.API) {
@@ -80,6 +97,11 @@ func (s *svc) registerAuth(api huma.API) {
 			}
 			if k := s.d.Cfg.TurnstileSiteKey; k != "" {
 				c.TurnstileSiteKey = &k
+			}
+			c.Native = coreNativeConfig{AppAttest: len(s.d.Cfg.AppAttestAppIDs) > 0, Push: s.d.Cfg.PushMode()}
+			if c.Native.Push == "relay" {
+				u := s.d.Cfg.PushRelayURL
+				c.Native.RelayURL = &u
 			}
 			return &struct{ Body coreAuthConfig }{c}, nil
 		})
@@ -108,72 +130,81 @@ func (s *svc) registerAuth(api huma.API) {
 		})
 
 	register(s, api, huma.Operation{OperationID: "auth-refresh", Method: http.MethodPost, Path: "/v1/auth/refresh",
-		Summary: "Rotate the refresh cookie for a new access token", Tags: tags, Security: []map[string][]string{}},
-		func(ctx context.Context, in *struct {
-			Refresh string `cookie:"od_refresh"`
-		}) (*authOut, error) {
-			out, err := s.rotateRefresh(ctx, in.Refresh, requestInfo(ctx))
-			if err != nil {
-				if he, ok := err.(*httpx.Error); ok && he.Status == 401 {
-					return nil, huma.ErrorWithHeaders(he, s.clearRefreshCookie())
-				}
-				return nil, httpx.Wrap(err)
-			}
-			return out, nil
+		Summary: "Rotate the refresh token for a new access token", Tags: tags, Security: []map[string][]string{}},
+		func(ctx context.Context, in *struct{ Body *refreshBody }) (*authOut, error) {
+			return s.handleRefresh(ctx, in.Body)
 		})
 
 	register(s, api, huma.Operation{OperationID: "auth-logout", Method: http.MethodPost, Path: "/v1/auth/logout",
-		Summary: "Sign out this session", Tags: tags, DefaultStatus: http.StatusNoContent},
-		func(ctx context.Context, in *struct {
-			Refresh string `cookie:"od_refresh"`
-		}) (*struct {
-			SetCookie string `header:"Set-Cookie"`
+		Summary: "Sign out of this account, or of every account in this browser", Tags: tags, DefaultStatus: http.StatusNoContent},
+		func(ctx context.Context, in *struct{ Body *logoutBody }) (*struct {
+			SetCookie []string `header:"Set-Cookie"`
 		}, error) {
-			var uid, sid uuid.UUID
-			if p := auth.FromContext(ctx); p != nil && p.Kind == auth.KindUser {
-				uid, sid = p.UserID, p.SessionID
+			ri := requestInfo(ctx)
+			body := in.Body
+			if body == nil {
+				body = &logoutBody{}
 			}
+			var p sessionRef
+			if pr := auth.FromContext(ctx); pr != nil && pr.Kind == auth.KindUser {
+				p = sessionRef{pr.UserID, pr.SessionID}
+			}
+			var clear []string
+			var ended []sessionRef
 			err := s.tx(ctx, func(tx pgx.Tx) error {
-				if sid == uuid.Nil && in.Refresh != "" {
-					err := tx.QueryRow(ctx, `SELECT id, user_id FROM sessions WHERE refresh_hash = $1 AND revoked_at IS NULL`,
-						crypto.HashToken(in.Refresh)).Scan(&sid, &uid)
-					if err != nil && !db.IsNotFound(err) {
+				targets, c, err := s.logoutTargets(ctx, tx, p, body, ri)
+				if err != nil {
+					return err
+				}
+				clear = c
+				for _, t := range targets {
+					ok, err := endSession(ctx, tx, t.uid, t.sid)
+					if err != nil {
+						return err
+					}
+					if !ok {
+						continue
+					}
+					ended = append(ended, t)
+					if _, err := auditUser(ctx, tx, userPrincipal(t.uid, ri), t.uid, "logout", map[string]any{"session_id": t.sid}); err != nil {
 						return err
 					}
 				}
-				if sid == uuid.Nil {
-					return nil
-				}
-				if _, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, sid, uid); err != nil {
-					return err
-				}
-				_, err := auditUser(ctx, tx, userPrincipal(uid, requestInfo(ctx)), uid, "logout", map[string]any{"session_id": sid})
-				return err
+				return nil
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if uid != uuid.Nil {
-				s.disconnect(uid, sid)
+			for _, t := range ended {
+				s.disconnect(t.uid, t.sid)
 			}
-			return &struct {
-				SetCookie string `header:"Set-Cookie"`
-			}{s.refreshCookie("", -1)}, nil
+			if p.uid != uuid.Nil && len(ended) == 0 {
+				// The session had already ended: still close what is left of it.
+				s.disconnect(p.uid, p.sid)
+			}
+			out := &struct {
+				SetCookie []string `header:"Set-Cookie"`
+			}{}
+			if !ri.Native {
+				out.SetCookie = clear
+			}
+			return out, nil
 		})
 
 	register(s, api, huma.Operation{OperationID: "auth-password-forgot", Method: http.MethodPost, Path: "/v1/auth/password/forgot",
 		Summary: "Email a password reset link", Tags: tags, DefaultStatus: http.StatusNoContent, Security: []map[string][]string{}},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Email          string `json:"email" maxLength:"320"`
-				TurnstileToken string `json:"turnstile_token,omitempty" maxLength:"4096"`
+				Email          string          `json:"email" maxLength:"320"`
+				TurnstileToken string          `json:"turnstile_token,omitempty" maxLength:"4096"`
+				AppAttest      *appAttestProof `json:"app_attest,omitempty" doc:"Native requests: an App Attest proof in place of turnstile_token"`
 			}
 		}) (*struct{}, error) {
 			ri := requestInfo(ctx)
 			if err := s.limit("forgot:ip:"+ri.IP, forgotPerIP, time.Hour); err != nil {
 				return nil, err
 			}
-			if err := s.d.Captcha.Verify(ctx, in.Body.TurnstileToken, ri.IP); err != nil {
+			if err := s.humanCheck(ctx, ri, appattest.ActionPasswordForgot, in.Body.TurnstileToken, in.Body.AppAttest); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			email := normEmail(in.Body.Email)
@@ -190,13 +221,21 @@ func (s *svc) registerAuth(api huma.API) {
 		Summary: "Set a new password from a reset link", Tags: tags, DefaultStatus: http.StatusNoContent, Security: []map[string][]string{}},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Token    string `json:"token" maxLength:"200"`
-				Password string `json:"password" maxLength:"1024"`
+				Token     string          `json:"token" maxLength:"200"`
+				Password  string          `json:"password" maxLength:"1024"`
+				AppAttest *appAttestProof `json:"app_attest,omitempty" doc:"Native requests: an App Attest proof; verified when present"`
 			}
 		}) (*struct{}, error) {
 			ri := requestInfo(ctx)
 			if err := s.limit("reset:ip:"+ri.IP, resetPerIP, time.Hour); err != nil {
 				return nil, err
+			}
+			// The emailed token is this route's gate; a native request's proof, when sent,
+			// must still hold.
+			if in.Body.AppAttest != nil && ri.Native && s.attestEnabled() {
+				if err := s.verifyAppAttest(ctx, appattest.ActionPasswordReset, in.Body.AppAttest); err != nil {
+					return nil, httpx.Wrap(err)
+				}
 			}
 			if err := auth.CheckPassword(in.Body.Password); err != nil {
 				return nil, httpx.Wrap(err)
@@ -310,7 +349,7 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 	if err := s.limit("register:ip:"+ri.IP, registerPerIP, time.Hour); err != nil {
 		return nil, err
 	}
-	if err := s.d.Captcha.Verify(ctx, in.TurnstileToken, ri.IP); err != nil {
+	if err := s.humanCheck(ctx, ri, appattest.ActionRegister, in.TurnstileToken, in.AppAttest); err != nil {
 		return nil, httpx.Wrap(err)
 	}
 	email := normEmail(in.Email)
@@ -382,7 +421,7 @@ func (s *svc) handleLogin(ctx context.Context, in *coreLoginBody) (*authOut, err
 			return nil, err
 		}
 	}
-	if err := s.d.Captcha.Verify(ctx, in.TurnstileToken, ri.IP); err != nil {
+	if err := s.humanCheck(ctx, ri, appattest.ActionLogin, in.TurnstileToken, in.AppAttest); err != nil {
 		return nil, httpx.Wrap(err)
 	}
 	var uid uuid.UUID
@@ -499,4 +538,79 @@ func (s *svc) handleMFA(ctx context.Context, mfaToken, code string) (*authOut, e
 	out.Body.RedirectTo = c.Data["rt"]
 	s.d.Analytics.Capture(uid.String(), "", "user_logged_in", map[string]any{"method": method, "mfa": true})
 	return out, nil
+}
+
+// handleRefresh rotates one account's refresh token. A browser names the account with
+// user_id and only that account's cookie changes; without user_id it refreshes the
+// account it used most recently. Native requests send the token in the body.
+func (s *svc) handleRefresh(ctx context.Context, in *refreshBody) (*authOut, error) {
+	ri := requestInfo(ctx)
+	if in == nil {
+		in = &refreshBody{}
+	}
+	var want uuid.UUID
+	if in.UserID != "" {
+		id, err := uuid.Parse(in.UserID)
+		if err != nil {
+			return nil, httpx.Wrap(errRefreshInvalid())
+		}
+		want = id
+	}
+	pick, err := s.pickRefreshCookie(ctx, want, ri)
+	if err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	token := in.RefreshToken
+	if pick != nil {
+		token = pick.Value
+	}
+	expect := want
+	if pick != nil && !pick.legacy() {
+		expect = pick.UserID
+	}
+	out, keep, err := s.rotateRefresh(ctx, token, expect, ri)
+	if err != nil {
+		if he, ok := err.(*httpx.Error); ok && he.Status == 401 && pick != nil && !keep {
+			return nil, huma.ErrorWithHeaders(he, s.clearCookieHeader(pick.Name))
+		}
+		return nil, httpx.Wrap(err)
+	}
+	if pick != nil && pick.legacy() {
+		// The legacy cookie has moved to the account's own cookie.
+		out.SetCookie = append(out.SetCookie, s.clearCookie(LegacyRefreshCookie))
+	}
+	return out, nil
+}
+
+// pickRefreshCookie chooses the cookie a refresh uses: the named account's (or the legacy
+// cookie, which may belong to it), or without a name the account used most recently.
+func (s *svc) pickRefreshCookie(ctx context.Context, want uuid.UUID, ri reqInfo) (*presentedCookie, error) {
+	if len(ri.Cookies) == 0 {
+		return nil, nil
+	}
+	if want != uuid.Nil {
+		if c := ri.cookieFor(want); c != nil {
+			return c, nil
+		}
+		return ri.legacyCookie(), nil
+	}
+	if len(ri.Cookies) == 1 {
+		return &ri.Cookies[0], nil
+	}
+	held, err := s.heldSessions(ctx, s.d.DB.Pool, ri)
+	if err != nil {
+		return nil, err
+	}
+	var best *heldSession
+	for i := range held {
+		h := &held[i]
+		if h.Valid && !h.Stale && (best == nil || h.LastUsed.After(best.LastUsed)) {
+			best = h
+		}
+	}
+	if best == nil {
+		return &ri.Cookies[0], nil
+	}
+	c := best.presentedCookie
+	return &c, nil
 }

@@ -1,0 +1,306 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import SectionHead from '../components/SectionHead.astro';
+import Backdrop from '../components/home/Backdrop.astro';
+import DesktopStage from '../components/download/DesktopStage.astro';
+import { LINKS, SITE } from '../lib/site';
+import { DESKTOP_ASSETS as A, DESKTOP_RELEASES, checksumsUrl, getDesktopRelease, isDesktopPublished, type DesktopOs } from '../lib/desktop';
+import type { BrandName, IconName } from '../lib/icons';
+
+const release = await getDesktopRelease();
+// Before the first release there are no files: the page says so instead of linking to them.
+const published = await isDesktopPublished();
+const DOCS = `${LINKS.docs}/guides/desktop-app/`;
+
+// The hero's button for each system. Mac is the default until the script knows better.
+const picks: { os: DesktopOs; glyph: BrandName; label: string; href: string; meta: string }[] = [
+  { os: 'mac', glyph: 'apple', label: 'Download for Mac', href: A.mac.url, meta: 'macOS 13 or later · Apple silicon and Intel' },
+  { os: 'windows', glyph: 'windows', label: 'Download for Windows', href: A.windows.url, meta: 'Windows 10 or later · x64 and arm64' },
+  { os: 'linux', glyph: 'linux', label: 'Download for Linux', href: A.appImageX64.url, meta: 'AppImage for x64 · .deb files below' },
+];
+
+interface Card {
+  os: DesktopOs;
+  glyph: BrandName;
+  name: string;
+  tag: string;
+  rows: [string, string][];
+  file?: string;
+  downloads: { label: string; href: string }[];
+}
+const cards: Card[] = [
+  {
+    os: 'mac', glyph: 'apple', name: 'macOS', tag: 'Universal',
+    rows: [
+      ['Requires', 'macOS 13 Ventura or later'],
+      ['Runs on', 'Apple silicon and Intel, in one app'],
+      ['Install', 'Open the .dmg and drag opendesk to Applications.'],
+    ],
+    file: A.mac.file,
+    downloads: [{ label: 'Download for Mac', href: A.mac.url }],
+  },
+  {
+    os: 'windows', glyph: 'windows', name: 'Windows', tag: 'Installer',
+    rows: [
+      ['Requires', 'Windows 10 or later'],
+      ['Runs on', 'x64 and arm64, one installer for both'],
+      ['Install', 'Run the .exe. It installs for you alone and needs no administrator.'],
+    ],
+    file: A.windows.file,
+    downloads: [{ label: 'Download for Windows', href: A.windows.url }],
+  },
+  {
+    os: 'linux', glyph: 'linux', name: 'Linux', tag: 'AppImage and .deb',
+    rows: [
+      ['Requires', 'x64 or arm64, on a major distribution its maker still supports, such as Ubuntu, Debian or Fedora'],
+      ['Which file', '.deb for Debian and Ubuntu, AppImage for the rest. Make an AppImage executable, then run it.'],
+    ],
+    downloads: [A.appImageX64, A.appImageArm64, A.debAmd64, A.debArm64].map((a) => ({ label: `${a.format} · ${a.arch}`, href: a.url })),
+  },
+];
+
+const perks: [IconName, string, string][] = [
+  ['bell', 'System notifications', 'Assigned to you, mentioned, a customer replied, an SLA breached. When the window is behind, they arrive as system notifications.'],
+  ['inbox', 'An unread badge', 'The dock or taskbar icon shows how many notifications you have not read, and clears as you read them.'],
+  ['arrowUpRight', 'Links open in the app', 'Click a notification and its ticket opens. opendesk:// links go straight to a page; other sites open in your browser.'],
+  ['logIn', 'Sign in through your browser', 'Google, Microsoft and GitHub sign-in opens your default browser and hands you back to the app, signed in.'],
+  ['refresh', 'Updates itself', 'New versions download in the background and install when you restart. Join the beta channel to get them early.'],
+  ['server', 'Cloud or your own server', 'Choose opendesk Cloud or your own address the first time it opens, and switch whenever you like.'],
+  ['users', 'Every account', 'Stay signed in to more than one account and move between them without signing out.'],
+  ['layers', 'A window that fits in', 'A translucent sidebar on macOS and mica on Windows 11. Light and dark follow your system.'],
+];
+
+const appJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'opendesk',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'macOS 13 or later, Windows 10 or later, Linux',
+  url: new URL('/download/', SITE.url).toString(),
+  ...(published ? { downloadUrl: [A.mac.url, A.windows.url, A.appImageX64.url, A.appImageArm64.url, A.debAmd64.url, A.debArm64.url] } : {}),
+  ...(release ? { softwareVersion: release.version, releaseNotes: release.notesUrl, datePublished: release.date.slice(0, 10) } : {}),
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+};
+---
+<Layout
+  title="Download"
+  description="Download the opendesk desktop app for Mac, Windows and Linux. System notifications, an unread badge and links that open in the app, for opendesk Cloud or your own server."
+  preload={{ name: 'coast', sizes: '100vw' }}
+  cta={{ painting: 'rust-valley', title: 'Bring your whole team along.', body: 'The app works with opendesk Cloud and with your own server. Start free in a minute, or self-host it tonight.' }}
+  jsonLd={appJsonLd}
+>
+  <!-- Hero: the app in its own window, standing on a painted coast. -->
+  <section class="px-2 pt-2 md:px-3 md:pt-3">
+    <div class="relative isolate overflow-hidden rounded-[22px] md:rounded-[28px]">
+      <Backdrop name="coast" priority sizes="100vw" class="absolute inset-0 -z-10 h-full w-full" style="object-position:50% 20%" />
+      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-[radial-gradient(70%_45%_at_50%_22%,rgb(12_40_120/0.5),transparent_75%),radial-gradient(40%_14%_at_50%_47%,rgb(12_40_120/0.4),transparent_100%),linear-gradient(180deg,rgb(12_40_120/0.55)_0%,rgb(12_40_120/0.25)_36%,transparent_60%)]"></div>
+
+      <div class="container-page pt-16 text-center text-white md:pt-24">
+        <div class="font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-white/80">Desktop app</div>
+        <h1 class="mt-6 text-[38px] font-semibold leading-[1] tracking-[-0.045em] [text-shadow:0_2px_30px_rgb(10_30_80/0.35)] sm:text-[64px] lg:text-[84px]">Your helpdesk,<br />in its own window.</h1>
+        <p class="mx-auto mt-6 max-w-[640px] text-balance text-[17.5px] leading-[1.5] text-white [text-shadow:0_1px_2px_rgb(10_30_80/0.35),0_2px_24px_rgb(10_30_80/0.5)] md:text-[20px]">
+          opendesk for Mac, Windows and Linux, with system notifications, an unread badge and links that open straight in the app. For opendesk Cloud or your own server.
+        </p>
+
+        <p class="mx-auto mt-8 hidden w-fit max-w-[520px] items-start gap-2.5 rounded-[12px] bg-white/12 px-4 py-3 text-left text-[14.5px] leading-snug text-white ring-1 ring-white/25 backdrop-blur-md" data-mobile-note>
+          <Icon name="smartphone" size={16} class="mt-0.5 shrink-0 text-white/80" />
+          <span>{published
+            ? 'The desktop app is for Mac, Windows and Linux computers. Open this page on one to download it. The iPhone app is coming soon.'
+            : 'The desktop app is for Mac, Windows and Linux computers, and its first release is on its way. The iPhone app is coming soon.'}</span>
+        </p>
+
+        {published ? (
+          <>
+            <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              {picks.map((p) => (
+                <a href={p.href} class="btn btn-lg min-w-[230px] bg-white text-[#0a0a0a] shadow-[0_10px_30px_-10px_rgb(10_30_80/0.5)] hover:bg-white/90" data-pick={p.os} hidden={p.os !== 'mac'}>
+                  <Icon name={p.glyph} size={16} />{p.label}
+                </a>
+              ))}
+              <a href="#platforms" class="btn btn-lg bg-white/10 text-white ring-1 ring-white/30 backdrop-blur-md hover:bg-white/20">Other platforms<Icon name="chevronDown" size={15} /></a>
+            </div>
+
+            <div class="mt-5 space-y-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-white [text-shadow:0_1px_2px_rgb(10_30_80/0.55),0_1px_12px_rgb(10_30_80/0.75)]">
+              {picks.map((p) => <p data-pick-meta={p.os} hidden={p.os !== 'mac'}>{p.meta}</p>)}
+              {release && (
+                <p>
+                  <span class="whitespace-nowrap">Version {release.version},</span> <span class="whitespace-nowrap">released <time datetime={release.date}>{release.dateLabel}</time></span>
+                  <span class="whitespace-nowrap"><span class="mx-1.5 text-white/50">·</span><a href={release.notesUrl} class="underline decoration-white/40 underline-offset-4 transition-colors hover:decoration-white">What’s new</a></span>
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <div class="mt-9 flex flex-col items-center gap-5" data-desktop-unpublished>
+            <span class="inline-flex h-8 items-center gap-2 rounded-full bg-white/12 px-3.5 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-white ring-1 ring-white/25 backdrop-blur-md"><span class="size-1.5 rounded-full bg-white"></span>Coming soon</span>
+            <div class="flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a href={LINKS.login} class="btn btn-lg min-w-[230px] bg-white text-[#0a0a0a] shadow-[0_10px_30px_-10px_rgb(10_30_80/0.5)] hover:bg-white/90">Open opendesk in your browser<Icon name="arrowRight" size={15} /></a>
+              <a href={LINKS.githubReleases} class="btn btn-lg bg-white/10 text-white ring-1 ring-white/30 backdrop-blur-md hover:bg-white/20"><Icon name="github" size={15} />Follow releases</a>
+            </div>
+            <p class="font-mono text-[11px] uppercase tracking-[0.08em] text-white [text-shadow:0_1px_2px_rgb(10_30_80/0.55),0_1px_12px_rgb(10_30_80/0.75)]">The first release is on its way · Everything works in the browser today</p>
+          </div>
+        )}
+      </div>
+
+      <div class="relative mx-auto mt-12 max-w-[1416px] px-3 md:mt-16 md:px-7">
+        <div class="-mb-[7%]"><DesktopStage /></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Every download -->
+  <section id="platforms" class="container-page mt-24 scroll-mt-24 md:mt-32">
+    <SectionHead label="All platforms" title="Mac, Windows and Linux." body="Every file comes from the same release on GitHub, built from the code in the repository. Install it once and it keeps itself up to date." href={DOCS} link="Installation help" />
+
+    <div class="mt-10 grid gap-3 md:mt-14 lg:grid-cols-3">
+      {cards.map((c) => (
+        <article class="flex flex-col overflow-hidden rounded-[14px] bg-bg ring-1 ring-line" data-card={c.os}>
+          <header class="flex items-center gap-3.5 border-b border-line bg-surface-2 px-5 py-4 md:px-6">
+            <span class="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-bg text-fg ring-1 ring-line"><Icon name={c.glyph} size={18} /></span>
+            <div class="min-w-0">
+              <h3 class="text-[18px] font-semibold tracking-[-0.02em] text-fg">{c.name}</h3>
+              <div class="font-mono text-[11px] uppercase tracking-[0.08em] text-subtle">{c.tag}</div>
+            </div>
+            <span class="pill pill-dot t-green ml-auto !h-[22px] !px-2 !text-[11.5px]" data-yours-pill>Your system</span>
+          </header>
+          <dl class="flex-1 px-5 py-2 md:px-6">
+            {c.rows.map(([k, v], i) => (
+              <div class={`grid grid-cols-[92px_1fr] gap-4 py-3 ${i ? 'border-t border-line' : ''}`}>
+                <dt class="pt-[3px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">{k}</dt>
+                <dd class="text-[14.5px] leading-relaxed text-body">{v}</dd>
+              </div>
+            ))}
+            {c.file && (
+              <div class="grid grid-cols-[92px_1fr] gap-4 border-t border-line py-3">
+                <dt class="pt-[3px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">File</dt>
+                <dd class="truncate font-mono text-[12.5px] leading-[1.7rem] text-fg">{c.file}</dd>
+              </div>
+            )}
+          </dl>
+          {!published && (
+            <div class="border-t border-line p-4 md:p-5">
+              <span class="btn btn-ghost pointer-events-none w-full text-muted" aria-disabled="true">Coming soon</span>
+            </div>
+          )}
+          {published && <div class={`border-t border-line p-4 md:p-5 ${c.downloads.length > 1 ? 'grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2' : ''}`}>
+            {c.downloads.length > 1
+              ? c.downloads.map((d) => (
+                  <a href={d.href} class="btn btn-ghost h-10 justify-between px-3.5 text-[13.5px]"><span class="min-w-0 truncate">{d.label}</span><Icon name="download" size={14} class="shrink-0 text-subtle" /></a>
+                ))
+              : c.downloads.map((d) => (
+                  <a href={d.href} class="btn btn-primary w-full"><Icon name="download" size={15} />{d.label}</a>
+                ))}
+          </div>}
+        </article>
+      ))}
+    </div>
+
+    {published && <div class="mt-3 flex flex-col gap-5 rounded-[14px] border border-dashed border-line-strong p-5 md:flex-row md:items-center md:gap-8 md:p-6">
+      <div class="flex min-w-0 items-start gap-3.5">
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-surface text-fg ring-1 ring-line"><Icon name="shieldCheck" size={16} /></span>
+        <div>
+          <h3 class="text-[15.5px] font-semibold tracking-[-0.015em] text-fg">Check your download</h3>
+          <p class="mt-1 text-[14px] leading-relaxed text-muted">Each release lists the SHA-256 of every file it ships. Compare it with <code class="whitespace-nowrap font-mono text-[12.5px] text-fg">shasum -a 256</code> on macOS and Linux, or <code class="whitespace-nowrap font-mono text-[12.5px] text-fg">Get-FileHash</code> on Windows.</p>
+        </div>
+      </div>
+      <div class="flex shrink-0 flex-wrap gap-x-6 gap-y-2 md:ml-auto">
+        {release
+          ? <a href={checksumsUrl(release.version)} class="link-arrow">SHA256SUMS for {release.version}<Icon name="arrowUpRight" size={14} /></a>
+          : <a href={DESKTOP_RELEASES} class="link-arrow">Checksums on GitHub<Icon name="arrowUpRight" size={14} /></a>}
+        <a href={DESKTOP_RELEASES} class="link-arrow">Every release<Icon name="arrowUpRight" size={14} /></a>
+      </div>
+    </div>}
+  </section>
+
+  <!-- What the app adds to the web app -->
+  <section id="features" class="container-page mt-28 scroll-mt-24 md:mt-40">
+    <SectionHead label="What you get" title="Everything the browser tab could not do." body="The app shows your server’s own web app, so everything works the way it does in the browser, and adds what a tab cannot." />
+    <ul class="mt-10 grid gap-px overflow-hidden rounded-[14px] bg-line ring-1 ring-line md:mt-14 md:grid-cols-2 lg:grid-cols-4">
+      {perks.map(([icon, t, d]) => (
+        <li class="bg-bg p-6 md:p-7">
+          <span class="flex size-9 items-center justify-center rounded-[9px] bg-surface-2 text-fg ring-1 ring-line"><Icon name={icon} size={16} /></span>
+          <h3 class="mt-5 text-[16px] font-semibold tracking-[-0.015em] text-fg">{t}</h3>
+          <p class="mt-1.5 text-[14.5px] leading-relaxed text-muted">{d}</p>
+        </li>
+      ))}
+    </ul>
+
+    <div class="mt-3 grid gap-3 md:grid-cols-2">
+      <div class="flex gap-5 rounded-[18px] bg-surface-2 p-6 ring-1 ring-line md:p-7">
+        <span class="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-bg text-fg ring-1 ring-line"><Icon name="smartphone" size={18} /></span>
+        <div>
+          <h3 class="flex flex-wrap items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em] text-fg">iPhone<span class="pill t-blue !h-[21px] !text-[11px]">Coming soon</span></h3>
+          <p class="mt-1.5 text-[14.5px] leading-relaxed text-muted">A native iPhone app with push for new chats, replies and mentions, for opendesk Cloud or your own server. It is not in the App Store yet.</p>
+        </div>
+      </div>
+      <a href={DOCS} class="group flex gap-5 rounded-[18px] bg-surface-2 p-6 ring-1 ring-line transition-colors hover:bg-surface md:p-7">
+        <span class="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-bg text-fg ring-1 ring-line"><Icon name="book" size={18} /></span>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-[16px] font-semibold tracking-[-0.015em] text-fg">Installing, signing in and updates</h3>
+          <p class="mt-1.5 text-[14.5px] leading-relaxed text-muted">The guide covers each system, connecting to your server, notifications and how updates arrive.</p>
+        </div>
+        <Icon name="arrowUpRight" size={15} class="mt-1 shrink-0 text-subtle transition-transform group-hover:-translate-y-px group-hover:translate-x-px group-hover:text-fg" />
+      </a>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  [data-yours-pill] { display: none; }
+  [data-card][data-yours] { box-shadow: 0 0 0 1.5px var(--fg), var(--shadow); }
+  [data-card][data-yours] [data-yours-pill] { display: inline-flex; }
+</style>
+
+<script>
+  // Pick the download for this computer. The page ships with Mac chosen, so it
+  // works without this; phones get a note instead of a button.
+  type Os = 'mac' | 'windows' | 'linux' | 'mobile' | null;
+  type UAData = { platform?: string; mobile?: boolean; getHighEntropyValues?: (h: string[]) => Promise<{ architecture?: string }> };
+
+  const nav = navigator as Navigator & { userAgentData?: UAData };
+  const ua = navigator.userAgent;
+
+  function detect(): Os {
+    const hint = nav.userAgentData;
+    // iPadOS asks for desktop sites as a Mac, but a Mac has no touch screen.
+    if (hint?.mobile || /iphone|ipad|ipod|android/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'mobile';
+    const platform = (hint?.platform ?? '').toLowerCase();
+    if (platform === 'macos') return 'mac';
+    if (platform === 'windows') return 'windows';
+    if (platform === 'linux' || platform === 'chrome os' || platform === 'chromeos') return 'linux';
+    if (/windows/i.test(ua)) return 'windows';
+    if (/mac os x|macintosh/i.test(ua)) return 'mac';
+    if (/cros|linux|x11/i.test(ua)) return 'linux';
+    return null;
+  }
+
+  const os = detect();
+  const show = (attr: string, value: string) =>
+    document.querySelectorAll<HTMLElement>(`[${attr}]`).forEach((el) => { el.hidden = el.getAttribute(attr) !== value; });
+
+  if (os === 'mobile') {
+    show('data-pick', '');
+    show('data-pick-meta', '');
+    const note = document.querySelector<HTMLElement>('[data-mobile-note]');
+    note?.classList.replace('hidden', 'flex');
+  } else if (os) {
+    show('data-pick', os);
+    show('data-pick-meta', os);
+    document.querySelector(`[data-card="${os}"]`)?.setAttribute('data-yours', '');
+  }
+
+  if (os === 'linux') {
+    const arm = (arch: string) => {
+      const link = document.querySelector<HTMLAnchorElement>('[data-pick="linux"]');
+      const meta = document.querySelector<HTMLElement>('[data-pick-meta="linux"]');
+      if (!link || !meta || !/^arm|aarch64/i.test(arch)) return;
+      link.href = link.href.replace('-x64.AppImage', '-arm64.AppImage');
+      meta.textContent = meta.textContent?.replace('x64', 'arm64') ?? '';
+    };
+    const m = ua.match(/aarch64|arm64|armv\d+/i);
+    if (m) arm(m[0]);
+    else nav.userAgentData?.getHighEntropyValues?.(['architecture']).then((v) => arm(v.architecture ?? ''), () => {});
+  }
+</script>

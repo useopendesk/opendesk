@@ -1,0 +1,161 @@
+---
+title: Cloud plans and billing
+description: The Free and Pro plans on opendesk Cloud, seats, the AI balance in US dollars, AI top-ups, auto-recharge and downgrades.
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Legend from '../../../components/Legend.astro';
+import Fold from '../../../components/Fold.astro';
+
+Billing applies only to opendesk Cloud. Self-hosted opendesk has no plans, no limits and no billing.
+
+**Every feature is on every plan.** Plans differ only in limits.
+
+| Plan | Price | Mailboxes | Members | AI usage per month |
+| --- | --- | --- | --- | --- |
+| Free | $0 per workspace, forever | 1 | 1 | $0.50 per workspace |
+| Pro | $18 per seat per month | unlimited | unlimited | $10 per paid seat, pooled |
+| Self-hosted | free | unlimited | unlimited | unlimited, with your own AI key |
+
+Owners and admins manage billing in **Settings, Plan and billing**.
+
+<Screenshot src="/guides/billing/overview" alt="Settings, Plan and billing: the current plan ringed as 1, the AI balance as 2, and Auto-recharge as 3" />
+
+<Legend>
+
+1. **Current plan**: your plan, seats, price and renewal date.
+2. **AI balance**: what is left to spend on AI this month, and where to add AI usage.
+3. **Auto-recharge**: adds AI usage for you when the balance runs low.
+
+</Legend>
+
+## Your plan and seats
+
+<Screenshot src="/guides/billing/plan" alt="The current plan card for Pro: the seat count ringed as 1, the price of $18 per seat per month ringed as 2, and Manage billing ringed as 3" />
+
+<Legend>
+
+1. **Seats**: members with the owner, admin or agent role each take a seat. **Viewers are free.** When members join, leave or change role, the seat count updates on its own, prorated.
+2. **Price**: $18 per seat per month on Pro. Pro can also be billed yearly when a yearly price is offered.
+3. **Manage billing**: opens the billing portal for the payment method, invoices, tax ids and cancellation.
+
+</Legend>
+
+On Free, **Upgrade to Pro** opens a secure checkout. Prices at checkout include tax where it applies. On Free, the member limit counts all members plus pending invitations, and the owner is the one member.
+
+## The AI balance
+
+AI features are paid from the workspace's AI balance, in US dollars. It is the monthly allowance plus any AI usage you add.
+
+<Screenshot src="/guides/billing/balance" alt="The AI balance: $58.14 remaining ringed as 1, the monthly allowance used this month and its reset date ringed as 2, what is left of the allowance and of added usage ringed as 3, and Add AI usage ringed as 4" />
+
+<Legend>
+
+1. **Remaining**: everything you can spend right now.
+2. **Monthly allowance**: $0.50 a month on Free, or $10 per paid seat on Pro, shared across the workspace. Five seats give $50 a month. It resets at the start of each calendar month (UTC).
+3. **Allowance left** and **Added, left**: AI usage you add is spent after the allowance, and never expires.
+4. **Add AI usage**: any amount from $5 to $5,000, dollar for dollar. Pick $10, $25, $50, $100 or $250, or **Other** to type an amount.
+
+</Legend>
+
+With a saved payment method, **Pay** charges it after one confirmation, and the usage is there at once. If your bank wants you to confirm the payment, or you choose **Pay another way**, it continues in a secure checkout, where you can also use another card. Without a saved payment method, **Continue to pay** opens the checkout and saves the card for next time.
+
+### What a call costs
+
+- **Charged on real cost.** Each AI call is charged what it cost the provider, at the model's list price, times 1.5. A pricier model, a longer thread or a longer answer costs more. **Settings, AI** shows what typical calls cost on your models; see [AI usage on Cloud](/guides/ai/#ai-usage-on-cloud).
+- **Starting a call.** A call starts only when the balance covers its estimate: the prompt at the model's input price plus the longest answer it may write (counted up to 4,000 tokens) at the output price, times 1.5, and at least $0.01. Otherwise the feature asks you to add AI usage, and the call is not made.
+- **A failed AI request costs nothing.** Search indexing is free.
+- **Your own key costs $0.** A workspace that runs its AI on its [own provider key](/guides/ai/#your-own-provider-key) pays its provider directly. Only the decision model's triage and automation decisions still use a little of the AI balance.
+
+When the balance runs out, AI features ask you to add AI usage, and the AI agent goes quiet and leaves conversations to your team until there is balance again.
+
+## Turn on auto-recharge
+
+<Steps>
+<Step title="Switch it on">
+
+Under **Auto-recharge**, turn the switch on. It needs a saved payment method; if you have none, **Add a payment method** saves one first.
+
+</Step>
+<Step title="Set when and how much">
+
+<Screenshot src="/guides/billing/auto-recharge" alt="Auto-recharge switched on ringed as 1, with Recharge below $5.00 ringed as 2, Recharge amount $25 ringed as 3, and Monthly limit $250 ringed as 4" />
+
+<Legend>
+
+1. **On**: the line above it says what will happen, such as "Add $25 when the balance falls below $5.00, up to $250 a month."
+2. **Recharge below**: the balance that triggers a recharge, $5 by default.
+3. **Recharge amount**: the AI usage each recharge adds, $5 to $5,000, $25 by default.
+4. **Monthly limit**: the most auto-recharge adds in a calendar month, $250 by default. Near the limit it adds only what is left of it, then waits for next month.
+
+</Legend>
+
+Each recharge must bring the balance back above the threshold, and the monthly limit must fit at least one recharge.
+
+</Step>
+</Steps>
+
+Every recharge is charged to your saved payment method with its own invoice, under **Payment method and invoices**.
+
+<Callout type="warning">
+
+If the bank declines a recharge for now, such as for insufficient funds, auto-recharge stays on and tries again after 1 hour, 6 hours and 18 hours; the card shows when. If the payment still fails, or fails for good (a declined card, or a bank that wants you to confirm the payment), auto-recharge turns itself off, and owners and admins get a notification, also by email unless they turned that off in their [notification settings](/guides/notifications/). Update the payment method, then turn it back on.
+
+</Callout>
+
+## Payment method and invoices
+
+<Screenshot src="/guides/billing/invoices" alt="Payment method and invoices: the saved card Visa ending 4242 ringed as 1, and an invoice for the Pro subscription ringed as 2" />
+
+<Legend>
+
+1. **Payment method**: the card that AI usage and auto-recharge charge, with its expiry. **Change** saves another one in a secure checkout. When the card network updates an expired or replaced card, this shows the new one.
+2. **Invoices**: every payment, from Pro to AI usage, with its invoice number. Download the PDF, or open the invoice to view or pay it. **Manage billing** has the full history.
+
+</Legend>
+
+## See what AI was used for
+
+**AI usage** shows the spend for a date range by day, and broken down by feature, member and model.
+
+<Screenshot src="/guides/billing/usage" alt="AI usage: the date range ringed as 1, the spend by feature ringed as 2, by member ringed as 3, and by model ringed as 4" />
+
+<Fold>
+
+## Running low
+
+Owners and admins are told at most once a month:
+
+- when the balance is running low: below the auto-recharge threshold, but never more than a fifth of the monthly allowance (at least $0.05);
+- when it is used up: below $0.01, so no AI call can start.
+
+Adding AI usage, by hand or by a recharge, resets both notices. Both arrive in the app and, by default, by email ([notification settings](/guides/notifications/)).
+
+</Fold>
+
+<Fold>
+
+## Payment problems and downgrades
+
+- If a payment fails, Pro stays active while it is retried.
+- If the subscription ends (canceled or unpaid), the workspace returns to Free.
+- **Nothing is deleted on a downgrade.** Existing mailboxes and members stay. Creating new ones is refused until the workspace is within the Free limits.
+
+</Fold>
+
+<Fold>
+
+## Self-hosted
+
+A self-hosted instance runs the same code with billing off: every workspace is on the self-hosted plan with unlimited mailboxes, members and AI use, paid for with your own [AI provider key](/self-hosting/ai/).
+
+</Fold>
+
+## Related
+
+- [AI features](/guides/ai/)
+- [Teams and roles](/guides/teams-and-roles/)
+- [Billing API](/api/resources/billing/)

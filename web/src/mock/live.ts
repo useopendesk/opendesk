@@ -6,6 +6,7 @@ import { contactRef, db, type WsData } from "./db";
 import { activeTicketIds, emitOnTicket, publish, setTeammatePresence, teammatePresence } from "./gateway";
 import { customerReply } from "./handlers/tickets";
 import { FOLLOW_UPS, GENERATED, TEAM } from "./content";
+import { countRuleRun, evaluateRouting } from "./teams";
 import { addMessage, newTicket, notify, OPENISH } from "./tickets";
 import { ollieOnActive } from "./ollie";
 import { textToHtml } from "./util";
@@ -51,15 +52,40 @@ const NEW_SUBJECTS = [
   "Two workspaces after signing up with Google",
 ];
 
+const CHAT_PAGES = ["/pricing", "/docs/getting-started", "/blog/launch", "/", "/account/billing"];
+
+/**
+ * A new conversation, routed like the server would (contracts/teams.md "Routing"):
+ * email arrives at an active address or one of its aliases, chat starts on a widget
+ * (sometimes with a topic) and has no reply address until it needs one.
+ */
 function randomNewTicket() {
   const w = ws();
   const contact = any(w.contacts);
   if (!contact) return;
   const subject = any(NEW_SUBJECTS) ?? GENERATED[0].subject;
-  const t = newTicket(w, { subject, contact: contactRef(contact), channel: Math.random() < 0.2 ? "chat" : "email", priority: Math.random() < 0.2 ? "high" : "normal", mailbox_id: w.mailboxes[0]?.id });
+  const body = `Hi there,\n\n${subject}. Could you take a look?\n\n${contact.name.split(" ")[0]}`;
+  const widget = Math.random() < 0.25 ? any(w.widgets) : undefined;
+  let t;
+  if (widget) {
+    const topic = Math.random() < 0.6 ? any(widget.settings.topics) : undefined;
+    const slug = w.brands.find((b) => b.id === widget.brand_id)?.slug ?? "margin";
+    const page_url = `https://${slug}.app${any(CHAT_PAGES) ?? "/"}`;
+    const route = evaluateRouting(w, { channel: "chat", from: contact.email ?? "", subject, body, widget_id: widget.id, topic: topic?.id, page_url });
+    t = newTicket(w, { subject, contact: contactRef(contact), channel: "chat", priority: "normal", mailbox_id: null, team_id: route.team_id, brand_id: route.brand_id, widget_id: widget.id, page_url, routed: route.routed });
+    countRuleRun(w, route.routed);
+  } else {
+    const box = any(w.mailboxes.filter((m) => m.status === "active"));
+    if (!box) return;
+    const to = Math.random() < 0.3 && box.aliases.length ? (any(box.aliases) ?? box.email) : box.email;
+    const route = evaluateRouting(w, { channel: "email", to, from: contact.email ?? "", subject, body });
+    t = newTicket(w, { subject, contact: contactRef(contact), channel: "email", priority: Math.random() < 0.2 ? "high" : "normal", mailbox_id: route.mailbox_id ?? box.id, team_id: route.team_id, brand_id: route.brand_id, received_at: to, routed: route.routed });
+    t.origin_mailbox_id = box.id;
+    countRuleRun(w, route.routed);
+  }
   contact.ticket_count++;
   publish(w, "ticket.created", { ticket: t });
-  addMessage(w, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hi there,\n\n${subject}. Could you take a look?\n\n${contact.name.split(" ")[0]}`) });
+  addMessage(w, t, { kind: "reply", direction: "inbound", html: textToHtml(body) });
 }
 
 function randomNotification() {

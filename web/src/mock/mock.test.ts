@@ -17,13 +17,48 @@ async function call(method: string, path: string, body?: unknown) {
 describe("mock backend", () => {
   installMock();
 
+  it("breaks reports down by team and brand, and narrows them", async () => {
+    const range = "from=2026-09-12&to=2026-10-11";
+    const all = (await call("GET", `/v1/reports/overview?${range}`)).body;
+    expect(all.by_team.length).toBeGreaterThan(1);
+    expect(all.by_team.some((r: { team_id: string | null }) => r.team_id === null)).toBe(true);
+    expect(all.by_brand.length).toBe(2);
+    const team = all.by_team.find((r: { team_id: string | null }) => r.team_id)!.team_id;
+    const one = (await call("GET", `/v1/reports/overview?${range}&team_id=${team}`)).body;
+    expect(one.by_team.map((r: { team_id: string }) => r.team_id)).toEqual([team]);
+    expect(one.created).toBeLessThan(all.created);
+    const brand = all.by_brand[0].brand_id;
+    const b = (await call("GET", `/v1/reports/overview?${range}&brand_id=${brand}&team_id=none`)).body;
+    expect(b.by_brand.map((r: { brand_id: string }) => r.brand_id)).toEqual([brand]);
+    expect((await call("GET", `/v1/reports/overview?${range}&team_id=nope`)).status).toBe(422);
+  });
+
+  it("gives collections and articles a brand, and scopes help centers by it", async () => {
+    const brands = (await call("GET", "/v1/brands")).body.data as { id: string; slug: string; is_default: boolean }[];
+    const press = brands.find((b) => b.slug === "pressroom")!;
+    expect((await call("POST", "/v1/kb/collections", { name: "X", brand_id: "nope" })).status).toBe(422);
+    const col = (await call("POST", "/v1/kb/collections", { name: "Press only", description: "", brand_id: press.id })).body;
+    expect(col.brand_id).toBe(press.id);
+    const art = (await call("POST", "/v1/kb/articles", { title: "Press article", collection_id: col.id, body_html: "<p>Hi</p>", status: "published" })).body;
+    const forDefault = (await call("GET", `/v1/kb/articles?for_brand_id=${brands.find((b) => b.is_default)!.id}`)).body.data as { id: string }[];
+    expect(forDefault.some((a) => a.id === art.id)).toBe(false);
+    const own = (await call("GET", `/v1/kb/articles?brand_id=${press.id}`)).body.data as { id: string }[];
+    expect(own.some((a) => a.id === art.id)).toBe(true);
+    const home = (await call("GET", "/v1/public/help/margin")).body;
+    expect(home.collections.some((c: { id: string }) => c.id === col.id)).toBe(false);
+    expect(home.logo_url).toBeTruthy();
+    const shared = (await call("PATCH", `/v1/kb/collections/${col.id}`, { brand_id: null })).body;
+    expect(shared.brand_id).toBeNull();
+    expect((await call("PATCH", `/v1/kb/articles/${art.id}`, { brand_id: "nope" })).status).toBe(422);
+  });
+
   it("serves every list endpoint the app reads", async () => {
     for (const path of [
       "/v1/me", "/v1/tickets", "/v1/tickets/counts", "/v1/contacts", "/v1/companies", "/v1/tags", "/v1/views",
       "/v1/sla-policies", "/v1/automations", "/v1/mailboxes", "/v1/members", "/v1/invitations", "/v1/teams",
       "/v1/api-keys", "/v1/webhooks", "/v1/audit-logs", "/v1/notifications", "/v1/kb/collections", "/v1/kb/articles",
       "/v1/saved-replies", "/v1/me/sessions", "/v1/widget/settings", "/v1/workspace", "/v1/search?q=sso",
-      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/public/help/fieldnote", "/v1/public/csat/demo", "/v1/auth/config",
+      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/public/help/margin", "/v1/public/csat/demo", "/v1/auth/config",
       "/v1/integrations", "/v1/integrations/catalog",
     ]) {
       expect((await call("GET", path)).status, path).toBe(200);
@@ -53,7 +88,7 @@ describe("mock backend", () => {
 
     const t = (await call("GET", "/v1/tickets/%231072")).body;
     const before = db.workspaces[0].seq;
-    const link = await call("POST", `/v1/tickets/${t.id}/links`, { url: "https://github.com/fieldnote/app/issues/7", title: "SSO loop" });
+    const link = await call("POST", `/v1/tickets/${t.id}/links`, { url: "https://github.com/margin/app/issues/7", title: "SSO loop" });
     expect(link.status).toBe(201);
     expect((await call("POST", `/v1/tickets/${t.id}/links`, { url: "javascript:alert(1)" })).status).toBe(422);
     const ev = (await call("GET", `/v1/events?since=${before}`)).body.data.map((e: { type: string }) => e.type);

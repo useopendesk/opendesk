@@ -1,7 +1,7 @@
 // AI in the reply composer: draft a reply (streamed), rewrite the draft or the
 // selection, translate the draft into the customer's language. Every change is
 // undoable: drafts by toast, rewrites and translations from a diff review.
-// Credits are shown in the menu. Status, sources and diff patterns adapted
+// Typical costs are shown in the menu. Status, sources and diff patterns adapted
 // from Beautiful UI (MIT, see web/THIRD_PARTY_NOTICES.md and ../ui/).
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,12 +21,12 @@ import { Kbd } from "@/components/ui/kbd";
 import { toast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm";
 import type { RichEditorHandle } from "@/components/editor/RichEditor";
-import { AiIcon, useCreditLabel } from "../bits";
+import { AiIcon, useCostLabel } from "../bits";
 import { DiffView } from "../ui/DiffView";
 import { htmlToPlain } from "../ui/diff";
 import { SourceChips } from "../ui/StreamingText";
 import { ShimmerText, WorkingBar, formatElapsed, useElapsed } from "../ui/Thinking";
-import { creditsSpent, isAbort, reportAiError } from "./errors";
+import { balanceSpent, isAbort, reportAiError } from "./errors";
 import { isForeign, languageName, streamTextToHtml, ticketLanguage } from "./text";
 
 export const REWRITE_MODES: RewriteMode[] = ["friendlier", "more_formal", "shorter", "longer", "fix_grammar", "simplify"];
@@ -118,7 +118,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
       );
       editor.current?.setHtml(res.body_html);
       setSources(res.sources ?? []);
-      creditsSpent(qc);
+      balanceSpent(qc);
       if (prev) undoToast(t("composer.draftReplaced"), prev);
     } catch (e) {
       if (isAbort(e)) return;
@@ -169,7 +169,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
       );
       if (selection) ed.chain().focus().insertContentAt({ from, to }, res.html).run();
       else editor.current?.setHtml(res.html);
-      creditsSpent(qc);
+      balanceSpent(qc);
       setReview({
         id: Date.now(),
         title: t(selection ? "composer.rewroteSelection" : "composer.rewrote", { mode: t(`rewrite.${m}`).toLowerCase() }),
@@ -197,7 +197,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
       const res = await api.ai.translate({ html: prev, target });
       const next = res.html ?? streamTextToHtml(res.text ?? "");
       editor.current?.setHtml(next);
-      creditsSpent(qc);
+      balanceSpent(qc);
       setReview({ id: Date.now(), title: t("composer.translated", { language: languageName(target) }), before: htmlToPlain(prev), after: htmlToPlain(next), prev });
     } catch (e) {
       reportAiError(e, t("composer.translateFailed"));
@@ -245,7 +245,7 @@ function Item({ icon, children, hint, onSelect, disabled }: { icon?: ReactNode; 
 }
 
 function Cost({ feature }: { feature: AIFeature }) {
-  const label = useCreditLabel()(feature);
+  const label = useCostLabel()(feature);
   return label ? <span className="mono text-[10.5px] normal-case tracking-normal text-fg-4">{label}</span> : null;
 }
 

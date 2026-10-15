@@ -88,7 +88,7 @@ describe("mock agent quality loop", () => {
     expect((await call("POST", "/v1/ai/agent/test-runs", { settings: { widget_model: "openai/gpt-4" } })).status).toBe(422);
     expect((await call("POST", "/v1/ai/agent/test-runs", { test_ids: ["nope"] })).status).toBe(404);
 
-    const started = await call("POST", "/v1/ai/agent/test-runs", { settings: { widget_instructions: "Be brief." } });
+    const started = await call("POST", "/v1/ai/agent/test-runs", { settings: { bot: { personality: { reply_length: "short" } } } });
     expect(started.body).toMatchObject({ status: "queued", draft: true });
     expect((await call("POST", "/v1/ai/agent/test-runs", {})).status).toBe(409);
     await vi.advanceTimersByTimeAsync(300 + STEP_MS + 50);
@@ -106,7 +106,7 @@ describe("mock agent quality loop", () => {
     const full = await runToEnd();
     expect(full.status).toBe("done");
     expect(full.passed + full.failed + full.errored).toBe(full.total);
-    expect(full.credits).toBeGreaterThan(0);
+    expect(full.usd).toBeGreaterThan(0);
   });
 
   it("lists answers to review, dismisses them and improves them into a snippet and a test", async () => {

@@ -5,31 +5,106 @@ import type {
   Activity,
   Attachment,
   Channel,
+  Mailbox,
   Message,
   Priority,
+  SlaPolicy,
   TagRef,
   Ticket,
   TicketCounts,
   TicketFilters,
   TicketPatch,
+  TicketRouted,
   TicketStatus,
   UserRef,
 } from "@/lib/api/types";
 import { db, userRef, type WsData } from "./db";
 import { publish } from "./gateway";
+import { canSeeTicket, defaultBrand, teamRole } from "./teams";
 import { applyLabels, checkRequiredOnSolve, fieldDefs, fieldFiltersFromQuery, fieldsText, fieldSortValue, matchFields, mergeFields, type FieldFilterIn } from "./labels";
 import { MIN, nowIso, preview, stripHtml, uuid } from "./util";
+import { botForTicket, botRefFor } from "./bots";
 
 export const OPENISH: TicketStatus[] = ["open", "pending", "on_hold"];
 
-export function policyFor(ws: WsData, priority: Priority) {
-  const enabled = ws.sla.filter((p) => p.enabled).sort((a, b) => a.position - b.position);
-  return enabled.find((p) => p.priority === priority) ?? enabled.find((p) => p.priority === null) ?? null;
+// ─── Teams, visibility and addresses (contracts/teams.md) ──────────────────
+
+export function myTeamIds(ws: WsData, userId: string): string[] {
+  return ws.teams.filter((x) => teamRole(x, userId)).map((x) => x.id);
+}
+
+/** Only a private team's members send from its addresses. */
+export function canSendFrom(ws: WsData, m: Mailbox, userId: string): boolean {
+  const team = m.team_id ? ws.teams.find((x) => x.id === m.team_id) : undefined;
+  return !m.private || (!!team && !!teamRole(team, userId));
+}
+
+/** The brand's address whose default team is this team (the oldest active one). */
+export function teamAddress(ws: WsData, brandId: string, teamId: string | null): Mailbox | undefined {
+  if (!teamId) return undefined;
+  return ws.mailboxes
+    .filter((m) => m.brand_id === brandId && m.team_id === teamId && m.status !== "disabled")
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))[0];
+}
+
+/**
+ * Moving to another team switches the reply address when the current one's default
+ * team is the old team (or none) and the brand has an address for the new team.
+ */
+export function addressAfterMove(ws: WsData, t: Ticket, toTeam: string | null): Mailbox | null {
+  const cur = ws.mailboxes.find((m) => m.id === t.mailbox_id);
+  if (!cur || !toTeam || toTeam === t.team_id) return null;
+  if (cur.team_id && cur.team_id !== t.team_id) return null;
+  const next = teamAddress(ws, t.brand_id, toTeam);
+  return next && next.id !== cur.id ? next : null;
+}
+
+/** The From name customers see: the address's format filled in (contracts/teams.md "Reply address"). */
+export function fromName(ws: WsData, t: Ticket, m: Mailbox, agent: string | null): string {
+  const team = ws.teams.find((x) => x.id === t.team_id)?.name;
+  const brand = ws.brands.find((b) => b.id === (t.brand_id || m.brand_id))?.name ?? "";
+  const mailbox = m.display_name || m.name;
+  let f = (m.from_name_format || "{agent} at {mailbox}").trim();
+  if (!/\{(team|brand|mailbox|agent|agent_first)\}/.test(f)) return f || mailbox;
+  if (!agent) {
+    f = f.replace(/\{agent(_first)?\}[^{]*/g, "");
+    if (!/\{(team|brand|mailbox)\}/.test(f)) return mailbox;
+  }
+  const vars: Record<string, string> = { agent: agent ?? "", agent_first: agent?.split(" ")[0] ?? "", team: team || brand, brand, mailbox };
+  return f.replace(/\{(agent_first|agent|team|brand|mailbox)\}/g, (_, k: string) => vars[k] ?? "").replace(/\s+/g, " ").trim() || mailbox;
+}
+
+/** The address a reply goes out as: the alias the customer wrote to, when it belongs to that mailbox. */
+function sendAs(t: Ticket, m: Mailbox): string {
+  const r = t.received_at.toLowerCase();
+  return r && m.aliases.some((a) => a.toLowerCase() === r) ? t.received_at : m.email;
+}
+
+/** A team filter: ids, "mine" and "none", comma separated. */
+function teamMatches(ws: WsData, filter: string, t: Ticket, meId: string): boolean {
+  const mine = filter.includes("mine") ? myTeamIds(ws, meId) : [];
+  return filter
+    .split(",")
+    .filter(Boolean)
+    .some((p) => (p === "none" ? !t.team_id : p === "mine" ? !!t.team_id && mine.includes(t.team_id) : t.team_id === p));
+}
+
+/**
+ * As the server: the first enabled policy in list order whose priority (or any) and team (or any)
+ * match. A priority or team of its own only wins between policies at the same position.
+ */
+export function policyFor(ws: WsData, priority: Priority, teamId: string | null = null) {
+  const rank = (p: SlaPolicy) => [p.position, p.priority === null ? 1 : 0, p.team_id ? 0 : 1];
+  const matching = ws.sla.filter((p) => p.enabled && (p.priority === null || p.priority === priority) && (!p.team_id || p.team_id === teamId));
+  return matching.sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+  })[0] ?? null;
 }
 
 /** Recompute due dates and breach from the ticket's policy. */
 export function computeSla(ws: WsData, t: Ticket, keepPolicy = true): Ticket["sla"] {
-  const policy = keepPolicy && t.sla ? ws.sla.find((p) => p.id === t.sla!.policy_id) ?? policyFor(ws, t.priority) : policyFor(ws, t.priority);
+  const policy = keepPolicy && t.sla ? ws.sla.find((p) => p.id === t.sla!.policy_id) ?? policyFor(ws, t.priority, t.team_id) : policyFor(ws, t.priority, t.team_id);
   if (!policy) return null;
   const created = Date.parse(t.created_at);
   const fr = created + policy.first_response_minutes * MIN;
@@ -51,12 +126,16 @@ export type ListFilters = TicketFilters & { contact_id?: string; spam?: boolean;
 export function resolveFilters(ws: WsData, f: ListFilters): ListFilters {
   if (!f.view_id) return f;
   const v = ws.views.find((x) => x.id === f.view_id);
-  return v ? { ...v.filters, ...f, fields: [...(v.filters.fields ?? []), ...(f.fields ?? [])], view_id: undefined } : f;
+  if (!v) return f;
+  // Only filters the request actually sets narrow the view's own.
+  const set = Object.fromEntries(Object.entries(f).filter(([, x]) => x !== undefined)) as ListFilters;
+  return { ...v.filters, ...set, fields: [...(v.filters.fields ?? []), ...(f.fields ?? [])], view_id: undefined };
 }
 
 export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): boolean {
   const f = resolveFilters(ws, raw);
   if (ws.deletedTickets.has(t.id)) return false;
+  if (!canSeeTicket(ws, t, meId)) return false;
   if ((f.spam ?? false) !== t.spam) return false;
   if (f.status?.length && !f.status.includes(t.status)) return false;
   if (f.priority?.length && !f.priority.includes(t.priority)) return false;
@@ -64,8 +143,10 @@ export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): 
   if (f.assignee === "me" && t.assignee?.id !== meId) return false;
   if (f.assignee === "none" && t.assignee) return false;
   if (f.assignee && f.assignee !== "me" && f.assignee !== "none" && t.assignee?.id !== f.assignee) return false;
-  if (f.team_id && t.team_id !== f.team_id) return false;
+  if (f.team_id && !teamMatches(ws, f.team_id, t, meId)) return false;
   if (f.mailbox_id && t.mailbox_id !== f.mailbox_id) return false;
+  if (f.brand_id && t.brand_id !== f.brand_id) return false;
+  if (f.widget_id && t.widget_id !== f.widget_id) return false;
   if (f.channel && t.channel !== f.channel) return false;
   if (f.contact_id && t.contact?.id !== f.contact_id) return false;
   if (f.tag && !t.tags.some((x) => x.name.toLowerCase() === f.tag!.toLowerCase())) return false;
@@ -83,7 +164,20 @@ export function counts(ws: WsData, meId: string): TicketCounts {
   const ns = live.filter((t) => !t.spam);
   const views: Record<string, number> = {};
   for (const v of ws.views) views[v.id] = live.filter((t) => matches(ws, t, { view_id: v.id }, meId)).length;
+  // Every team the caller can see; private teams' tickets still count in the totals.
+  const teamCount = (list: Ticket[]) => ({
+    open: list.filter((t) => t.status === "open").length,
+    unassigned: list.filter((t) => OPENISH.includes(t.status) && !t.assignee).length,
+  });
+  const teams: Record<string, { open: number; unassigned: number }> = {};
+  for (const team of ws.teams) {
+    if (team.private && !teamRole(team, meId)) continue;
+    teams[team.id] = teamCount(ns.filter((t) => t.team_id === team.id));
+  }
+  const mine = new Set(myTeamIds(ws, meId));
   return {
+    teams,
+    my_teams: teamCount(ns.filter((t) => !!t.team_id && mine.has(t.team_id))),
     unassigned: ns.filter((t) => OPENISH.includes(t.status) && !t.assignee).length,
     mine: ns.filter((t) => OPENISH.includes(t.status) && t.assignee?.id === meId).length,
     open: ns.filter((t) => t.status === "open").length,
@@ -165,6 +259,8 @@ export function publishTicketUpdated(ws: WsData, t: Ticket, changes: string[]) {
 export type PatchResult = { changes: string[] };
 
 export type PatchOpts = {
+  /** How a team change came about (team_changed `via`); a person's edit by default. */
+  via?: TicketRouted["via"];
   /** People and API keys: solving with an empty required field is refused. */
   requireFields?: boolean;
   /** May name labels that don't exist yet (they're created). */
@@ -219,12 +315,35 @@ export function applyPatch(ws: WsData, t: Ticket, patch: TicketPatch, actor: Use
       notify(ws, "assigned", t, { actor });
     }
   }
+  if (patch.brand_id !== undefined && patch.brand_id !== t.brand_id && ws.brands.some((b) => b.id === patch.brand_id)) {
+    t.brand_id = patch.brand_id;
+    changes.push("brand_id");
+    // Replies go from an address of the new brand: its address for the team, else its default.
+    const cur = ws.mailboxes.find((m) => m.id === t.mailbox_id);
+    if (cur && cur.brand_id !== t.brand_id) {
+      const brand = ws.brands.find((b) => b.id === t.brand_id);
+      const next = teamAddress(ws, t.brand_id, t.team_id) ?? ws.mailboxes.find((m) => m.id === brand?.default_mailbox_id) ?? ws.mailboxes.find((m) => m.brand_id === t.brand_id);
+      t.mailbox_id = next?.id ?? null;
+      changes.push("mailbox_id");
+    }
+  }
   if (patch.team_id !== undefined && (patch.team_id ?? null) !== t.team_id) {
     const from = t.team_id;
+    const before = ws.mailboxes.find((m) => m.id === t.mailbox_id);
+    const box = patch.mailbox_id === undefined ? addressAfterMove(ws, t, patch.team_id ?? null) : null;
     t.team_id = patch.team_id ?? null;
     changes.push("team_id");
-    const name = (id: string | null) => ws.teams.find((x) => x.id === id)?.name ?? null;
-    act("team_changed", { from: name(from), to: name(t.team_id) });
+    const via = opts.via ?? (actor ? "agent" : "automation");
+    if (box) {
+      t.mailbox_id = box.id;
+      changes.push("mailbox_id");
+    }
+    t.routed = via === "agent" && actor ? { via, by: actor } : { via };
+    act("team_changed", { from, to: t.team_id, via, mailbox_from: box ? (before?.id ?? null) : null, mailbox_to: box?.id ?? null });
+  }
+  if (patch.mailbox_id !== undefined && patch.mailbox_id !== t.mailbox_id) {
+    t.mailbox_id = patch.mailbox_id;
+    changes.push("mailbox_id");
   }
   if (patch.snoozed_until !== undefined && patch.snoozed_until !== t.snoozed_until) {
     t.snoozed_until = patch.snoozed_until;
@@ -264,7 +383,7 @@ export function applyPatch(ws: WsData, t: Ticket, patch: TicketPatch, actor: Use
       if (!changes.includes("custom")) changes.push("custom");
     }
   }
-  if (changes.some((c) => c === "priority" || c === "status")) t.sla = computeSla(ws, t, false);
+  if (changes.some((c) => c === "priority" || c === "status" || c === "team_id")) t.sla = computeSla(ws, t, false);
   if (changes.length && publishEvents) publishTicketUpdated(ws, t, changes);
   return { changes };
 }
@@ -301,16 +420,30 @@ export type NewMessage = {
   delivery_error?: string;
   /** A widget agent reply under this bot name (contracts/agent.md "Output and posting"). */
   bot?: string;
+  /** The bot an AI reply is sent as; else the one named `bot`, else the default. */
+  bot_id?: string;
   ai_action?: Message["ai_action"];
   ai_rating?: Message["ai_rating"];
+  /** Inbound email: the Reply-To it named when that differs from From. */
+  reply_to?: string;
+  /** Inbound email: its From failed DMARC; it does not reopen the ticket. */
+  auth_failed?: boolean;
+  /** Inbound email: the trusted contact form it came through (the contact is the visitor). */
+  form_sender?: string;
 };
 
 export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
   const contact = t.contact;
   const mailbox = ws.mailboxes.find((x) => x.id === t.mailbox_id);
+  const brand = ws.brands.find((b) => b.id === t.brand_id)?.name ?? ws.workspace.name;
   const inbound = m.direction === "inbound";
   const at = m.at ?? nowIso();
   const isEmail = t.channel === "email";
+  // Only an email reply goes out from an address; a note or a chat message has none.
+  const sentFrom = m.kind === "reply" && isEmail ? mailbox : undefined;
+  // An AI reply is sent as the ticket's bot (its widget's or mailbox's, contracts/bots.md).
+  const aiBot = m.bot ? botRefFor(ws, m.bot_id ?? botForTicket(ws, t).id, "") : null;
+  const botLabel = aiBot?.name ?? m.bot;
   const msg: Message = {
     id: uuid(),
     ticket_id: t.id,
@@ -322,20 +455,26 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     author: inbound
       ? { type: "contact", user: null, contact }
       : m.bot
-        ? { type: "system", user: null, contact: null }
+        ? { type: "system", user: null, contact: null, bot: aiBot }
         : { type: "user", user: m.user ?? null, contact: null },
     body_html: m.html,
     body_text: stripHtml(m.html),
     has_quoted: m.has_quoted ?? false,
     subject: inbound ? t.subject : `Re: ${t.subject}`,
-    from_email: inbound ? (contact?.email ?? "") : (mailbox?.email ?? "support@fieldnote.app"),
-    from_name: inbound ? (contact?.name ?? "") : m.bot ? m.bot : `${m.user?.name ?? "Fieldnote"} (Fieldnote)`,
-    to: inbound ? [mailbox?.email ?? "support@fieldnote.app"] : contact?.email ? [contact.email] : [],
+    from_email: inbound ? (contact?.email ?? "") : sentFrom ? sendAs(t, sentFrom) : "",
+    from_name: inbound ? (contact?.name ?? "") : sentFrom ? fromName(ws, t, sentFrom, botLabel ?? m.user?.name ?? null) : (botLabel ?? m.user?.name ?? brand),
+    // Inbound: the address it was written to (an alias or the mailbox's own).
+    to: inbound ? (isEmail && (t.received_at || mailbox) ? [t.received_at || mailbox!.email] : []) : contact?.email ? [contact.email] : [],
+    // Inbound: where it arrived (email only); outbound: the address it went from.
+    mailbox_id: inbound ? (isEmail ? (t.origin_mailbox_id ?? t.mailbox_id) : null) : (sentFrom?.id ?? null),
     cc: m.cc ?? [],
     bcc: m.bcc ?? [],
     attachments: m.attachments ?? [],
     delivery_status: m.kind === "note" || inbound || !isEmail ? "none" : (m.delivery ?? "sent"),
     delivery_error: m.delivery_error ?? "",
+    reply_to: inbound && isEmail ? (m.reply_to ?? "") : "",
+    auth_failed: inbound && isEmail && !!m.auth_failed,
+    form_sender: inbound && isEmail ? (m.form_sender ?? "") : "",
     created_at: at,
   };
   if (msg.delivery_status === "failed" && !msg.delivery_error) msg.delivery_error = "550 5.1.1 Recipient address rejected";
@@ -349,7 +488,7 @@ export function addMessage(ws: WsData, t: Ticket, m: NewMessage, opts: { publish
   ws.messages.push(msg);
   if (m.has_quoted) {
     ws.originals[msg.id] =
-      `${msg.body_html}<blockquote><p>On ${new Date(Date.parse(msg.created_at) - 3 * 3600_000).toUTCString()}, Fieldnote Support wrote:</p><p>Thanks for the detailed report. Could you check whether anything changed on your side recently?</p><blockquote><p>Earlier messages in this thread…</p></blockquote></blockquote>`;
+      `${msg.body_html}<blockquote><p>On ${new Date(Date.parse(msg.created_at) - 3 * 3600_000).toUTCString()}, ${ws.brands.find((b) => b.id === t.brand_id)?.name ?? ws.workspace.name} Support wrote:</p><p>Thanks for the detailed report. Could you check whether anything changed on your side recently?</p><blockquote><p>Earlier messages in this thread…</p></blockquote></blockquote>`;
   }
   const changes: string[] = [];
   if (m.kind === "reply") {
@@ -359,7 +498,13 @@ export function addMessage(ws: WsData, t: Ticket, m: NewMessage, opts: { publish
     if (m.direction === "inbound") {
       t.last_customer_message_at = msg.created_at;
       t.waiting_since ??= msg.created_at;
-      if (t.status !== "open" && !t.spam) {
+      t.unanswered_count = (t.unanswered_count ?? 0) + 1;
+      if (t.status !== "open" && !t.spam && msg.auth_failed) {
+        // A reply that failed sender checks leaves the status where it was (contracts/api.md "Inbound email").
+        const data = { from: t.status, to: t.status, reason: "sender_unverified", message_id: msg.id };
+        if (doPublish) addActivity(ws, t, "status_changed", data, null);
+        else addActivity(ws, t, "status_changed", data, null, msg.created_at, false);
+      } else if (t.status !== "open" && !t.spam) {
         const from = t.status;
         t.status = "open";
         t.solved_at = null;
@@ -369,6 +514,7 @@ export function addMessage(ws: WsData, t: Ticket, m: NewMessage, opts: { publish
       }
     } else {
       t.waiting_since = null;
+      t.unanswered_count = 0;
       if (!t.first_responded_at && !m.bot) {
         t.first_responded_at = msg.created_at;
         changes.push("first_responded_at");
@@ -405,10 +551,20 @@ export function newTicket(
     tags?: TagRef[];
     fields?: Ticket["fields"];
     created_at?: string;
+    brand_id?: string;
+    widget_id?: string | null;
+    /** The exact address written to; the mailbox's own address by default (email). */
+    received_at?: string;
+    page_url?: string;
+    routed?: TicketRouted | null;
   },
 ): Ticket {
   const number = Math.max(1000, ...ws.tickets.map((x) => x.number)) + 1;
   const at = init.created_at ?? nowIso();
+  // A chat gets no address until it needs one (contracts/teams.md "Reply address").
+  const mailboxId = init.mailbox_id !== undefined ? init.mailbox_id : init.channel === "chat" ? null : (ws.mailboxes[0]?.id ?? null);
+  const mailbox = ws.mailboxes.find((m) => m.id === mailboxId);
+  const email = init.channel === "email";
   const t: Ticket = {
     id: uuid(),
     number,
@@ -417,10 +573,16 @@ export function newTicket(
     priority: init.priority ?? "normal",
     severity: init.severity ?? null,
     channel: init.channel,
-    mailbox_id: init.mailbox_id ?? ws.mailboxes[0]?.id ?? null,
+    mailbox_id: mailboxId,
     contact: init.contact,
     assignee: init.assignee ?? null,
     team_id: init.team_id ?? null,
+    brand_id: init.brand_id ?? mailbox?.brand_id ?? defaultBrand(ws)?.id ?? "",
+    widget_id: init.widget_id ?? null,
+    origin_mailbox_id: email && mailbox ? mailbox.id : null,
+    received_at: init.received_at ?? (email && mailbox ? mailbox.email : ""),
+    page_url: init.page_url ?? "",
+    routed: init.routed ?? null,
     tags: init.tags ?? [],
     sla: null,
     first_responded_at: null,
@@ -429,6 +591,7 @@ export function newTicket(
     last_message_at: at,
     last_customer_message_at: null,
     waiting_since: null,
+    unanswered_count: 0,
     last_message_preview: "",
     message_count: 0,
     spam: false,

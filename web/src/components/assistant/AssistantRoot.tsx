@@ -1,5 +1,7 @@
 // Mounted once in the app shell: the floating panel (and the phone sheet) and
 // the global ⌘J toggle. The docked column is AssistantDock, in the main row.
+// In a ticket's reply box ⌘J asks Ollie for a draft instead: the composer handles
+// the key first and marks it taken, so the toggle here skips it.
 
 import { useHotkeys } from "@/lib/hotkeys";
 import { AssistantFloat } from "./AssistantPanel";

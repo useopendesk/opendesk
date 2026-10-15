@@ -18,7 +18,7 @@
   "expectations_other": "{{count}} checks",
   "newBadge": "Newly failing",
   "noneInFilter": "No tests here.",
-  "note": "Each test answered or graded uses about {{n}} credits, as playground replies do. Tools that change things never run in tests.",
+  "note": "Each test answered or graded costs about {{cost}} on the agent's model, as playground replies do. Tools that change things never run in tests.",
   "state": {
     "passed": "Passing",
     "failed": "Failing",
@@ -77,8 +77,8 @@
     "noRuns": "Never run",
     "tests": "Tests",
     "testsHint": "Up to {{n}}",
-    "credits": "Credits",
-    "creditsHint": "Used by the last run"
+    "spent": "Spent",
+    "spentHint": "AI usage of the last run"
   },
   "newlyFailing": {
     "title_one": "{{count}} test started failing since the run before",

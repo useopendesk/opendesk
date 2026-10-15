@@ -54,13 +54,13 @@ output "s3_bucket" {
   value = module.s3.bucket
 }
 
-output "neon_project_id" {
-  description = "GitHub variable NEON_PROJECT_ID (per-PR branches)."
-  value       = module.neon.project_id
+output "postgres_private_host" {
+  description = "PlanetScale's private host; it resolves to the VPC endpoint only inside the VPC."
+  value       = module.planetscale.private_host
 }
 
-output "neon_branch_id" {
-  value = module.neon.branch_id
+output "postgres_endpoint_id" {
+  value = module.planetscale.endpoint_id
 }
 
 output "pages_projects" {

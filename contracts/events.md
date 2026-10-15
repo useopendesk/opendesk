@@ -26,9 +26,13 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 
 - `visibility: "public"` events may reach the end customer (widget). Internal notes,
   assignment, tags, SLA and everything else is `"agents"`.
-- `topics` decides fan-out in the gateway. Every event includes `workspace:<wid>`.
-  Add `user:<uid>` for per-user notifications, and `contact:<wid>:<contact_id>` for
-  public events about a chat conversation.
+- `topics` decides fan-out in the gateway. Every event includes `workspace:<wid>`, except events
+  about a ticket in a private team: those carry `team:<wid>:<tid>` instead (contracts/teams.md "Visibility").
+  `events.Publish` finds the ticket in `TicketID`, else in the data: a `ticket_id`, or a value
+  naming a ticket (`events.TicketRef`: a ticket, message, activity or notification). Only
+  `ticket.hidden` opts out (`Workspace: true`), as it carries nothing but ids.
+  Add `user:<uid>` for per-user notifications, and `contact:<wid>:<contact_id>:<brand_id>` (the
+  chat's brand) for public events about a chat conversation.
 
 ## Transport
 
@@ -51,8 +55,8 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `ticket.created`         | agents     | —                                     | `{ "ticket": Ticket }` |
 | `ticket.updated`         | agents     | `user:<assignee>` when assignee changes | `{ "ticket": Ticket, "changes": ["status","assignee_id","tags","fields",...] }` |
 | `ticket.deleted`         | agents     | —                                     | `{ "ticket_id": "..." }` |
-| `message.created`        | agents (note) / public (reply on chat ticket) / agents (reply on email ticket) | `contact:<wid>:<cid>` when public | `{ "ticket_id": "...", "message": Message }` |
-| `message.updated`        | agents (public on chat tickets) | `contact:<wid>:<cid>` when public | `{ "ticket_id": "...", "message": Message }` (delivery status; the widget agent's action card status and visitor rating, `contracts/agent.md`) |
+| `message.created`        | agents (note) / public (reply on chat ticket) / agents (reply on email ticket) | `contact:<wid>:<cid>:<brand_id>` when public | `{ "ticket_id": "...", "message": Message }` |
+| `message.updated`        | agents (public on chat tickets) | `contact:<wid>:<cid>:<brand_id>` when public | `{ "ticket_id": "...", "message": Message }` (delivery status; the widget agent's action card status and visitor rating, `contracts/agent.md`) |
 | `activity.created`       | agents     | —                                     | `{ "ticket_id": "...", "activity": Activity }` |
 | `contact.created` / `contact.updated` / `contact.deleted` | agents | — | `{ "contact": Contact }` / `{ "contact_id" }`. `contact.updated` also when a picture is uploaded, removed or found automatically |
 | `company.created` / `company.updated` / `company.deleted` | agents | — | `{ "company": Company }` / `{ "company_id" }` |
@@ -70,14 +74,16 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `ai_agent_test.created` / `ai_agent_test.updated` / `ai_agent_test.deleted` | agents | — | `{ "test": AgentTest }` / `{ "test_id" }` (`contracts/agent.md` "Tests") |
 | `ai_agent_test_run.created` / `ai_agent_test_run.updated` | agents | — | `{ "run": AgentTestRun }` (without `results`): on start, when the job picks it up, after each test and when it ends or is stopped |
 | `ai_agent_test_result.updated` | agents | — | `{ "result": AgentTestResult }`: a test of a run finished (`passed`, `failed` or `error`); it becomes that test's `last_result` |
-| `ai_agent_review.updated` | agents | — | `{ "message_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
-| `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, credits, prices. Sent on subscription changes, seat syncs and credit purchases |
+| `ai_agent_review.updated` | agents | — | `{ "message_id", "ticket_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
+| `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, AI balance, prices. Sent on subscription changes, seat syncs, AI top-ups and recharges |
 | `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*`, `webhook.*` | agents | — | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `bot.created` / `bot.updated` / `bot.deleted` | agents | — | `{ "bot": Bot }` / `{ "bot_id" }` (contracts/bots.md); a new default, a reorder or a new picture is `bot.updated` of each bot it changed |
 | `integration.created` / `integration.updated` / `integration.deleted` | agents | — | `{ "integration": Integration }` / `{ "integration_id" }` (`contracts/integrations.md`; never credentials) |
 | `ticket_link.created` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |
 | `chat.typing` (not stored; gateway only) | public | `contact:<wid>:<cid>` | `{ "ticket_id": "...", "user": {"id","name"} }` |
 
-Webhooks receive the envelope unchanged (minus `topics`), signed:
+Webhooks receive the envelope unchanged (minus `topics`); an event of a private team's ticket (`events.team_id`)
+only when the webhook's `private_team_ids` include that team, and no stand-in otherwise. Signed:
 `OD-Signature: t=<unix>,v1=<hex hmac_sha256(secret, "<t>.<body>")>`, `OD-Event-Id`, `OD-Event-Type`.
 
 Reorders (`/v1/tags/reorder`, `/v1/tag-groups/reorder`, `/v1/custom-fields/reorder`) publish one `*.updated` per moved row.

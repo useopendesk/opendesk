@@ -33,7 +33,7 @@ func TestConfigAndSettings(t *testing.T) {
 	var cfg AIConfig
 	e.Do("GET", "/v1/ai/config", e.viewer(), nil).Want(t, 200).JSON(t, &cfg)
 	if !cfg.Enabled || cfg.Provider != "anthropic" || cfg.Models.Default != "claude-sonnet-5-5" || !cfg.Features.Enabled ||
-		cfg.Features.Tone != "friendly" || cfg.Costs["draft_reply"] != 3 {
+		cfg.Features.Tone != "friendly" || cfg.Costs["draft_reply"] != 0.03 {
 		t.Fatalf("%+v", cfg)
 	}
 	if strings.Contains(string(e.Do("GET", "/v1/ai/config", e.viewer(), nil).Body), "test-key") {
@@ -125,10 +125,10 @@ func TestDraftJSONAndSSE(t *testing.T) {
 		!strings.Contains(user, "<agent_request>") || !strings.Contains(user, "Offer a refund") || !strings.Contains(user, "Refund policy") {
 		t.Fatalf("user turn %s", user)
 	}
-	var credits int64
-	e.Scalar(`SELECT included_used_milli FROM ai_credits WHERE workspace_id = $1`, &credits, e.WS.ID)
-	if credits != 3000 {
-		t.Fatalf("credits %d", credits)
+	var used int64
+	e.Scalar(`SELECT included_used_micro_usd FROM ai_balances WHERE workspace_id = $1`, &used, e.WS.ID)
+	if used != 30000 {
+		t.Fatalf("used %d", used)
 	}
 	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1 AND feature = 'draft_reply' AND ticket_id = $2 AND user_id = $3
 		AND input_tokens = 120 AND output_tokens = 30`, e.WS.ID, tk.ID, e.WS.Agent.ID); n != 1 {
@@ -158,32 +158,32 @@ func TestDraftJSONAndSSE(t *testing.T) {
 	if stream, _ := e.F.last()["stream"].(bool); !stream {
 		t.Fatal("not streamed upstream")
 	}
-	e.Scalar(`SELECT included_used_milli FROM ai_credits WHERE workspace_id = $1`, &credits, e.WS.ID)
-	if credits != 6000 {
-		t.Fatalf("credits %d", credits)
+	e.Scalar(`SELECT included_used_micro_usd FROM ai_balances WHERE workspace_id = $1`, &used, e.WS.ID)
+	if used != 60000 {
+		t.Fatalf("used %d", used)
 	}
 }
 
-func TestNoCredits(t *testing.T) {
+func TestNoBalance(t *testing.T) {
 	e := newEnv(t, opts{billing: true})
 	tk := e.ticket("Charged twice", "Refund please")
 	if err := plan.Ensure(e.Ctx, e.D.DB.Pool, e.WS.ID); err != nil {
 		t.Fatal(err)
 	}
-	e.Exec(`UPDATE ai_credits SET included_used_milli = $2 WHERE workspace_id = $1`, e.WS.ID, (plan.FreeMonthlyCredits-2)*1000)
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = $2 WHERE workspace_id = $1`, e.WS.ID, plan.FreeMonthlyUSD-20_000)
 	path := "/v1/tickets/" + tk.ID.String() + "/ai/draft"
 	r := e.Do("POST", path, e.agent(), map[string]any{}).Want(t, 402)
-	if problemCode(t, r) != "no_credits" {
+	if problemCode(t, r) != "ai_balance_empty" {
 		t.Fatal(string(r.Body))
 	}
 	st, ct, _, body := e.stream(path, e.agent(), map[string]any{})
-	if st != 402 || !strings.Contains(ct, "json") || !strings.Contains(string(body), "no_credits") {
+	if st != 402 || !strings.Contains(ct, "json") || !strings.Contains(string(body), "ai_balance_empty") {
 		t.Fatalf("%d %s %s", st, ct, body)
 	}
 	if e.F.calls() != 0 {
-		t.Fatal("model called without credits")
+		t.Fatal("model called without balance")
 	}
-	// A 1-credit feature still runs.
+	// A $0.01 feature still runs.
 	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 200)
 	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1`, e.WS.ID); n != 1 {
 		t.Fatalf("usage %d", n)
@@ -344,13 +344,13 @@ func TestAutoTriageAndSentimentAutomation(t *testing.T) {
 		t.Fatalf("usage %d", n)
 	}
 
-	// Without credits auto-triage skips silently and the trigger still runs.
-	e.Exec(`UPDATE ai_credits SET included_used_milli = 1000000 WHERE workspace_id = $1`, e.WS.ID)
+	// Without AI balance auto-triage skips silently and the trigger still runs.
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = 10000000 WHERE workspace_id = $1`, e.WS.ID)
 	calls := e.F.calls()
 	tk2 := e.ticket("Another", "Another question")
 	e.runTriggers()
 	if e.F.calls() != calls || e.loadTicket(tk2.ID).Custom["ai_triaged_at"] != nil {
-		t.Fatal("triaged without credits")
+		t.Fatal("triaged without balance")
 	}
 }
 
@@ -431,7 +431,7 @@ func TestRewriteTranslateAskKB(t *testing.T) {
 	if kb.Title != "Get a refund" || strings.Contains(kb.BodyHTML, "script") || !strings.Contains(kb.BodyHTML, "<ol>") {
 		t.Fatalf("%+v", kb)
 	}
-	// Without billing usage is still recorded (for reports), with no credit balance.
+	// Without billing usage is still recorded (for reports), with no balance.
 	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1`, e.WS.ID); n != 7 {
 		t.Fatalf("usage rows %d", n)
 	}
@@ -680,11 +680,11 @@ func TestSearchFTSFallback(t *testing.T) {
 	if len(res.Articles) == 0 || res.Articles[0].ID != art || len(res.Tickets) == 0 || res.Tickets[0].ID != tk.ID {
 		t.Fatalf("%+v", res)
 	}
-	src, err := e.S.retrieveKB(e.Ctx, e.WS.ID, e.WS.Slug, "How do I reset my password?", 3, true)
+	src, err := e.S.retrieveKB(e.Ctx, e.WS.ID, nil, "How do I reset my password?", 3, true)
 	if err != nil || len(src) != 1 || src[0].Title != "Reset your password" {
 		t.Fatalf("%+v %v", src, err)
 	}
-	src, _ = e.S.retrieveKB(e.Ctx, e.WS.ID, e.WS.Slug, "Can I pay with bitcoin?", 3, true)
+	src, _ = e.S.retrieveKB(e.Ctx, e.WS.ID, nil, "Can I pay with bitcoin?", 3, true)
 	if len(src) != 0 {
 		t.Fatalf("irrelevant match %+v", src)
 	}

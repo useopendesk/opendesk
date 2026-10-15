@@ -12,6 +12,8 @@ service (opendesk.sh) and as a self-host, and **the two are the same code**.
 | `realtime/` | Elixir/Phoenix realtime gateway; no database | `gateway.opendesk.sh` (AWS ECS) |
 | `web/` | React app (Vite, TanStack Router/Query, Tailwind v4), plus the help center and widget | `app.opendesk.sh` (Cloudflare Pages) |
 | `web/widget/` | embeddable chat widget bundle | `app.opendesk.sh/widget/v1.js` |
+| `desktop/` | Electron shell that loads the instance's web app (notifications, badge, deep links, translucent chrome); `contracts/native.md` | GitHub Releases |
+| `ios/` | native SwiftUI iPhone app (`sh.opendesk.app`); `contracts/native.md` | App Store / TestFlight |
 | `site/` | Astro marketing site | `opendesk.sh` (Cloudflare Pages) |
 | `docs/` | Starlight docs | `docs.opendesk.sh` (Cloudflare Pages) |
 | `deploy/` | Dockerfiles, self-host compose + Caddy, Terraform (AWS, Cloudflare), Cloudflare Email Worker | |
@@ -19,10 +21,12 @@ service (opendesk.sh) and as a self-host, and **the two are the same code**.
 | `migrations/` | SQL migrations, embedded in the binary, applied at boot | |
 | `brand/` | logo, icons, tokens | |
 
-Data: Postgres. Hosted = **Neon** (`DATABASE_URL` is the `-pooler` host for request
-handlers; `DATABASE_URL_DIRECT` is the direct host for migrations, River and the event
-relay, because they need session features like LISTEN/NOTIFY). Self-hosted = stock
-Postgres. Never use a Neon-only feature.
+Data: Postgres. Hosted = **PlanetScale Postgres**, reached only over AWS PrivateLink
+(`DATABASE_URL` is PgBouncer on 6432 for request handlers; `DATABASE_URL_DIRECT` is the
+direct connection on 5432 for River and the event relay, because they need session
+features like LISTEN/NOTIFY). The services connect as a role that reads and writes data
+but cannot change the schema; only the migration task has DDL (`DATABASE_URL_MIGRATE`
+in Terraform). Self-hosted = stock Postgres. Never use a provider-only feature.
 
 Events: the transactional outbox (`events` table) → relay → NATS `od.events.<wid>` →
 Elixir gateway → browsers; and → webhooks. NATS runs **embedded** in the Go binary for
@@ -39,7 +43,7 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, widget,
   SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
   `internal/ai` (AI features, providers, embeddings) and `internal/integrations`
-  (connected products over MCP, ticket links; `contracts/integrations.md`). Plan limits and AI credits go
+  (connected products over MCP, ticket links; `contracts/integrations.md`). Plan limits and AI usage go
   through `d.Plan` (`internal/plan`, `contracts/billing.md`); AI through `internal/ai`
   (`contracts/ai.md`). Each exposes `Register`, `RegisterWorkers`, `Periodic`,
   `Background` (see `internal/app`). Shared ticket writes live in `internal/domain`:
@@ -86,8 +90,8 @@ Authentication
 - Passwords: Argon2id only (`auth.HashPassword`). `auth.CheckPassword` is the single gate
   for every new or changed password (12..128 chars, refuses the embedded breached list):
   registration, reset, change, invite acceptance.
-- Login, registration and password reset are behind Turnstile (`d.Captcha.Verify`) and
-  rate limited per IP and per account (`d.Limiter`). Login answers the same for unknown
+- Login, registration and password reset are behind Turnstile (`d.Captcha.Verify`), or an
+  App Attest proof from the iPhone app, and rate limited per IP and per account (`d.Limiter`). Login answers the same for unknown
   users and wrong passwords, in the same time (`auth.DummyVerify`).
 - TOTP stores the last consumed step and refuses its replay. Recovery codes are hashed
   and single use.
@@ -99,7 +103,9 @@ Authentication
 Sessions and tokens
 - Every JWT has a `purpose`, verified against the one purpose its consumer accepts
   (`contracts/tokens.md`). HS256 only, `exp` required. `AUTH_SECRET` >= 32 bytes or no boot.
-- Refresh tokens rotate on use and are stored hashed. Logout, password change, member
+- Refresh tokens rotate on use and are stored hashed. Browsers only ever get them as a
+  cookie; a response body carries one only for a native request (`OD-Client`, no `Origin`).
+  Push devices are bound to a session and removed with it. Logout, password change, member
   removal and session revocation revoke sessions **and** publish `od.control.disconnect`.
 - Cookies: HttpOnly, Secure (https), SameSite=Lax, path-scoped.
 
@@ -108,6 +114,11 @@ Access control
   Principal, never from the request body. A referenced id (contact, team, tag, mailbox,
   attachment) is checked to belong to the same workspace before use.
 - Viewers read only; settings routes need admin; API keys need the matching scope.
+- Tickets of a private team (`contracts/teams.md` "Visibility"): every ticket read and write
+  goes through domain visibility (`domain.LoadVisibleTicket`/`CanSee` for one ticket,
+  `domain.HiddenTeams` with `VisibleSQL`/`VisibleSQLUser` for lists); a hidden ticket is `404`.
+  Events about a ticket set `events.Event.TicketID`; live previews and realtime topics carry
+  its private team. New tickets get their team through `routing.Resolve`.
 
 Input and output
 - Names people choose go through `internal/displayname` (users, workspaces, teams,
@@ -133,8 +144,12 @@ Errors, logging, data
   brand greys from `brand/tokens.css`, ink primary buttons, slightly square radii, Geist +
   Geist Mono. Colour is semantic and soft (tinted pills): status, priority, severity, SLA,
   labels, sentiment, AI (violet). The palette lives in the web tokens; the site matches it.
-- The AI is one persona, **Ollie** (the violet blob). Anything the AI does is attributed to
-  Ollie. Jev (TypeSafe) is a decision model behind triage, never a name in the UI.
+- In the app the AI is **Ollie** (the violet blob): the assistant, triage, drafts and every AI
+  action are attributed to Ollie. Ollie is also the default customer-facing bot; workspaces build
+  their own bots (name, look, personality; `contracts/bots.md`), and visitors and email recipients
+  see the widget's or mailbox's bot. Bot looks render through the one shared renderer
+  (`web/src/lib/botlook.ts`, Go twin in `internal/ai/bots`). Jev (TypeSafe) is a decision model
+  behind triage, never a name in the UI.
 - Motion is subtle and fast (shared presets in `web/src/lib/motion.ts`), always honours
   reduced motion. Empty pages use the shared EmptyState, never a lone icon and one line.
 - Light and dark themes. Dense, calm, keyboard-first. Learn from `~/projects/warmbly/web`
@@ -144,6 +159,8 @@ Errors, logging, data
   closes on click-away and Escape. A page is routed, linked, titled and prefetched.
 - Prefer realtime over polling: apply socket events to the TanStack Query cache.
 - Copy: sentence case, plain words, no em dashes.
+- The social card (`site/public/og.jpg`, also the docs' and GitHub's) is the hero's app window
+  on its painting. After changing that window, run `pnpm og` in `site/` and commit the copies.
 
 ## Commits
 

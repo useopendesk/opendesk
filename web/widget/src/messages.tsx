@@ -5,14 +5,15 @@
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { actionStatus } from "./ai";
+import { botShown, readBotRef } from "./config";
 import type { Controller } from "./controller";
 import { hostOf, initials, safeHtml, size, splitSources } from "./html";
 import { clock, t } from "./i18n";
-import { Bolt, Check, Clock, Cross, FileIc, LinkIc, Ollie, Person, Spinner, ThumbDown, ThumbUp } from "./icons";
+import { Bolt, BotFace, Check, Clock, Cross, FileIc, LinkIc, Person, Spinner, ThumbDown, ThumbUp } from "./icons";
 import type { LiveReply } from "./live";
 import { renderMarkdown } from "./markdown";
 import type { ActionUi } from "./store";
-import type { AIAction, AIActionStatus, Attachment, BotIdentity, Rating, TeamMember, UiMessage } from "./types";
+import type { AIAction, AIActionStatus, Attachment, BotRef, Rating, TeamMember, UiMessage } from "./types";
 
 export const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -24,10 +25,16 @@ export const Dots = () => (
   </span>
 );
 
-export function BotAvatar({ bot, size: s = 18 }: { bot: BotIdentity; size?: number }) {
+/**
+ * A bot's avatar: its uploaded picture (an image look), round, else its look
+ * drawn by the shared renderer. A picture that fails to load falls back to the look.
+ */
+export function BotAvatar({ bot, size: s = 18, anim }: { bot: BotRef; size?: number; anim?: boolean }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  const pic = bot.look.kind === "image" && bot.avatar_url && broken !== bot.avatar_url ? bot.avatar_url : null;
   return (
-    <span class={`av bot-av${bot.avatar_url ? "" : " is-ollie"}`} style={{ width: `${s}px`, height: `${s}px` }} aria-hidden="true">
-      {bot.avatar_url ? <img src={bot.avatar_url} alt="" referrerpolicy="no-referrer" /> : <Ollie s={s} />}
+    <span class={`av bot-av${pic ? " is-pic" : ""}`} style={{ width: `${s}px`, height: `${s}px` }} aria-hidden="true">
+      {pic ? <img src={pic} alt="" referrerpolicy="no-referrer" onError={() => setBroken(pic)} /> : <BotFace look={bot.look} anim={anim} />}
     </span>
   );
 }
@@ -41,11 +48,11 @@ export function PersonAvatar({ p, size: s = 18, one }: { p: TeamMember; size?: n
 }
 
 /** Overlapping avatars: the agent first (when it answers), then up to 3 team members. */
-export function AvatarStack({ team, bot, size: s = 24 }: { team: TeamMember[]; bot?: BotIdentity | null; size?: number }) {
+export function AvatarStack({ team, bot, size: s = 24 }: { team: TeamMember[]; bot?: BotRef | null; size?: number }) {
   if (!team.length && !bot) return null;
   return (
     <span class="stack" aria-hidden="true">
-      {bot && <BotAvatar bot={bot} size={s} />}
+      {bot && <BotAvatar bot={bot} size={s} anim />}
       {team.slice(0, 3).map((p, i) => (
         <PersonAvatar key={`${p.name}-${i}`} p={p} size={s} one />
       ))}
@@ -53,11 +60,16 @@ export function AvatarStack({ team, bot, size: s = 24 }: { team: TeamMember[]; b
   );
 }
 
-function BotHead({ bot }: { bot: BotIdentity }) {
+function BotHead({ bot, role }: { bot: BotRef; role?: string }) {
   return (
     <div class="who">
       <BotAvatar bot={bot} />
       <span class="who-name">{bot.name}</span>
+      {role && (
+        <span class="who-role" dir="auto">
+          {role}
+        </span>
+      )}
       <span class="ai-pill" title={t("aiAnswer")}>
         <span class="sr">{t("aiAnswer")}</span>
         <span aria-hidden="true">{t("ai")}</span>
@@ -136,20 +148,24 @@ export function AiMessage({
   swapped,
   rating,
   action,
+  landed,
 }: {
   c: Controller;
   m: UiMessage;
   convId: string | null;
-  bot: BotIdentity;
+  bot: BotRef;
   offer: Offer;
   swapped: boolean;
   rating: Rating | null;
   action: ActionUi | undefined;
+  /** It just landed: the bot hops once. */
+  landed?: boolean;
 }) {
   const body = useMemo(() => (m.body_html ? splitSources(safeHtml(m.body_html)) : null), [m.body_html]);
+  const seen = useMemo(() => readBotRef(m.author.bot), [m.author.bot]);
   return (
-    <div class={`row them gap ai${swapped ? " no-enter" : ""}`}>
-      <BotHead bot={bot} />
+    <div class={`row them gap ai${swapped ? " no-enter" : ""}`} data-bot-state={landed ? "happy" : undefined}>
+      <BotHead bot={botShown(seen, bot)} />
       {body ? <div class="msg" dangerouslySetInnerHTML={{ __html: body.html }} /> : <div class="msg" dir="auto">{m.body_text}</div>}
       {body && body.sources.length > 0 && (
         <div class="sources" aria-label={t("sources")}>
@@ -267,12 +283,14 @@ function ToolLine({ name, status }: { name: string; status: "running" | "done" |
   );
 }
 
-export function LiveReplyView({ r, bot }: { r: LiveReply; bot: BotIdentity }) {
+export function LiveReplyView({ r, bot }: { r: LiveReply; bot: BotRef }) {
   const showText = !r.partial && r.text.trim() !== "";
-  const name = r.bot || bot.name;
+  const who = botShown(r.bot, bot);
+  const name = who.name;
+  const writing = r.phase === "typing" || r.phase === "streaming";
   return (
-    <div class={`row them gap ai live${r.phase === "leaving" ? " leaving" : ""}`} aria-busy="true">
-      <BotHead bot={{ ...bot, name }} />
+    <div class={`row them gap ai live${r.phase === "leaving" ? " leaving" : ""}`} aria-busy="true" data-bot-state={writing ? "thinking" : undefined}>
+      <BotHead bot={who} />
       <div class="msg">
         {r.tools.length > 0 && (
           <div class="tools">
@@ -290,6 +308,18 @@ export function LiveReplyView({ r, bot }: { r: LiveReply; bot: BotIdentity }) {
             </span>
           )
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The bot's opening message in a new chat (its greeting), attributed to it. */
+export function BotGreeting({ bot, text }: { bot: BotRef & { role?: string }; text: string }) {
+  return (
+    <div class="row them gap ai greeting">
+      <BotHead bot={bot} role={bot.role} />
+      <div class="msg" dir="auto">
+        {text}
       </div>
     </div>
   );

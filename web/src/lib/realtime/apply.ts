@@ -14,6 +14,7 @@ import type {
   Notification,
   Page,
   SuggestedReply,
+  Team,
   Ticket,
   TicketLink,
   Workspace,
@@ -21,12 +22,15 @@ import type {
 import { qk, removeFromList, upsertInList } from "../queries";
 import { applyAgentQualityEvent } from "../agentTests";
 import { updateWorkspace, useSession } from "../session";
-import { patchTicketEverywhere, removeTicketEverywhere } from "../ticketCache";
+import { cachedTicket, forgetTicket, patchTicketEverywhere, removeTicketEverywhere, teamsOf } from "../ticketCache";
+import { markHidden, unmarkHidden } from "./store";
 
 // Events that can tick off a setup checklist step (contracts/api.md "Onboarding").
 const onboardingResources = new Set(["mailbox", "member", "tag", "kb_article", "workspace"]);
 // Events that can tick off an AI agent setup step (contracts/agent.md "Setup").
-const agentSetupResources = new Set(["mailbox", "kb_article", "workspace", "ai_knowledge", "ai_mcp_server"]);
+const agentSetupResources = new Set(["mailbox", "kb_article", "workspace", "ai_knowledge", "ai_mcp_server", "bot"]);
+// Bots list where they answer, so widget and address changes move their usage too.
+const botResources = new Set(["bot", "widget", "mailbox"]);
 
 export type ApplyContext = {
   me: string;
@@ -35,6 +39,10 @@ export type ApplyContext = {
   /** The signed-in user was removed from this workspace or changed role. */
   onSelfMembershipChanged?: () => void;
   onNotification?: (n: Notification) => void;
+  /** A ticket arrived (once per ticket, from the workspace channel). */
+  onTicketCreated?: (t: Ticket) => void;
+  /** The private teams this connection may see (the ws token's `teams` claim). */
+  privateTeams?: () => string[];
 };
 
 // Settings-style resources: event prefix -> [list key, payload field].
@@ -49,6 +57,9 @@ const simpleLists: Record<string, { key: readonly unknown[]; field: string }> = 
   sla_policy: { key: qk.slaPolicies, field: "sla_policy" },
   kb_collection: { key: qk.kbCollections, field: "kb_collection" },
   team: { key: qk.teams, field: "team" },
+  brand: { key: qk.brands, field: "brand" },
+  widget: { key: qk.widgets, field: "widget" },
+  routing_rule: { key: qk.routingRules, field: "routing_rule" },
   webhook: { key: qk.webhooks, field: "webhook" },
   integration: { key: qk.integrations, field: "integration" },
 };
@@ -122,14 +133,34 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
   const [resource, verb] = splitType(env.type);
   if (onboardingResources.has(resource) && verb !== "deleted") void qc.invalidateQueries({ queryKey: qk.onboarding });
   if (agentSetupResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.agentSetup });
+  // A new default or an order touches every row, so the short list is refetched whole.
+  if (botResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.bots });
+  if (resource === "bot") return;
 
   switch (env.type) {
+    // A stand-in for an event of a private team's ticket: it only keeps seq contiguous.
+    case "event.hidden":
+      return;
+    case "ticket.hidden": {
+      const id = d.ticket_id as string | undefined;
+      const team = d.team_id as string | undefined;
+      if (!id) return;
+      // Its members (and its assignee) keep seeing it; the team channel brings its updates.
+      if (team && (ctx.privateTeams?.().includes(team) || teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).includes(team))) return;
+      if (cachedTicket(qc, id)?.assignee?.id === ctx.me) return;
+      forgetTicket(qc, id);
+      markHidden(id);
+      refreshCounts(qc);
+      return;
+    }
     case "ticket.created":
     case "ticket.updated": {
       const t = d.ticket as Ticket;
       if (!t) return;
+      unmarkHidden(t.id);
       patchTicketEverywhere(qc, t, ctx.me);
       refreshCounts(qc);
+      if (env.type === "ticket.created" && !ctx.viaUser) ctx.onTicketCreated?.(t);
       return;
     }
     case "ticket.deleted": {
@@ -180,6 +211,8 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     case "billing.updated": {
       if (d && typeof d === "object" && "plan" in d) qc.setQueryData(qk.billing, d);
       else void qc.invalidateQueries({ queryKey: qk.billing });
+      // A purchase or recharge brings a new invoice.
+      void qc.invalidateQueries({ queryKey: qk.billingInvoices });
       return;
     }
     case "notification.created": {
@@ -303,6 +336,17 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     return;
   }
 
+  if (resource === "team") {
+    // Joining or leaving a team changes what "My teams" and private tickets hold.
+    const before = teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).join(",");
+    if (verb === "deleted") removeFromList(qc, qk.teams, d.team_id as string);
+    else if (d.team) upsertInList(qc, qk.teams, d.team as Team);
+    const after = teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).join(",");
+    if (before !== after || verb === "deleted") void qc.invalidateQueries({ queryKey: ["tickets"] });
+    refreshCounts(qc);
+    return;
+  }
+
   const simple = simpleLists[resource];
   if (simple) {
     if (verb === "deleted") removeFromList(qc, simple.key, d[`${simple.field}_id`] as string);
@@ -311,6 +355,8 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
       if (row) upsertInList(qc, simple.key, row);
     }
     if (resource === "view") refreshCounts(qc);
+    // Tickets name their brand and widget; a removed one leaves lists to refetch.
+    if ((resource === "brand" || resource === "widget") && verb === "deleted") void qc.invalidateQueries({ queryKey: qk.ticketLists });
     // Records embed label names and colours, and field changes can clear stored values.
     if ((resource === "tag" || resource === "tag_group") && verb !== "created") void qc.invalidateQueries({ queryKey: qk.ticketLists });
     if (resource === "tag_group") void qc.invalidateQueries({ queryKey: qk.tags });

@@ -22,7 +22,7 @@ func (s *Service) TriageTicket(ctx context.Context, p *auth.Principal, rawID str
 	if !s.canTriage() {
 		return nil, errDisabled
 	}
-	tid, err := resolveTicket(ctx, s.d.DB.Pool, p.WorkspaceID, rawID)
+	tid, err := resolveVisibleTicket(ctx, s.d.DB.Pool, p, rawID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s *Service) TriageTicket(ctx context.Context, p *auth.Principal, rawID str
 func skippable(err error) bool {
 	return errors.Is(err, ErrUnavailable) || errors.Is(err, ErrBusy) || errors.Is(err, ErrRefused) ||
 		errors.Is(err, ErrBadOutput) || errors.Is(err, errDisabled) || errors.Is(err, errOff) ||
-		errors.Is(err, context.DeadlineExceeded) || isNoCredits(err)
+		errors.Is(err, context.DeadlineExceeded) || isNoBalance(err)
 }
 
 // autoTriage is the hd.AIHooks.AutoTriage hook: triage a new ticket when the
@@ -78,7 +78,7 @@ func (s *Service) autoTriage(ctx context.Context, wid, tid uuid.UUID) error {
 	}
 	res, c, err := s.triage(ctx, s.d.DB.Pool, wid, nil, tid)
 	if err != nil {
-		if isNoCredits(err) {
+		if isNoBalance(err) {
 			return nil
 		}
 		return err
@@ -158,8 +158,8 @@ func (s *Service) decideConditions(ctx context.Context, tx pgx.Tx, wid, tid uuid
 // errReason is a log-safe label for an AI error.
 func errReason(err error) string {
 	switch {
-	case isNoCredits(err):
-		return "no_credits"
+	case isNoBalance(err):
+		return "no_balance"
 	case errors.Is(err, ErrBusy):
 		return "busy"
 	case errors.Is(err, ErrRefused):

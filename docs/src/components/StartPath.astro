@@ -1,0 +1,122 @@
+---
+/**
+ * One way to start, as a short numbered path and a link to its quickstart.
+ *
+ *   <StartPath kicker="Cloud" title="Use opendesk.sh" href="/getting-started/quickstart-cloud/"
+ *     cta="Cloud quickstart" steps={['Create your account', 'Create a workspace']}>
+ *   One sentence about this path.
+ *   </StartPath>
+ */
+interface Props {
+  kicker: string;
+  title: string;
+  href: string;
+  cta: string;
+  steps: string[];
+}
+
+const { kicker, title, href, cta, steps } = Astro.props;
+---
+
+<section class="od-path">
+  <p class="od-path-kicker">{kicker}</p>
+  <p class="od-path-title">{title}</p>
+  <div class="od-path-text"><slot /></div>
+  <ol class="od-path-steps">
+    {steps.map((s) => <li>{s}</li>)}
+  </ol>
+  <a class="od-card od-path-cta" href={href}>
+    {cta}
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+  </a>
+</section>
+
+<style>
+  .od-path {
+    display: flex;
+    flex-direction: column;
+    padding: 1.125rem 1.25rem 1.25rem;
+    border: 1px solid var(--od-line);
+    border-radius: var(--od-radius);
+    background: var(--od-bg);
+  }
+  .od-path-kicker {
+    margin: 0;
+    font: var(--od-mono-label);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--od-faint);
+  }
+  .od-path-title {
+    margin: 0.375rem 0 0;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.35;
+    color: var(--od-heading);
+  }
+  .od-path-text {
+    margin-top: 0.25rem;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--od-muted);
+  }
+  .od-path-text :global(p) {
+    margin: 0;
+    color: var(--od-muted);
+  }
+  .od-path-steps {
+    counter-reset: od-path;
+    list-style: none;
+    display: grid;
+    gap: 0.5rem;
+    margin: 1rem 0 1.125rem;
+    padding: 0;
+  }
+  .od-path-steps li {
+    counter-increment: od-path;
+    position: relative;
+    margin: 0;
+    padding-inline-start: 2rem;
+    font-size: 14px;
+    line-height: 1.375rem;
+    color: var(--od-body);
+  }
+  .od-path-steps li::before {
+    content: counter(od-path);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1.375rem;
+    height: 1.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--od-ink);
+    color: var(--od-ink-fg);
+    font: 500 11px/1 var(--__sl-font-mono);
+  }
+  .od-path-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+    margin-top: auto;
+    height: 2.25rem;
+    padding: 0 0.875rem;
+    border: 1px solid var(--od-line);
+    border-radius: var(--od-radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--od-heading);
+    text-decoration: none;
+    transition: background-color 150ms ease;
+  }
+  .od-path-cta:hover {
+    background: var(--od-soft);
+  }
+  .od-path-cta svg {
+    color: var(--od-faint);
+  }
+</style>

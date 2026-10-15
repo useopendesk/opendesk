@@ -13,9 +13,11 @@ Owners: the agent loop, guardrails, actions, ratings, playground and reports liv
 
 ## Identity
 
-The agent speaks to visitors under the workspace's bot name (`settings.widget.bot_name`, default
-"Ollie") and picture (`widget_bot` image, default the Ollie mark). In the web app its messages,
-activities and actions are always Ollie's.
+The agent speaks as a **bot** (contracts/bots.md): a chat as its widget's bot (`Widget.bot_id`), an
+email as its mailbox's bot (`Mailbox.bot_id`), the workspace's default bot (Ollie unless changed)
+where none is set. Visitors and email recipients see the bot's name and look; its replies keep the
+bot they were sent as (`messages.bot_id`, `author.bot`). In the web app its replies show the bot with
+an "AI" tint; activities, triage, drafts and the assistant are always Ollie's.
 
 ## When it answers
 
@@ -26,17 +28,22 @@ activities and actions are always Ollie's.
   message is no longer the latest visitor message does nothing.
 - After `settings.ai.widget_max_replies` replies in one conversation it hands off.
 - It stays silent and the conversation waits for the team, as without the agent, when: AI is off,
-  credits are out (`no_credits`), the workspace's monthly agent cap is reached
-  (`widget_monthly_cap`), or the provider fails after retries.
+  the AI balance is used up (`ai_balance_empty`), the workspace's monthly agent cap is reached
+  (`widget_monthly_cap_usd`), or the provider fails after retries.
 
 ## What it knows
 
 Each reply is a tool-using model loop (at most 6 model turns per reply) with:
 - the conversation: the latest 30 public messages (12,000 characters);
 - the top 6 passages for the visitor's latest messages from published KB articles **and** ready
-  knowledge sources (below), retrieved up front (embeddings, FTS fallback, the looser draft threshold);
-- `widget_instructions`, `widget_blocked_topics`, the workspace's `tone`, `reply_language` and
-  `instructions`, the workspace name, the bot name;
+  knowledge sources (below), retrieved up front (embeddings, FTS fallback, the looser draft threshold).
+  KB articles are the conversation's brand's and the shared ones (contracts/teams.md: an article takes
+  its collection's brand); knowledge sources are workspace-wide. Tickets are never a source;
+- the bot's personality (contracts/bots.md "The prompt": name, role, tone, reply length, emoji use,
+  language, greeting, handoff line, email sign-off, instructions) in one `<bot_persona>` block; the
+  workspace's `widget_blocked_topics` and the bot's `blocked_topics`; the workspace's
+  `reply_language` and `instructions` and the workspace name. The persona shapes voice, never the
+  rules, tools or blocked topics;
 - the visitor: name, whether the session is verified (`user_hash`), and the current page URL when the
   widget reports it.
 
@@ -81,7 +88,10 @@ and are never replayed.
   offers "Talk to a person" while the agent is handling the conversation) marks the ticket for a
   human: `custom.ai_handoff = true`, `custom.ai_handoff_at`, activity `ai_handoff`, notification type
   `ai_handoff` to the assignee, else the ticket's team, else every non-viewer member, and
-  `ticket.updated` with `["custom"]`. The widget learns of a handoff from `ai.reply.ended` or from
+  `ticket.updated` with `["custom"]`. When the agent hands over, the ticket also gets
+  `custom.ai_handoff_bot` and the activity `data.bot`, the name of the bot that handed over, plus
+  `data.bot_id` unless it is the built-in default (`contracts/bots.md`); the inbox shows that bot
+  instead of the assistant. The widget learns of a handoff from `ai.reply.ended` or from
   `ai_handoff` on the conversation.
 
 ## Visitor actions (confirm before acting)
@@ -116,11 +126,11 @@ topic too).
 
 ```ts
 widget_blocked_topics: string[]   // at most 20, each 2..100 chars of plain text: topics the agent declines
-widget_monthly_cap: number        // credits per calendar month (UTC) the agent may use (features answer, answer_email, answer_check, agent tools); 0 = no cap; 0..1,000,000
+widget_monthly_cap_usd: number    // US dollars of AI usage per calendar month (UTC) the agent may use (features answer, answer_email, answer_check, agent tools); 0 = no cap; 0..10,000, rounded to cents
 widget_collect_email: boolean     // when the visitor has no email, the agent asks for one before handing off, default true
 ```
 
-The cap counts usage rows of the agent's features this month. Reaching it stops the agent (silent,
+The cap counts what usage rows of the agent's features charged this month. Reaching it stops the agent (silent,
 the team takes over) and sends one notification `ai_cap_reached` per month to owners and admins.
 
 ## Playground (admin)
@@ -130,15 +140,18 @@ the team takes over) and sends one notification `ai_cap_reached` per month to ow
 ```ts
 // Body
 { messages: { role: "visitor" | "agent"; text: string }[] /* 1..40, the last is the visitor's, each up to 4,000 chars */;
-  settings?: Partial<Pick<AISettings, "widget_model" | "widget_instructions" | "widget_blocked_topics" | "tone" | "reply_language" | "instructions">> /* unsaved drafts */;
+  settings?: Partial<Pick<AISettings, "widget_model" | "widget_blocked_topics" | "tone" | "reply_language" | "instructions">> & {
+    bot_id?: string /* answer as this bot of the workspace (422 otherwise); default the default bot */;
+    bot?: { name?: string; role?: string; language?: string; personality?: Partial<BotPersonality> } /* unsaved edits, validated like PATCH /v1/bots/{id} */
+  } /* unsaved drafts */;
   visitor?: { name?: string; email?: string; verified?: boolean; user_id?: string } }
 ```
 
 It answers `text/event-stream`: `delta {text}`, `tool {name, status: "running" | "done" | "error",
 summary}`, `sources {sources: Source[]}`, then `done {text_html, sources, handoff: boolean, action:
-{tool, title, summary} | null, credits: number}`, or `error` (problem JSON). Read-only MCP tools run
+{tool, title, summary} | null, usd: number /* what the reply cost, in US dollars */}`, or `error` (problem JSON). Read-only MCP tools run
 for real (with the given visitor in `_meta`); any other tool is not run and comes back as `action`.
-Metered as feature `playground` (typical 3 credits per reply, counted toward nothing else).
+Metered as feature `playground` (about $0.03 per reply on the default model, counted toward nothing else).
 Rate limited to 30 per user per minute.
 
 ```ts
@@ -159,7 +172,7 @@ served from `internal/ai/setup_api.go`):
 | id | done when | optional |
 | --- | --- | --- |
 | `ai_on` | the instance has a provider (or the workspace a working own key) and `settings.ai.enabled` | |
-| `identity` | `widget_instructions` was saved, the widget has a `bot_name`, or a `widget_bot` picture is set | |
+| `identity` | a bot was made or changed: more than one bot, or the default has another name, a picture, instructions or an edit (`href` `/settings/ai/bots`) | |
 | `knowledge` | a published KB article or an enabled, ready knowledge source | |
 | `tools` | an enabled, connected MCP connection | yes |
 | `playground` | a playground reply was recorded (`ai_usage.feature = 'playground'`) | |
@@ -182,7 +195,7 @@ checklist (`GET /v1/onboarding`) has a `setup_ai_agent` step that is done when t
   resolved: number               // of those, solved or closed with no team member reply
   handoffs: number
   ratings: { up: number; down: number }
-  credits: number                // features answer, answer_email, answer_check and agent tools
+  usd: number                    // AI usage in US dollars: features answer, answer_email, answer_check and agent tools
   by_day: { date: string; conversations: number; replies: number; resolved: number; handoffs: number }[]
   tools: { tool: string; calls: number; errors: number }[]
   gaps: { question: string; count: number }[]  // up to 20 recent visitor questions the agent handed off or could not answer, newest first (first 200 chars)
@@ -202,19 +215,22 @@ The agent can also answer email, per mailbox, **off by default**. A mailbox has 
 ```ts
 ai_answers: boolean               // Ollie answers emails to this mailbox; turning it on needs AI on (422 ai_off)
 ai_answers_mode: "draft" | "send" // draft: a suggested reply a teammate sends, edits or discards; send: Ollie replies by email
-ai_answers_outside_hours: boolean // only while the workspace's business hours are closed (ignored while business hours are off)
+ai_answers_outside_hours: boolean // only while business hours are closed: the ticket's team's own hours when it has them, else the workspace's (ignored while those hours are off)
+bot_id: string | null             // the bot it answers as (contracts/bots.md); null = the default bot
 ```
 
-It does not need `widget_answers`; it shares the agent's knowledge, `widget_instructions`,
-`widget_blocked_topics`, `widget_model`, `widget_max_replies`, `widget_monthly_cap`, tone and language
-settings, and the bot name.
+It does not need `widget_answers`; it shares the agent's knowledge, `widget_blocked_topics`,
+`widget_model`, `widget_max_replies`, `widget_monthly_cap` and language settings, and answers as the
+mailbox's bot (`Mailbox.bot_id`, else the default bot), whose name fills `{agent}` in the From name
+and whose `sign_off` ends its emails.
 
 When it answers:
 - Inbound (`internal/email`) queues job `ai.email_answer` in the transaction that stores a customer's
   email (a new ticket or a reply), scheduled 30 s later so automations and assignment run first and a
   burst of emails gets one answer (a job whose message is no longer the latest does nothing). It never
-  queues for spam (DMARC failure), mail inbound already drops (bounces, `Auto-Submitted`, `Precedence:
-  bulk/junk/auto_reply`, foreign lists, auto-replies, the workspace's own mailboxes), nor for any
+  queues for mail that failed sender checks (DMARC, contracts/api.md "Inbound email"), mail inbound
+  already drops (bounces, `Auto-Submitted`, `Precedence: bulk/junk/auto_reply`, foreign lists,
+  auto-replies, the workspace's own mailboxes), nor for any
   message with `Precedence: list`, `List-Id`, `List-Unsubscribe`, `List-Post`, `X-Auto-Response-Suppress`,
   `X-Autoreply`, `X-Autorespond`, `X-Loop`, `Feedback-ID`, a null `Return-Path`, an out-of-office
   subject, or a no-reply sender (`noreply`, `no-reply`, `donotreply`, `mailer-daemon`, `postmaster`,
@@ -227,7 +243,7 @@ When it answers:
   over all their tickets (then it stays silent), `widget_max_replies` per ticket (counting sent replies
   and pending or discarded suggestions, then it hands off), and the agent's emails carry
   `Auto-Submitted: auto-generated` and `X-Auto-Response-Suppress: All` so autoresponders do not answer.
-- It stays silent (the team handles the email) when credits are out, the monthly cap is reached
+- It stays silent (the team handles the email) when the AI balance is used up, the monthly cap is reached
   (`ai_cap_reached` as in chat), or the provider fails after retries.
 
 What it writes: the same loop as chat (knowledge, guardrails, at most 6 model turns) with an email
@@ -235,8 +251,8 @@ prompt: one complete email (a greeting with the customer's first name, the answe
 the bot name and the workspace name), no chat phrases, `[n]` citations removed and no link list
 (passages may be linked inline). The customer block says the channel is email and the sender is
 **not verified**, so only read-only tools that need no confirmation and are not `verified_only` are
-offered; tool `_meta` carries `verified: false`. Metered as feature `answer_email` (typical 3 credits
-per model turn), plus `answer_check` for Jev.
+offered; tool `_meta` carries `verified: false`. Metered as feature `answer_email` (about $0.03
+per model turn on the default model), plus `answer_check` for Jev.
 
 Handoff: the agent calling `handoff_to_human`, or Jev's `needs_human` at 0.8 or above (checked before
 the model, which is then not called), hands off **without sending anything**: `custom.ai_handoff`,
@@ -299,7 +315,7 @@ interface AgentTestRun {
   draft: boolean                           // ran against unsaved settings
   test_ids: string[]                       // in order
   total: number; passed: number; failed: number; errored: number
-  credits: number
+  usd: number                              // what the run cost, in US dollars
   error: string | null                     // why a failed run stopped (a fixed, safe message)
   results?: AgentTestResult[]              // GET /v1/ai/agent/test-runs/{id} only
   created_at: string; started_at: string | null; finished_at: string | null
@@ -312,7 +328,7 @@ interface AgentTestResult {
   action: { tool: string; title: string; summary: string } | null   // a tool call that needs confirmation (never run)
   checks: { kind: AgentExpectation["kind"]; value: string; passed: boolean; reason: string }[]   // one per expectation, in order
   error: string | null                     // the test could not be answered or graded (fixed message)
-  credits: number
+  usd: number                              // what answering and grading the test cost, in US dollars
   draft: boolean                           // the run used unsaved settings
   previous_status: "passed" | "failed" | "error" | null   // the test's final status in the run before, so newly failing tests stand out
   finished_at: string | null
@@ -348,8 +364,8 @@ interface AgentTestResult {
   answer with no text fails `mentions` and passes `not_mentions` without a call. A test passes
   when every check passes; `error` when it could not be answered or graded.
 - Answers and grading are metered as feature `playground` (not counted toward the agent's monthly
-  cap). Without credits the test errors and the run ends `failed` ("Not enough credits to finish
-  the run.").
+  cap). When the AI balance is too low the test errors and the run ends `failed` ("The AI balance
+  is too low to finish the run.").
 - Progress is live: `ai_agent_test_run.updated` and `ai_agent_test_result.updated`
   (`contracts/events.md`).
 
@@ -395,7 +411,8 @@ interface AgentReviewItem {
 ```
 
 `POST /v1/ai/agent/review/{id}/dismiss` (admin, `settings:write`) → `204`; `404` unless `id` is an
-agent reply of the workspace. Dismissing and improving publish `ai_agent_review.updated`.
+agent reply of the workspace on a ticket the caller may see (contracts/teams.md "Visibility"; the same
+for `message_id` in improve). Dismissing and improving publish `ai_agent_review.updated`.
 
 ## MCP connections (company tools)
 
@@ -553,7 +570,7 @@ Tools (offered only when the key has the scope):
 | tool | scope | does |
 | --- | --- | --- |
 | `search_tickets` | `tickets:read` | filters (status, assignee, team, label, priority, text, dates), at most 50 |
-| `get_ticket` | `tickets:read` | a ticket with its thread (notes included) |
+| `get_ticket` | `tickets:read` | a ticket with its thread (notes included), team, brand, `received_at` and the reply address |
 | `reply_to_ticket` | `tickets:write` | a public reply (`body` markdown) |
 | `add_note` | `tickets:write` | an internal note |
 | `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels |

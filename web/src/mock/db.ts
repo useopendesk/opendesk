@@ -38,9 +38,16 @@ import type {
   Workspace,
   Attachment,
   AssignmentRule,
+  Brand,
+  RoutingRule,
+  Widget,
   Availability,
   BusinessHours,
   TriageField,
+  Bot,
+  EmailCadence,
+  NotificationChannels,
+  NotificationType,
 } from "@/lib/api/types";
 
 export type MemberRow = {
@@ -68,15 +75,15 @@ export type RoutingState = {
 export type AiUsageRow = {
   feature: AIFeature;
   user_id: string | null;
-  /** Up to 3 decimals. */
-  credits: number;
+  /** What the call was charged, in integer micro-dollars (millionths of a US dollar). */
+  micro_usd: number;
   /** An OpenRouter model id, or "jev" for decisions. */
   model: string;
   input_tokens: number;
   output_tokens: number;
   at: string;
-  /** "own_key": the workspace's own provider key paid (0 credits). Unset: credits. */
-  source?: "credits" | "own_key";
+  /** "own_key": the workspace's own provider key paid ($0). Unset: the instance's provider. */
+  source?: "instance" | "own_key";
 };
 
 export type WsData = {
@@ -123,7 +130,23 @@ export type WsData = {
   knowledgeDocs: Record<string, KnowledgeDoc[]>;
   /** Assignment rules, auto-away, business hours and triage options. */
   routing: RoutingState;
+  /** Brands, chat widgets and routing rules (contracts/teams.md; handlers/teams.ts). */
+  brands: Brand[];
+  /** `settings` of the default brand's first widget is also `widget` (the legacy /v1/widget/settings). */
+  widgets: Widget[];
+  /** Each widget's identity verification secret, never answered after create or rotate. */
+  widgetSecrets: Record<string, string>;
+  routingRules: RoutingRule[];
+  /** The AI agent's bots (contracts/bots.md; mock/bots.ts makes the default on first use). */
+  bots?: Bot[];
+  /** Notification channels each member set here, by user id then type; unset ones follow the defaults (handlers/notificationPrefs.ts). */
+  notificationPrefs?: Record<string, Partial<Record<NotificationType, Partial<NotificationChannels>>>>;
+  /** Unsubscribe links used here, by user id: when, and each type's email choice before (handlers/notificationPrefs.ts). */
+  notificationUnsubscribes?: Record<string, { at: string; previous: Partial<Record<NotificationType, boolean | undefined>> }>;
 };
+
+/** A user's account-wide notification settings: the email schedule and the pause. */
+export type NotificationSettingsRow = { email_cadence: EmailCadence; digest_hour: number; timezone: string; paused_until: string | null };
 
 export type Db = {
   users: User[];
@@ -132,6 +155,10 @@ export type Db = {
   workspaces: WsData[];
   attachments: Attachment[];
   totpPending: string | null;
+  /** The owner-level gate for this session (contracts/api.md): "ok", or why it refuses. `?mock_gate=mfa|reauth` sets it. */
+  stepUp: "ok" | "mfa_required" | "reauth_required";
+  /** Account-wide notification settings by user id; unset users have the defaults. */
+  notificationSettings: Record<string, NotificationSettingsRow>;
 };
 
 export const db: Db = {
@@ -141,12 +168,20 @@ export const db: Db = {
   workspaces: [],
   attachments: [],
   totpPending: null,
+  stepUp: "ok",
+  notificationSettings: {},
 };
 
 export function me(): User {
   const u = db.users.find((x) => x.id === db.meId);
   if (!u) throw new Error("mock: no current user");
   return u;
+}
+
+/** The account a mock access token was issued to (tokens name their account). */
+export function userFromToken(header: string | null): string | null {
+  const m = /^Bearer mock_access_([0-9a-f-]{36})_/.exec(header ?? "");
+  return m && db.users.some((u) => u.id === m[1]) ? m[1] : null;
 }
 
 export function userRef(id: string | null | undefined): UserRef | null {

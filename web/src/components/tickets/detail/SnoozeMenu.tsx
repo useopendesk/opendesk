@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { TextInput } from "@/components/ui/input";
+import { DateField, TimeField, parseDay, parseTime } from "@/components/ui/date-picker";
 import { Tooltip } from "@/components/ui/tooltip";
 
 function at9(d: Date) {
@@ -28,14 +28,21 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
     setInnerOpen(o);
     onOpenChange?.(o);
   };
-  const [custom, setCustom] = useState("");
+  const [day, setDay] = useState("");
+  const [time, setTime] = useState("09:00");
+  const custom = (() => {
+    const d = parseDay(day);
+    const t = parseTime(time);
+    return d && t ? setMinutes(setHours(d, t[0]), t[1]) : null;
+  })();
+  const valid = !!custom && custom.getTime() > Date.now();
   const opts = snoozeOptions();
   return (
     <Popover
       open={open}
       onOpenChange={setOpen}
       align="end"
-      className="w-[240px] p-1"
+      className="w-[264px] p-1"
       trigger={
         <Tooltip content={t("snooze.title")} shortcut="h">
           <Button variant="ghost" size="sm" square aria-label="Snooze" disabled={disabled} icon={<AlarmClock className="size-3.5" />} />
@@ -62,15 +69,15 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
           className="flex items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            const d = new Date(custom);
-            if (!Number.isNaN(d.getTime()) && d.getTime() > Date.now()) {
-              onSnooze(d);
+            if (valid) {
+              onSnooze(custom);
               setOpen(false);
             }
           }}
         >
-          <TextInput type="datetime-local" inputSize="sm" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label={t("snooze.until")} className="mono text-[11.5px]" />
-          <Button type="submit" size="sm" disabled={!custom}>
+          <DateField size="sm" value={day} onChange={setDay} min={format(new Date(), "yyyy-MM-dd")} placeholder={t("snooze.pickDay")} aria-label={t("snooze.until")} className="min-w-0 flex-1" />
+          <TimeField size="sm" value={time} onChange={setTime} aria-label={t("snooze.time")} />
+          <Button type="submit" size="sm" disabled={!valid}>
             {t("snooze.set")}
           </Button>
         </form>

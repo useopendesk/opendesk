@@ -1,0 +1,68 @@
+---
+/**
+ * A section of the /security standard: a ruled header with its number and the
+ * ASVS chapters it answers to, the clauses as numbered ruled rows with a mono
+ * reference into the code, and the figure that shows one of them at work.
+ */
+export interface Clause {
+  text: string;
+  /** Where the rule lives, in mono: a function, a header, a file. */
+  ref: string;
+  /** The figure that shows this clause at work. */
+  fig?: string;
+}
+
+interface Props {
+  id: string;
+  n: string;
+  title: string;
+  refs: string;
+  lede: string;
+  clauses: Clause[];
+  /** Which side the figure sits on, on wide screens. */
+  side?: 'left' | 'right';
+}
+const { id, n, title, refs, lede, clauses, side = 'right' } = Astro.props;
+const hasFigure = Astro.slots.has('figure');
+---
+<section id={id} class="container-page mt-24 scroll-mt-24 md:mt-36">
+  <header class="sec-rule pt-4">
+    <div class="flex items-center gap-3 font-mono text-[11.5px] uppercase tracking-[0.08em] text-muted">
+      <span class="text-fg">§ {n}</span>
+      <span class="h-px flex-1 bg-line"></span>
+      <span class="text-right">{refs}</span>
+    </div>
+    <div class="mt-8 grid gap-5 md:mt-10 lg:grid-cols-12 lg:items-end lg:gap-14">
+      <h2 class="text-[38px] font-semibold leading-[1] tracking-[-0.045em] text-fg md:text-[58px] lg:col-span-7"><span class="mr-3 font-mono font-medium tracking-[-0.06em] text-faint md:mr-4">{n}.</span>{title}</h2>
+      <p class="max-w-[46ch] text-[16px] leading-[1.6] text-muted md:text-[17px] lg:col-span-5 lg:pb-1.5">{lede}</p>
+    </div>
+  </header>
+
+  <div class="mt-10 grid gap-10 md:mt-14 lg:grid-cols-12 lg:gap-14">
+    <ol class:list={['border-b border-line', hasFigure ? 'lg:col-span-5' : 'lg:col-span-12']}>
+      {clauses.map((c, i) => (
+        <li class="grid grid-cols-[46px_minmax(0,1fr)] gap-x-3 border-t border-line py-5 md:grid-cols-[56px_minmax(0,1fr)]">
+          <span class="pt-[3px] font-mono text-[13px] font-medium text-fg">{n}.{i + 1}</span>
+          <div>
+            <p class="text-[15.5px] leading-[1.6] text-body">{c.text}</p>
+            <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[11px] text-subtle">
+              <span class="rounded-[4px] bg-surface-2 px-1.5 py-0.5 text-muted ring-1 ring-line">{c.ref}</span>
+              {c.fig && <a href={`#fig-${c.fig.replace('.', '-')}`} class="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">see Fig. {c.fig}</a>}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+    {hasFigure && (
+      <div class:list={['flex flex-col gap-3 lg:sticky lg:top-24 lg:col-span-7 lg:self-start', side === 'left' && 'lg:order-first']}>
+        <slot name="figure" />
+      </div>
+    )}
+  </div>
+  <slot />
+</section>
+
+<style is:global>
+  .sec-rule { border-top: 1px solid var(--fg); position: relative; }
+  .sec-rule::before { content: ''; position: absolute; inset: 3px 0 auto; height: 1px; background: var(--line); }
+</style>

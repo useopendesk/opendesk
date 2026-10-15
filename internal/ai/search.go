@@ -143,7 +143,8 @@ func (s *Service) Search(ctx context.Context, p *auth.Principal, q string) (*AIS
 			}
 		}
 		for _, id := range fuse(sem, fts) {
-			t, err := domain.LoadTicket(ctx, pool, wid, id)
+			// A private team's ticket is left out for whoever may not see it.
+			t, err := domain.LoadVisibleTicket(ctx, pool, p, id)
 			if db.IsNotFound(err) {
 				continue
 			}

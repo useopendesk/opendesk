@@ -7,6 +7,7 @@ import { Field, TextInput } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { CopyField } from "@/components/ui/copy-button";
+import { PrivateTeamsField } from "./teams";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Webhook } from "@/lib/api/types";
@@ -19,7 +20,7 @@ export const eventGroups: { label: string; events: string[] }[] = [
   { label: "Activity", events: ["activity.created"] },
   { label: "Contacts", events: ["contact.created", "contact.updated", "contact.deleted"] },
   { label: "Companies", events: ["company.created", "company.updated", "company.deleted"] },
-  { label: "Tags", events: ["tag.created", "tag.updated", "tag.deleted"] },
+  { label: "Labels", events: ["tag.created", "tag.updated", "tag.deleted"] },
   { label: "Mailboxes", events: ["mailbox.created", "mailbox.updated", "mailbox.deleted"] },
   { label: "Members", events: ["member.added", "member.updated", "member.removed"] },
   { label: "Knowledge base", events: ["kb_article.created", "kb_article.updated", "kb_article.deleted", "kb_collection.created", "kb_collection.updated", "kb_collection.deleted"] },
@@ -64,13 +65,15 @@ export function WebhookDialog({ hook, onClose, onCreated }: { hook: Webhook | nu
   const [description, setDescription] = useState(hook?.description ?? "");
   const [events, setEvents] = useState<string[]>(hook ? expandEvents(hook.events) : ["ticket.created", "ticket.updated", "message.created"]);
   const [enabled, setEnabled] = useState(hook?.enabled ?? true);
+  const [privateTeams, setPrivateTeams] = useState<string[]>(hook?.private_team_ids ?? []);
   const [error, setError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const all = allEvents.every((e) => events.includes(e));
 
   const save = useMutation({
     mutationFn: async () => {
-      const body = { url: url.trim(), description: description.trim(), events: all ? ["*"] : events, enabled };
+      const changedTeams = JSON.stringify(privateTeams) !== JSON.stringify(hook?.private_team_ids ?? []);
+      const body = { url: url.trim(), description: description.trim(), events: all ? ["*"] : events, enabled, ...(changedTeams ? { private_team_ids: privateTeams } : {}) };
       if (hook) return { w: await api.webhooks.update(hook.id, body), secret: null };
       const created = await api.webhooks.create(body);
       return { w: created as Webhook, secret: created.secret };
@@ -184,6 +187,7 @@ export function WebhookDialog({ hook, onClose, onCreated }: { hook: Webhook | nu
           </div>
           <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Webhook active" />
         </div>
+        <PrivateTeamsField value={privateTeams} onChange={setPrivateTeams} grants={hook?.private_teams} />
         <button type="submit" className="hidden" />
       </form>
     </Dialog>

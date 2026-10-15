@@ -1,0 +1,129 @@
+---
+/**
+ * A card into a guide, with a small picture of that part of the app on top (a shot from
+ * scripts/docs/shots/home.mjs, light and dark) or, without one, a line of text only.
+ *
+ *   <GuideCard title="Mailboxes" href="/guides/mailboxes/" shot="/guides/home/mailboxes"
+ *     description="Forwarding, IMAP, Google or Microsoft." />
+ */
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+interface Props {
+  title: string;
+  href: string;
+  description: string;
+  /** The shot's path under public/ without the extension (`.webp` and `.dark.webp`). */
+  shot?: string;
+}
+
+const { title, href, description, shot } = Astro.props;
+if (shot) {
+  for (const file of [`${shot}.webp`, `${shot}.dark.webp`]) {
+    if (!existsSync(path.join(process.cwd(), 'public', file))) {
+      throw new Error(`Card picture ${file} is missing. Take it with: node scripts/docs/shots.mjs ${shot.replace(/^\/guides\//, '')}`);
+    }
+  }
+}
+---
+
+<a class="od-card od-guide-card" href={href}>
+  {
+    shot && (
+      <span class="od-guide-card-shot" aria-hidden="true">
+        <img class="od-shot-light" src={`${shot}.webp`} alt="" loading="lazy" decoding="async" />
+        <img class="od-shot-dark" src={`${shot}.dark.webp`} alt="" loading="lazy" decoding="async" />
+      </span>
+    )
+  }
+  <span class="od-guide-card-text">
+    <span class="od-guide-card-title">
+      {title}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+    </span>
+    <span class="od-guide-card-description">{description}</span>
+  </span>
+</a>
+
+<style>
+  .od-guide-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--od-line);
+    border-radius: var(--od-radius);
+    background: var(--od-bg);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 150ms ease;
+  }
+  .od-guide-card:hover {
+    border-color: color-mix(in oklab, var(--od-faint) 60%, transparent);
+  }
+  .od-guide-card:focus-visible {
+    outline: 2px solid var(--od-ink);
+    outline-offset: 2px;
+  }
+  .od-guide-card-shot {
+    display: block;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-bottom: 1px solid var(--od-line);
+    background: var(--od-soft);
+  }
+  .od-guide-card .od-guide-card-shot img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    object-fit: cover;
+    object-position: top left;
+    transition: transform 240ms ease;
+  }
+  .od-guide-card:hover .od-guide-card-shot img {
+    transform: scale(1.02);
+  }
+  .od-guide-card-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 0.9375rem 0.875rem;
+  }
+  .od-guide-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 14.5px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--od-heading);
+  }
+  .od-guide-card-title svg {
+    flex-shrink: 0;
+    color: var(--od-faint);
+    transition: transform 150ms ease, color 150ms ease;
+  }
+  .od-guide-card:hover .od-guide-card-title svg {
+    color: var(--od-heading);
+    transform: translateX(2px);
+  }
+  .od-guide-card-description {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--od-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .od-guide-card .od-guide-card-shot img,
+    .od-guide-card-title svg {
+      transition: none;
+    }
+    .od-guide-card:hover .od-guide-card-shot img {
+      transform: none;
+    }
+  }
+</style>

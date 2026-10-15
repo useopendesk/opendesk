@@ -11,7 +11,17 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 )
 
-// WidgetSettings lives in workspaces.settings.widget.
+// WidgetTopic is a choice the widget offers before the first message; the pick routes
+// the conversation to TeamID (contracts/teams.md).
+type WidgetTopic struct {
+	ID     string     `json:"id"`
+	Label  string     `json:"label"`
+	TeamID *uuid.UUID `json:"team_id"`
+}
+
+// WidgetSettings lives in widgets.settings. The default brand's first widget is also
+// mirrored to workspaces.settings.widget, where workspace-wide readers (the AI agent's
+// name) find it.
 type WidgetSettings struct {
 	Greeting       string   `json:"greeting"`
 	RequireEmail   bool     `json:"require_email"`
@@ -32,14 +42,17 @@ type WidgetSettings struct {
 	ShowTeam      bool     `json:"show_team"`
 	Suggestions   []string `json:"suggestions"`
 	Sound         bool     `json:"sound"`
-	BotName       string   `json:"bot_name"`
+	// Routing and offline behaviour (contracts/teams.md).
+	Topics         []WidgetTopic `json:"topics"`
+	OfflineMessage string        `json:"offline_message"`
+	EmailFollowUp  bool          `json:"email_follow_up"`
 }
 
 // DefaultWidgetSettings are the settings of a workspace that never changed them.
 func DefaultWidgetSettings() WidgetSettings {
 	return WidgetSettings{Greeting: "Hi! How can we help?", Enabled: true, AllowedOrigins: []string{},
 		Theme: "auto", Position: "right", OffsetX: 20, OffsetY: 20, Launcher: "icon", Radius: "soft",
-		ShowTeam: true, Suggestions: []string{}}
+		ShowTeam: true, Suggestions: []string{}, Topics: []WidgetTopic{}, EmailFollowUp: true}
 }
 
 // UnmarshalJSON fills keys missing from a stored document with their defaults.
@@ -76,6 +89,19 @@ func (w *WidgetSettings) normalize() {
 	if w.Suggestions == nil {
 		w.Suggestions = []string{}
 	}
+	if w.Topics == nil {
+		w.Topics = []WidgetTopic{}
+	}
+}
+
+// ParseWidgetSettings decodes a stored widget settings document with defaults; a
+// malformed document reads as the defaults.
+func ParseWidgetSettings(raw []byte) WidgetSettings {
+	var w WidgetSettings
+	if len(raw) == 0 || json.Unmarshal(raw, &w) != nil {
+		return DefaultWidgetSettings()
+	}
+	return w
 }
 
 // Settings is the helpdesk's view of workspaces.settings. Unknown keys are kept by

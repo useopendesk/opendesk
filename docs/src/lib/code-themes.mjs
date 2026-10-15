@@ -27,5 +27,5 @@ export const opendeskLight = theme('light', {
   bg: '#fafafa', fg: '#262626', strong: '#0a0a0a', muted: '#525252', faint: '#8a8a8a', sel: '#e4e4e4',
 });
 export const opendeskDark = theme('dark', {
-  bg: '#121212', fg: '#e4e4e4', strong: '#ffffff', muted: '#a3a3a3', faint: '#737373', sel: '#262626',
+  bg: '#1a1b1e', fg: '#dcdcde', strong: '#f5f5f6', muted: '#a1a1a6', faint: '#74747a', sel: '#2c2d31',
 });

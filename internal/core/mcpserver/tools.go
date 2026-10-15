@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -234,6 +235,8 @@ type apiTicket struct {
 	Contact          *contactRef    `json:"contact"`
 	Assignee         *userRef       `json:"assignee"`
 	TeamID           *string        `json:"team_id"`
+	BrandID          string         `json:"brand_id"`
+	ReceivedAt       string         `json:"received_at"`
 	Tags             []tagRef       `json:"tags"`
 	Fields           map[string]any `json:"fields"`
 	SLA              *apiSLA        `json:"sla"`
@@ -274,16 +277,22 @@ type outSLA struct {
 }
 
 type outTicket struct {
-	ID            string         `json:"id"`
-	Number        int64          `json:"number"`
-	Subject       string         `json:"subject"`
-	Status        string         `json:"status"`
-	Priority      string         `json:"priority"`
-	Severity      *string        `json:"severity,omitempty"`
-	Channel       string         `json:"channel"`
-	Contact       *outPerson     `json:"contact,omitempty"`
-	Assignee      *outPerson     `json:"assignee,omitempty"`
-	TeamID        *string        `json:"team_id,omitempty"`
+	ID       string     `json:"id"`
+	Number   int64      `json:"number"`
+	Subject  string     `json:"subject"`
+	Status   string     `json:"status"`
+	Priority string     `json:"priority"`
+	Severity *string    `json:"severity,omitempty"`
+	Channel  string     `json:"channel"`
+	Contact  *outPerson `json:"contact,omitempty"`
+	Assignee *outPerson `json:"assignee,omitempty"`
+	TeamID   *string    `json:"team_id,omitempty"`
+	Team     string     `json:"team,omitempty"`
+	BrandID  string     `json:"brand_id,omitempty"`
+	Brand    string     `json:"brand,omitempty"`
+	// ReceivedAt is the address the customer wrote to; ReplyFrom the address replies go out from.
+	ReceivedAt    string         `json:"received_at,omitempty"`
+	ReplyFrom     *outAddress    `json:"reply_from,omitempty"`
 	Labels        []string       `json:"labels,omitempty"`
 	SLA           *outSLA        `json:"sla,omitempty"`
 	Fields        map[string]any `json:"fields,omitempty"`
@@ -298,12 +307,20 @@ type outTicket struct {
 	SolvedAt      *time.Time     `json:"solved_at,omitempty"`
 }
 
+type outAddress struct {
+	MailboxID string `json:"mailbox_id"`
+	Email     string `json:"email,omitempty"`
+}
+
 // compactTicket keeps the fields an AI client acts on. full adds custom fields, CSAT
 // and the stored summary.
 func compactTicket(t apiTicket, full bool) outTicket {
 	o := outTicket{ID: t.ID, Number: t.Number, Subject: t.Subject, Status: t.Status, Priority: t.Priority, Severity: t.Severity,
-		Channel: t.Channel, TeamID: t.TeamID, Spam: t.Spam, SnoozedUntil: t.SnoozedUntil, MessageCount: t.MessageCount,
-		LastMessage: clip(t.Preview, 200), LastMessageAt: t.LastMessageAt, CreatedAt: t.CreatedAt, SolvedAt: t.SolvedAt}
+		Channel: t.Channel, TeamID: t.TeamID, BrandID: t.BrandID, ReceivedAt: t.ReceivedAt, Spam: t.Spam, SnoozedUntil: t.SnoozedUntil,
+		MessageCount: t.MessageCount, LastMessage: clip(t.Preview, 200), LastMessageAt: t.LastMessageAt, CreatedAt: t.CreatedAt, SolvedAt: t.SolvedAt}
+	if t.MailboxID != nil {
+		o.ReplyFrom = &outAddress{MailboxID: *t.MailboxID}
+	}
 	if t.Contact != nil {
 		o.Contact = &outPerson{ID: t.Contact.ID, Name: t.Contact.Name}
 		if t.Contact.Email != nil {
@@ -336,4 +353,83 @@ func compactTicket(t apiTicket, full bool) outTicket {
 		}
 	}
 	return o
+}
+
+// --- names ---------------------------------------------------------------------------
+
+// refNames are the team and brand names of the caller's workspace, read once per tool
+// call. The lists need settings:read for an API key; without it ticket outputs keep the
+// ids only.
+type refNames struct {
+	loaded        bool
+	teams, brands map[string]string
+}
+
+// listNames reads a list route's {id, name} pairs, from a page or a bare array.
+func listNames(ctx context.Context, c *caller, path string) map[string]string {
+	var raw json.RawMessage
+	if err := c.get(ctx, path, url.Values{"limit": {"100"}}, &raw); err != nil {
+		return nil
+	}
+	type named struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var list []named
+	if err := json.Unmarshal(raw, &list); err != nil {
+		var pg page[named]
+		if json.Unmarshal(raw, &pg) != nil {
+			return nil
+		}
+		list = pg.Data
+	}
+	out := make(map[string]string, len(list))
+	for _, n := range list {
+		out[n.ID] = n.Name
+	}
+	return out
+}
+
+// name fills in the team and brand names of tickets.
+func (c *caller) name(ctx context.Context, ts ...*outTicket) {
+	if c.names == nil {
+		c.names = &refNames{}
+	}
+	n := c.names
+	if !n.loaded {
+		n.loaded = true
+		n.teams = listNames(ctx, c, "/v1/teams")
+		n.brands = listNames(ctx, c, "/v1/brands")
+	}
+	for _, t := range ts {
+		if t.TeamID != nil {
+			t.Team = n.teams[*t.TeamID]
+		}
+		t.Brand = n.brands[t.BrandID]
+	}
+}
+
+// nameAll fills in the team and brand names of a list of tickets.
+func (c *caller) nameAll(ctx context.Context, ts []outTicket) {
+	if len(ts) == 0 {
+		return
+	}
+	ptrs := make([]*outTicket, len(ts))
+	for i := range ts {
+		ptrs[i] = &ts[i]
+	}
+	c.name(ctx, ptrs...)
+}
+
+// replyAddress fills in the email address replies go out from, when the caller may read it.
+func (c *caller) replyAddress(ctx context.Context, t *outTicket) {
+	if t.ReplyFrom == nil {
+		return
+	}
+	var m struct {
+		Email string `json:"email"`
+	}
+	if err := c.get(ctx, "/v1/mailboxes/"+url.PathEscape(t.ReplyFrom.MailboxID), nil, &m); err == nil {
+		t.ReplyFrom.Email = m.Email
+	}
 }

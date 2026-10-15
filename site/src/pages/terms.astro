@@ -2,13 +2,12 @@
 /*
  * DRAFT FOR LEGAL REVIEW. These terms have not been reviewed by a lawyer.
  * Placeholders to confirm before launch:
- *   - COMPANY.legalName, COMPANY.address, COMPANY.jurisdiction (src/lib/site.ts)
  *   - the 30 day export window after termination
  *   - the liability cap (fees paid in the 12 months before the claim)
- *   - pricing comes from src/lib/pricing.ts; the credit pack price is not decided yet
+ *   - pricing comes from src/lib/pricing.ts
  */
 import Legal from '../layouts/Legal.astro';
-import { COMPANY, EMAILS, LINKS } from '../lib/site';
+import { COMPANY, EMAIL, LINKS } from '../lib/site';
 
 const toc = [
   { id: 'agreement', label: 'The agreement' },
@@ -28,11 +27,11 @@ const toc = [
   { id: 'contact', label: 'Contact' },
 ];
 ---
-<Legal title="Terms of service" description="The terms that govern your use of opendesk Cloud, the hosted opendesk helpdesk service." updated="October 11, 2026" toc={toc}>
+<Legal title="Terms of service" description="The terms that govern your use of opendesk Cloud, the hosted opendesk helpdesk service." updated="October 14, 2026" toc={toc}>
   <p>These terms govern your use of opendesk Cloud. Please read them. If you are using opendesk for an organization, you accept them on its behalf and confirm you are allowed to.</p>
 
   <h2 id="agreement">The agreement</h2>
-  <p>These terms are an agreement between you, or the organization you represent ("Customer", "you"), and {COMPANY.legalName}, {COMPANY.address} ("opendesk", "we", "us"). They cover the hosted service at app.opendesk.sh, api.opendesk.sh and related hosts, including help centers and the chat widget we host (the "Service"). Our <a href="/privacy/">privacy policy</a> explains how we handle personal data and is part of these terms. If you and we sign a separate agreement, it takes precedence where it conflicts with these terms.</p>
+  <p>These terms are an agreement between you, or the organization you represent ("Customer", "you"), and {COMPANY.legalName}, a company registered in {COMPANY.registeredIn} with company number {COMPANY.number}, whose registered office is at {COMPANY.address} ("opendesk", "we", "us"). They cover the hosted service at app.opendesk.sh, api.opendesk.sh and related hosts, including help centers and the chat widget we host (the "Service"). Our <a href="/privacy/">privacy policy</a> explains how we handle personal data and is part of these terms. If you and we sign a separate agreement, it takes precedence where it conflicts with these terms.</p>
 
   <h2 id="open-source">Open source and these terms</h2>
   <p>The opendesk software is open source, licensed under the <a href={LINKS.license}>Apache License 2.0</a>. That license, not these terms, governs your use of the source code, including when you run opendesk on your own servers. These terms apply only to the Service we operate for you. Nothing here limits your rights under the Apache License. The opendesk name and logo are not licensed for use beyond accurately referring to the project.</p>
@@ -41,12 +40,12 @@ const toc = [
   <ul>
     <li>You must give accurate information and keep it up to date, and you must be at least 16 years old.</li>
     <li>You are responsible for activity in your workspace and for keeping credentials, including API keys, safe. Turn on two-factor authentication; we strongly recommend it for every member.</li>
-    <li>Workspace owners control who has access and with which role. Tell us promptly at <a href={`mailto:${EMAILS.security}`}>{EMAILS.security}</a> if you suspect unauthorized access.</li>
+    <li>Workspace owners control who has access and with which role. Tell us promptly at <a href={`mailto:${EMAIL}`}>{EMAIL}</a> if you suspect unauthorized access.</li>
   </ul>
 
   <h2 id="your-data">Your data</h2>
   <p>You own the data you and your end customers put into the Service: tickets, messages, contacts, attachments, articles and settings ("Customer Data"). You give us permission to host, copy, process, transmit and display Customer Data only as needed to provide, secure and support the Service, and as you instruct through your use of it, for example by configuring automations, webhooks or integrations.</p>
-  <p>You are responsible for having the right to send us Customer Data and for giving your end customers any notices the law requires. We process personal data in Customer Data as your processor. A data processing agreement is available on request at <a href={`mailto:${EMAILS.legal}`}>{EMAILS.legal}</a>.</p>
+  <p>You are responsible for having the right to send us Customer Data and for giving your end customers any notices the law requires. We process personal data in Customer Data as your processor. A data processing agreement is available on request at <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
   <p>We do not sell Customer Data, use it for advertising, or use it to train generalized AI or machine learning models.</p>
 
   <h2 id="acceptable-use">Acceptable use</h2>
@@ -65,10 +64,12 @@ const toc = [
 
   <h2 id="fees">Plans, fees and billing</h2>
   <ul>
-    <li><strong>Free plan.</strong> Every workspace can use the Free plan at no charge, within its limits on mailboxes, members and AI credits shown on our <a href="/pricing/">pricing page</a>.</li>
-    <li><strong>Fees.</strong> The Pro plan is billed per user (owners, admins and agents; viewers are free), in advance, at the prices on our pricing page or in your order. Payments are processed by Stripe. Fees exclude taxes, which you pay where they apply.</li>
+    <li><strong>Free plan.</strong> Every workspace can use the Free plan at no charge, within its limits on mailboxes, members and AI usage shown on our <a href="/pricing/">pricing page</a>.</li>
+    <li><strong>For businesses.</strong> Paid plans and AI top-ups are sold to businesses for use in their trade or profession, not to consumers. By subscribing or buying AI top-ups you confirm that you are acting for business purposes, and you give us your company's legal name, its billing address and, where it has one, its VAT or other business tax number. They appear on your invoices.</li>
+    <li><strong>Fees.</strong> The Pro plan is billed per user (owners, admins and agents; viewers are free), in advance, in US dollars, at the prices on our pricing page or in your order. Payments are processed by Stripe.</li>
+    <li><strong>Taxes.</strong> Fees are exclusive of taxes. Where the law requires us to charge VAT, sales tax or a similar tax, we add it to your invoice. Where we do not, you are responsible for accounting for any tax due in your country, including under the reverse charge.</li>
     <li><strong>Changes in users.</strong> Adding or removing users during a billing period is prorated.</li>
-    <li><strong>AI credits.</strong> Plans include a monthly allowance of AI credits that does not carry over. Credit packs are a one-time purchase, do not expire and are not refundable once used.</li>
+    <li><strong>AI usage.</strong> AI features are charged in US dollars on what each call uses, at the prices on our pricing page. Plans include a monthly AI usage allowance that does not carry over. AI top-ups, bought yourself or by auto-recharge, are one-time purchases, do not expire and are not refundable once used.</li>
     <li><strong>Downgrades.</strong> If a subscription ends, the workspace moves to the Free plan. Nothing is deleted, but you cannot add mailboxes or members beyond the Free limits.</li>
     <li><strong>Renewal.</strong> Plans renew automatically until cancelled. You can cancel at any time, effective at the end of the current period. Fees already paid are not refunded, except where the law requires.</li>
     <li><strong>Price changes.</strong> We will give at least 30 days' notice of a price change, which applies from your next renewal.</li>
@@ -109,5 +110,5 @@ const toc = [
   </ul>
 
   <h2 id="contact">Contact</h2>
-  <p>{COMPANY.legalName}<br />{COMPANY.address}<br />Email: <a href={`mailto:${EMAILS.legal}`}>{EMAILS.legal}</a></p>
+  <p>{COMPANY.legalName}<br />{COMPANY.address}<br />Company number {COMPANY.number}, registered in {COMPANY.registeredIn}<br />Email: <a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
 </Legal>

@@ -1,0 +1,29 @@
+---
+/**
+ * A painting with the opendesk mark on a glass tile in the middle: the cover
+ * of a post or a release. A label (a tag, a version) can sit in the corner.
+ */
+import Backdrop from '../home/Backdrop.astro';
+
+interface Props {
+  painting: string;
+  label?: string;
+  sizes: string;
+  /** Mark size in px. */
+  mark?: number;
+  priority?: boolean;
+  /** The painting alone, without the mark. */
+  bare?: boolean;
+  class?: string;
+}
+const { painting, label, sizes, mark = 56, priority = false, bare = false, class: className = '' } = Astro.props;
+---
+<div class={`painted-thumb relative isolate overflow-hidden ${className}`}>
+  <Backdrop name={painting} sizes={sizes} priority={priority} class="absolute inset-0 -z-10 h-full w-full transition-transform duration-[1400ms] ease-out group-hover:scale-[1.035]" />
+  {!bare && <div class="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+    <span class="flex items-center justify-center rounded-[28%] bg-white/55 text-[#0a0a0a] shadow-[0_24px_50px_-20px_rgb(10_30_80/0.45)] ring-1 ring-white/60 backdrop-blur-md" style={`width:${mark * 1.9}px;height:${mark * 1.9}px`}>
+      <svg viewBox="0 0 64 64" fill="currentColor" style={`width:${mark}px;height:${mark}px`}><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /><path d="M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /></svg>
+    </span>
+  </div>}
+  {label && <span class="absolute left-3 top-3 inline-flex h-7 items-center gap-1.5 rounded-full bg-white/60 px-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-[#1a1a1a] ring-1 ring-white/60 backdrop-blur-md"><span class="size-[5px] rounded-full bg-[#1a1a1a]"></span>{label}</span>}
+</div>

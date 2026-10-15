@@ -22,6 +22,7 @@ import (
 func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s := newSvc(d)
 	s.registerAuth(api)
+	s.registerAccounts(api)
 	s.registerOAuth(api, r)
 	s.registerTOTP(api)
 	s.registerPasskeys(api)
@@ -36,6 +37,10 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerAPIKeys(api)
 	s.registerWebhooks(api)
 	s.registerPlatform(api)
+	s.registerAppAttest(api)
+	s.registerDevices(api)
+	s.registerPush(api)
+	s.registerNotificationPrefs(api, r)
 }
 
 // RegisterWorkers adds this area's River workers.
@@ -47,6 +52,10 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &dispatchWorker{s: s})
 	river.AddWorker(w, &deliverWorker{s: s})
 	river.AddWorker(w, &cleanupWorker{s: s})
+	river.AddWorker(w, &pushNotificationWorker{s: s})
+	river.AddWorker(w, &pushBadgeWorker{s: s})
+	river.AddWorker(w, &notificationSweepWorker{s: s})
+	river.AddWorker(w, &notificationEmailWorker{s: s})
 }
 
 // Periodic returns this area's scheduled jobs.
@@ -54,6 +63,8 @@ func Periodic(d *deps.Deps) []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) { return cleanupArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(notificationSweepEvery),
+			func() (river.JobArgs, *river.InsertOpts) { return notificationSweepArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
 }
 

@@ -111,10 +111,10 @@ variable "stop_timeout" {
   default = 30
 }
 
-variable "task_role_policy_json" {
-  description = "Least-privilege policy for the application. null = the task role has no permissions."
-  type        = string
-  default     = null
+variable "task_role_policies" {
+  description = "Least-privilege inline policies for the application, name => policy JSON. Empty = the task role has no permissions."
+  type        = map(string)
+  default     = {}
 }
 
 variable "ecr_repository_arns" {
@@ -176,7 +176,7 @@ variable "health_check_grace_period_seconds" {
 }
 
 variable "discovery_namespace_id" {
-  description = "Cloud Map namespace to register the tasks in (A records, MULTIVALUE)."
+  description = "Cloud Map namespace to register the tasks in (A records, MULTIVALUE). Used when discovery_name is set."
   type        = string
   default     = null
 }
@@ -199,4 +199,10 @@ variable "autoscaling" {
     cpu_target = optional(number, 60)
   })
   default = null
+}
+
+variable "spot" {
+  description = "Run on Fargate Spot (the cluster must list FARGATE_SPOT as a capacity provider). For work that tolerates a two-minute interruption."
+  type        = bool
+  default     = false
 }

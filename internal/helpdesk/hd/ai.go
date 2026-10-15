@@ -3,6 +3,7 @@ package hd
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -35,11 +36,11 @@ type AISettings struct {
 	Model       string `json:"model"`
 	FastModel   string `json:"fast_model"`
 	WidgetModel string `json:"widget_model"`
-	// The widget agent (contracts/agent.md).
-	WidgetInstructions  string   `json:"widget_instructions"`
+	// The widget agent (contracts/agent.md). What it knows and how it talks is its bot's
+	// (contracts/bots.md).
 	WidgetMaxReplies    int      `json:"widget_max_replies"`
 	WidgetBlockedTopics []string `json:"widget_blocked_topics"`
-	WidgetMonthlyCap    int      `json:"widget_monthly_cap" doc:"Credits per month the widget agent may use; 0 = no cap"`
+	WidgetMonthlyCapUSD float64  `json:"widget_monthly_cap_usd" doc:"US dollars of AI usage per month the widget agent may use; 0 = no cap"`
 	WidgetCollectEmail  bool     `json:"widget_collect_email"`
 }
 
@@ -71,10 +72,9 @@ func (s Settings) AI() AISettings {
 			field("model", &a.Model)
 			field("fast_model", &a.FastModel)
 			field("widget_model", &a.WidgetModel)
-			field("widget_instructions", &a.WidgetInstructions)
 			field("widget_max_replies", &a.WidgetMaxReplies)
 			field("widget_blocked_topics", &a.WidgetBlockedTopics)
-			field("widget_monthly_cap", &a.WidgetMonthlyCap)
+			field("widget_monthly_cap_usd", &a.WidgetMonthlyCapUSD)
 			field("widget_collect_email", &a.WidgetCollectEmail)
 		}
 	}
@@ -84,7 +84,7 @@ func (s Settings) AI() AISettings {
 	if a.WidgetBlockedTopics == nil {
 		a.WidgetBlockedTopics = []string{}
 	}
-	a.WidgetMonthlyCap = max(a.WidgetMonthlyCap, 0)
+	a.WidgetMonthlyCapUSD = max(a.WidgetMonthlyCapUSD, 0)
 	if a.ReplyLanguage != "workspace" {
 		a.ReplyLanguage = "customer"
 	}
@@ -108,10 +108,9 @@ type AISettingsPatch struct {
 	FastModel     *string `json:"fast_model,omitempty" maxLength:"200"`
 	WidgetModel   *string `json:"widget_model,omitempty" maxLength:"200"`
 
-	WidgetInstructions  *string   `json:"widget_instructions,omitempty" maxLength:"4000"`
 	WidgetMaxReplies    *int      `json:"widget_max_replies,omitempty" minimum:"1" maximum:"100"`
 	WidgetBlockedTopics *[]string `json:"widget_blocked_topics,omitempty" maxItems:"20"`
-	WidgetMonthlyCap    *int      `json:"widget_monthly_cap,omitempty" minimum:"0" maximum:"1000000"`
+	WidgetMonthlyCapUSD *float64  `json:"widget_monthly_cap_usd,omitempty" minimum:"0" maximum:"10000" doc:"US dollars, rounded to cents"`
 	WidgetCollectEmail  *bool     `json:"widget_collect_email,omitempty"`
 }
 
@@ -183,13 +182,6 @@ func ValidateAIPatch(p AISettingsPatch, allowedModel func(string) bool) (map[str
 		}
 		out[key] = m
 	}
-	if p.WidgetInstructions != nil {
-		s := cleanInstructions(*p.WidgetInstructions)
-		if utf8.RuneCountInString(s) > 4000 {
-			return nil, httpx.Validation("widget_instructions must be 4000 characters or less")
-		}
-		out["widget_instructions"] = s
-	}
 	if p.WidgetMaxReplies != nil {
 		if *p.WidgetMaxReplies < 1 || *p.WidgetMaxReplies > 100 {
 			return nil, httpx.Validation("widget_max_replies must be from 1 to 100")
@@ -215,11 +207,12 @@ func ValidateAIPatch(p AISettingsPatch, allowedModel func(string) bool) (map[str
 		}
 		out["widget_blocked_topics"] = topics
 	}
-	if p.WidgetMonthlyCap != nil {
-		if *p.WidgetMonthlyCap < 0 || *p.WidgetMonthlyCap > 1_000_000 {
-			return nil, httpx.Validation("widget_monthly_cap must be from 0 to 1000000")
+	if p.WidgetMonthlyCapUSD != nil {
+		v := math.Round(*p.WidgetMonthlyCapUSD*100) / 100
+		if math.IsNaN(v) || v < 0 || v > 10_000 {
+			return nil, httpx.Validation("widget_monthly_cap_usd must be from 0 to 10000")
 		}
-		out["widget_monthly_cap"] = *p.WidgetMonthlyCap
+		out["widget_monthly_cap_usd"] = v
 	}
 	if p.WidgetCollectEmail != nil {
 		out["widget_collect_email"] = *p.WidgetCollectEmail
@@ -248,11 +241,11 @@ type AIHooks struct {
 	AutoTriage func(ctx context.Context, wid, tid uuid.UUID) error
 	// Triage runs the ai_triage automation action inside the trigger transaction and
 	// returns the ticket fields it changed. It returns (nil, nil) when it skips (AI off,
-	// no credits, provider unavailable); an error means tx failed.
+	// no AI balance, provider unavailable); an error means tx failed.
 	Triage func(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) ([]string, error)
 	// Decide answers ai_decide conditions: the probability of yes for each question, in
 	// one decision call inside the trigger transaction. A question it could not answer
-	// (no decision engine, AI off, no credits, provider failure) is absent from the map;
+	// (no decision engine, AI off, no AI balance, provider failure) is absent from the map;
 	// an error means tx failed.
 	Decide func(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, questions []string) (map[string]float64, error)
 }
@@ -302,14 +295,21 @@ func EnqueueAIWidgetAnswer(ctx context.Context, tx pgx.Tx, jc domain.Jobs, cfg *
 	return err
 }
 
+// HandoffBot is the bot that hands a conversation to the team; ID is nil for the built-in default.
+type HandoffBot struct {
+	ID   *uuid.UUID
+	Name string
+}
+
 // NotifyAIHandoff is the notification type sent when a visitor asks for a person.
 const NotifyAIHandoff = "ai_handoff"
 
 // MarkAIHandoff hands a chat over from the answer bot to the team: it sets
 // custom.ai_handoff, logs an ai_handoff activity, notifies the assignee (or the team's
-// members) and publishes ticket.updated. It reports false when the ticket was already
-// handed off.
-func MarkAIHandoff(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, actorType string) (bool, error) {
+// members) and publishes ticket.updated. bot is the bot that handed over
+// (custom.ai_handoff_bot and the activity's data.bot and data.bot_id), zero when the
+// visitor asked. It reports false when the ticket was already handed off.
+func MarkAIHandoff(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, actorType string, bot HandoffBot) (bool, error) {
 	var custom map[string]any
 	var assignee, team *uuid.UUID
 	if err := tx.QueryRow(ctx, `SELECT custom, assignee_id, team_id FROM tickets WHERE workspace_id = $1 AND id = $2
@@ -320,14 +320,23 @@ func MarkAIHandoff(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, actorType
 		return false, nil
 	}
 	patch := map[string]any{"ai_handoff": true, "ai_handoff_at": time.Now().UTC().Format(time.RFC3339)}
+	data := map[string]any{}
+	if bot.Name != "" {
+		patch["ai_handoff_bot"] = bot.Name
+		data["bot"] = bot.Name
+	}
+	if bot.ID != nil {
+		data["bot_id"] = bot.ID.String()
+	}
 	if _, err := tx.Exec(ctx, `UPDATE tickets SET custom = custom || $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 		wid, tid, patch); err != nil {
 		return false, err
 	}
-	if _, err := domain.LogActivity(ctx, tx, wid, tid, actorType, nil, "ai_handoff", map[string]any{}); err != nil {
+	if _, err := domain.LogActivity(ctx, tx, wid, tid, actorType, nil, "ai_handoff", data); err != nil {
 		return false, err
 	}
-	// The assignee, else the ticket's team, else every member who can reply.
+	// The assignee, else the ticket's team's leads and members (not observers), else every
+	// member who can reply. Notify skips anyone who may not see the ticket.
 	var recipients []uuid.UUID
 	var rows pgx.Rows
 	var err error
@@ -337,7 +346,8 @@ func MarkAIHandoff(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, actorType
 	case team != nil:
 		rows, err = tx.Query(ctx, `SELECT tm.user_id FROM team_members tm JOIN teams t ON t.id = tm.team_id
 			JOIN members m ON m.user_id = tm.user_id AND m.workspace_id = t.workspace_id
-			WHERE t.workspace_id = $1 AND t.id = $2 AND m.role <> 'viewer' ORDER BY tm.user_id LIMIT 50`, wid, *team)
+			WHERE t.workspace_id = $1 AND t.id = $2 AND tm.role <> 'observer' AND m.role <> 'viewer'
+			ORDER BY tm.user_id LIMIT 50`, wid, *team)
 	default:
 		rows, err = tx.Query(ctx, `SELECT user_id FROM members WHERE workspace_id = $1 AND role <> 'viewer'
 			ORDER BY user_id LIMIT 50`, wid)
