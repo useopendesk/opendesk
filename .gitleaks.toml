@@ -17,6 +17,8 @@ regexes = [
   '''sk-or-v1-0123456789abcdefWXYZ''',
   '''sk-or-bad-12345678''',
   '''sk-test-(abcd1234|12345678)''',
+  # A wrong mailbox password in the connection check tests (internal/email/connect_test.go).
+  '''Wrong-Passw0rd''',
 ]
 paths = [
   '''internal/auth/passwords/breached\.txt''',
