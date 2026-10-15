@@ -91,7 +91,7 @@ func testDeps(t testing.TB) *deps.Deps {
 		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test", ServeWeb: true,
 			AuthSecret: testSecret, InboundDomain: "in.test", InboundSecret: "test", MailFrom: "opendesk <notifications@opendesk.test>",
 			MailDriver: "log", GoogleClientID: "gid", GoogleClientSecret: "gsecret", GoogleMailboxClientID: "gid", GoogleMailboxClientSecret: "gsecret", MicrosoftClientID: "mid",
-			MicrosoftClientSecret: "msecret", MicrosoftTenant: "common", GoogleMailboxOAuth: true, MicrosoftMailboxOAuth: true, InboundAuthservIDs: []string{"mx.in.test", "mx.test"},
+			MicrosoftClientSecret: "msecret", MicrosoftMailboxClientID: "mid", MicrosoftMailboxClientSecret: "msecret", MicrosoftTenant: "common", GoogleMailboxOAuth: true, MicrosoftMailboxOAuth: true, InboundAuthservIDs: []string{"mx.in.test", "mx.test"},
 			MailboxIMAP: true}
 		log := slog.New(slog.NewTextHandler(io.Discard, nil))
 		if os.Getenv("EMAILTEST_LOG") != "" {

@@ -7,7 +7,7 @@ import { Steps, Aside } from '@astrojs/starlight/components';
 
 Self-hosted instances use their own OAuth apps. One app per provider covers both **sign-in** and **mailbox connections**. Without them, password sign-in and forwarding, SMTP and IMAP mailboxes still work.
 
-Gmail mailbox connections can also use a separate Google client, for example in its own Google Cloud project while its Gmail scope is reviewed: set `GOOGLE_MAILBOX_CLIENT_ID` and `GOOGLE_MAILBOX_CLIENT_SECRET`, and register only the mailbox redirect URI on it.
+Gmail mailbox connections can also use a separate Google client, for example in its own Google Cloud project while its Gmail scope is reviewed: set `GOOGLE_MAILBOX_CLIENT_ID` and `GOOGLE_MAILBOX_CLIENT_SECRET`, and register only the mailbox redirect URI on it. Microsoft mailbox connections can likewise use their own Entra app with `MICROSOFT_MAILBOX_CLIENT_ID` and `MICROSOFT_MAILBOX_CLIENT_SECRET`; Microsoft sign-in then stays off unless `MICROSOFT_CLIENT_ID` is set too.
 
 ## Redirect URIs
 

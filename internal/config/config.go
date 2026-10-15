@@ -82,12 +82,17 @@ type Config struct {
 	MicrosoftClientID         string
 	MicrosoftClientSecret     string
 	MicrosoftTenant           string
-	GitHubClientID            string
-	GitHubClientSecret        string
-	OIDCIssuer                string
-	OIDCClientID              string
-	OIDCClientSecret          string
-	OIDCName                  string
+	// MicrosoftMailboxClientID and MicrosoftMailboxClientSecret are the Microsoft app
+	// mailbox connections use (MICROSOFT_MAILBOX_CLIENT_ID, MICROSOFT_MAILBOX_CLIENT_SECRET),
+	// when it is not the sign-in app; the sign-in app otherwise.
+	MicrosoftMailboxClientID     string
+	MicrosoftMailboxClientSecret string
+	GitHubClientID               string
+	GitHubClientSecret           string
+	OIDCIssuer                   string
+	OIDCClientID                 string
+	OIDCClientSecret             string
+	OIDCName                     string
 	// GoogleMailboxOAuth and MicrosoftMailboxOAuth allow connecting a new mailbox with
 	// that provider's sign-in (GOOGLE_MAILBOX_OAUTH, MICROSOFT_MAILBOX_OAUTH). Each is on
 	// when the provider's client is configured, unless set to false. Reconnecting a
@@ -548,7 +553,11 @@ func Load() (*Config, error) {
 		c.GoogleMailboxClientID, c.GoogleMailboxClientSecret = c.GoogleClientID, c.GoogleClientSecret
 	}
 	c.GoogleMailboxOAuth = mailboxOAuth("GOOGLE_MAILBOX_OAUTH", c.GoogleMailboxClientID, c.GoogleMailboxClientSecret)
-	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftClientID, c.MicrosoftClientSecret)
+	c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret = env("MICROSOFT_MAILBOX_CLIENT_ID", ""), env("MICROSOFT_MAILBOX_CLIENT_SECRET", "")
+	if c.MicrosoftMailboxClientID == "" {
+		c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret = c.MicrosoftClientID, c.MicrosoftClientSecret
+	}
+	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret)
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.MailboxIMAP = envBool("MAILBOX_IMAP", true)
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")

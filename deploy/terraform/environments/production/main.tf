@@ -370,11 +370,13 @@ locals {
     MICROSOFT_CLIENT_ID = var.microsoft_client_id
     # The Gmail mailbox client, when it is its own Google project; empty uses the sign-in client.
     GOOGLE_MAILBOX_CLIENT_ID = var.google_mailbox_client_id
-    MICROSOFT_TENANT         = var.microsoft_tenant
-    GITHUB_CLIENT_ID         = var.github_client_id
-    TURNSTILE_SITE_KEY       = var.turnstile_site_key
-    POSTHOG_HOST             = var.posthog_host
-    APP_ATTEST_APP_IDS       = var.app_attest_app_ids
+    # The Microsoft mailbox app, when it is not the sign-in app; empty uses the sign-in app.
+    MICROSOFT_MAILBOX_CLIENT_ID = var.microsoft_mailbox_client_id
+    MICROSOFT_TENANT            = var.microsoft_tenant
+    GITHUB_CLIENT_ID            = var.github_client_id
+    TURNSTILE_SITE_KEY          = var.turnstile_site_key
+    POSTHOG_HOST                = var.posthog_host
+    APP_ATTEST_APP_IDS          = var.app_attest_app_ids
 
     # Mailbox sign-in per provider (variables.tf).
     GOOGLE_MAILBOX_OAUTH    = tostring(var.google_mailbox_oauth)

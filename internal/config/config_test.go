@@ -133,6 +133,15 @@ func TestMailboxOAuthSwitch(t *testing.T) {
 	if c, _ = Load(); c.GoogleMailboxOAuth {
 		t.Fatal("a mailbox client without its secret must be off")
 	}
+	// The same for Microsoft: a mailbox-only app leaves Microsoft sign-in off.
+	t.Setenv("MICROSOFT_MAILBOX_OAUTH", "")
+	t.Setenv("MICROSOFT_CLIENT_ID", "")
+	t.Setenv("MICROSOFT_CLIENT_SECRET", "")
+	t.Setenv("MICROSOFT_MAILBOX_CLIENT_ID", "mmid")
+	t.Setenv("MICROSOFT_MAILBOX_CLIENT_SECRET", "mmsecret")
+	if c, _ = Load(); c.MicrosoftMailboxClientID != "mmid" || c.MicrosoftMailboxClientSecret != "mmsecret" || c.MicrosoftClientID != "" || !c.MicrosoftMailboxOAuth {
+		t.Fatalf("own Microsoft mailbox app: %q %q", c.MicrosoftMailboxClientID, c.MicrosoftClientID)
+	}
 }
 
 func TestMailhostISPDBDefault(t *testing.T) {

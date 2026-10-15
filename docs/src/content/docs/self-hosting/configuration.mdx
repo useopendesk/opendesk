@@ -166,7 +166,8 @@ See [Email setup](/self-hosting/email/).
 | --- | --- | --- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Google sign-in, and Gmail mailbox connections unless they have their own client. |
 | `GOOGLE_MAILBOX_CLIENT_ID`, `GOOGLE_MAILBOX_CLIENT_SECRET` | the sign-in client | A separate Google client for Gmail mailbox connections, for example in its own Google Cloud project for the Gmail scopes' review. |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | | Microsoft sign-in and Outlook mailbox connections. |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | | Microsoft sign-in, and Outlook mailbox connections unless they have their own app. |
+| `MICROSOFT_MAILBOX_CLIENT_ID`, `MICROSOFT_MAILBOX_CLIENT_SECRET` | the sign-in app | A separate Microsoft app for Outlook mailbox connections, for example to offer mailboxes without Microsoft sign-in. |
 | `MICROSOFT_TENANT` | `common` | `common`, `organizations`, `consumers` or your tenant id. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | | GitHub sign-in. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | | Any OpenID Connect provider for single sign-on. |

@@ -31,6 +31,7 @@ github_repo = "opendesk/opendesk"
 
 google_client_id    = ""
 # google_mailbox_client_id = ""   # Gmail mailboxes in their own Google project (secret GOOGLE_MAILBOX_CLIENT_SECRET)
+# microsoft_mailbox_client_id = "" # Microsoft mailboxes in their own Entra app (secret MICROSOFT_MAILBOX_CLIENT_SECRET)
 microsoft_client_id = ""
 github_client_id    = ""
 turnstile_site_key  = ""

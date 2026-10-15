@@ -106,7 +106,7 @@ func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
 			imapHost: "imap.gmail.com",
 		},
 		KindMicrosoft: {
-			name: KindMicrosoft, clientID: cfg.MicrosoftClientID, clientSecret: cfg.MicrosoftClientSecret,
+			name: KindMicrosoft, clientID: cfg.MicrosoftMailboxClientID, clientSecret: cfg.MicrosoftMailboxClientSecret,
 			authURL: ms + "/authorize", tokenURL: ms + "/token",
 			authScopes:    []string{"openid", "email", "offline_access", msIMAPScope, msSendScope, msUserScope},
 			sendScopes:    []string{"openid", "email", "offline_access", msSendScope, msUserScope},

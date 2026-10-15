@@ -232,6 +232,12 @@ variable "microsoft_client_id" {
   default = ""
 }
 
+variable "microsoft_mailbox_client_id" {
+  description = "MICROSOFT_MAILBOX_CLIENT_ID: the Microsoft app for mailbox connections, when it is not the sign-in app. Its secret is MICROSOFT_MAILBOX_CLIENT_SECRET."
+  type        = string
+  default     = ""
+}
+
 variable "google_mailbox_oauth" {
   description = "Offer Google sign-in for new mailbox connections. Keep false until the Google OAuth client is verified for the Gmail scopes; mailboxes then connect with an app password or forwarding. User sign-in with Google is not affected."
   type        = bool
@@ -268,7 +274,7 @@ variable "turnstile_site_key" {
 variable "optional_secrets" {
   description = <<-EOT
     Operator-supplied secrets the tasks should reference, once they have a value
-    (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
+    (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, MICROSOFT_MAILBOX_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
     ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN). See modules/secrets.
@@ -278,7 +284,7 @@ variable "optional_secrets" {
 
   validation {
     condition = alltrue([for s in var.optional_secrets : contains([
-      "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
+      "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_MAILBOX_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
       "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY", "CLOUDFLARE_SAAS_TOKEN",
     ], s)])
