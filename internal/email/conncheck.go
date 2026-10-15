@@ -45,6 +45,9 @@ func (s *service) testInbound(ctx context.Context, m *mailboxRow) error {
 		}
 		return nil
 	}
+	if !s.mailboxIMAP {
+		return errIMAPOff
+	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	sess, err := s.dialIMAP(ctx, m)
@@ -70,6 +73,10 @@ func (s *service) testOutbound(ctx context.Context, m *mailboxRow) error {
 		}
 		return s.checkSMTP(ctx, s.mailboxSMTP(m, creds))
 	case KindGoogle:
+		if m.sendOnly() {
+			// gmail.send cannot read the profile; a fresh token proves the grant holds.
+			return s.refreshGrant(ctx, m, resIMAP)
+		}
 		resp, body, err := s.apiCall(ctx, m, resIMAP, func(token string) (*http.Request, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.gmailBase+"/gmail/v1/users/me/profile", nil)
 			if err == nil {
@@ -103,6 +110,24 @@ func (s *service) testOutbound(ctx context.Context, m *mailboxRow) error {
 		return nil
 	}
 	return permanent("The mailbox has no way to send email.")
+}
+
+// refreshGrant asks the provider for a new access token, which it gives only while the
+// mailbox's grant holds.
+func (s *service) refreshGrant(ctx context.Context, m *mailboxRow, resource string) error {
+	if err := s.expireToken(ctx, m, resource); err != nil {
+		return err
+	}
+	_, err := s.accessToken(ctx, m, resource)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, errReconnect):
+		return permanent(err.Error())
+	case errors.Is(err, errProviderUnavailable):
+		return transient(err.Error())
+	}
+	return permanent(safeError(err))
 }
 
 // mailboxSMTP is the mailbox's own SMTP server as configured.

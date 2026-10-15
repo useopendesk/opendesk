@@ -24,6 +24,7 @@ type Mailbox = {
   display_name: string;
   inbound_kind: "forwarding" | "imap" | "google" | "microsoft";
   outbound_kind: "smtp" | "google" | "microsoft" | "system";
+  receiving: "ok" | "imap_off"; // read-only
   forwarding_address: string;
   config: {
     imap_host?: string;
@@ -51,6 +52,26 @@ type Mailbox = {
 
 Passwords and tokens are write-only: they are accepted on create and update, encrypted, and never returned.
 
+- `inbound_kind` is how mail comes in: `forwarding` to `forwarding_address`, or read directly over IMAP (`imap`, or `google` and `microsoft` for a mailbox connected to sync).
+- `outbound_kind` is how replies go out: through the mailbox's SMTP server, through Gmail or Microsoft for a mailbox connected with that sign-in, or `system` through opendesk.
+- `receiving` is `imap_off` for a mailbox that reads over IMAP while the instance has receiving over IMAP turned off (`MAILBOX_IMAP=false`, as on opendesk Cloud). It receives nothing until you switch it to forwarding (below). Otherwise `ok`.
+
+## Receiving over IMAP
+
+Every mailbox can receive by forwarding. Reading a mailbox over IMAP is an instance option for self-hosted instances, on by default; opendesk Cloud has it off. While it is off:
+
+- Creating a mailbox with `inbound_kind` `imap`, `google` or `microsoft`, or changing a mailbox to one, is `422 imap_off`.
+- A Google or Microsoft connection with `receive: "sync"` is `422 imap_off`.
+
+Switch a mailbox that reads over IMAP to forwarding with `PATCH`, then forward its mail to `forwarding_address`:
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/mailboxes/0192f0c4-... \
+  -H "Authorization: Bearer od_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "inbound_kind": "forwarding" }'
+```
+
 ## Contact forms
 
 Website contact forms usually send `From` an address of the site with the visitor in `Reply-To`. List those addresses in `trusted_form_senders` (an exact address, or `@domain` for every address at that domain, at most 50) and a form message that passed DMARC is from the visitor: the visitor becomes the contact and replies go to them. Mail from a listed address that did not pass DMARC is handled like any other mail.
@@ -64,7 +85,28 @@ curl -X PATCH https://api.opendesk.sh/v1/mailboxes/0192f0c4-... \
 
 The list replaces the stored one. A domain of a public email provider (such as `@gmail.com`) is refused; list the form's exact address instead.
 
-## Create an IMAP and SMTP mailbox
+## Create a mailbox
+
+A forwarding mailbox that sends through your SMTP server:
+
+```sh
+curl https://api.opendesk.sh/v1/mailboxes \
+  -H "Authorization: Bearer od_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Support",
+    "email": "support@example.com",
+    "display_name": "Example Support",
+    "inbound_kind": "forwarding",
+    "outbound_kind": "smtp",
+    "config": { "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "support@example.com", "smtp_tls": "starttls" },
+    "smtp_password": "smtp-app-password"
+  }'
+```
+
+Read `forwarding_address` from the response and forward the support address's mail to it. Use `"outbound_kind": "system"`, without SMTP settings, to send through opendesk.
+
+On an instance that receives over IMAP, an IMAP and SMTP mailbox:
 
 ```sh
 curl https://api.opendesk.sh/v1/mailboxes \
@@ -85,8 +127,6 @@ curl https://api.opendesk.sh/v1/mailboxes \
   }'
 ```
 
-For forwarding, set `"inbound_kind": "forwarding"` and read `forwarding_address` from the response.
-
 ## Test
 
 ```sh
@@ -99,7 +139,20 @@ curl -X POST https://api.opendesk.sh/v1/mailboxes/0192f0c4-.../test -H "Authoriz
 
 ## Connect Google or Microsoft
 
-`POST /v1/mailboxes/oauth/{provider}/start` with `{ name, email?, mailbox_id? }` returns `{ url }`. Send the user's browser to that URL. After consent, the provider redirects to the callback, which redirects to `APP_URL/settings/mailboxes?connected=<id>`. Pass `mailbox_id` to reconnect an existing mailbox. `provider` is `google` or `microsoft`.
+`POST /v1/mailboxes/oauth/{provider}/start` with `{ name, email?, mailbox_id?, receive? }` returns `{ url }`. Send the user's browser to that URL. After consent, the provider redirects to the callback, which redirects to `APP_URL/settings/mailboxes?connected=<id>`. Pass `mailbox_id` to reconnect an existing mailbox. `provider` is `google` or `microsoft`.
+
+`receive` is how the mailbox gets its mail:
+
+| `receive` | Creates | Asks the provider for |
+| --- | --- | --- |
+| `"forwarding"` (default) | `inbound_kind: "forwarding"`, `outbound_kind` `"google"` or `"microsoft"` | Sending only: Gmail `gmail.send`, or Microsoft Graph `Mail.Send` and `User.Read` |
+| `"sync"` | `inbound_kind` and `outbound_kind` `"google"` or `"microsoft"` | Reading over IMAP as well. `422 imap_off` while receiving over IMAP is off |
+
+```json
+{ "name": "Support", "email": "support@example.com", "receive": "forwarding" }
+```
+
+A send-only connection cannot read the mailbox: forward its mail to `forwarding_address`.
 
 ## Inbound email
 

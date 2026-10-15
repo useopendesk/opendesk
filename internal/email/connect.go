@@ -93,6 +93,7 @@ type connectOptions struct {
 		Enabled bool   `json:"enabled" doc:"Forwarded mail is received (INBOUND_SECRET or INBOUND_SMTP_ADDR)"`
 		Domain  string `json:"domain" doc:"The domain forwarding addresses live on"`
 	} `json:"forwarding"`
+	MailboxIMAP  bool   `json:"mailbox_imap" doc:"Mailboxes may receive over IMAP (MAILBOX_IMAP): generic IMAP and Google or Microsoft sync. Off, mailboxes receive by forwarding and Google and Microsoft connect send-only"`
 	SystemSender string `json:"system_sender" doc:"The address replies come from when a mailbox sends through opendesk"`
 }
 
@@ -126,6 +127,7 @@ func (s *service) registerConnectRoutes(api huma.API) {
 			out.Microsoft = providerOption{Configured: s.providers[KindMicrosoft].configured(), OAuth: s.oauthConnect(KindMicrosoft)}
 			out.Forwarding.Enabled = cfg.InboundSecret != "" || cfg.InboundSMTPAddr != ""
 			out.Forwarding.Domain = s.inboundDomain()
+			out.MailboxIMAP = s.mailboxIMAP
 			out.SystemSender = s.systemFrom().Address
 			return &struct{ Body connectOptions }{out}, nil
 		})
@@ -262,9 +264,10 @@ type verifiedPatch struct {
 }
 
 // verifyPatch signs in to the servers a PATCH changes before anything is stored:
-// the IMAP server when its settings or password change, the SMTP server when its
-// settings or password change or replies move to it. A refusal is
-// connectionFailed; a PATCH that changes neither checks nothing.
+// the IMAP server (while this instance receives over IMAP) when the mailbox moves to
+// IMAP or its settings or password change, the SMTP server when its settings or
+// password change or replies move to it. A refusal is connectionFailed; a PATCH that
+// changes neither checks nothing.
 func (s *service) verifyPatch(ctx context.Context, wid, id uuid.UUID, in *updateMailboxInput) (verifiedPatch, error) {
 	var out verifiedPatch
 	m, err := loadMailbox(ctx, s.d.DB.Pool, wid, id)
@@ -279,12 +282,16 @@ func (s *service) verifyPatch(ctx context.Context, wid, id uuid.UUID, in *update
 	if changes, _ := applyPatch(m, &creds, in); len(changes) == 0 {
 		return out, nil
 	}
+	if err := s.checkInboundChange(before.InboundKind, m.InboundKind); err != nil {
+		return out, err
+	}
 	if err := s.validateMailbox(m, creds); err != nil {
 		return out, err
 	}
 	prepareMailbox(m, &creds, in.Body.Password != nil || in.Body.SMTPPassword != nil)
 	c, a := before.Config, m.Config
-	inbound := m.InboundKind == InboundIMAP && (!strings.EqualFold(a.IMAPHost, c.IMAPHost) || a.IMAPPort != c.IMAPPort ||
+	inbound := s.mailboxIMAP && m.InboundKind == InboundIMAP && (before.InboundKind != InboundIMAP ||
+		!strings.EqualFold(a.IMAPHost, c.IMAPHost) || a.IMAPPort != c.IMAPPort ||
 		a.IMAPTLS != c.IMAPTLS || a.IMAPUsername != c.IMAPUsername || creds.Password != beforeCreds.Password)
 	outbound := m.OutboundKind == OutboundSMTP && (before.OutboundKind != OutboundSMTP || !strings.EqualFold(a.SMTPHost, c.SMTPHost) ||
 		a.SMTPPort != c.SMTPPort || a.SMTPTLS != c.SMTPTLS || a.SMTPUsername != c.SMTPUsername || creds.smtpPassword() != beforeCreds.smtpPassword())

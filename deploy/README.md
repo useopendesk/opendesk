@@ -106,7 +106,7 @@ accepts only Cloudflare's published IP ranges.
 
 The alternative, private subnets, needs a path out, and opendesk needs the
 internet, not only AWS: Google and Microsoft OAuth, Gmail and Graph for
-mailbox sync, IMAP and SMTP servers, customers' webhook endpoints and PostHog.
+sending replies, customers' SMTP servers and webhook endpoints, and PostHog.
 VPC interface endpoints (about $7 a month each, per AZ) would cover ECR, Secrets
 Manager, SES and CloudWatch but none of those. A NAT Gateway costs about $33 a
 month per AZ plus $0.045 per GB, which is most of what the compute costs at this
@@ -115,7 +115,7 @@ gateway endpoint, and Postgres goes through the PlanetScale PrivateLink
 endpoint, so database traffic never leaves the AWS network either.
 
 Move to private subnets with a NAT Gateway when a customer requires fixed
-egress IPs (allow-listed webhook sources or IMAP servers): that is a change to
+egress IPs (allow-listed webhook sources or SMTP servers): that is a change to
 `modules/network` and the services' `assign_public_ip`.
 
 ## First-time cloud setup
@@ -216,7 +216,9 @@ Identities > opendesk.sh shows "Verified", usually within minutes):
 - Approval usually takes a day. Until then only verified recipients get mail.
 
 Ticket replies to customers go out through each workspace's own mailbox (Gmail,
-Microsoft 365 or SMTP), not SES.
+Microsoft 365 or SMTP), not SES. Mail comes in by forwarding, through the email
+worker: the cloud runs with `MAILBOX_IMAP=false` (Terraform `mailbox_imap`), so
+no mailbox is read over IMAP and Google and Microsoft connect send-only.
 
 ### 6. Secrets
 
@@ -268,14 +270,17 @@ Sign-in and mailbox connections each have a callback on the API:
 1. Create a project, then APIs & Services > OAuth consent screen: External,
    app name opendesk, support email, the authorized domain `opendesk.sh`, links
    to the privacy policy and terms on opendesk.sh.
-2. Enable the Gmail API.
+2. Enable the Gmail API (APIs & Services > Library): replies are sent through it.
 3. Credentials > Create OAuth client ID > Web application, with both redirect
    URIs above (provider `google`).
-4. Scopes: `openid email profile` for sign-in; mailbox connections request
-   `https://mail.google.com/` (IMAP and SMTP over OAuth), which is **restricted**, so
-   publishing the app needs Google's verification and an annual CASA Tier 1
-   assessment (opendesk's invariants in AGENTS.md exist for it). Until then the
-   app works for up to 100 test users you list on the consent screen.
+4. Scopes (Data Access): `openid email profile` for sign-in; mailbox connections
+   request only `https://www.googleapis.com/auth/gmail.send`, to send replies.
+   It is a **sensitive** scope: publishing the app needs Google's verification
+   once (a demo video of the consent and sending, and the privacy policy), and no
+   CASA assessment. Don't add `https://mail.google.com/`: that restricted scope
+   is only for a self-hosted instance that syncs mailboxes over IMAP. Until the
+   app is verified it works for up to 100 test users you list on the consent
+   screen.
 
 **Microsoft** (entra.microsoft.com > App registrations > New registration):
 1. Supported account types: accounts in any organizational directory and
@@ -284,10 +289,16 @@ Sign-in and mailbox connections each have a callback on the API:
 3. Certificates & secrets > New client secret. Note its expiry and set a
    reminder: an expired secret breaks sign-in and every connected mailbox.
 4. API permissions (delegated): Microsoft Graph `openid`, `email`, `profile`,
-   `offline_access`, `User.Read`, `Mail.Send`, and Office 365 Exchange Online
-   `IMAP.AccessAsUser.All` (mailbox sync runs over IMAP).
-5. Branding & properties: publisher domain `opendesk.sh` (verify it) so users
-   see a verified publisher.
+   `offline_access`, `User.Read`, `Mail.Send`. Mailbox connections request
+   `openid email offline_access Mail.Send User.Read`; no Exchange Online
+   `IMAP.AccessAsUser.All`, which only a self-hosted instance that syncs
+   mailboxes needs.
+5. Branding & properties: publisher domain `opendesk.sh`, verified by the file
+   at `https://opendesk.sh/.well-known/microsoft-identity-association.json`
+   (already published by the site). Publisher verification (linking a Microsoft
+   AI Cloud Partner Program account) is recommended, so the consent screen shows
+   opendesk as a verified publisher and organizations that allow only verified
+   apps can consent.
 
 **GitHub** (optional, sign-in only): Settings > Developer settings > OAuth Apps,
 callback `https://api.opendesk.sh/v1/auth/oauth/github/callback`.
@@ -305,16 +316,24 @@ The client ids are not secret: set `google_client_id`, `microsoft_client_id`
 (Cloudflare Turnstile, with `turnstile_site_key`) and `POSTHOG_KEY`.
 
 **Mailbox sign-in while a provider's review is pending.** Each provider's
-mailbox sign-in has its own switch, separate from user sign-in: the API reads
-`GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` (Terraform
+mailbox sign-in, which sends replies, has its own switch, separate from user
+sign-in: the API reads `GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` (Terraform
 `google_mailbox_oauth`, default `false`, and `microsoft_mailbox_oauth`, default
 `true`), and the web app reads the GitHub variable `MAILBOX_OAUTH` (step 11,
 default `microsoft`). With a provider off, the mailbox wizard does not offer its
 sign-in and the API refuses new connections with `403 mailbox_oauth_disabled`;
-mailboxes already connected that way keep syncing and can reconnect. People
-connect Gmail and Google Workspace with an app password over IMAP and SMTP, or
-with forwarding. When Google verifies the app, set `google_mailbox_oauth = true`,
-`terraform apply`, set `MAILBOX_OAUTH` to `google,microsoft` and redeploy Pages.
+mailboxes already connected that way keep sending and can reconnect. Gmail and
+Google Workspace mailboxes still receive by forwarding, and send through Gmail's
+SMTP server with an app password, or through opendesk. When Google verifies the
+app's `gmail.send` scope, set `google_mailbox_oauth = true`, `terraform apply`,
+set `MAILBOX_OAUTH` to `google,microsoft` and redeploy Pages.
+
+**IMAP stays off in the cloud.** `MAILBOX_IMAP` (Terraform `mailbox_imap`, and
+the GitHub variable `MAILBOX_IMAP` for the web app, step 11) is `false` for the
+cloud: every mailbox receives by forwarding, the API answers an IMAP, Google or
+Microsoft `inbound_kind` and a syncing connection with `422 imap_off`, and the
+wizard offers neither. Leave it off; turning it on would need the restricted
+Google scope above, with its verification and yearly CASA assessment.
 
 ### 8. Stripe billing
 
@@ -443,6 +462,7 @@ In the `production` environment, from `terraform output`:
 | variable | `WEB_POSTHOG_KEY`, `WEB_POSTHOG_HOST`, `TURNSTILE_SITE_KEY` | browser-side keys (optional) |
 | variable | `APPLE_APP_IDS` | `<team id>.sh.opendesk.app` for the apple-app-site-association (optional, step 10) |
 | variable | `MAILBOX_OAUTH` | mailbox sign-in the wizard offers: `google`, `microsoft`, `google,microsoft` or `none` (default `microsoft`, step 7) |
+| variable | `MAILBOX_IMAP` | whether mailboxes may receive over IMAP, matching the API's `MAILBOX_IMAP` (default `false`, step 7) |
 | secret | `CLOUDFLARE_API_TOKEN` | the token from step 2 |
 
 Branch protection on `main`: require the **CI status** check and "require
@@ -663,6 +683,13 @@ port 25 closed and have any relay that can POST raw messages (the Cloudflare
 worker in `deploy/cloudflare/email-worker` works for a domain on Cloudflare)
 deliver to `https://<domain>/v1/inbound/email?to=<rcpt>` with the
 `OD-Inbound-Secret` header set to `INBOUND_SECRET`.
+
+**Reading mailboxes over IMAP.** On by default (`MAILBOX_IMAP=true`): besides
+forwarding, mailboxes can connect over IMAP and SMTP, and Google and Microsoft
+mailboxes can sync instead of connecting send-only, which needs the extra OAuth
+scopes in the docs page "Google and Microsoft OAuth". `MAILBOX_IMAP=false`
+receives by forwarding only, as opendesk Cloud does; mailboxes that read over
+IMAP are kept, stop receiving, and switch to forwarding from their page.
 
 **AI.** Optional, and off without a provider. Self-hosted instances have no
 plans, limits or AI balance; nothing about Stripe applies. Three ways:

@@ -246,7 +246,7 @@ func (s *service) expireToken(ctx context.Context, m *mailboxRow, resource strin
 	if err != nil {
 		return err
 	}
-	if resource == resGraph && m.InboundKind == KindMicrosoft {
+	if resource == resGraph && m.oauthProvider() == KindMicrosoft {
 		c.GraphExpiry = time.Time{}
 	} else {
 		c.Expiry = time.Time{}
@@ -309,7 +309,9 @@ func (s *service) sendGmail(ctx context.Context, m *mailboxRow, raw []byte) (str
 	var sent struct {
 		ID string `json:"id"`
 	}
-	if json.Unmarshal(body, &sent) != nil || sent.ID == "" {
+	// A send grant cannot read the sent message back; replies then thread through our
+	// own Message-ID, the reply address tag and the [#n] subject.
+	if json.Unmarshal(body, &sent) != nil || sent.ID == "" || m.sendOnly() {
 		return "", nil
 	}
 	return s.gmailStampedID(ctx, m, sent.ID), nil

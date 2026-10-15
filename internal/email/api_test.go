@@ -248,7 +248,7 @@ func TestGoogleOAuthConnect(t *testing.T) {
 	p.tokenURL, p.userinfoURL = f.srv.URL+"/token", f.srv.URL+"/userinfo"
 	srv := w.api(w.admin)
 
-	u, cookie := startOAuth(t, srv.URL, "google", map[string]any{"name": "Gmail support"})
+	u, cookie := startOAuth(t, srv.URL, "google", map[string]any{"name": "Gmail support", "receive": "sync"})
 	q := u.Query()
 	challenge = q.Get("code_challenge")
 	if u.Host != "accounts.google.com" || q.Get("code_challenge_method") != "S256" || challenge == "" || q.Get("access_type") != "offline" ||
@@ -332,7 +332,7 @@ func TestMicrosoftOAuthConnect(t *testing.T) {
 	w.s.providers[KindMicrosoft].tokenURL = f.srv.URL + "/token"
 	w.s.graphBase = f.srv.URL
 	srv := w.api(w.admin)
-	u, cookie := startOAuth(t, srv.URL, "microsoft", map[string]any{"name": "Ops"})
+	u, cookie := startOAuth(t, srv.URL, "microsoft", map[string]any{"name": "Ops", "receive": "sync"})
 	scope := u.Query().Get("scope")
 	for _, s := range []string{"offline_access", msIMAPScope, msSendScope, msUserScope} {
 		if !strings.Contains(scope, s) {

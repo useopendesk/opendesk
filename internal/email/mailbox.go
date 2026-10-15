@@ -25,6 +25,20 @@ const (
 	OutboundSystem    = "system"
 )
 
+// OAuth grants a Google or Microsoft mailbox holds (MailboxConfig.OAuthGrant). A send
+// grant sends only (gmail.send, Mail.Send) and the mailbox receives by forwarding; a sync
+// grant also reads the inbox over IMAP. A connection stored without a grant is a sync one.
+const (
+	GrantSend = "send"
+	GrantSync = "sync"
+)
+
+// Receiving states (Mailbox.Receiving).
+const (
+	ReceivingOK      = "ok"
+	ReceivingIMAPOff = "imap_off"
+)
+
 // TLS modes for IMAP and SMTP.
 const (
 	TLSImplicit = "tls"
@@ -43,6 +57,10 @@ type MailboxConfig struct {
 	SMTPUsername string `json:"smtp_username,omitempty"`
 	SMTPTLS      string `json:"smtp_tls,omitempty" enum:"tls,starttls,none"`
 	OAuthEmail   string `json:"oauth_email,omitempty"`
+	// OAuthGrant is what the Google or Microsoft connection may do: send (send only,
+	// the mailbox receives by forwarding) or sync (read the inbox and send). Set by the
+	// connection, never by a request.
+	OAuthGrant string `json:"oauth_grant,omitempty" enum:"send,sync"`
 	// MailHost is who hosts the mailbox's mail (mailhost.Host values, e.g. gmail,
 	// google_workspace, yahoo, other), for labels and connection fixes.
 	MailHost string `json:"mail_host,omitempty" maxLength:"32"`
@@ -79,7 +97,10 @@ type Mailbox struct {
 	// BotID is the bot the AI agent answers and signs as here (contracts/bots.md); nil = the default bot.
 	BotID *uuid.UUID `json:"bot_id"`
 	// Private is true when its team is private: only that team's members send from it.
-	Private      bool       `json:"private"`
+	Private bool `json:"private"`
+	// Receiving is imap_off when the mailbox receives over IMAP and this instance has
+	// IMAP off (MAILBOX_IMAP): it is kept but not polled until it switches to forwarding.
+	Receiving    string     `json:"receiving" enum:"ok,imap_off"`
 	Status       string     `json:"status" enum:"active,error,disabled"`
 	LastError    string     `json:"last_error"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
@@ -172,6 +193,29 @@ func (m *mailboxRow) addresses() []string {
 	return out
 }
 
+// receivesIMAP reports an inbound kind that reads the mailbox over IMAP: generic
+// IMAP, or a Google or Microsoft sync connection.
+func receivesIMAP(kind string) bool {
+	return kind == InboundIMAP || kind == KindGoogle || kind == KindMicrosoft
+}
+
+// oauthProvider is the provider whose grant the mailbox holds: the one it receives
+// through, else the one it sends through; "" without one.
+func (m *mailboxRow) oauthProvider() string {
+	switch {
+	case m.InboundKind == KindGoogle || m.InboundKind == KindMicrosoft:
+		return m.InboundKind
+	case m.OutboundKind == KindGoogle || m.OutboundKind == KindMicrosoft:
+		return m.OutboundKind
+	}
+	return ""
+}
+
+// sendOnly reports a grant that sends but cannot read the mailbox.
+func (m *mailboxRow) sendOnly() bool {
+	return m.Config.OAuthGrant == GrantSend
+}
+
 // alias returns addr when it is one of the mailbox's aliases (not its own address).
 func (m *mailboxRow) alias(addr string) string {
 	addr = strings.ToLower(strings.TrimSpace(addr))
@@ -206,6 +250,13 @@ func (s *service) inboundDomain() string {
 func (s *service) api(m *mailboxRow, withConfig bool) Mailbox {
 	out := m.Mailbox
 	out.ForwardingAddress = s.forwardingAddress(m.ForwardingToken)
+	out.Receiving = ReceivingOK
+	if receivesIMAP(m.InboundKind) && !s.mailboxIMAP {
+		out.Receiving = ReceivingIMAPOff
+	}
+	if out.Config.OAuthGrant == "" && m.oauthProvider() != "" {
+		out.Config.OAuthGrant = GrantSync
+	}
 	if !withConfig {
 		out.Config = MailboxConfig{}
 		out.TrustedFormSenders = []string{}

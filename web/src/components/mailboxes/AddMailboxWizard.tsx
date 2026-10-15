@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { InBrowserNote } from "@/components/desktop/InBrowser";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
-import { ArrowRight, Check, ChevronDown, ChevronLeft, Forward, KeyRound, LockKeyhole, Server, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronLeft, Forward, KeyRound, LockKeyhole, Send, Server, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -12,11 +12,11 @@ import { useConfirm } from "@/components/ui/confirm";
 import { CopyField } from "@/components/ui/copy-button";
 import { Field, TextInput } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
-import { api, type CreateMailboxBody } from "@/lib/api/endpoints";
+import { api, type CreateMailboxBody, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { MailDetection, MailHost, Mailbox, MailboxConnectOptions, MailboxTest, TlsMode } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
-import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
+import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailboxHost, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
 import { qk, upsertInList } from "@/lib/queries";
 import { tone } from "@/lib/tones";
 import { useBrands } from "@/components/settings2/teams";
@@ -28,10 +28,12 @@ import {
   connectFailure,
   DetectionCard,
   ExternalButton,
+  imapOn,
   isGuideHost,
   NotConfiguredPanel,
   oauthOffered,
   oauthUnconfigured,
+  sendProviders,
   ServerSummary,
   Steps,
   useConnectOptions,
@@ -60,8 +62,8 @@ type Form = {
   smtp_username: string;
   smtp_password: string;
   smtp_tls: TlsMode;
-  /** Forwarding mailboxes: replies through opendesk or the mailbox's own SMTP server. */
-  send_via: "system" | "smtp";
+  /** Forwarding mailboxes: replies through opendesk, the mailbox's own SMTP server, or a send-only Google or Microsoft connection. */
+  send_via: SendVia;
   mail_host: MailHost | "";
   team_id: string;
   brand_id: string;
@@ -92,6 +94,10 @@ const empty: Form = {
   from_name_format: DEFAULT_FROM,
 };
 
+type SendVia = "system" | "smtp" | "google" | "microsoft";
+const isProvider = (v: SendVia): v is "google" | "microsoft" => v === "google" || v === "microsoft";
+const providerName = (p: "google" | "microsoft") => (p === "google" ? "Google" : "Microsoft");
+
 type Errors = Partial<Record<keyof Form, string>>;
 
 type T = TFunction<"settingsChannels">;
@@ -113,9 +119,16 @@ function validateAddress(f: Form, t: T): Errors {
   return e;
 }
 
+/** The provider the next step signs in to, if any: a sync, or a forwarding mailbox's send-only connection. */
+function signInFor(method: Method | null, f: Form): "google" | "microsoft" | null {
+  if (method === "google" || method === "microsoft") return method;
+  if (method === "forwarding" && isProvider(f.send_via)) return f.send_via;
+  return null;
+}
+
 function validateConnect(method: Method, f: Form, t: T): Errors {
   const e: Errors = {};
-  if (method !== "google" && method !== "microsoft" && fromNameProblem(f.from_name_format)) e.from_name_format = t("addressing.fromInvalid");
+  if (!signInFor(method, f) && fromNameProblem(f.from_name_format)) e.from_name_format = t("addressing.fromInvalid");
   if (method === "app_password" || method === "password") {
     if (!f.imap_password.trim()) e.imap_password = t("wizard.err.imapPassword");
   }
@@ -138,27 +151,53 @@ function validateConnect(method: Method, f: Form, t: T): Errors {
 
 type Way = { id: Method; recommended?: boolean; advanced?: boolean };
 
-/** The ways in for a detected host, best first. */
+/**
+ * The ways mail can reach opendesk for a detected host, best first: forwarding, then,
+ * where the instance receives over IMAP, syncing the mailbox.
+ */
 function suggestedWays(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): Way[] {
-  const out: Way[] = [];
+  const out: Way[] = [{ id: "forwarding", recommended: true }];
+  if (!imapOn(opts)) return out;
   if (det?.oauth && oauthOffered(opts, det.oauth)) out.push({ id: det.oauth });
   if (det?.settings && det.password_auth === "app_password") out.push({ id: "app_password" });
   if (det?.settings && det.password_auth === "password") out.push({ id: "password" });
-  out.push({ id: "forwarding" });
   out.push({ id: "imap", advanced: true });
-  out[0] = { ...out[0], recommended: true };
   return out;
 }
 
 /** Every way in, when the suggested ones don't fit. */
 function allWays(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): Way[] {
-  const out: Way[] = [];
+  const out: Way[] = [{ id: "forwarding" }];
+  if (!imapOn(opts)) return out;
   if (oauthOffered(opts, "google")) out.push({ id: "google" });
   if (oauthOffered(opts, "microsoft")) out.push({ id: "microsoft" });
   if (det?.settings && det.password_auth === "app_password") out.push({ id: "app_password" });
   if (det?.settings && det.password_auth === "password") out.push({ id: "password" });
-  out.push({ id: "forwarding" }, { id: "imap" });
+  out.push({ id: "imap" });
   return out;
+}
+
+/** The ways replies can leave a forwarding mailbox: a send-only sign-in where the instance offers one, SMTP, or opendesk. */
+function sendWays(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): SendVia[] {
+  return [...sendProviders(det, opts), "smtp", "system"];
+}
+
+/** Replies go out from the address itself when its provider's sign-in is offered, else through opendesk. */
+function defaultSendVia(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): SendVia {
+  return det?.oauth && oauthOffered(opts, det.oauth) ? det.oauth : "system";
+}
+
+/** Arrow keys move the choice within a radio group, as a native one does. */
+function radioKeys(e: React.KeyboardEvent<HTMLElement>) {
+  const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+  if (!step) return;
+  const radios = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'));
+  const i = radios.indexOf(document.activeElement as HTMLElement);
+  if (i < 0) return;
+  e.preventDefault();
+  const next = radios[(i + step + radios.length) % radios.length];
+  next.focus();
+  next.click();
 }
 
 function wayIcon(id: Method): ReactNode {
@@ -178,6 +217,14 @@ function wayIcon(id: Method): ReactNode {
 }
 
 const wayTone: Record<Method, keyof typeof tone> = { google: "blue", microsoft: "cyan", app_password: "amber", password: "indigo", forwarding: "teal", imap: "gray" };
+
+function sendIcon(v: SendVia): ReactNode {
+  if (v === "google") return <GoogleGlyph className="size-[18px]" />;
+  if (v === "microsoft") return <MicrosoftGlyph className="size-[18px]" />;
+  if (v === "smtp") return <Server className="size-[18px]" />;
+  return <Send className="size-[18px]" />;
+}
+const sendTone: Record<SendVia, keyof typeof tone> = { google: "blue", microsoft: "cyan", smtp: "indigo", system: "gray" };
 
 const slide = {
   enter: (dir: number) => ({ x: dir * 16, opacity: 0 }),
@@ -218,6 +265,8 @@ export function AddMailboxWizard({
   const [created, setCreated] = useState<Mailbox | null>(null);
   const [test, setTest] = useState<MailboxTest | null>(null);
   const [lookup, setLookup] = useState<string | null>(null);
+  // Once someone picks how replies are sent, a new lookup no longer changes it.
+  const [sendPicked, setSendPicked] = useState(false);
 
   const opts = useConnectOptions();
   const detect = useMailDetection(lookup);
@@ -233,6 +282,7 @@ export function AddMailboxWizard({
   }, [lookup, detect.isLoading, ways]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => {
+    if (k === "send_via") setSendPicked(true);
     setForm((f) => ({ ...f, [k]: v }));
     if (errors[k]) setErrors((e) => ({ ...e, [k]: undefined }));
     if (failure && (k === "imap_password" || k === "smtp_password" || k.endsWith("_host") || k.endsWith("_port"))) setFailure(null);
@@ -260,6 +310,8 @@ export function AddMailboxWizard({
     setForm((f) => {
       const s = det?.settings;
       const next = { ...f, mail_host: det?.host ?? "" };
+      // A provider that is no longer on offer (another address) falls back to the default.
+      if (m === "forwarding" && (!sendPicked || !sendWays(det, opts.data).includes(f.send_via))) next.send_via = defaultSendVia(det, opts.data);
       if (s && (m !== "imap" || !f.imap_host)) {
         Object.assign(next, {
           imap_host: s.imap.host,
@@ -279,12 +331,12 @@ export function AddMailboxWizard({
   // The desktop app connects in the browser, where the provider's sign-in works and the session lives.
   const [openedInBrowser, setOpenedInBrowser] = useState(false);
   const oauth = useMutation({
-    mutationFn: async (provider: "google" | "microsoft") => {
+    mutationFn: async ({ provider, receive }: { provider: "google" | "microsoft"; receive: MailboxReceive }) => {
       if (isDesktop) {
         openInBrowser(location.pathname);
         return null;
       }
-      return api.mailboxes.oauthStart(provider, { name: form.name.trim(), email: form.email.trim() || undefined });
+      return api.mailboxes.oauthStart(provider, { name: form.name.trim(), email: form.email.trim() || undefined, receive });
     },
     onSuccess: (r) => (r ? window.location.assign(r.url) : setOpenedInBrowser(true)),
     onError: (e) => setBlocked(errorMessage(e)),
@@ -372,7 +424,8 @@ export function AddMailboxWizard({
       if (Object.keys(e).length) return setBlocked(t("wizard.fixFields"));
       setBlocked(null);
       setFailure(null);
-      if (method === "google" || method === "microsoft") oauth.mutate(method);
+      const provider = signInFor(method, form);
+      if (provider) oauth.mutate({ provider, receive: method === "forwarding" ? "forwarding" : "sync" });
       else create.mutate();
     }
   };
@@ -393,14 +446,15 @@ export function AddMailboxWizard({
 
   const busy = oauth.isPending || create.isPending;
   const hostName = det?.label && det.host && det.host !== "other" ? det.label : "";
+  const signIn = signInFor(method, form);
   const primaryLabel =
     step === 0
       ? t("wizard.continue")
-      : isDesktop && (method === "google" || method === "microsoft")
+      : isDesktop && signIn
         ? tShell("desktop.continueInBrowser")
-        : method === "google"
+        : signIn === "google"
           ? t("wizard.continueGoogle")
-          : method === "microsoft"
+          : signIn === "microsoft"
             ? t("wizard.continueMicrosoft")
             : gmailPath && sub === 0
               ? t("connect.gmail.s1Next")
@@ -456,7 +510,8 @@ export function AddMailboxWizard({
               {lookup && (
                 <div className="flex flex-col gap-3">
                   <DetectionCard domain={domain} detection={det} loading={detect.isLoading} failed={detect.isError} />
-                  {!detect.isLoading && (
+                  {!detect.isLoading && !imapOn(opts.data) && <ForwardingWay email={form.email.trim()} />}
+                  {!detect.isLoading && imapOn(opts.data) && (
                     <WayPicker
                       ways={ways}
                       method={method}
@@ -498,9 +553,7 @@ export function AddMailboxWizard({
               }}
             />
           )}
-          {step === 1 && (method === "google" || method === "microsoft") && (
-            <InBrowserNote name={method === "google" ? "Google" : "Microsoft"} opened={openedInBrowser} className="mt-4" />
-          )}
+          {step === 1 && signIn && <InBrowserNote name={providerName(signIn)} opened={openedInBrowser} className="mt-4" />}
 
           {step === 2 && created && <DoneStep mailbox={created} method={method!} test={test} />}
         </motion.div>
@@ -632,47 +685,141 @@ function WayPicker({
       {unconfigured && <NotConfiguredPanel provider={unconfigured} />}
       {!showAll && msNoPassword && <Note>{t("connect.microsoftNoPassword")}</Note>}
       {!showAll && det?.host === "proton" && <Note>{t("connect.protonNoImap")}</Note>}
-      <div role="radiogroup" aria-label={t("wizard.methodsLabel")} className={cn("grid gap-2", !compact && "sm:grid-cols-2")}>
-        {ways.map((w, i) => {
-          const on = method === w.id;
-          return (
-            <button
-              key={w.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onPick(w.id)}
-              onDoubleClick={() => onOpen(w.id)}
-              style={{ animationDelay: `${i * 30}ms` }}
-              className={cn(
-                "group relative flex animate-rise-in items-start gap-3 rounded-lg border bg-surface p-3.5 text-left outline-none transition-[border-color,box-shadow,background-color,transform] duration-150 active:scale-[0.99] focus-visible:shadow-[0_0_0_3px_var(--focus)] motion-reduce:animate-none motion-reduce:active:scale-100",
-                on ? "border-fg-2 shadow-[0_0_0_1px_var(--fg-2)]" : "border-line hover:border-line-strong hover:bg-sunken/60",
-              )}
-            >
-              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md", tone[wayTone[w.id]].chip)}>{wayIcon(w.id)}</span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium">
-                  {t(`connect.method.${w.id}`)}
-                  {w.recommended && !showAll && <span className={cn("rounded-sm px-1.5 py-px text-[10.5px] font-medium", tone.green.chip)}>{t("connect.recommended")}</span>}
-                  {w.advanced && !showAll && <span className={cn("rounded-sm px-1.5 py-px text-[10.5px] font-medium", tone.gray.chip)}>{t("connect.advanced")}</span>}
-                </span>
-                <span className="mt-0.5 block text-xs leading-[18px] text-fg-3">{t(`connect.method.${w.id}Body`, { host: hostLabel || "your provider" })}</span>
-              </span>
-              <span
-                className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
-                  on ? "border-inverse bg-inverse text-inverse-fg" : "border-line-strong",
-                )}
-              >
-                {on && <Check className="size-2.5 animate-indicator-in motion-reduce:animate-none" strokeWidth={3.5} />}
-              </span>
-            </button>
-          );
-        })}
+      <div role="radiogroup" aria-label={t("wizard.methodsLabel")} onKeyDown={radioKeys} className={cn("grid gap-2", !compact && "sm:grid-cols-2")}>
+        {ways.map((w, i) => (
+          <Choice
+            key={w.id}
+            on={method === w.id}
+            tabbable={method === w.id || (i === 0 && !ways.some((x) => x.id === method))}
+            index={i}
+            icon={wayIcon(w.id)}
+            tint={wayTone[w.id]}
+            title={t(`connect.method.${w.id}`)}
+            badge={
+              !showAll && w.recommended ? (
+                <span className={cn("rounded-sm px-1.5 py-px text-[10.5px] font-medium", tone.green.chip)}>{t("connect.recommended")}</span>
+              ) : !showAll && w.advanced ? (
+                <span className={cn("rounded-sm px-1.5 py-px text-[10.5px] font-medium", tone.gray.chip)}>{t("connect.advanced")}</span>
+              ) : null
+            }
+            body={t(`connect.method.${w.id}Body`, { host: hostLabel || "your provider" })}
+            onPick={() => onPick(w.id)}
+            onOpen={() => onOpen(w.id)}
+          />
+        ))}
       </div>
       <button type="button" onClick={onToggleAll} className="self-start rounded-sm text-xs text-fg-3 underline decoration-line-strong underline-offset-2 outline-none hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]">
         {showAll ? t("connect.suggestedWays") : t("connect.anotherWay")}
       </button>
+    </div>
+  );
+}
+
+/** Where receiving over IMAP is off, mail always arrives by forwarding: said once, not offered as a choice. */
+function ForwardingWay({ email }: { email: string }) {
+  const { t } = useTranslation("settingsChannels");
+  return (
+    <div className="flex animate-rise-in items-start gap-3 rounded-lg border border-line bg-surface p-3.5 motion-reduce:animate-none">
+      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md", tone.teal.chip)}>
+        <Forward className="size-[18px]" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-medium">{t("connect.forwardingOnly")}</span>
+        <span className="mt-0.5 block text-xs leading-[18px] text-fg-3">{t("connect.forwardingOnlyBody", { email })}</span>
+      </span>
+    </div>
+  );
+}
+
+/** One option in a radio group of cards: an icon tile, a title, a line of help and the radio dot. */
+function Choice({
+  on,
+  tabbable = on,
+  index,
+  icon,
+  tint,
+  title,
+  badge,
+  body,
+  onPick,
+  onOpen,
+}: {
+  on: boolean;
+  /** The one option Tab lands on: the chosen one, else the first. */
+  tabbable?: boolean;
+  index: number;
+  icon: ReactNode;
+  tint: keyof typeof tone;
+  title: ReactNode;
+  badge?: ReactNode;
+  body: ReactNode;
+  onPick: () => void;
+  onOpen?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      tabIndex={tabbable ? 0 : -1}
+      onClick={onPick}
+      onDoubleClick={onOpen}
+      style={{ animationDelay: `${index * 30}ms` }}
+      className={cn(
+        "group relative flex animate-rise-in items-start gap-3 rounded-lg border bg-surface p-3.5 text-left outline-none transition-[border-color,box-shadow,background-color,transform] duration-150 active:scale-[0.99] focus-visible:shadow-[0_0_0_3px_var(--focus)] motion-reduce:animate-none motion-reduce:active:scale-100",
+        on ? "border-fg-2 shadow-[0_0_0_1px_var(--fg-2)]" : "border-line hover:border-line-strong hover:bg-sunken/60",
+      )}
+    >
+      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md", tone[tint].chip)}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium">
+          {title}
+          {badge}
+        </span>
+        <span className="mt-0.5 block text-xs leading-[18px] text-fg-3">{body}</span>
+      </span>
+      <span
+        className={cn(
+          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+          on ? "border-inverse bg-inverse text-inverse-fg" : "border-line-strong",
+        )}
+      >
+        {on && <Check className="size-2.5 animate-indicator-in motion-reduce:animate-none" strokeWidth={3.5} />}
+      </span>
+    </button>
+  );
+}
+
+/** How replies leave a forwarding mailbox. */
+function SendPicker({
+  ways,
+  value,
+  email,
+  sender,
+  onChange,
+}: {
+  ways: SendVia[];
+  value: SendVia;
+  email: string;
+  sender: string;
+  onChange: (v: SendVia) => void;
+}) {
+  const { t } = useTranslation("settingsChannels");
+  return (
+    <div role="radiogroup" aria-label={t("connect.sending")} onKeyDown={radioKeys} className="flex flex-col gap-2">
+      {ways.map((w, i) => (
+        <Choice
+          key={w}
+          on={value === w}
+          tabbable={value === w || (i === 0 && !ways.includes(value))}
+          index={i}
+          icon={sendIcon(w)}
+          tint={sendTone[w]}
+          title={t(`connect.send.${w}`)}
+          body={t(`connect.send.${w}Body`, { email, sender })}
+          onPick={() => onChange(w)}
+        />
+      ))}
     </div>
   );
 }
@@ -751,30 +898,28 @@ function ConnectStep({
     );
   }
 
-  if (method === "forwarding")
+  if (method === "forwarding") {
+    const ways = sendWays(det, opts);
+    const via = ways.includes(form.send_via) ? form.send_via : ways[ways.length - 1];
+    const unconfigured = det?.oauth && oauthUnconfigured(opts, det.oauth) ? det.oauth : null;
     return (
       <div className="flex flex-col gap-4">
         <Summary form={form} det={det} />
         <Note>{t("connect.forwardingIntro")}</Note>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
           <span className="text-[12.5px] font-medium">{t("connect.sending")}</span>
-          <Segmented
-            className="self-start"
-            value={form.send_via}
+          {unconfigured && !imapOn(opts) && <NotConfiguredPanel provider={unconfigured} />}
+          <SendPicker
+            ways={ways}
+            value={via}
+            email={form.email.trim()}
+            sender={opts?.system_sender || "opendesk"}
             onChange={(v) => set("send_via", v)}
-            options={[
-              { value: "system", label: t("connect.sendSystem") },
-              { value: "smtp", label: t("connect.sendSmtp") },
-            ]}
           />
-          <p className="text-xs leading-[18px] text-fg-3">
-            {form.send_via === "system"
-              ? t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: form.email.trim() })
-              : t("connect.sendSmtpBody", { email: form.email.trim() })}
-          </p>
-          {form.send_via === "smtp" && isMicrosoftHost(form.mail_host) && <p className="text-xs leading-[18px] text-tone-amber">{t("connect.sendSmtpMicrosoft")}</p>}
+          {isProvider(via) && !isDesktop && <Note>{t("connect.sendOnlyNote", { provider: providerName(via) })}</Note>}
+          {via === "smtp" && isMicrosoftHost(form.mail_host) && <p className="text-xs leading-[18px] text-tone-amber">{t("connect.sendSmtpMicrosoft")}</p>}
         </div>
-        {form.send_via === "smtp" && (
+        {via === "smtp" && (
           <ServerFields
             title={t("wizard.outgoing")}
             host={form.smtp_host}
@@ -795,9 +940,10 @@ function ConnectStep({
             compact={compact}
           />
         )}
-        <AddressingFields form={form} set={set} errors={errors} compact={compact} />
+        {!isProvider(via) && <AddressingFields form={form} set={set} errors={errors} compact={compact} />}
       </div>
     );
+  }
 
   // Other IMAP and SMTP.
   return (
@@ -1089,7 +1235,21 @@ function ServerFields(p: {
 
 function DoneStep({ mailbox, method, test }: { mailbox: Mailbox; method: Method; test: MailboxTest | null }) {
   const { t } = useTranslation("settingsChannels");
-  if (method === "forwarding") return <ForwardingInstructions mailbox={mailbox} />;
+  if (method === "forwarding")
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <span className={cn("flex size-8 items-center justify-center rounded-md animate-indicator-in motion-reduce:animate-none", tone.teal.chip)}>
+            <Forward className="size-4" />
+          </span>
+          <div>
+            <div className="text-[13.5px] font-medium">{t("wizard.created", { name: mailbox.name })}</div>
+            <div className="text-xs text-fg-3">{t("wizard.createdForward")}</div>
+          </div>
+        </div>
+        <ForwardingInstructions mailbox={mailbox} />
+      </div>
+    );
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
@@ -1107,21 +1267,26 @@ function DoneStep({ mailbox, method, test }: { mailbox: Mailbox; method: Method;
   );
 }
 
-type Provider = "gmail" | "workspace" | "microsoft";
-const STEPS = ["s1", "s2", "s3", "s4"] as const;
+type Guide = "gmail" | "workspace" | "microsoft" | "outlook" | "other";
+const GUIDES: readonly Guide[] = ["gmail", "workspace", "microsoft", "outlook", "other"];
+/** How many steps each provider's guide has (forwarding.steps.<guide>.s1..sN). */
+const GUIDE_STEPS: Record<Guide, number> = { gmail: 4, workspace: 4, microsoft: 4, outlook: 3, other: 2 };
 
 /** The forwarding guide that fits the mailbox's host. */
-function forwardingProvider(m: Mailbox): Provider {
-  const h = m.config.mail_host;
+function forwardingGuide(m: Mailbox): Guide {
+  const h = mailboxHost(m);
   if (h === "google_workspace") return "workspace";
-  if (h === "microsoft365" || h === "outlook") return "microsoft";
+  if (h === "microsoft365") return "microsoft";
+  if (h === "outlook") return "outlook";
+  if (h && h !== "gmail") return "other";
   return "gmail";
 }
 
 export function ForwardingInstructions({ mailbox }: { mailbox: Mailbox }) {
   const { t } = useTranslation("settingsChannels");
-  const [p, setP] = useState<Provider>(() => forwardingProvider(mailbox));
+  const [g, setG] = useState<Guide>(() => forwardingGuide(mailbox));
   const code = <span className="mono" />;
+  const steps = Array.from({ length: GUIDE_STEPS[g] }, (_, i) => `s${i + 1}`);
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -1131,19 +1296,22 @@ export function ForwardingInstructions({ mailbox }: { mailbox: Mailbox }) {
         <CopyField value={mailbox.forwarding_address} />
       </div>
       <div className="flex flex-col gap-3">
+        {/* Five providers: in a narrow column the tabs wrap whole, never mid-label. */}
         <Segmented
           size="xs"
-          className="self-start"
-          value={p}
-          onChange={setP}
-          options={[
-            { value: "gmail", label: t("forwarding.gmail") },
-            { value: "workspace", label: t("forwarding.workspace") },
-            { value: "microsoft", label: t("forwarding.microsoft") },
-          ]}
+          className="flex-wrap self-start [&_button]:whitespace-nowrap"
+          value={g}
+          onChange={setG}
+          options={GUIDES.map((x) => ({ value: x, label: t(`forwarding.${x}`) }))}
         />
-        <ol key={p} className="flex flex-col gap-2.5">
-          {STEPS.map((k, i) => (
+        {g === "microsoft" && (
+          <p key="ms" className="flex animate-rise-in gap-2 rounded-md border border-line bg-sunken px-3 py-2.5 text-xs leading-[18px] text-fg-2 motion-reduce:animate-none">
+            <TriangleAlert className="mt-px size-3.5 shrink-0 text-tone-amber" aria-hidden />
+            <span>{t("forwarding.microsoftBlocked")}</span>
+          </p>
+        )}
+        <ol key={g} className="flex flex-col gap-2.5">
+          {steps.map((k, i) => (
             <li
               key={k}
               className="flex animate-rise-in gap-2.5 text-[12.5px] leading-5 text-fg-2 motion-reduce:animate-none [&_b]:font-medium [&_b]:text-fg"
@@ -1151,7 +1319,7 @@ export function ForwardingInstructions({ mailbox }: { mailbox: Mailbox }) {
             >
               <span className="mono flex size-5 shrink-0 items-center justify-center rounded-sm border border-line bg-sunken text-[10.5px] text-fg-3">{i + 1}</span>
               <span>
-                <Trans t={t} i18nKey={`forwarding.steps.${p}.${k}`} components={{ b: <b /> }} />
+                <Trans t={t} i18nKey={`forwarding.steps.${g}.${k}` as "forwarding.steps.gmail.s1"} components={{ b: <b /> }} />
               </span>
             </li>
           ))}

@@ -101,12 +101,30 @@ export function connectionMethod(m: Pick<Mailbox, "inbound_kind" | "outbound_kin
   return passwordAuthFor(m.config.mail_host) === "app_password" ? "app_password" : "password";
 }
 
+/** Whether a mailbox receives by signing in over IMAP (IMAP, or a Google or Microsoft sync) rather than by forwarding. */
+export function receivesOverImap(m: Pick<Mailbox, "inbound_kind">): boolean {
+  return m.inbound_kind !== "forwarding";
+}
+
+/** The provider a mailbox is signed in to, to sync or only to send, if any. */
+export function signedInProvider(m: Pick<Mailbox, "inbound_kind" | "outbound_kind">): "google" | "microsoft" | null {
+  if (m.inbound_kind === "google" || m.inbound_kind === "microsoft") return m.inbound_kind;
+  if (m.outbound_kind === "google" || m.outbound_kind === "microsoft") return m.outbound_kind;
+  return null;
+}
+
+/** Signed in to Google or Microsoft only to send: mail arrives by forwarding. */
+export function sendOnly(m: Pick<Mailbox, "inbound_kind" | "outbound_kind">): boolean {
+  return m.inbound_kind === "forwarding" && (m.outbound_kind === "google" || m.outbound_kind === "microsoft");
+}
+
 /** The host a connected mailbox is on, when known. */
-export function mailboxHost(m: Pick<Mailbox, "inbound_kind" | "config" | "email">): MailHost | null {
+export function mailboxHost(m: Pick<Mailbox, "inbound_kind" | "config" | "email"> & Partial<Pick<Mailbox, "outbound_kind">>): MailHost | null {
   if (isMailHost(m.config.mail_host)) return m.config.mail_host;
   const domain = m.email.split("@")[1]?.toLowerCase() ?? "";
-  if (m.inbound_kind === "google") return domain === "gmail.com" || domain === "googlemail.com" ? "gmail" : "google_workspace";
-  if (m.inbound_kind === "microsoft") return "microsoft365";
+  const provider = m.inbound_kind === "forwarding" ? m.outbound_kind : m.inbound_kind;
+  if (provider === "google") return domain === "gmail.com" || domain === "googlemail.com" ? "gmail" : "google_workspace";
+  if (provider === "microsoft") return "microsoft365";
   return null;
 }
 

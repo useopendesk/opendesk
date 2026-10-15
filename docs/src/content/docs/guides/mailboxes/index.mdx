@@ -1,6 +1,6 @@
 ---
 title: Connect a mailbox
-description: Type your support address, let opendesk find who hosts it, and connect it with an app password, a password, forwarding or a provider sign-in.
+description: Forward your support address to opendesk, and send replies from it with Google or Microsoft, your SMTP server, or opendesk.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -12,18 +12,18 @@ import Fold from '../../../../components/Fold.astro';
 
 A **mailbox** is a support address, such as `support@example.com`, connected to your workspace. Mail that arrives there becomes a ticket in the inbox, and your team's replies go back out from the same address, so customers see the address they wrote to.
 
-Adding one starts with the address. opendesk looks up who hosts it and offers the ways to connect that fit, best first.
+Every mailbox has two halves:
 
-<Screenshot src="/guides/mailboxes/detect" alt="Add a mailbox, first step: the name Care and the address care@margin.app ringed as 1, Google Workspace detected from the domain's MX records ringed as 2, three ways to connect with App password recommended ringed as 3, and the Continue button ringed as 4" />
+- **Receiving.** Your provider forwards the address's mail to a private opendesk address, such as `margin-care-cace@in.opendesk.sh`. Forwarding works with every provider and shares no password. See [Forwarding](/guides/mailboxes/forwarding/).
+- **Sending.** Connect Google or Microsoft to send replies through Gmail or Microsoft 365 from your own address, or use your SMTP server. Either way, replies come from your address and land in its Sent folder. Without one, replies go out through opendesk with your mailbox's name, and customers' answers come back to your address.
 
-<Legend>
+Connecting Google or Microsoft lets opendesk send mail from the address you connect, and nothing else: it cannot read the mailbox. Mail reaches opendesk only because you forward it.
 
-1. **Name and email address**: what your team calls the mailbox, and the address customers write to.
-2. **Provider**: who hosts the address, with its logo and how opendesk found out.
-3. **Ways to connect**: the ones that work for this provider, the recommended one first and selected.
-4. **Continue** opens the next step for the way you picked.
+<Callout>
 
-</Legend>
+On your own instance, mailboxes can also receive over IMAP, which is on by default ([`MAILBOX_IMAP`](/self-hosting/configuration/#receiving-over-imap)). The wizard then also offers an app password or the mailbox's password, and Google and Microsoft sign-in can sync the mailbox instead of using forwarding. See [Other providers](/guides/mailboxes/imap-smtp/). opendesk Cloud receives by forwarding.
+
+</Callout>
 
 ## Add a mailbox
 
@@ -44,79 +44,78 @@ The button sits at the top right of the page.
 </Step>
 <Step title="Type the address">
 
-Give the mailbox a **name** your team will recognise, like Support or Billing, and type the **email address** customers write to. When you leave the address field, opendesk looks up who hosts it: a known email provider, the domain's MX records, the domain's own autoconfig file, or its DNS service records. If it can't tell, you can still connect by forwarding or with your own server settings.
+Give the mailbox a **name** your team will recognise, like Support or Billing, and type the **email address** customers write to. When you leave the address field, opendesk looks up who hosts it: a known email provider, the domain's MX records, the domain's own autoconfig file, or its DNS service records. If it can't tell, you can still forward the mail and send through your own server settings.
 
 <Screenshot src="/guides/mailboxes/type-address" alt="The email address care@margin.app ringed as 1, and below it Google Workspace, detected from the domain's MX records, ringed as 2" />
 
 </Step>
-<Step title="Pick how it connects">
+<Step title="Pick forwarding">
 
-The ways that fit the provider are listed, with the recommended one selected. Keep it, or pick another, then click **Continue**. **Choose another way** lists every way, including a provider sign-in that the suggestions left out.
+**Forward mail to opendesk** is recommended and works with every provider. Keep it selected and click **Continue**.
 
-<Screenshot src="/guides/mailboxes/pick-method" alt="The ways to connect: App password, recommended and selected, ringed as 1, Choose another way ringed as 2, and Continue ringed as 3" />
-
-</Step>
-<Step title="Connect">
-
-What you do here depends on the way you picked:
-
-- **App password**: create one at your provider and paste it. For Gmail and Google Workspace the wizard walks you through it in three short steps. See [Gmail and Google Workspace](/guides/mailboxes/google/) and [Other providers](/guides/mailboxes/imap-smtp/).
-- **Email password**: paste the mailbox's password. The servers are already filled in.
-- **Forward mail to opendesk**: choose how replies are sent, then create the mailbox. See [Forwarding](/guides/mailboxes/forwarding/).
-- **Sign in with Google** or **Sign in with Microsoft**, when your instance offers it: approve access at the provider and come back.
-- **Other IMAP and SMTP**: type the server settings yourself.
-
-For a password, opendesk signs in to both servers before it saves anything. If a server refuses, you see why and how to fix it (see [When a connection fails](#when-a-connection-fails)).
-
-<Screenshot src="/guides/mailboxes/gmail-connect" alt="The last step of the Gmail app password walkthrough: the App password field ringed as 1, the server settings set for you ringed as 2, and the Connect button ringed as 3" />
+On an instance that receives over IMAP, **Choose another way** also lists ways that read the mailbox directly: **Sign in with Google** or **Sign in with Microsoft** to sync it, **App password**, **Email password** and **Other IMAP and SMTP**. See [Other providers](/guides/mailboxes/imap-smtp/).
 
 </Step>
-<Step title="Done">
+<Step title="Choose how replies are sent">
 
-The last step shows that receiving and sending both work. For a forwarding mailbox it shows the address to forward to, with the steps for your provider. Click **Done** to open the mailbox's page.
+Under **Replies are sent**, the ways that fit the provider are listed, the best one selected:
 
-<Screenshot src="/guides/mailboxes/done" alt="Add a mailbox, done: Care is connected, ringed as 1, with Receiving works and Sending works ringed as 2" />
+- **Google** or **Microsoft**, for Gmail, Google Workspace, Microsoft 365 and Outlook.com addresses when your instance offers it: you approve sending at the provider, and replies go out through it from your address. See [Gmail and Google Workspace](/guides/mailboxes/google/) and [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
+- **Through your SMTP server**: replies go out from your address through your provider's server. opendesk signs in to it before it saves anything. If it refuses, you see why and how to fix it (see [When a connection fails](#when-a-connection-fails)).
+- **Through opendesk**: replies go out from opendesk's sending address with your mailbox's name, and customers' answers come back to your address. Nothing to set up.
 
-To check it end to end, write to the address from another account. The email shows up in **Unassigned** as a new ticket.
+<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for a forwarding mailbox: Replies are sent, Through opendesk, ringed as 1, and the Create mailbox button ringed as 2" />
+
+</Step>
+<Step title="Forward the mail">
+
+Once the mailbox is created, opendesk shows the private address to forward to, with a copy button and the steps for your provider. Turn on forwarding at your provider as in [Forwarding](/guides/mailboxes/forwarding/). Gmail sends a confirmation email first: it arrives in opendesk as a ticket, so open it and click the link or copy the code. The address is also on the mailbox's page.
+
+<Screenshot src="/guides/mailboxes/forwarding-address" alt="Add a mailbox, done: the private forwarding address for returns@margin.app with its copy button ringed as 1, and the Google Workspace forwarding steps ringed as 2" />
+
+</Step>
+<Step title="Send a test email">
+
+Write to the address from another account. The email shows up in **Unassigned** as a new ticket. Reply to it to check sending.
 
 </Step>
 </Steps>
 
 <Callout>
 
-- opendesk reads and sends mail only for the address you connect, and you can disconnect at any time.
+- opendesk sends mail only from the address you connect, and you can disconnect at any time.
 - Passwords and sign-in tokens are encrypted at rest and never shown again after you save them.
 
 </Callout>
 
-## Ways to connect, by provider
+## Ways to send, by provider
 
-Each mailbox has two halves: how mail comes **in**, and how replies go **out**. With a sign-in, an app password or a password, opendesk reads the mailbox and sends replies through it, so they land in its Sent folder. With forwarding, your provider passes the mail on, and replies go out through opendesk or through your SMTP server.
+Every provider can forward its mail to opendesk. What differs is how replies go out from your address.
 
-| Provider | Sign-in | App password | Email password | Forwarding |
-| --- | --- | --- | --- | --- |
-| Gmail, Google Workspace | When your instance offers it | Yes, with 2-Step Verification on | No | Yes |
-| Outlook.com, Microsoft 365 | When your instance offers it | No | No. SMTP only, for replies, when your admin allows it | Yes |
-| Yahoo Mail, AOL Mail, iCloud Mail, Fastmail, Yandex Mail | No | Yes | No | Yes |
-| Zoho Mail | No | When two-factor authentication is on | Yes | Yes |
-| GoDaddy, Namecheap, IONOS, Hostinger, OVHcloud, Migadu, Purelymail, Rackspace, GMX | No | If your account needs one | Yes | Yes |
-| Proton Mail | No | No | No | Yes |
-| Any other host | No | If your host needs one | Yes, with detected or typed settings | Yes |
+| Provider | Send with a sign-in | Send through SMTP |
+| --- | --- | --- |
+| Gmail, Google Workspace | Google sign-in, when your instance offers it | Gmail's server, with an app password and 2-Step Verification on |
+| Outlook.com, Microsoft 365 | Microsoft sign-in, when your instance offers it | Microsoft's server, when your admin allows SMTP AUTH |
+| Yahoo Mail, AOL Mail, iCloud Mail, Fastmail, Yandex Mail | No | With an app password |
+| Zoho Mail | No | With the mailbox's password, or an app password when two-factor authentication is on |
+| GoDaddy, Namecheap, IONOS, Hostinger, OVHcloud, Migadu, Purelymail, Rackspace, GMX | No | With the mailbox's password, or an app password if your account needs one |
+| Proton Mail | No | No. Replies go out through opendesk |
+| Any other host | No | With detected or typed settings |
 
-On opendesk Cloud, Gmail and Google Workspace connect with an app password, and Microsoft 365 and Outlook.com with Microsoft sign-in or forwarding. On your own instance, see [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in) to offer Google and Microsoft sign-in.
+Any mailbox can send through opendesk instead, with no setup. On your own instance, see [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in) to offer Google and Microsoft sign-in.
 
-Every provider's details: [Gmail and Google Workspace](/guides/mailboxes/google/), [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/), [Other providers](/guides/mailboxes/imap-smtp/) and [Forwarding](/guides/mailboxes/forwarding/).
+Every provider's details: [Forwarding](/guides/mailboxes/forwarding/), [Gmail and Google Workspace](/guides/mailboxes/google/), [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/) and [Other providers](/guides/mailboxes/imap-smtp/).
 
 ## When a connection fails
 
-When a server refuses the sign-in, nothing is saved. The wizard says what went wrong and how to fix it, with each server's own reply underneath, so you can fix it and click **Connect** again.
+When a mail server refuses the sign-in, nothing is saved. The wizard says what went wrong and how to fix it, with each server's own reply underneath, so you can fix it and click **Connect** again.
 
 <Screenshot src="/guides/mailboxes/cause-and-fix" alt="A refused connection: the cause, Google needs an app password, with its fix ringed as 1, and the IMAP and SMTP servers' replies ringed as 2" />
 
 <Legend>
 
 1. **The cause and the fix**: what the provider refused and the steps that solve it, with a link where there is a page to visit.
-2. **The servers' replies**: what the incoming (IMAP) and outgoing (SMTP) servers answered, for you or your email admin.
+2. **The servers' replies**: what the outgoing (SMTP) server answered, and the incoming (IMAP) server on an instance that receives over IMAP, for you or your email admin.
 
 </Legend>
 
@@ -130,9 +129,9 @@ The same causes show on a connected mailbox when **Test connection** fails.
 | --- | --- |
 | **Google needs an app password** | The regular Google password was used. Turn on 2-Step Verification, create an app password and paste its 16 letters. See [Gmail and Google Workspace](/guides/mailboxes/google/). |
 | **Google did not accept the app password** | Create a new app password while signed in to this exact address, not an alias or a group, and use it. A deleted app password stops working at once. |
-| **IMAP is turned off in Google** | On Google Workspace, an admin allows IMAP in the Admin console under **Apps**, **Google Workspace**, **Gmail**, **End User Access**. |
+| **IMAP is turned off in Google** | Only when the mailbox receives over IMAP. On Google Workspace, an admin allows IMAP in the Admin console under **Apps**, **Google Workspace**, **Gmail**, **End User Access**. |
 | **Yahoo needs an app password**, and the same for AOL, iCloud, Fastmail and Yandex | Create an app password at the provider and use it instead of the account password. See [Other providers](/guides/mailboxes/imap-smtp/#app-passwords-by-provider). |
-| **Microsoft needs Microsoft sign-in** | Microsoft does not accept a password over IMAP. Connect with Microsoft sign-in, or by forwarding. See [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/). |
+| **Microsoft needs Microsoft sign-in** | Microsoft does not accept a password over IMAP. Forward the mail instead, and send with Microsoft. See [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/). |
 | **SMTP sign-in is turned off in Microsoft 365** | An admin turns on SMTP AUTH for the mailbox, or you send replies through opendesk. See [Turn on SMTP AUTH](/guides/mailboxes/microsoft/#turn-on-smtp-auth). |
 | **The server refused the sign-in** | Check the username, usually the full address, and the password. If the account has two-step sign-in, use an app password. |
 | **The mail port did not answer** | The SMTP port is blocked on the way. Use port 587 with STARTTLS. See [Ports and security](/guides/mailboxes/imap-smtp/#ports-and-security). |
@@ -152,8 +151,8 @@ The **Mailboxes** page lists every address with how it connects and whether it i
 
 1. **Add mailbox** starts the setup for a new address.
 2. **Summary**: how many mailboxes you have, and how many are active, need attention or are disabled.
-3. **Connection**: the provider and how the mailbox signs in: sign-in, app password, password or forwarding.
-4. **Status**: **Active**, or **Needs attention** when the last sync failed. Open the mailbox to see the error.
+3. **Connection**: the provider and how the mailbox connects: sign-in, app password, password or forwarding.
+4. **Status**: **Active**, or **Needs attention** when the mailbox last failed to receive or send. Open the mailbox to see the error.
 5. **Actions**: test the connection, disable the mailbox, or remove it.
 
 </Legend>
@@ -194,11 +193,13 @@ Further down, every mailbox has its own signature and an optional auto-reply.
 
 ## Fix a mailbox that needs attention
 
-A mailbox is **Active**, **Needs attention** (its last sync failed) or **Disabled**. When it needs attention, its page shows the provider's last error and when it last synced.
+A mailbox is **Active**, **Needs attention** (it last failed to receive or send) or **Disabled**. When it needs attention, its page shows the provider's last error and when it last worked.
 
 <Screenshot src="/guides/mailboxes/connection-error" alt="A mailbox's Connection section: the last sync error ringed as 1, and the Test connection button ringed as 2" />
 
 Fix the cause, often a changed password or an app password that was deleted, then click **Test connection**. The test checks receiving and sending separately and names the cause and the fix when one fails. For a password mailbox, enter the new password in the server settings below and save.
+
+A mailbox that read its mail over IMAP stops receiving when its instance turns IMAP receiving off; its page says so. Its tickets and settings stay. Switch it to forwarding on its page, then turn on forwarding at your provider with the address it shows, as in [Forwarding](/guides/mailboxes/forwarding/).
 
 For a mailbox connected with Google or Microsoft sign-in, click **Reconnect** if access was revoked or the password changed. You sign in again, and the mailbox keeps its settings and tickets.
 
@@ -214,7 +215,7 @@ Open the **⋯** menu on a mailbox's row, or scroll to the bottom of its page.
 
 <Screenshot src="/guides/mailboxes/row-actions" alt="The actions menu on a mailbox row: Test connection, Disable and Remove" />
 
-- **Disable** stops syncing and sending without removing anything. **Enable** starts it again.
+- **Disable** stops receiving and sending without removing anything. **Enable** starts it again.
 - **Remove** deletes the mailbox. Its existing tickets stay; new mail to the address stops arriving.
 
 To revoke opendesk's access at the provider as well, see [Gmail and Google Workspace](/guides/mailboxes/google/#disconnect) or [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/#disconnect).
@@ -225,12 +226,12 @@ To revoke opendesk's access at the provider as well, see [Gmail and Google Works
 
 ## Security
 
-Passwords, app passwords and sign-in tokens are encrypted at rest with AES-GCM and are never shown again after you save them. opendesk connects only to mail servers on the public internet, over TLS or STARTTLS unless you choose otherwise. Connecting or disconnecting a mailbox is recorded in the audit log. Managing mailboxes needs the admin role.
+Passwords, app passwords and sign-in tokens are encrypted at rest with AES-GCM and are never shown again after you save them. A Google or Microsoft connection grants sending only, unless your own instance syncs the mailbox over IMAP. opendesk connects only to mail servers on the public internet, over TLS or STARTTLS unless you choose otherwise. Connecting or disconnecting a mailbox is recorded in the audit log. Managing mailboxes needs the admin role.
 
 </Fold>
 
 ## Related
 
-- [Gmail and Google Workspace](/guides/mailboxes/google/), [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/), [Other providers](/guides/mailboxes/imap-smtp/) and [Forwarding](/guides/mailboxes/forwarding/)
+- [Forwarding](/guides/mailboxes/forwarding/), [Gmail and Google Workspace](/guides/mailboxes/google/), [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/) and [Other providers](/guides/mailboxes/imap-smtp/)
 - [Inbox and tickets](/guides/inbox-and-tickets/)
 - [Mailboxes API](/api/resources/mailboxes/)

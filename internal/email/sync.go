@@ -83,7 +83,8 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		}
 		return err
 	}
-	if m.InboundKind == InboundForwarding || m.Status == "disabled" {
+	// While IMAP is off the mailbox is kept as it is, unpolled.
+	if !receivesIMAP(m.InboundKind) || m.Status == "disabled" || !s.mailboxIMAP {
 		return nil
 	}
 	sess, err := s.dialIMAP(ctx, m)
@@ -203,14 +204,16 @@ func (w *syncDueWorker) Work(ctx context.Context, _ *river.Job[syncDueArgs]) err
 }
 
 func (s *service) enqueueDue(ctx context.Context) error {
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id FROM mailboxes WHERE inbound_kind IN ('imap', 'google', 'microsoft')
-		AND status <> 'disabled' AND (next_sync_at IS NULL OR next_sync_at <= now())`)
-	if err != nil {
-		return err
-	}
-	list, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
-	if err != nil {
-		return err
+	var list []uuid.UUID
+	if s.mailboxIMAP {
+		rows, err := s.d.DB.Pool.Query(ctx, `SELECT id FROM mailboxes WHERE inbound_kind IN ('imap', 'google', 'microsoft')
+			AND status <> 'disabled' AND (next_sync_at IS NULL OR next_sync_at <= now())`)
+		if err != nil {
+			return err
+		}
+		if list, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID]); err != nil {
+			return err
+		}
 	}
 	if len(list) > 0 {
 		params := make([]river.InsertManyParams, 0, len(list))
@@ -221,7 +224,7 @@ func (s *service) enqueueDue(ctx context.Context) error {
 			return err
 		}
 	}
-	_, err = s.d.DB.Pool.Exec(ctx, `DELETE FROM email_auto_replies WHERE sent_at < now() - interval '1 day'`)
+	_, err := s.d.DB.Pool.Exec(ctx, `DELETE FROM email_auto_replies WHERE sent_at < now() - interval '1 day'`)
 	return err
 }
 

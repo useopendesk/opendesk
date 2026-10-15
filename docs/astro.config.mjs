@@ -107,10 +107,10 @@ export default defineConfig({
               label: 'Mailboxes',
               items: [
                 { label: 'Connect a mailbox', slug: 'guides/mailboxes' },
+                { label: 'Forwarding', slug: 'guides/mailboxes/forwarding' },
                 { label: 'Gmail and Google Workspace', slug: 'guides/mailboxes/google' },
                 { label: 'Microsoft 365 and Outlook', slug: 'guides/mailboxes/microsoft' },
                 { label: 'Other providers', slug: 'guides/mailboxes/imap-smtp' },
-                { label: 'Forwarding', slug: 'guides/mailboxes/forwarding' },
               ],
             },
             {

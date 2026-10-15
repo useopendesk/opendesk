@@ -194,7 +194,7 @@ func Router(d *deps.Deps) http.Handler {
 		r.Handle("/*", webui.Handler(webui.RuntimeConfig{APIURL: cfg.APIURL, GatewayURL: cfg.GatewayURL,
 			PosthogKey: os.Getenv("WEB_POSTHOG_KEY"), PosthogHost: os.Getenv("WEB_POSTHOG_HOST"),
 			TurnstileSiteKey: cfg.TurnstileSiteKey, SelfHosted: true, MailboxOAuth: cfg.MailboxOAuthProviders(),
-			HelpDomain: cfg.HelpDomain}, csp))
+			MailboxIMAP: cfg.MailboxIMAP, HelpDomain: cfg.HelpDomain}, csp))
 	}
 	return r
 }

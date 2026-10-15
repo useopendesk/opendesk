@@ -27,7 +27,7 @@ import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { aiOff } from "./ai";
 import { defaultBrand, isAdmin, teamOut } from "../teams";
 import { checkLimit } from "./billing";
-import { authRefusedCause, connectOptions, detect, mockOAuthEnabled, refusal } from "./mailhost";
+import { authRefusedCause, connectOptions, detect, imapOff, mockImapOn, mockOAuthEnabled, receivingOf, refusal, syncReceiving } from "./mailhost";
 import { assign, crud } from "./crud";
 import { checkBotId } from "./bots";
 
@@ -358,20 +358,30 @@ export function registerResources() {
   });
 
   // Mailboxes.
-  get("/v1/mailboxes", (ctx) => paginate(ctx, ctx.ws.mailboxes, 100));
+  get("/v1/mailboxes", (ctx) => {
+    syncReceiving(ctx.ws.mailboxes);
+    return paginate(ctx, ctx.ws.mailboxes, 100);
+  });
   get("/v1/mailboxes/connect-options", () => connectOptions("in.opendesk.sh"));
   get("/v1/mailboxes/detect", (ctx) => {
     const email = (ctx.query.get("email") ?? "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address");
     return detect(email);
   });
-  get("/v1/mailboxes/:id", (ctx) => findMailbox(ctx));
+  get("/v1/mailboxes/:id", (ctx) => {
+    const m = findMailbox(ctx);
+    m.receiving = receivingOf(m);
+    return m;
+  });
   post("/v1/mailboxes", (ctx) => {
     checkLimit(ctx.ws, "mailbox");
     const email = required(ctx, "email").toLowerCase();
     if (ctx.ws.mailboxes.some((m) => m.email === email || m.aliases.includes(email))) throw new HttpError(409, "conflict", "A mailbox with this address already exists");
     const inbound = (s(ctx, "inbound_kind") ?? "forwarding") as Mailbox["inbound_kind"];
     const outbound = (s(ctx, "outbound_kind") ?? "system") as Mailbox["outbound_kind"];
+    if (inbound !== "forwarding" && !mockImapOn()) throw imapOff();
+    if ((outbound === "google" || outbound === "microsoft") && inbound !== outbound)
+      throw invalid(`Sending with ${outbound === "google" ? "Google" : "Microsoft"} needs its sign-in: connect it from the mailbox.`);
     const config = isRecord(ctx.body.config) ? (ctx.body.config as MailboxConfig) : {};
     if (inbound === "imap" && (!config.imap_host || !config.imap_username)) throw invalid("IMAP host and username are required");
     if (outbound === "smtp" && (!config.smtp_host || !config.smtp_username)) throw invalid("SMTP host and username are required");
@@ -393,6 +403,7 @@ export function registerResources() {
   });
   patch("/v1/mailboxes/:id", (ctx) => {
     const m = findMailbox(ctx);
+    patchReceiving(ctx, m);
     assign(m, ctx.body, ["name", "display_name", "signature_html", "auto_reply_enabled", "auto_reply_subject", "auto_reply_html", "status"]);
     const prevTeam = m.team_id;
     if ("team_id" in ctx.body) m.team_id = teamRef(ctx, ctx.body.team_id);
@@ -407,6 +418,7 @@ export function registerResources() {
       m.status = "active";
       m.last_error = "";
     }
+    m.receiving = receivingOf(m);
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return m;
   });
@@ -434,25 +446,42 @@ export function registerResources() {
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return respond(200, { inbound: { ok: true, error: "" }, outbound: { ok: true, error: "" } });
   });
+  // Google or Microsoft sign-in: to send only (receive "forwarding", the default) or to sync
+  // over IMAP as well (receive "sync", where the instance receives over IMAP).
   post("/v1/mailboxes/oauth/:provider/start", (ctx) => {
     const provider = ctx.params.provider;
     if (provider !== "google" && provider !== "microsoft") throw notFound("Provider");
+    const receive = s(ctx, "receive") ?? "forwarding";
+    if (receive !== "forwarding" && receive !== "sync") throw invalid("receive must be forwarding or sync");
+    if (receive === "sync" && !mockImapOn()) throw imapOff();
     const existingId = s(ctx, "mailbox_id");
     let m = existingId ? ctx.ws.mailboxes.find((x) => x.id === existingId) : undefined;
-    if (!mockOAuthEnabled(provider) && m?.inbound_kind !== provider) {
+    if (existingId && !m) throw notFound("Mailbox");
+    const connected = m?.inbound_kind === provider || m?.outbound_kind === provider;
+    if (!mockOAuthEnabled(provider) && !connected) {
       const name = provider === "google" ? "Google" : "Microsoft";
-      throw new HttpError(403, "mailbox_oauth_disabled", `Connecting a new mailbox with ${name} sign-in is not available on this instance. Connect it with an app password over IMAP and SMTP, or forward its mail into opendesk.`);
+      throw new HttpError(403, "mailbox_oauth_disabled", `Connecting a mailbox with ${name} sign-in is not available on this instance. Forward its mail into opendesk and send through opendesk or SMTP.`);
     }
     const email = s(ctx, "email")?.toLowerCase() || `support@${provider === "google" ? "margin.app" : "margin.onmicrosoft.com"}`;
+    // A new mailbox receives as asked; a reconnect keeps how it receives, moving to
+    // forwarding where the instance no longer receives over IMAP.
+    const inbound = (m ? m.inbound_kind !== "forwarding" && mockImapOn() : receive === "sync") ? provider : "forwarding";
     if (!m) {
-      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: provider, outbound_kind: provider, config: { oauth_email: email }, team_id: teamRef(ctx, ctx.body.team_id) });
+      if (ctx.ws.mailboxes.some((x) => x.email === email || x.aliases.includes(email))) throw new HttpError(409, "conflict", "A mailbox with this address already exists");
+      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: inbound, outbound_kind: provider, config: { oauth_email: email }, team_id: teamRef(ctx, ctx.body.team_id) });
       writeAddressing(ctx, m);
+      m.receiving = receivingOf(m);
       publish(ctx.ws, "mailbox.created", { mailbox: m });
     } else {
+      if (m.inbound_kind !== "forwarding" && inbound === "forwarding") stopImap(m);
       m.status = "active";
       m.last_error = "";
-      m.inbound_kind = provider;
+      m.inbound_kind = inbound;
       m.outbound_kind = provider;
+      m.config = { ...m.config, oauth_email: m.config.oauth_email || m.email };
+      for (const k of SMTP_KEYS) delete m.config[k];
+      mailboxSecrets.delete(m.id);
+      m.receiving = receivingOf(m);
       publish(ctx.ws, "mailbox.updated", { mailbox: m });
     }
     return respond(200, { url: `/settings/mailboxes?connected=${m.id}` });
@@ -595,6 +624,12 @@ function patchFormSenders(ctx: Ctx, m: Mailbox) {
 /** Mailbox passwords, write-only as in the API: the mock checks sign-ins against them. */
 const mailboxSecrets = new Map<string, { password: string; smtp: string }>();
 
+/** A seeded mailbox has working passwords stored (16 letters, which every host's check accepts). */
+const SEEDED_PASSWORD = "seededapppasswrd";
+function secretsOf(m: Mailbox): { password: string; smtp: string } {
+  return mailboxSecrets.get(m.id) ?? { password: m.inbound_kind === "imap" ? SEEDED_PASSWORD : "", smtp: m.outbound_kind === "smtp" ? SEEDED_PASSWORD : "" };
+}
+
 const IMAP_KEYS = ["imap_host", "imap_port", "imap_username", "imap_tls"] as const;
 const SMTP_KEYS = ["smtp_host", "smtp_port", "smtp_username", "smtp_tls"] as const;
 
@@ -616,7 +651,7 @@ function patchConnection(ctx: Ctx, m: Mailbox) {
   if (m.inbound_kind === "imap") take(IMAP_KEYS);
   if (outbound === "smtp") take(SMTP_KEYS);
   else for (const k of SMTP_KEYS) delete next[k];
-  const prev = mailboxSecrets.get(m.id) ?? { password: "", smtp: "" };
+  const prev = secretsOf(m);
   const sec = { password: (s(ctx, "password") ?? prev.password).trim(), smtp: outbound === "smtp" ? (s(ctx, "smtp_password") ?? prev.smtp).trim() : "" };
   if (outbound !== "smtp" && m.inbound_kind === "forwarding") sec.password = "";
   if (outbound === "smtp") {
@@ -641,6 +676,34 @@ function patchConnection(ctx: Ctx, m: Mailbox) {
   mailboxSecrets.set(m.id, sec);
 }
 
+/** A mailbox that stops receiving over IMAP: its IMAP settings and password go, and so does a sign-in error. */
+function stopImap(m: Mailbox) {
+  for (const k of IMAP_KEYS) delete m.config[k];
+  mailboxSecrets.set(m.id, { ...secretsOf(m), password: "" });
+  if (m.status === "error") {
+    m.status = "active";
+    m.last_error = "";
+  }
+  m.last_synced_at = null;
+}
+
+/**
+ * How mail arrives, on a PATCH: an IMAP-receiving mailbox may switch to forwarding, which
+ * keeps how its replies are sent. Receiving over IMAP is refused where the instance has it off.
+ */
+function patchReceiving(ctx: Ctx, m: Mailbox) {
+  const kind = s(ctx, "inbound_kind");
+  if (kind === undefined || kind === m.inbound_kind) return;
+  if (kind === "forwarding") {
+    stopImap(m);
+    m.inbound_kind = "forwarding";
+    return;
+  }
+  if (kind !== "imap" && kind !== "google" && kind !== "microsoft") throw invalid("inbound_kind must be forwarding, imap, google or microsoft");
+  if (!mockImapOn()) throw imapOff();
+  throw invalid(kind === "imap" ? "Add the mailbox again to receive over IMAP." : "Reconnect the mailbox to sync it.");
+}
+
 function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_name" | "inbound_kind" | "outbound_kind" | "config" | "team_id">): Mailbox {
   const m: Mailbox = {
     ...init,
@@ -662,6 +725,7 @@ function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_nam
     status: "active",
     last_error: "",
     last_synced_at: init.inbound_kind === "forwarding" ? null : nowIso(),
+    receiving: receivingOf(init),
     created_at: nowIso(),
   };
   ws.mailboxes.push(m);

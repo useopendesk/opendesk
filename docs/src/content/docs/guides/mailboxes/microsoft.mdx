@@ -1,6 +1,6 @@
 ---
 title: Microsoft 365 and Outlook
-description: Connect a Microsoft 365 or Outlook.com mailbox to opendesk by forwarding, with replies through opendesk or Microsoft's SMTP server, or with Microsoft sign-in when your instance offers it.
+description: Forward a Microsoft 365 or Outlook.com mailbox to opendesk and send replies from your address with Microsoft sign-in, Microsoft's SMTP server or opendesk.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -10,24 +10,69 @@ import Callout from '../../../../components/Callout.astro';
 import Legend from '../../../../components/Legend.astro';
 import Fold from '../../../../components/Fold.astro';
 
-Microsoft no longer accepts a password over IMAP for Outlook.com and Microsoft 365 mailboxes. So a Microsoft mailbox connects in one of two ways:
+A Microsoft 365 or Outlook.com mailbox receives by [forwarding](/guides/mailboxes/forwarding/#microsoft-365-and-outlook): Microsoft passes incoming mail on to a private opendesk address. Replies go out from your address in one of three ways:
 
-- **Microsoft sign-in**, when your instance offers it. You approve access once, and opendesk reads the mailbox and sends replies through it. See [Microsoft sign-in](#microsoft-sign-in-when-your-instance-offers-it).
-- **Forwarding**. Microsoft passes incoming mail on to a private opendesk address. Replies go out through opendesk, or through Microsoft's SMTP server when your admin allows SMTP AUTH.
+- **Microsoft**, when your instance offers it. You approve sending once, and replies go out through Microsoft 365 and land in the mailbox's Sent folder. opendesk gets permission to send mail as you and nothing else: it cannot read, change or delete your mail. See [Send with Microsoft](#send-with-microsoft).
+- **Microsoft's SMTP server**, when your admin allows SMTP AUTH. See [Turn on SMTP AUTH](#turn-on-smtp-auth).
+- **Through opendesk**, with your mailbox's name, and no setup.
 
-When Microsoft sign-in isn't offered, the wizard says so and recommends forwarding.
+Microsoft 365 blocks forwarding to outside addresses until an admin allows it, so plan for one admin step. See [Allow forwarding to outside addresses](/guides/mailboxes/forwarding/#allow-forwarding-to-outside-addresses-admin).
+
+## Send with Microsoft
+
+<Steps>
+<Step title="Add the mailbox and pick forwarding">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. opendesk shows **Microsoft 365** or **Outlook.com**. Keep **Forward mail to opendesk** selected and click **Continue**.
+
+</Step>
+<Step title="Send replies with Microsoft">
+
+Under **Replies are sent**, keep Microsoft selected and create the mailbox. Pick the Microsoft account for the address and accept the permissions. Microsoft sends you back to opendesk with the mailbox connected.
+
+Some organizations require an admin to approve new apps. If you see **Need admin approval**, ask a Microsoft 365 admin to grant consent for opendesk.
+
+</Step>
+<Step title="Forward the mail">
+
+opendesk shows the private address to forward to. An admin allows automatic forwarding to outside addresses in the Microsoft Defender portal, then forwards the mailbox in the Exchange admin center, or you create an Outlook rule. [Forwarding](/guides/mailboxes/forwarding/#microsoft-365-and-outlook) has every step.
+
+</Step>
+<Step title="Send a test email">
+
+Write to the address from another account. It shows up in **Unassigned** as a new ticket, and your reply goes out through Microsoft 365.
+
+</Step>
+</Steps>
+
+### What opendesk asks for
+
+| Scope | Why |
+| --- | --- |
+| `openid`, `email` | Identify which Microsoft account was connected. |
+| `offline_access` | Keep sending after you close the browser. |
+| `https://graph.microsoft.com/Mail.Send` | Send the replies your team writes, from your address. |
+| `https://graph.microsoft.com/User.Read` | Read the account's basic profile, such as its address. |
+
+This is send-only access. opendesk cannot read, search, change or delete the mail in your mailbox with it. Tokens are encrypted at rest with AES-GCM.
+
+### Self-hosting
+
+On your own instance, Microsoft sign-in for mailboxes needs your own Microsoft app (`MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`), and `MICROSOFT_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
+
+## Send through SMTP or opendesk
+
+When your instance doesn't offer Microsoft for sending, replies go out through opendesk or Microsoft's SMTP server.
 
 <Screenshot src="/guides/mailboxes/microsoft-detect" alt="Add a mailbox for support@contoso.com: Microsoft 365 detected from the domain's MX records ringed as 1, the note that Microsoft turned off password sign-in over IMAP ringed as 2, and Forward mail to opendesk, recommended, ringed as 3" />
 
 <Legend>
 
 1. **Microsoft 365**, found from the domain's MX records. Outlook.com, Hotmail and Live addresses show as **Outlook.com**.
-2. **Why forwarding**: Microsoft turned off password sign-in over IMAP.
-3. **Forward mail to opendesk**, recommended. **Other IMAP and SMTP** stays available for other servers.
+2. **Why forwarding**: Microsoft turned off password sign-in over IMAP, so a password can't read the mailbox.
+3. **Forward mail to opendesk**, recommended.
 
 </Legend>
-
-## Connect by forwarding
 
 <Steps>
 <Step title="Add the mailbox and pick forwarding">
@@ -54,14 +99,14 @@ After you click **Create mailbox** (or **Connect**), the last step shows the pri
 <Screenshot src="/guides/mailboxes/microsoft-forward-to" alt="Add a mailbox, done: the private forwarding address ringed as 1, and the four Microsoft 365 forwarding steps ringed as 2" />
 
 </Step>
+<Step title="Allow forwarding to outside addresses">
+
+Microsoft 365 blocks automatic forwarding to outside addresses by default. An admin allows it in the [Microsoft Defender portal](https://security.microsoft.com): **Email & collaboration**, **Policies & rules**, **Threat policies**, **Anti-spam**. Create an outbound policy for the support mailbox only (the tidier choice), or open **Anti-spam outbound policy (Default)**, and set **Automatic forwarding rules** to **On - Forwarding is enabled**.
+
+</Step>
 <Step title="Forward the mail in Microsoft">
 
 As an admin, in the [Exchange admin center](https://admin.exchange.microsoft.com), open **Recipients**, **Mailboxes** and select the mailbox. Under **Mail flow settings**, choose **Manage email forwarding**, turn on forwarding, paste the address and keep **Deliver to both** on if the mailbox should keep a copy. Without admin rights, use an Outlook rule instead. [Forwarding](/guides/mailboxes/forwarding/#microsoft-365-and-outlook) has both, step by step.
-
-</Step>
-<Step title="Allow forwarding to outside addresses">
-
-Microsoft 365 blocks automatic forwarding to outside addresses by default. An admin allows it in the [Microsoft Defender portal](https://security.microsoft.com): **Email & collaboration**, **Policies & rules**, **Threat policies**, **Anti-spam policies**. Open the outbound policy (or create one for the support mailbox only) and set **Automatic forwarding rules** to **On - Forwarding is enabled**.
 
 Then write to the address from another account. The email shows up in **Unassigned** as a new ticket.
 
@@ -100,7 +145,7 @@ Set-CASMailbox -Identity support@contoso.com -SmtpClientAuthenticationDisabled $
 
 </Callout>
 
-If your admin keeps SMTP AUTH off, choose **Through opendesk**.
+If your admin keeps SMTP AUTH off, send with Microsoft, or choose **Through opendesk**.
 
 <Fold>
 
@@ -111,61 +156,30 @@ Nothing is saved when Microsoft refuses. The wizard shows the cause and the fix,
 | What you see | What to do |
 | --- | --- |
 | **SMTP sign-in is turned off in Microsoft 365** | Turn on SMTP AUTH for the mailbox, as above, or send replies through opendesk. |
-| **Microsoft security defaults block passwords** | Security defaults refuse passwords over SMTP and IMAP. Connect with Microsoft sign-in, or forward and send through opendesk. |
-| **A Microsoft sign-in policy blocked this** | A Conditional Access policy refused the password. Connect with Microsoft sign-in, forward the mail, or ask your admin to allow SMTP AUTH for this mailbox. |
-| **Microsoft needs Microsoft sign-in** | Exchange Online doesn't accept a password over IMAP. Connect with Microsoft sign-in, or by forwarding. |
+| **Microsoft security defaults block passwords** | Security defaults refuse passwords over SMTP and IMAP. Send with Microsoft, or through opendesk. |
+| **A Microsoft sign-in policy blocked this** | A Conditional Access policy refused the password. Send with Microsoft or through opendesk, or ask your admin to allow SMTP AUTH for this mailbox. |
+| **Microsoft needs Microsoft sign-in** | Exchange Online doesn't accept a password over IMAP. Forward the mail, and send with Microsoft. |
 | **Microsoft did not accept the password** | Check the address and password, including the sign-in address if it differs from the mailbox address. An account with multi-factor sign-in can't use a password here. |
 
 </Fold>
 
-## Microsoft sign-in, when your instance offers it
+## On your own instance: receive over IMAP
 
-When your instance offers Microsoft sign-in for mailboxes, **Sign in with Microsoft** is the recommended way for Microsoft 365 and Outlook.com. opendesk reads the mailbox over IMAP and sends replies through Microsoft, so they land in its Sent folder. No password is stored.
+On a self-hosted instance with IMAP receiving on (`MAILBOX_IMAP`, the default), **Choose another way** also lists **Sign in with Microsoft**, which syncs the mailbox over IMAP instead of using forwarding. opendesk then reads new mail over IMAP (`outlook.office365.com`) and sends replies through Microsoft, with no forwarding to set up. opendesk Cloud receives by forwarding.
 
-<Steps>
-<Step title="Pick Sign in with Microsoft">
-
-Add the mailbox, type the address, keep **Sign in with Microsoft** selected and click **Continue**.
-
-<Screenshot src="/guides/mailboxes/microsoft-signin" alt="The ways to connect a Microsoft 365 address with Sign in with Microsoft recommended and selected, ringed as 1, and Continue ringed as 2" />
-
-</Step>
-<Step title="Approve access in Microsoft">
-
-Click **Continue with Microsoft**, pick the Microsoft account for the address and accept the permissions. Microsoft sends you back to opendesk with the mailbox connected.
-
-Some organizations require an admin to approve new apps. If you see **Need admin approval**, ask a Microsoft 365 admin to grant consent for opendesk.
-
-</Step>
-</Steps>
-
-### What opendesk asks for
-
-| Scope | Why |
-| --- | --- |
-| `openid`, `email` | Identify which Microsoft account was connected. |
-| `offline_access` | Keep the connection working after you close the browser. |
-| `https://outlook.office.com/IMAP.AccessAsUser.All` | Read incoming mail over IMAP (`outlook.office365.com`). |
-| `https://graph.microsoft.com/Mail.Send` | Send replies through the mailbox. |
-| `https://graph.microsoft.com/User.Read` | Read the account's basic profile. |
-
-Tokens are encrypted at rest with AES-GCM.
+Syncing asks for one more permission, `https://outlook.office.com/IMAP.AccessAsUser.All`, which lets opendesk read the mailbox. Your Microsoft app needs it, as described in [Google and Microsoft OAuth](/self-hosting/oauth-apps/#microsoft). Choose forwarding to keep the connection send-only.
 
 ### IMAP must be enabled
 
-In Microsoft 365, IMAP can be turned off per mailbox. An admin turns it on in the [Microsoft 365 admin center](https://admin.microsoft.com) under **Users**, **Active users**: select the user, then **Mail**, **Manage email apps**, and tick **IMAP**.
-
-### Self-hosting
-
-On your own instance, Microsoft sign-in for mailboxes needs your own Microsoft app (`MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`), and `MICROSOFT_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
+In Microsoft 365, IMAP can be turned off per mailbox. For a synced mailbox, an admin turns it on in the [Microsoft 365 admin center](https://admin.microsoft.com) under **Users**, **Active users**: select the user, then **Mail**, **Manage email apps**, and tick **IMAP**.
 
 ## Disconnect
 
 Remove the mailbox in opendesk, under **Mailboxes**. Then, at Microsoft:
 
 - **Forwarding**: turn off the forwarding or the Outlook rule, so mail stops going to the old address.
+- **Microsoft**: remove opendesk from [My apps](https://myapps.microsoft.com), or as an admin from **Enterprise applications** in Microsoft Entra.
 - **SMTP**: change the mailbox's password, or turn SMTP AUTH off again.
-- **Microsoft sign-in**: remove opendesk from [My apps](https://myapps.microsoft.com), or as an admin from **Enterprise applications** in Microsoft Entra.
 
 ## Related
 

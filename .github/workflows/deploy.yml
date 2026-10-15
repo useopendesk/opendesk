@@ -261,6 +261,8 @@ jobs:
           # The repository variable is set once the help zone and its worker serve
           # (deploy/README.md); until then help centers stay on the API's /help/<slug>.
           HELP_DOMAIN: ${{ vars.HELP_DOMAIN }}
+          # Matches the API's MAILBOX_IMAP (Terraform var.mailbox_imap): Cloud receives by forwarding.
+          MAILBOX_IMAP: ${{ vars.MAILBOX_IMAP || 'false' }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build

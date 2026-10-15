@@ -24,7 +24,7 @@ const queue = [
   { icon: 'mail', via: 'Google', who: 'Aisha Bello', initials: 'AB', tone: '#dbe7fb', ink: '#1e4a8a', subject: 'Can’t get into my workspace' },
   { icon: 'chat', via: 'Live chat', who: 'Noah Fischer', initials: 'NF', tone: '#d9f2e6', ink: '#1d6b47', subject: 'Shared notebook won’t open' },
   { icon: 'mail', via: 'Microsoft 365', who: 'Elena Rossi', initials: 'ER', tone: '#f6e3d3', ink: '#8a4a1e', subject: 'Export to PDF stops halfway' },
-  { icon: 'server', via: 'IMAP', who: 'Tom Becker', initials: 'TB', tone: '#e7e2f8', ink: '#4a3a8a', subject: 'Invoice needs our VAT number' },
+  { icon: 'mail', via: 'Fastmail', who: 'Tom Becker', initials: 'TB', tone: '#e7e2f8', ink: '#4a3a8a', subject: 'Invoice needs our VAT number' },
   { icon: 'at', via: 'Forwarding', who: 'Katrin Vogel', initials: 'KV', tone: '#f8dfe6', ink: '#8a1e45', subject: 'Synchronisierung zwischen iPad und Mac' },
   { icon: 'mail', via: 'Google', who: 'Sara Lindqvist', initials: 'SL', tone: '#e0eef2', ink: '#1e5a6b', subject: 'Refund for a duplicate charge' },
 ] as const;
@@ -110,8 +110,8 @@ const RING = 2 * Math.PI * 78;
   </Tile>
 
   <!-- D: channels -->
-  <Tile class="lg:col-span-4" icon="inbox" title="Every mailbox, one queue" body="Google, Microsoft 365, IMAP or plain forwarding, and live chat. Replies leave from your own address." photo="brush-cyan" href="/features/#inbox">
-    <Stage w={440} h={340} tone="none" label="Mail from Google, Microsoft 365, IMAP and forwarding, and live chats, arriving in one queue.">
+  <Tile class="lg:col-span-4" icon="inbox" title="Every mailbox, one queue" body="Forward mail from Google, Microsoft 365 or any provider, and add live chat. Replies leave from your own address." photo="brush-cyan" href="/features/#inbox">
+    <Stage w={440} h={340} tone="none" label="Mail forwarded from Google, Microsoft 365 and other providers, and live chats, arriving in one queue.">
       <div class="bx-card absolute left-[30px] top-[30px] h-[280px] w-[380px] overflow-hidden text-left">
         <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <svg viewBox="0 0 64 64" class="size-[18px] text-fg" fill="currentColor" aria-hidden="true"><path d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /><path class="mark-turn" d="M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z" /></svg>

@@ -168,3 +168,14 @@ func TestHelpCenterURL(t *testing.T) {
 		}
 	}
 }
+
+func TestMailboxIMAPDefault(t *testing.T) {
+	productionEnv(t)
+	if c, _ := Load(); !c.MailboxIMAP {
+		t.Fatal("default must be on")
+	}
+	t.Setenv("MAILBOX_IMAP", "false")
+	if c, _ := Load(); c.MailboxIMAP {
+		t.Fatal("MAILBOX_IMAP=false")
+	}
+}

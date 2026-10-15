@@ -3,12 +3,49 @@
 //
 // Sign-in can be hidden per provider for demos with
 // localStorage["od.mock.mailboxOAuth"] = "google" | "microsoft" | "none" | "google,microsoft".
+//
+// Receiving over IMAP follows the app's runtime config (VITE_MAILBOX_IMAP, on by
+// default), and localStorage["od.mock.mailboxImap"] = "off" | "on" overrides it for a
+// demo of an instance that receives by forwarding only (reload after setting it).
 
-import type { MailDetection, MailEndpoint, MailHost, MailboxCause, MailboxTestLeg, PasswordAuth } from "@/lib/api/types";
+import type { Mailbox, MailDetection, MailEndpoint, MailHost, MailboxCause, MailboxTestLeg, PasswordAuth } from "@/lib/api/types";
+import { config } from "@/lib/config";
 import { MAIL_HOST_LABELS } from "@/lib/mailHost";
+import { HttpError } from "../router";
 import catalogue from "../mailCauses.json";
 
 const OAUTH_KEY = "od.mock.mailboxOAuth";
+const IMAP_KEY = "od.mock.mailboxImap";
+
+/** Applies the localStorage override of IMAP receiving to the app's config, before anything renders. */
+export function applyMockImap(): void {
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(IMAP_KEY);
+  } catch {
+    raw = null;
+  }
+  if (raw === "off") config.mailboxImap = false;
+  if (raw === "on") config.mailboxImap = true;
+}
+
+/** Whether this instance receives over IMAP: the same switch the app reads. */
+export function mockImapOn(): boolean {
+  return config.mailboxImap;
+}
+
+export const IMAP_OFF_DETAIL = "Receiving over IMAP is off on this instance. Forward the address to opendesk instead.";
+export const imapOff = () => new HttpError(422, "imap_off", IMAP_OFF_DETAIL);
+
+/** The read-only receiving state the API reports. */
+export function receivingOf(m: Pick<Mailbox, "inbound_kind">): NonNullable<Mailbox["receiving"]> {
+  return m.inbound_kind === "forwarding" || mockImapOn() ? "ok" : "imap_off";
+}
+
+/** Brings every mailbox's receiving state up to date (the IMAP switch can change under them in tests). */
+export function syncReceiving(mailboxes: Mailbox[]): void {
+  for (const m of mailboxes) m.receiving = receivingOf(m);
+}
 
 export function mockOAuthEnabled(p: "google" | "microsoft"): boolean {
   let raw: string | null;
@@ -30,6 +67,7 @@ export function connectOptions(forwardingDomain: string) {
     microsoft: { configured: true, oauth: mockOAuthEnabled("microsoft") },
     forwarding: { enabled: true, domain: forwardingDomain },
     system_sender: "noreply@opendesk.sh",
+    mailbox_imap: mockImapOn(),
   };
 }
 

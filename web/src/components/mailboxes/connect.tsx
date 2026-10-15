@@ -34,10 +34,24 @@ export function useMailDetection(email: string | null) {
 
 export type Provider = "google" | "microsoft";
 
+/** Receiving over IMAP is offered when the runtime config and the API both have it on. */
+export function imapOn(opts?: MailboxConnectOptions): boolean {
+  return config.mailboxImap && opts?.mailbox_imap !== false;
+}
+
 /** Sign-in is offered when the API allows it and the deployment's runtime config does not hide it. */
 export function oauthOffered(opts: MailboxConnectOptions | undefined, p: Provider): boolean {
   if (!opts?.[p].oauth) return false;
   return config.mailboxOAuth === null || config.mailboxOAuth.includes(p);
+}
+
+/**
+ * The providers a forwarding mailbox may connect to send its replies: its host's own,
+ * or either for a host nobody could identify, when the instance offers that sign-in.
+ */
+export function sendProviders(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): Provider[] {
+  const candidates: Provider[] = det?.oauth ? [det.oauth] : det?.host ? [] : ["google", "microsoft"];
+  return candidates.filter((p) => oauthOffered(opts, p));
 }
 
 /** A self-host without the provider's OAuth client says how to set it up. */
@@ -107,6 +121,7 @@ export function CauseCallout({ failure }: { failure: ConnectFailure }) {
 /** The detected provider: logo, name and where the answer came from. */
 export function DetectionCard({ domain, detection, loading, failed }: { domain: string; detection?: MailDetection; loading: boolean; failed: boolean }) {
   const { t } = useTranslation("settingsChannels");
+  const { data: opts } = useConnectOptions();
   if (loading)
     return (
       <div className="flex items-center gap-3 rounded-lg border border-line bg-sunken/60 px-3.5 py-3" aria-busy="true" role="status">
@@ -125,7 +140,10 @@ export function DetectionCard({ domain, detection, loading, failed }: { domain: 
       <ProviderLogo host={detection.host} label={detection.label} />
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium">{known ? detection.label : detection.settings ? detection.domain : t("connect.unknownHost")}</div>
-        <div className="text-xs text-fg-3">{t(`connect.source.${detection.source}`, { domain: detection.domain })}</div>
+        <div className="text-xs text-fg-3">
+          {/* Without IMAP receiving there are no server settings to enter: forwarding is the way in. */}
+          {t(detection.source === "none" && !imapOn(opts) ? "connect.source.noneForward" : `connect.source.${detection.source}`, { domain: detection.domain })}
+        </div>
       </div>
     </div>
   );

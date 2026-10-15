@@ -244,6 +244,12 @@ variable "microsoft_mailbox_oauth" {
   default     = true
 }
 
+variable "mailbox_imap" {
+  description = "MAILBOX_IMAP: let mailboxes receive over IMAP (generic IMAP, and Google and Microsoft mailboxes that read the inbox). Off, mailboxes receive by forwarding and Google and Microsoft connect send-only (gmail.send, Mail.Send); no IMAP connection is kept open. Match the Pages variable MAILBOX_IMAP so the app and the API agree."
+  type        = bool
+  default     = false
+}
+
 variable "microsoft_tenant" {
   type    = string
   default = "common"

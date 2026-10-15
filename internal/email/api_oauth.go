@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -40,6 +41,7 @@ type oauthStartInput struct {
 		MailboxID string `json:"mailbox_id,omitempty" doc:"Reconnect this mailbox instead of adding one"`
 		Name      string `json:"name,omitempty" maxLength:"64"`
 		Email     string `json:"email,omitempty" maxLength:"254" doc:"Login hint for the provider"`
+		Receive   string `json:"receive,omitempty" enum:"forwarding,sync" doc:"How a new mailbox receives: forwarding (default; the connection only sends) or sync (read the inbox over IMAP, while this instance has IMAP on). A reconnect keeps the mailbox's own."`
 	}
 }
 
@@ -68,6 +70,13 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				return nil, httpx.E(422, "provider_not_configured", providerLabel(in.Provider)+" sign-in is not configured on this instance.")
 			}
 			b := in.Body
+			if b.Receive == "sync" && !s.mailboxIMAP {
+				return nil, imapOff()
+			}
+			grant := GrantSend
+			if b.Receive == "sync" {
+				grant = GrantSync
+			}
 			data := map[string]string{"flow": oauthFlow, "provider": in.Provider, "wid": p.WorkspaceID.String()}
 			if b.MailboxID != "" {
 				id, ok := ids.Parse(b.MailboxID)
@@ -80,8 +89,14 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				}
 				// Reconnecting a mailbox that already uses this sign-in is always allowed;
 				// moving one onto it is a new connection.
-				if m.InboundKind != in.Provider && !s.oauthConnect(in.Provider) {
+				if m.oauthProvider() != in.Provider && !s.oauthConnect(in.Provider) {
 					return nil, oauthDisabled(in.Provider)
+				}
+				// A reconnect keeps how the mailbox receives; with IMAP off, one that
+				// received over IMAP moves to forwarding.
+				grant = GrantSend
+				if receivesIMAP(m.InboundKind) && s.mailboxIMAP {
+					grant = GrantSync
 				}
 				data["mailbox_id"] = id.String()
 				if b.Email == "" {
@@ -103,6 +118,7 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				}
 				data["name"] = name
 			}
+			data["grant"] = grant
 			verifier := oauth2.GenerateVerifier()
 			if data["verifier"], err = s.sealVerifier(verifier); err != nil {
 				return nil, httpx.Wrap(err)
@@ -118,11 +134,16 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				hint = ""
 			}
 			out := &oauthStartOutput{SetCookie: s.stateCookie(nonce, int(auth.OAuthStateTTL.Seconds()))}
-			out.Body.URL = s.authCodeURL(prov, state, verifier, hint)
+			out.Body.URL = s.authCodeURL(prov, grant, state, verifier, hint)
 			return out, nil
 		})
 
 	r.Get("/v1/mailboxes/oauth/{provider}/callback", s.oauthCallback)
+}
+
+// imapOff answers a request to receive over IMAP while this instance has it off.
+func imapOff() error {
+	return httpx.E(http.StatusUnprocessableEntity, "imap_off", "Receiving over IMAP is off on this instance. Forward the address to opendesk instead.")
 }
 
 // oauthDisabled answers a new connection with a sign-in this instance does not offer
@@ -194,7 +215,12 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		fail("provider_error")
 		return
 	}
-	creds, email, username, err := s.completeOAuth(ctx, prov, code, verifier)
+	// A state signed before grants were recorded asked for the sync scopes.
+	grant := claims.Data["grant"]
+	if grant != GrantSend {
+		grant = GrantSync
+	}
+	creds, email, username, err := s.completeOAuth(ctx, prov, grant, code, verifier)
 	if err != nil {
 		s.log.Warn("mailbox oauth exchange failed", "provider", provider, "workspace_id", wid, "err", safeError(err))
 		fail("provider_error")
@@ -211,7 +237,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		mailboxID = &id
 	}
-	id, err := s.saveOAuthMailbox(ctx, p, provider, mailboxID, claims.Data["name"], email, username, creds)
+	id, err := s.saveOAuthMailbox(ctx, p, provider, grant, mailboxID, claims.Data["name"], email, username, creds)
 	if err != nil {
 		switch {
 		case db.IsUniqueViolation(err, "mailboxes_workspace_id_email_key"):
@@ -229,11 +255,12 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.settingsURL(url.Values{"connected": {id.String()}}), http.StatusFound)
 }
 
-// completeOAuth redeems the code and reads the account identity. For Microsoft the
-// code yields the IMAP (outlook.office.com) token; the refresh token is then exchanged
-// for a Graph token, which also proves the send consent was granted.
-func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, code, verifier string) (credentials, string, string, error) {
-	tr, err := s.exchangeCode(ctx, p, code, verifier)
+// completeOAuth redeems the code and reads the account identity. For a Microsoft sync
+// grant the code yields the IMAP (outlook.office.com) token; the refresh token is then
+// exchanged for a Graph token, which also proves the send consent was granted. A
+// Microsoft send grant redeems the code for the Graph token alone.
+func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, grant, code, verifier string) (credentials, string, string, error) {
+	tr, err := s.exchangeCode(ctx, p, grant, code, verifier)
 	if err != nil {
 		return credentials{}, "", "", err
 	}
@@ -243,7 +270,10 @@ func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, code, ver
 	now := timeNow()
 	c := credentials{RefreshToken: tr.RefreshToken, AccessToken: tr.AccessToken, Expiry: expiryOf(tr, now)}
 	identityToken := tr.AccessToken
-	if p.name == KindMicrosoft {
+	if p.name == KindMicrosoft && grant == GrantSend {
+		c.AccessToken, c.Expiry = "", time.Time{}
+		c.GraphAccessToken, c.GraphExpiry = tr.AccessToken, expiryOf(tr, now)
+	} else if p.name == KindMicrosoft {
 		g, err := s.refresh(ctx, p, c.RefreshToken, p.graphScope)
 		if err != nil {
 			return credentials{}, "", "", err
@@ -262,12 +292,18 @@ func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, code, ver
 }
 
 // saveOAuthMailbox creates the mailbox, or updates the one being reconnected (or the
-// one with the same address), and returns its id.
-func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provider string, mailboxID *uuid.UUID,
+// one with the same address), and returns its id. A sync grant receives over IMAP
+// while this instance has it on; otherwise the mailbox receives by forwarding and
+// sends through the provider.
+func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provider, grant string, mailboxID *uuid.UUID,
 	name, email, username string, creds credentials) (uuid.UUID, error) {
 	prov := s.providers[provider]
-	cfg := MailboxConfig{IMAPHost: prov.imapHost, IMAPPort: 993, IMAPTLS: TLSImplicit, IMAPUsername: username, OAuthEmail: email,
-		MailHost: string(mailhost.ForMailbox("", provider, "", email))}
+	inbound := InboundForwarding
+	cfg := MailboxConfig{OAuthEmail: email, OAuthGrant: grant, MailHost: string(mailhost.ForMailbox("", provider, "", email))}
+	if grant == GrantSync && s.mailboxIMAP {
+		inbound = provider
+		cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPTLS, cfg.IMAPUsername = prov.imapHost, 993, TLSImplicit, username
+	}
 	sealed, err := s.sealCreds(creds)
 	if err != nil {
 		return uuid.Nil, err
@@ -291,17 +327,20 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 		typ := "mailbox.updated"
 		if existing != nil {
 			id = existing.ID
-			// A reconnect keeps the mailbox's own address unless it was the old account's.
+			// A reconnect keeps the mailbox's own address unless it was the old account's
+			// (a row from before the account was recorded is one this sign-in synced).
+			// Connecting a provider to send for an address keeps that address.
 			addr := existing.Email
-			if existing.Config.OAuthEmail == "" || strings.EqualFold(existing.Config.OAuthEmail, existing.Email) {
+			legacy := existing.Config.OAuthEmail == "" && existing.InboundKind == provider
+			if legacy || (existing.Config.OAuthEmail != "" && strings.EqualFold(existing.Config.OAuthEmail, existing.Email)) {
 				addr = email
 			}
-			resetCursor := !strings.EqualFold(existing.Config.IMAPUsername, username) || existing.InboundKind != provider
-			_, err = tx.Exec(ctx, `UPDATE mailboxes SET email = $3, inbound_kind = $4, outbound_kind = $4, config = $5,
-				credentials_enc = $6, status = 'active', last_error = '', sync_failures = 0, next_sync_at = NULL,
-				imap_uid_validity = CASE WHEN $7 THEN 0 ELSE imap_uid_validity END,
-				imap_last_uid = CASE WHEN $7 THEN 0 ELSE imap_last_uid END, updated_at = now()
-				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, provider, cfg, sealed, resetCursor)
+			resetCursor := !strings.EqualFold(existing.Config.IMAPUsername, cfg.IMAPUsername) || existing.InboundKind != inbound
+			_, err = tx.Exec(ctx, `UPDATE mailboxes SET email = $3, inbound_kind = $4, outbound_kind = $5, config = $6,
+				credentials_enc = $7, status = 'active', last_error = '', sync_failures = 0, next_sync_at = NULL,
+				imap_uid_validity = CASE WHEN $8 THEN 0 ELSE imap_uid_validity END,
+				imap_last_uid = CASE WHEN $8 THEN 0 ELSE imap_last_uid END, updated_at = now()
+				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, inbound, provider, cfg, sealed, resetCursor)
 			if err != nil {
 				return err
 			}
@@ -316,7 +355,7 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 			}
 			m := &mailboxRow{WorkspaceID: wid}
 			m.ID = ids.New()
-			m.Name, m.Email, m.InboundKind, m.OutboundKind, m.Config, m.Status = name, email, provider, provider, cfg, "active"
+			m.Name, m.Email, m.InboundKind, m.OutboundKind, m.Config, m.Status = name, email, inbound, provider, cfg, "active"
 			if m.Name == "" {
 				m.Name = providerLabel(provider) + " mailbox"
 			}
@@ -333,7 +372,7 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 			return err
 		}
 		if err := audit.Log(ctx, tx, p, wid, "mailbox.connected", "mailbox", &id, map[string]any{
-			"provider": provider, "email": email, "reconnect": existing != nil}); err != nil {
+			"provider": provider, "email": email, "reconnect": existing != nil, "grant": grant, "inbound_kind": inbound}); err != nil {
 			return err
 		}
 		m, err := loadMailbox(ctx, tx, wid, id)

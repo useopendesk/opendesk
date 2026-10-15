@@ -1,6 +1,6 @@
 ---
 title: Other providers (IMAP and SMTP)
-description: Connect Yahoo, AOL, iCloud, Fastmail, Zoho, Yandex, a hosting provider or your own mail server over IMAP and SMTP, with the server settings detected for you.
+description: Send replies through Yahoo, AOL, iCloud, Fastmail, Zoho, Yandex, a hosting provider or your own mail server over SMTP, and on your own instance read the mailbox over IMAP, with the server settings detected for you.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -10,7 +10,33 @@ import Callout from '../../../../components/Callout.astro';
 import Legend from '../../../../components/Legend.astro';
 import Fold from '../../../../components/Fold.astro';
 
-Most mailboxes outside Google and Microsoft connect over **IMAP and SMTP**: opendesk reads new mail from the IMAP server and sends replies through the SMTP server, so they come from your address and land in your Sent folder. You type the address, opendesk finds the servers, and you paste a password.
+A mailbox outside Google and Microsoft sends replies through its provider's **SMTP server**, so they come from your address and land in your Sent folder. Mail comes in by [forwarding](/guides/mailboxes/forwarding/). Sending over SMTP works on every instance, opendesk Cloud included.
+
+On your own instance, a mailbox can also **receive over IMAP**: opendesk reads new mail from the IMAP server, with nothing to forward. IMAP receiving is on by default on a self-hosted instance, and `MAILBOX_IMAP` turns it off (see [Receiving over IMAP](/self-hosting/configuration/#receiving-over-imap)). opendesk Cloud receives by forwarding.
+
+## Send through your SMTP server
+
+<Steps>
+<Step title="Add the mailbox and pick forwarding">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. Choose **Forward mail to opendesk** and click **Continue**.
+
+</Step>
+<Step title="Enter the SMTP server">
+
+Under **Replies are sent**, choose **Through your SMTP server**. Enter the server, port and security from [Providers](#providers) below, your full address as the username, and the password your provider takes for mail apps: often an [app password](#app-passwords-by-provider). opendesk signs in to the server before it saves anything.
+
+</Step>
+<Step title="Forward the mail">
+
+Turn on forwarding at your provider to the address opendesk shows, as in [Forwarding](/guides/mailboxes/forwarding/). Then write to your address from another account: it shows up in **Unassigned** as a new ticket.
+
+</Step>
+</Steps>
+
+## Connect over IMAP and SMTP, on your own instance
+
+With IMAP receiving on, the wizard also offers ways that read the mailbox and send through it. You type the address, opendesk finds the servers, and you paste a password.
 
 - **App password**, for providers that only accept one from mail apps: Yahoo, AOL, iCloud, Fastmail and Yandex. The wizard shows where to make it.
 - **Email password**, for hosts that accept the mailbox's own password, such as a hosting provider or your company's mail server.
@@ -26,7 +52,7 @@ Most mailboxes outside Google and Microsoft connect over **IMAP and SMTP**: open
 
 </Legend>
 
-## Connect with an app password or a password
+### Connect with an app password or a password
 
 <Steps>
 <Step title="Add the mailbox and type the address">
@@ -48,7 +74,7 @@ Paste the app password, or the mailbox's password, and click **Connect**. opende
 
 ## Providers
 
-| Provider | Way in | Where to make an app password | IMAP | SMTP |
+| Provider | Password | Where to make an app password | IMAP | SMTP |
 | --- | --- | --- | --- | --- |
 | Yahoo Mail | App password | [login.yahoo.com/account/security](https://login.yahoo.com/account/security) | `imap.mail.yahoo.com:993` TLS | `smtp.mail.yahoo.com:465` TLS |
 | AOL Mail | App password | [login.aol.com/account/security](https://login.aol.com/account/security) | `imap.aol.com:993` TLS | `smtp.aol.com:465` TLS |
@@ -60,7 +86,7 @@ Paste the app password, or the mailbox's password, and click **Connect**. opende
 | Proton Mail | Forwarding only (see [Proton Mail](#proton-mail)) | | | |
 | Any other host | Email password, with detected or typed settings | | Detected when the domain publishes it | Detected when the domain publishes it |
 
-Zoho uses regional servers for accounts outside the US, such as `imap.zoho.eu` and `smtp.zoho.eu`. opendesk picks the right ones from the address and its MX records. For Gmail and Google Workspace, see [Gmail and Google Workspace](/guides/mailboxes/google/); for Outlook.com and Microsoft 365, see [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
+The IMAP server is used only by a mailbox that receives over IMAP. Zoho uses regional servers for accounts outside the US, such as `imap.zoho.eu` and `smtp.zoho.eu`. opendesk picks the right ones from the address and its MX records. For Gmail and Google Workspace, see [Gmail and Google Workspace](/guides/mailboxes/google/); for Outlook.com and Microsoft 365, see [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
 
 <Fold>
 
@@ -117,11 +143,11 @@ Only servers that offer TLS or STARTTLS are used. When the servers are found, th
 
 <Screenshot src="/guides/mailboxes/autoconfig-detect" alt="Add a mailbox for help@acme.example: the servers found from the domain's autoconfig file ringed as 1, and Email password, recommended, ringed as 2" />
 
-When nothing is found, the wizard says so: type the settings under **Other IMAP and SMTP**, from your host's help pages, or [forward the mail](/guides/mailboxes/forwarding/).
+When nothing is found, the wizard says so: type the SMTP settings from your host's help pages, or the IMAP and SMTP settings under **Other IMAP and SMTP** on an instance that receives over IMAP.
 
 ## Other IMAP and SMTP
 
-**Other IMAP and SMTP** shows every setting, filled in from what was found. Use it for your own mail server, or to change a detected setting.
+On an instance that receives over IMAP, **Other IMAP and SMTP** shows every setting, filled in from what was found. Use it for your own mail server, or to change a detected setting.
 
 <Screenshot src="/guides/mailboxes/imap-prefilled" alt="Other IMAP and SMTP for help@acme.example: the incoming mail server ringed as 1, the outgoing mail server ringed as 2, and the Connect and test button ringed as 3" />
 
@@ -163,7 +189,7 @@ Nothing is saved when a server refuses. The wizard shows the cause and the fix, 
 | **Yahoo needs an app password**, and the same for AOL, iCloud, Fastmail and Yandex | Create an app password as above and use it instead of the account password. |
 | **Zoho refused the password** | With two-factor authentication on, use an app password. Check that IMAP access is on in Zoho Mail. |
 | **The server refused the sign-in** | Check the username, usually the full address, and the password. Some hosts need an app password, or a username other than the address. |
-| **IMAP is turned off for this mailbox** | Turn IMAP on in the provider's mail settings, or ask your email admin. |
+| **IMAP is turned off for this mailbox** | Only when the mailbox receives over IMAP. Turn IMAP on in the provider's mail settings, or ask your email admin. |
 | **The server name does not exist** | Check the spelling of the IMAP and SMTP server. |
 | **The server could not be reached** | Check the server and port, and that the server accepts connections from the internet. |
 | **The mail port did not answer** | Use port 587 with STARTTLS instead of 465 or 25. |
@@ -177,11 +203,7 @@ Nothing is saved when a server refuses. The wizard shows the cause and the fix, 
 
 ## Proton Mail
 
-Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Connect a Proton address by [forwarding](/guides/mailboxes/forwarding/) its mail instead. Forwarding is available on Proton's paid plans.
-
-## Forwarding with SMTP
-
-You can also bring mail in by [forwarding](/guides/mailboxes/forwarding/) and send replies through your SMTP server. Choose **Forward mail to opendesk**, then **Through your SMTP server**. opendesk then sends from your address without reading the mailbox.
+Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Connect a Proton address by [forwarding](/guides/mailboxes/forwarding/) its mail, and send replies through opendesk. Forwarding is available on Proton's paid plans.
 
 ## Security
 

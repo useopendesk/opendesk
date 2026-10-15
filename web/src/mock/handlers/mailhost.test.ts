@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Mailbox, MailboxCause } from "@/lib/api/types";
+import { config } from "@/lib/config";
 import { installMock } from "../index";
 import { dispatch } from "../router";
 import { db } from "../db";
@@ -82,5 +83,69 @@ describe("mock mailbox sending", () => {
     expect((back.body as Mailbox).config.smtp_host).toBeUndefined();
     // No password is left to sign in with.
     expect((await call("PATCH", url, { ...smtp(), verify: false })).status).toBe(422);
+  });
+});
+
+describe("mock mailbox receiving", () => {
+  installMock();
+  afterEach(() => {
+    config.mailboxImap = true;
+  });
+  const list = async () => (await call("GET", "/v1/mailboxes")).body.data as Mailbox[];
+
+  it("seeds one mailbox of each kind", async () => {
+    const kinds = new Set((await list()).map((m) => `${m.inbound_kind}+${m.outbound_kind}`));
+    for (const k of ["google+google", "forwarding+system", "forwarding+smtp", "forwarding+google", "forwarding+microsoft", "imap+smtp"]) expect(kinds).toContain(k);
+    expect((await list()).every((m) => m.receiving === "ok")).toBe(true);
+  });
+
+  it("connects Google to send only by default, or to sync", async () => {
+    const start = (email: string, body: Record<string, unknown> = {}) => call("POST", "/v1/mailboxes/oauth/google/start", { name: "Desk", email, ...body });
+    const sendOnly = await start("desk@acme.io");
+    expect(sendOnly.status).toBe(200);
+    const id = new URL(sendOnly.body.url, "http://x").searchParams.get("connected");
+    const m = (await list()).find((x) => x.id === id)!;
+    expect(m).toMatchObject({ inbound_kind: "forwarding", outbound_kind: "google", receiving: "ok" });
+    expect(m.forwarding_address).toMatch(/@in\.opendesk\.sh$/);
+
+    const synced = await start("sync@acme.io", { receive: "sync" });
+    const s = (await list()).find((x) => x.id === new URL(synced.body.url, "http://x").searchParams.get("connected"))!;
+    expect(s).toMatchObject({ inbound_kind: "google", outbound_kind: "google" });
+    expect((await start("other@acme.io", { receive: "pop3" })).status).toBe(422);
+  });
+
+  it("refuses receiving over IMAP while it is off, and switches to forwarding", async () => {
+    config.mailboxImap = false;
+    const mbs = await list();
+    const support = mbs.find((m) => m.email === "support@margin.app")!;
+    const partners = mbs.find((m) => m.email === "partners@margin.app")!;
+    expect(support.receiving).toBe("imap_off");
+    expect(partners.receiving).toBe("imap_off");
+    expect(mbs.filter((m) => m.inbound_kind === "forwarding").every((m) => m.receiving === "ok")).toBe(true);
+
+    const imap = await call("POST", "/v1/mailboxes", {
+      name: "Ops",
+      email: "ops@imap-off.example",
+      inbound_kind: "imap",
+      outbound_kind: "smtp",
+      config: { imap_host: "imap.imap-off.example", imap_username: "ops", smtp_host: "smtp.imap-off.example", smtp_username: "ops" },
+      password: "pw",
+    });
+    expect(imap.status).toBe(422);
+    expect(imap.body).toMatchObject({ code: "imap_off", detail: "Receiving over IMAP is off on this instance. Forward the address to opendesk instead." });
+    expect((await call("POST", "/v1/mailboxes/oauth/google/start", { name: "Ops", email: "ops2@acme.io", receive: "sync" })).body.code).toBe("imap_off");
+    const billing = mbs.find((m) => m.email === "billing@margin.app")!;
+    expect((await call("PATCH", `/v1/mailboxes/${billing.id}`, { inbound_kind: "imap" })).body.code).toBe("imap_off");
+
+    // Switching keeps how replies are sent.
+    const switched = await call("PATCH", `/v1/mailboxes/${partners.id}`, { inbound_kind: "forwarding" });
+    expect(switched.status).toBe(200);
+    expect(switched.body).toMatchObject({ inbound_kind: "forwarding", outbound_kind: "smtp", receiving: "ok", status: "active", last_error: "" });
+    expect((switched.body as Mailbox).config.imap_host).toBeUndefined();
+    expect((switched.body as Mailbox).config.smtp_host).toBe("smtp.fastmail.com");
+
+    // Reconnecting a sync while IMAP is off connects it to send only.
+    await call("POST", "/v1/mailboxes/oauth/google/start", { mailbox_id: support.id, name: support.name, email: support.email });
+    expect(((await call("GET", `/v1/mailboxes/${support.id}`)).body as Mailbox)).toMatchObject({ inbound_kind: "forwarding", outbound_kind: "google", receiving: "ok" });
   });
 });

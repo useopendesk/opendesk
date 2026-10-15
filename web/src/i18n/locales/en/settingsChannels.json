@@ -36,7 +36,7 @@
     "count_one": "{{count}} mailbox",
     "count_other": "{{count}} mailboxes",
     "emptyTitle": "No mailboxes yet",
-    "emptyBody": "Connect Gmail or Microsoft 365, forward from any provider, or use IMAP and SMTP.",
+    "emptyBody": "Forward your support address from any provider, then choose how replies are sent.",
     "never": "Never synced",
     "instant": "Instant",
     "syncedAgo": "Synced {{when}}",
@@ -46,6 +46,7 @@
     "disable": "Disable",
     "remove": "Remove",
     "connected": "Mailbox connected",
+    "connectedForward": "Connected. Forward the mailbox's mail to opendesk to finish.",
     "connectFailed": "The mailbox couldn't be connected.",
     "noTeam": "No team",
     "colAddress": "Address",
@@ -89,6 +90,18 @@
     "failed": "{{what}} failed",
     "detail": "The server said"
   },
+  "receiving": {
+    "pill": "Not receiving",
+    "pillHint": "Receiving over IMAP is off on this instance. Switch the mailbox to forwarding.",
+    "offTitle": "This mailbox isn't receiving mail",
+    "offBody": "Receiving over IMAP is off on this instance, so opendesk no longer fetches mail from {{email}}. Switch to forwarding to keep getting it. Replies still go out the way they do now.",
+    "switch": "Switch to forwarding",
+    "confirmTitle": "Switch to forwarding?",
+    "confirmBody": "opendesk stops signing in to {{email}} to fetch mail and gives it an address to forward to. New mail arrives once the forward is set up. Replies still go out the way they do now.",
+    "switched": "Switched to forwarding. Set up the forward below.",
+    "title": "Receiving",
+    "imapHint": "opendesk signs in to the mailbox to fetch new mail. Forwarding works without signing in."
+  },
   "detail": {
     "fallbackTitle": "Mailbox",
     "back": "Mailboxes",
@@ -103,6 +116,8 @@
     "forwardingInstant": "Forwarded mail arrives as soon as it is sent.",
     "account": "Account",
     "accountHint": "Connected with {{provider}}. Reconnect if access was revoked or the password changed.",
+    "accountHintNoImap": "Connected with {{provider}}. Reconnecting connects it to send only, and its mail then arrives by forwarding.",
+    "accountSendOnly": "Connected with {{provider}} to send only. opendesk can't read the mailbox. Reconnect if access was revoked.",
     "reconnect": "Reconnect",
     "incoming": "Incoming (IMAP)",
     "outgoing": "Outgoing (SMTP)",
@@ -113,7 +128,12 @@
       "server": "SMTP server",
       "passwordNeeded": "Enter the password for this server.",
       "testHint": "Signs in to the server without sending anything.",
-      "saveToTest": "Save to test the new settings. Saving signs in first."
+      "saveToTest": "Save to test the new settings. Saving signs in first.",
+      "providerBody": "From {{email}} itself, sent with {{provider}}.",
+      "with": "With {{provider}}",
+      "connectTitle": "Send with {{provider}}",
+      "connectHint": "Replies go out from {{email}} itself. Connecting only lets opendesk send as this address. It does not read the mailbox.",
+      "connect": "Connect {{provider}}"
     },
     "sending": "Name and addresses",
     "sendingHint": "How this mailbox appears to your team and to customers.",
@@ -197,6 +217,8 @@
     "password": "Password",
     "passwordHint": "An app password if your provider requires one.",
     "connected": "{{name}} is connected",
+    "created": "{{name}} is ready",
+    "createdForward": "Forward its mail to the address below to start receiving.",
     "testRunning": "The connection test is still running. Check the mailbox status in a minute.",
     "fixLater": "You can fix the server settings on the mailbox page and test again.",
     "err": {
@@ -222,9 +244,12 @@
     "gmail": "Gmail",
     "workspace": "Google Workspace",
     "microsoft": "Microsoft 365",
+    "outlook": "Outlook.com",
+    "other": "Other",
+    "microsoftBlocked": "Microsoft 365 blocks automatic forwarding to outside addresses by default. An admin allows it once, then the forward is set on the mailbox.",
     "steps": {
       "gmail": {
-        "s1": "In Gmail, open <b>Settings</b>, then <b>See all settings</b>, then <b>Forwarding and POP/IMAP</b>.",
+        "s1": "In Gmail, open <b>Settings</b>, <b>See all settings</b>, then <b>Forwarding and POP/IMAP</b>.",
         "s2": "Choose <b>Add a forwarding address</b> and paste the address above.",
         "s3": "Gmail sends a confirmation email. It arrives in opendesk as a ticket: open it and click the link, or copy the code into Gmail.",
         "s4": "Back in Gmail, select <b>Forward a copy of incoming mail to</b> the new address and save."
@@ -236,10 +261,19 @@
         "s4": "Save. Changes can take a few minutes to apply."
       },
       "microsoft": {
-        "s1": "Open the Exchange admin center, then <b>Recipients</b>, <b>Mailboxes</b>, and select the mailbox.",
-        "s2": "Under <b>Mail flow settings</b>, choose <b>Manage email forwarding</b>.",
-        "s3": "Turn on forwarding, paste the address above, and keep <b>Deliver to both</b> on if the mailbox should still get a copy.",
-        "s4": "If outbound forwarding is blocked, allow it in the outbound spam policy, or use an Outlook rule that forwards to the address instead."
+        "s1": "An admin opens <b>Microsoft Defender</b>, then <b>Policies</b>, <b>Anti-spam</b>, <b>Outbound policy</b>, and sets <b>Automatic forwarding rules</b> to <b>On</b>.",
+        "s2": "In the <b>Exchange admin center</b>, open <b>Recipients</b>, <b>Mailboxes</b> and select the mailbox.",
+        "s3": "Under <b>Mail flow settings</b>, edit <b>Email forwarding</b>: turn it on, paste the address above and keep a copy in the mailbox.",
+        "s4": "No access to the admin center? After step 1, add an Outlook rule that forwards every message to the address above."
+      },
+      "outlook": {
+        "s1": "In Outlook.com, open <b>Settings</b>, <b>Mail</b>, then <b>Forwarding</b>.",
+        "s2": "Turn on <b>Enable forwarding</b> and paste the address above.",
+        "s3": "Turn on <b>Keep a copy of forwarded messages</b> and save."
+      },
+      "other": {
+        "s1": "In your email provider's settings, find forwarding. Some call it a redirect or an alias.",
+        "s2": "Forward all mail for this address to the address above, keeping a copy if you want one."
       }
     }
   },
@@ -289,29 +323,32 @@
       "autoconfig": "From the domain's autoconfig file",
       "ispdb": "From Thunderbird's provider database",
       "srv": "From the domain's DNS service records",
-      "none": "We couldn't tell who hosts {{domain}}. Enter the server settings, or forward mail."
+      "none": "We couldn't tell who hosts {{domain}}. Enter the server settings, or forward mail.",
+      "noneForward": "We couldn't tell who hosts {{domain}}. Forwarding works with any provider."
     },
     "detectFailed": "We couldn't look up {{domain}}. You can still choose how to connect.",
-    "howTitle": "How should opendesk connect?",
+    "howTitle": "How should mail reach opendesk?",
+    "forwardingOnly": "Mail arrives by forwarding",
+    "forwardingOnlyBody": "You forward {{email}} to a private address opendesk gives you. Works with any provider, and opendesk never reads the mailbox.",
     "anotherWay": "Choose another way",
     "suggestedWays": "Show the suggested ways",
     "recommended": "Recommended",
     "advanced": "Advanced",
     "method": {
-      "google": "Sign in with Google",
-      "googleBody": "Approve access in Google. Mail syncs and replies send from your address.",
-      "microsoft": "Sign in with Microsoft",
-      "microsoftBody": "Approve access in Microsoft. Works with Exchange Online mailboxes.",
+      "google": "Receive by syncing the mailbox (IMAP)",
+      "googleBody": "Sign in with Google. opendesk fetches new mail over IMAP and replies from your address.",
+      "microsoft": "Receive by syncing the mailbox (IMAP)",
+      "microsoftBody": "Sign in with Microsoft. opendesk fetches new mail over IMAP and replies from your address.",
       "app_password": "App password",
       "app_passwordBody": "Create an app password in {{host}} and paste it here. The servers are set for you.",
       "password": "Email password",
       "passwordBody": "Sign in with the mailbox's password. The servers are set for you.",
       "forwarding": "Forward mail to opendesk",
-      "forwardingBody": "Forward mail to an address opendesk gives you. Works with any provider, no password shared.",
+      "forwardingBody": "Forward mail to an address opendesk gives you. Works with any provider, and opendesk never reads the mailbox.",
       "imap": "Other IMAP and SMTP",
       "imapBody": "Enter the server settings yourself."
     },
-    "microsoftNoPassword": "Microsoft turned off password sign-in over IMAP and is phasing it out for SMTP AUTH, so this mailbox connects by forwarding and replies go out through opendesk.",
+    "microsoftNoPassword": "Microsoft turned off password sign-in over IMAP, so without Microsoft sign-in this mailbox receives by forwarding.",
     "protonNoImap": "Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Forward mail from Proton instead (Proton's paid plans can forward).",
     "notConfigured": {
       "title": "{{provider}} sign-in isn't set up on this server",
@@ -337,7 +374,18 @@
     "verifiedNote": "opendesk signs in to both servers before it saves anything.",
     "addressing": "Team, brand and From name",
     "addressingHint": "Optional. You can change these later.",
-    "sending": "Replies are sent",
+    "sending": "How replies are sent",
+    "send": {
+      "google": "Connect Google",
+      "googleBody": "Replies go out from {{email}} itself. This only lets opendesk send as the address. It does not read the mailbox.",
+      "microsoft": "Connect Microsoft",
+      "microsoftBody": "Replies go out from {{email}} itself. This only lets opendesk send as the address. It does not read the mailbox.",
+      "smtp": "Your SMTP server",
+      "smtpBody": "Replies go out from {{email}} through its own server, with the server's password.",
+      "system": "Through opendesk",
+      "systemBody": "From {{sender}} with your mailbox's name. Customers' answers come back to {{email}}."
+    },
+    "sendOnlyNote": "You'll go to {{provider}} to allow sending, then come back to set up forwarding. opendesk asks only for permission to send.",
     "sendSystem": "Through opendesk",
     "sendSystemBody": "From {{sender}} with your mailbox's name, and replies to the customer come back to {{email}}.",
     "sendSmtp": "Through your SMTP server",
@@ -415,8 +463,9 @@
       "signin": "Sign-in",
       "app_password": "App password",
       "password": "Password",
-      "forwarding": "Forwarding"
+      "forwarding": "Forwarding",
+      "sendsWith": "Sends with {{provider}}"
     },
-    "forwardingIntro": "After you create it, you get a private address to forward this mailbox's mail to. Nothing is shared but the mail you forward."
+    "forwardingIntro": "You get a private address to forward this mailbox's mail to. opendesk sees only the mail you forward."
   }
 }

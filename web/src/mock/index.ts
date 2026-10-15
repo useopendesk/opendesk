@@ -19,6 +19,7 @@ import { registerBots } from "./handlers/bots";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerIntegrations } from "./handlers/integrations";
 import { registerLabels } from "./handlers/labels";
+import { applyMockImap, syncReceiving } from "./handlers/mailhost";
 import { registerMcp } from "./handlers/mcp";
 import { registerNotificationPrefs } from "./handlers/notificationPrefs";
 import { registerResources } from "./handlers/resources";
@@ -53,7 +54,9 @@ export function installMock(): void {
   const params = new URLSearchParams(location.search);
   if (params.get("mock") === "anon") setSignedIn(false);
 
+  applyMockImap();
   seed();
+  for (const w of db.workspaces) syncReceiving(w.mailboxes);
   const gate = params.get("mock_gate");
   if (gate === "mfa" || gate === "reauth") db.stepUp = gate === "mfa" ? "mfa_required" : "reauth_required";
   registerAuth();

@@ -5,9 +5,9 @@ description: Register Google and Microsoft OAuth apps for sign-in and mailbox co
 
 import { Steps, Aside } from '@astrojs/starlight/components';
 
-Self-hosted instances use their own OAuth apps. One app per provider covers both **sign-in** and **mailbox connections**. Without them, password sign-in and IMAP, SMTP and forwarding mailboxes still work.
+Self-hosted instances use their own OAuth apps. One app per provider covers both **sign-in** and **mailbox connections**. Without them, password sign-in and forwarding, SMTP and IMAP mailboxes still work.
 
-Gmail mailbox connections can also use a separate Google client, for example in its own Google Cloud project while the restricted Gmail scope is reviewed: set `GOOGLE_MAILBOX_CLIENT_ID` and `GOOGLE_MAILBOX_CLIENT_SECRET`, and register only the mailbox redirect URI on it.
+Gmail mailbox connections can also use a separate Google client, for example in its own Google Cloud project while its Gmail scope is reviewed: set `GOOGLE_MAILBOX_CLIENT_ID` and `GOOGLE_MAILBOX_CLIENT_SECRET`, and register only the mailbox redirect URI on it.
 
 ## Redirect URIs
 
@@ -27,12 +27,14 @@ For `API_URL=https://desk.example.com`:
 
 ## Scopes
 
-| Provider | Sign-in | Mailbox connection |
-| --- | --- | --- |
-| Google | `openid`, `email`, `profile` | `openid`, `email`, `https://mail.google.com/` |
-| Microsoft | `openid`, `email`, `profile` | `openid`, `email`, `offline_access`, `https://outlook.office.com/IMAP.AccessAsUser.All`, `https://graph.microsoft.com/Mail.Send`, `https://graph.microsoft.com/User.Read` |
+A mailbox connection sends replies from the mailbox, and its mail comes in by forwarding. With [receiving over IMAP](/self-hosting/configuration/#receiving-over-imap) on (`MAILBOX_IMAP`, the default), a connection can instead sync the mailbox, which asks for more.
 
-Mailbox connections use PKCE and request offline access, so opendesk can keep reading mail.
+| Provider | Sign-in | Mailbox, send-only | Mailbox, sync (IMAP) |
+| --- | --- | --- | --- |
+| Google | `openid`, `email`, `profile` | `openid`, `email`, `https://www.googleapis.com/auth/gmail.send` | `openid`, `email`, `https://mail.google.com/` |
+| Microsoft | `openid`, `email`, `profile` | `openid`, `email`, `offline_access`, `https://graph.microsoft.com/Mail.Send`, `https://graph.microsoft.com/User.Read` | the same, plus `https://outlook.office.com/IMAP.AccessAsUser.All` |
+
+Mailbox connections use PKCE and request offline access, so opendesk keeps working after the person who connected closes the browser. If no one on your instance syncs mailboxes, register only the send-only scopes.
 
 ## Google
 
@@ -40,13 +42,13 @@ Mailbox connections use PKCE and request offline access, so opendesk can keep re
 
 1. Open the [Google Cloud console](https://console.cloud.google.com) and create (or pick) a project.
 
-2. Go to **APIs & Services → Library**, search for **Gmail API** and click **Enable**. (Only needed for mailbox connections.)
+2. Go to **APIs & Services → Library**, search for **Gmail API** and click **Enable**. (Only needed for mailbox connections: replies are sent through it.)
 
 3. Go to **Google Auth Platform → Branding** (formerly **OAuth consent screen**). Enter the app name, support email, your domain under **Authorized domains**, and links to your privacy policy and terms.
 
 4. Under **Audience**, choose **Internal** if everyone who connects a mailbox is in your Google Workspace organization. Choose **External** otherwise.
 
-5. Under **Data Access**, add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile` and, for mailboxes, `https://mail.google.com/`.
+5. Under **Data Access**, add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile` and, for mailboxes, `.../auth/gmail.send`. Add `https://mail.google.com/` only if mailboxes will sync over IMAP.
 
 6. Go to **Clients → Create client**. Choose **Web application**, give it a name, and add both Google redirect URIs above under **Authorized redirect URIs**. Click **Create**.
 
@@ -59,8 +61,12 @@ Mailbox connections use PKCE and request offline access, so opendesk can keep re
 
 </Steps>
 
-<Aside type="caution" title="Restricted scope">
-`https://mail.google.com/` is a **restricted** scope. An **Internal** app in your own Workspace can use it immediately. An **External** app in production needs Google's verification, including a security assessment (CASA), before people outside your test users can connect. While it is in **Testing**, add each Google account under **Audience → Test users**; refresh tokens for test apps expire after 7 days.
+<Aside type="note" title="Google verification">
+`gmail.send` is a **sensitive** scope. An **Internal** app in your own Workspace can use it immediately. An **External** app in production needs Google's app verification once before people outside your test users can connect.
+
+`https://mail.google.com/`, for syncing, is a **restricted** scope. An **External** app in production needs Google's verification and a yearly security assessment (CASA) for it. An **Internal** app can use it immediately.
+
+While an app is in **Testing**, add each Google account under **Audience → Test users**; refresh tokens for test apps expire after 7 days.
 </Aside>
 
 ## Microsoft
@@ -79,7 +85,7 @@ Mailbox connections use PKCE and request offline access, so opendesk can keep re
 
 5. Open **API permissions → Add a permission**:
    - **Microsoft Graph → Delegated**: `openid`, `email`, `profile`, `offline_access`, `User.Read`, `Mail.Send`
-   - **APIs my organization uses →** search **Office 365 Exchange Online → Delegated**: `IMAP.AccessAsUser.All`
+   - Only if mailboxes will sync over IMAP: **APIs my organization uses →** search **Office 365 Exchange Online → Delegated**: `IMAP.AccessAsUser.All`
 
    For a single organization, click **Grant admin consent** so members are not asked individually.
 
@@ -93,7 +99,9 @@ Mailbox connections use PKCE and request offline access, so opendesk can keep re
 
 </Steps>
 
-Mailboxes connected through Microsoft read mail over IMAP, so IMAP must be enabled for each mailbox in Microsoft 365. See [Connect Microsoft](/guides/mailboxes/microsoft/#imap-must-be-enabled).
+A Microsoft app used by people outside your organization should have a verified publisher: under **Branding & properties**, set the publisher domain and link a Microsoft partner account, so the consent screen shows your name as verified.
+
+Mailboxes that sync through Microsoft read mail over IMAP, so IMAP must be enabled for each of them in Microsoft 365. See [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/#imap-must-be-enabled).
 
 ## GitHub and OIDC sign-in
 

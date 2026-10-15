@@ -677,6 +677,8 @@ export type MailboxConnectOptions = {
   microsoft: { configured: boolean; oauth: boolean };
   forwarding: { enabled: boolean; domain: string };
   system_sender: string;
+  /** Mailboxes may receive over IMAP (MAILBOX_IMAP). Off, they receive by forwarding and sign-ins only send. */
+  mailbox_imap?: boolean;
 };
 /** Why a connection check failed and what fixes it. */
 export type MailboxCause = { code: string; title: string; fix: string; retryable: boolean };
@@ -685,9 +687,16 @@ export type Mailbox = {
   name: string;
   email: string;
   display_name: string;
+  /** How mail arrives: forwarded to forwarding_address, or fetched over IMAP (imap, or a Google or Microsoft sync). */
   inbound_kind: "forwarding" | "imap" | "google" | "microsoft";
+  /** How replies leave. google or microsoft on a forwarding mailbox is a send-only connection. */
   outbound_kind: "smtp" | "google" | "microsoft" | "system";
   forwarding_address: string;
+  /**
+   * Read-only. imap_off: the mailbox receives over IMAP on an instance where receiving
+   * over IMAP is now off, so no mail arrives until it is switched to forwarding.
+   */
+  receiving?: "ok" | "imap_off";
   config: MailboxConfig;
   team_id: string | null;
   brand_id: string;

@@ -30,6 +30,10 @@ type service struct {
 	gmailBase string // https://gmail.googleapis.com
 	graphBase string // https://graph.microsoft.com/v1.0
 
+	// mailboxIMAP: mailboxes may receive over IMAP (MAILBOX_IMAP). Off, no IMAP server
+	// is dialled and Google and Microsoft connect send-only.
+	mailboxIMAP bool
+
 	// rawSend replaces the platform transport for outbound_kind=system (tests).
 	rawSend func(ctx context.Context, from string, to []string, raw []byte) error
 }
@@ -42,6 +46,8 @@ func newService(d *deps.Deps) *service {
 		http:      &http.Client{Timeout: httpTimeout},
 		gmailBase: "https://gmail.googleapis.com",
 		graphBase: "https://graph.microsoft.com/v1.0",
+
+		mailboxIMAP: d.Cfg.MailboxIMAP,
 	}
 	s.providers = defaultProviders(d.Cfg)
 	s.detector = mailhost.NewDetector(nil, s.guard.httpClient(), mailhost.NewMemoryCache(detectCacheTTL, detectCacheMax))

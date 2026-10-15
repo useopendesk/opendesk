@@ -39,6 +39,7 @@ turnstile_site_key  = ""
 # variable MAILBOX_OAUTH so the wizard and the API agree.
 google_mailbox_oauth    = false
 microsoft_mailbox_oauth = true
+# mailbox_imap = true   # also receive over IMAP; match the Pages variable MAILBOX_IMAP
 
 # After `aws secretsmanager put-secret-value` for each:
 # optional_secrets = [

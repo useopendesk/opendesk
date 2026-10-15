@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { appleAppIds, buildConfig, helpDomain, mailboxOAuth, writeConfig } from "./write-config.mjs";
+import { appleAppIds, buildConfig, helpDomain, mailboxImap, mailboxOAuth, writeConfig } from "./write-config.mjs";
 
 test("defaults to production URLs and leaves optional keys out", () => {
   assert.deepEqual(buildConfig({}), {
@@ -125,4 +125,24 @@ test("writes helpDomain into both config files", () => {
   vm.runInNewContext(readFileSync(files[0], "utf8"), ctx);
   assert.equal(ctx.window.__OPENDESK__.helpDomain, "opendeskhelp.com");
   assert.equal(JSON.parse(readFileSync(files[1], "utf8")).helpDomain, "opendeskhelp.com");
+});
+
+test("MAILBOX_IMAP says whether the API receives mail over IMAP", () => {
+  assert.equal(buildConfig({ MAILBOX_IMAP: "false" }).mailboxImap, false);
+  assert.equal(buildConfig({ MAILBOX_IMAP: " TRUE " }).mailboxImap, true);
+  assert.equal("mailboxImap" in buildConfig({ MAILBOX_IMAP: "" }), false);
+  assert.equal("mailboxImap" in buildConfig({}), false);
+  for (const bad of ["yes", "0", "off", "1"]) {
+    assert.throws(() => buildConfig({ MAILBOX_IMAP: bad }), /MAILBOX_IMAP/, bad);
+  }
+  assert.throws(() => mailboxImap(undefined), /MAILBOX_IMAP/);
+});
+
+test("writes mailboxImap into both config files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "od-config-"));
+  const files = writeConfig(dir, { MAILBOX_IMAP: "false" });
+  const ctx = { window: {} };
+  vm.runInNewContext(readFileSync(files[0], "utf8"), ctx);
+  assert.equal(ctx.window.__OPENDESK__.mailboxImap, false);
+  assert.equal(JSON.parse(readFileSync(files[1], "utf8")).mailboxImap, false);
 });

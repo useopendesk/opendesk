@@ -20,7 +20,8 @@
 // "microsoft", "google,microsoft" or "none"; unset leaves it to the API),
 // HELP_DOMAIN (the domain help centers live under, as <slug>.<HELP_DOMAIN>, e.g.
 // "opendeskhelp.com": a lowercase hostname without a scheme; unset puts them at
-// /help/<slug> on the app's host). The URLs default to production.
+// /help/<slug> on the app's host), MAILBOX_IMAP ("true" or "false": whether the API
+// receives mail over IMAP; unset leaves it out). The URLs default to production.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -76,6 +77,14 @@ export function helpDomain(value) {
   return v;
 }
 
+// MAILBOX_IMAP: "true" or "false", as the API's own MAILBOX_IMAP is set.
+export function mailboxImap(value) {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "true") return true;
+  if (v === "false") return false;
+  throw new Error(`MAILBOX_IMAP must be true or false, got ${value}`);
+}
+
 export function buildConfig(env = process.env) {
   const cfg = {
     apiUrl: url("APP_API_URL", env.APP_API_URL || DEFAULTS.apiUrl, ["https:", "http:"]),
@@ -88,6 +97,7 @@ export function buildConfig(env = process.env) {
   cfg.selfHosted = false;
   if (env.MAILBOX_OAUTH !== undefined && env.MAILBOX_OAUTH.trim() !== "") cfg.mailboxOAuth = mailboxOAuth(env.MAILBOX_OAUTH);
   if (env.HELP_DOMAIN !== undefined && env.HELP_DOMAIN.trim() !== "") cfg.helpDomain = helpDomain(env.HELP_DOMAIN);
+  if (env.MAILBOX_IMAP !== undefined && env.MAILBOX_IMAP.trim() !== "") cfg.mailboxImap = mailboxImap(env.MAILBOX_IMAP);
   return cfg;
 }
 

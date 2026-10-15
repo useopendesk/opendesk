@@ -78,6 +78,9 @@ export type SendMessageBody = {
   mailbox_id?: string;
 };
 
+/** How a Google or Microsoft connection receives mail. */
+export type MailboxReceive = "forwarding" | "sync";
+
 export type CreateMailboxBody = {
   name: string;
   email: string;
@@ -409,7 +412,11 @@ export const api = {
     ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders">> & { bot_id?: string | null }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
-    oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string }) =>
+    /**
+     * receive: forwarding (the default) connects to send only; sync also receives over
+     * IMAP, which is 422 imap_off on an instance with IMAP receiving off.
+     */
+    oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string; receive?: MailboxReceive }) =>
       http.post<{ url: string }>(`/v1/mailboxes/oauth/${provider}/start`, b),
     connectOptions: () => http.get<T.MailboxConnectOptions>("/v1/mailboxes/connect-options"),
     detect: (email: string) => http.get<T.MailDetection>("/v1/mailboxes/detect", { query: { email } }),

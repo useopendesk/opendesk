@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { SummaryStrip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
-import { connectionLabel, MailboxIcon, MailboxStatus } from "@/components/mailboxes/kinds";
+import { connectionLabel, MailboxIcon, MailboxStatus, notReceiving } from "@/components/mailboxes/kinds";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import type { Mailbox } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
@@ -46,7 +46,7 @@ type OauthError = (typeof oauthErrorKeys)[number];
 
 // Fixed column widths so rows and the header line up.
 const COLS = {
-  kind: "hidden w-44 lg:block",
+  kind: "hidden w-52 lg:block",
   team: "hidden w-24 xl:block",
   status: "hidden w-[120px] sm:block",
   synced: "hidden w-24 text-right md:block",
@@ -65,7 +65,15 @@ export default function Mailboxes() {
 
   useEffect(() => {
     if (handled.current || (!search.connected && !search.error)) return;
+    if (search.connected && isLoading) return;
     handled.current = true;
+    const connected = search.connected ? data?.find((m) => m.id === search.connected) : undefined;
+    if (connected?.inbound_kind === "forwarding") {
+      // Connected to send only: its mail still has to be forwarded, which its page explains.
+      toast.success(t("list.connectedForward"));
+      void navigate({ to: "/settings/mailboxes/$mailboxId", params: { mailboxId: connected.id }, replace: true });
+      return;
+    }
     if (search.connected) {
       toast.success(t("list.connected"));
       setHighlight(search.connected);
@@ -73,11 +81,11 @@ export default function Mailboxes() {
     } else if (search.error)
       toast.error((oauthErrorKeys as readonly string[]).includes(search.error) ? t(`oauthErrors.${search.error as OauthError}`) : t("list.connectFailed"));
     void navigate({ to: "/settings/mailboxes", search: {}, replace: true });
-  }, [search.connected, search.error, navigate, t]);
+  }, [search.connected, search.error, navigate, t, isLoading, data]);
 
   const sorted = useMemo(() => {
-    const rank = { error: 0, active: 1, disabled: 2 } as const;
-    return [...(data ?? [])].sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    const rank = (m: Mailbox) => (m.status === "error" || notReceiving(m) ? 0 : m.status === "active" ? 1 : 2);
+    return [...(data ?? [])].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [data]);
   const teamName = (id: string | null) => (id ? teams?.find((x) => x.id === id)?.name : undefined);
 
@@ -88,7 +96,9 @@ export default function Mailboxes() {
       </SettingsPage>
     );
 
-  const count = (s: Mailbox["status"]) => sorted.filter((m) => m.status === s).length;
+  // A mailbox that no longer receives needs attention whatever its status says.
+  const count = (s: Mailbox["status"]) =>
+    sorted.filter((m) => (s === "error" ? m.status === "error" || notReceiving(m) : s === "active" ? m.status === "active" && !notReceiving(m) : m.status === s)).length;
 
   return (
     <SettingsPage title={t("list.title")} description={t("list.description")} actions={<AddMailboxButton>{t("list.add")}</AddMailboxButton>}>

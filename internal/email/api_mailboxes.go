@@ -70,6 +70,7 @@ type updateMailboxInput struct {
 		Name             *string             `json:"name,omitempty" minLength:"1" maxLength:"64"`
 		Email            *string             `json:"email,omitempty" maxLength:"254"`
 		DisplayName      *string             `json:"display_name,omitempty" maxLength:"64"`
+		InboundKind      *string             `json:"inbound_kind,omitempty" enum:"forwarding,imap,google,microsoft" doc:"forwarding drops the IMAP sign-in; imap needs its settings and password; google and microsoft connect with the OAuth start route"`
 		OutboundKind     *string             `json:"outbound_kind,omitempty" enum:"smtp,google,microsoft,system"`
 		Config           *mailboxConfigPatch `json:"config,omitempty"`
 		Password         *string             `json:"password,omitempty" maxLength:"1024" doc:"IMAP password (write-only)"`
@@ -178,6 +179,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			b := in.Body
+			if receivesIMAP(b.InboundKind) && !s.mailboxIMAP {
+				return nil, imapOff()
+			}
 			if b.InboundKind == KindGoogle || b.InboundKind == KindMicrosoft {
 				return nil, httpx.Validation("Connect " + providerLabel(b.InboundKind) + " mailboxes with POST /v1/mailboxes/oauth/" + b.InboundKind + "/start.")
 			}
@@ -266,7 +270,11 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				if err != nil {
 					return err
 				}
+				prevInbound := m.InboundKind
 				changes, resetSync := applyPatch(m, &creds, in)
+				if err := s.checkInboundChange(prevInbound, m.InboundKind); err != nil {
+					return err
+				}
 				if in.Body.BotID.Set {
 					bot, err := bots.ParseRef(ctx, tx, p.WorkspaceID, in.Body.BotID.Value)
 					if err != nil {
@@ -304,6 +312,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				}
 				reactivate := in.Body.Status != nil && *in.Body.Status == "active"
 				_, err = tx.Exec(ctx, `UPDATE mailboxes SET name = $3, email = $4, display_name = $5, outbound_kind = $6, config = $7,
+					inbound_kind = $25,
 					credentials_enc = $8, team_id = $9, signature_html = $10, auto_reply_enabled = $11, auto_reply_subject = $12,
 					auto_reply_html = $13, status = $14,
 					last_error = CASE WHEN $15 THEN '' ELSE last_error END,
@@ -317,7 +326,8 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					p.WorkspaceID, id, m.Name, m.Email, m.DisplayName, m.OutboundKind, m.Config, sealed, m.TeamID,
 					m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
 					reactivate || resetSync || contains(changes, "credentials"), resetSync,
-					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID)
+					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID,
+					m.InboundKind)
 				if err != nil {
 					return err
 				}
@@ -340,9 +350,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				if contains(changes, "ai_answers") || contains(changes, "ai_answers_mode") || contains(changes, "ai_answers_outside_hours") {
 					data["ai_answers"] = map[string]any{"enabled": m.AIAnswers, "mode": m.AIAnswersMode, "outside_hours": m.AIAnswersOutsideHours}
 				}
-				if contains(changes, "outbound_kind") || contains(changes, "config") || contains(changes, "credentials") {
+				if contains(changes, "inbound_kind") || contains(changes, "outbound_kind") || contains(changes, "config") || contains(changes, "credentials") {
 					// How the mailbox connects; never a password.
-					conn := map[string]any{"outbound_kind": m.OutboundKind, "verified": verified.checked}
+					conn := map[string]any{"inbound_kind": m.InboundKind, "outbound_kind": m.OutboundKind, "verified": verified.checked}
 					if m.InboundKind == InboundIMAP {
 						conn["imap"] = map[string]any{"host": m.Config.IMAPHost, "port": m.Config.IMAPPort, "tls": m.Config.IMAPTLS}
 					}
@@ -559,9 +569,10 @@ func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, s
 	}
 }
 
-// enqueueSync queues an immediate sync for IMAP and OAuth mailboxes.
+// enqueueSync queues an immediate sync for IMAP and OAuth mailboxes while this
+// instance receives over IMAP.
 func (s *service) enqueueSync(ctx context.Context, tx pgx.Tx, m *mailboxRow) error {
-	if m.InboundKind == InboundForwarding || m.Status == "disabled" || s.d.Jobs == nil {
+	if !receivesIMAP(m.InboundKind) || !s.mailboxIMAP || m.Status == "disabled" || s.d.Jobs == nil {
 		return nil
 	}
 	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SyncMailboxArgs{MailboxID: m.ID}, syncInsertOpts())
@@ -588,7 +599,14 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 		changes = append(changes, "email")
 	}
 	set("display_name", &m.DisplayName, b.DisplayName)
-	prevOutbound := m.OutboundKind
+	prevInbound, prevOutbound, prevProvider := m.InboundKind, m.OutboundKind, m.oauthProvider()
+	set("inbound_kind", &m.InboundKind, b.InboundKind)
+	if m.InboundKind != prevInbound {
+		resetSync = true
+		if m.InboundKind == InboundForwarding && m.Status == "error" {
+			m.Status = "active" // the error was the IMAP sync's
+		}
+	}
 	set("outbound_kind", &m.OutboundKind, b.OutboundKind)
 	set("signature_html", &m.SignatureHTML, b.SignatureHTML)
 	set("auto_reply_subject", &m.AutoReplySubject, b.AutoReplySubject)
@@ -677,6 +695,25 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 		}
 	}
 	credsChanged := false
+	if prevInbound == InboundIMAP && m.InboundKind != InboundIMAP && creds.Password != "" {
+		// The IMAP password is not kept once mail stops being read over IMAP; when it
+		// also signed in to SMTP, it stays as the SMTP password.
+		if m.OutboundKind == OutboundSMTP && creds.SMTPPassword == "" {
+			creds.SMTPPassword = creds.Password
+		}
+		creds.Password, credsChanged = "", true
+	}
+	if prevProvider != "" && m.oauthProvider() != prevProvider {
+		// Nor is a Google or Microsoft grant once neither side uses it.
+		if creds.RefreshToken != "" || creds.AccessToken != "" || creds.GraphAccessToken != "" {
+			creds.RefreshToken, creds.AccessToken, creds.Expiry = "", "", time.Time{}
+			creds.GraphAccessToken, creds.GraphExpiry = "", time.Time{}
+			credsChanged = true
+		}
+		m.Config.OAuthEmail, m.Config.OAuthGrant = "", ""
+	} else if prevProvider != "" && m.Config.OAuthGrant == "" {
+		m.Config.OAuthGrant = GrantSync // stored before grants were recorded
+	}
 	if prevOutbound == OutboundSMTP && m.OutboundKind != OutboundSMTP {
 		// The SMTP password is not kept once replies stop going through that server.
 		if creds.SMTPPassword != "" {
@@ -770,7 +807,8 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 			return httpx.Validation("Enter the SMTP password.")
 		}
 	case KindGoogle, KindMicrosoft:
-		if m.InboundKind != m.OutboundKind {
+		// Only a mailbox that holds the provider's grant sends through it.
+		if m.oauthProvider() != m.OutboundKind || creds.RefreshToken == "" {
 			return httpx.Validation("Sending through " + providerLabel(m.OutboundKind) + " needs a mailbox connected with " + providerLabel(m.OutboundKind) + ".")
 		}
 		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPTLS = "", 0, "", ""
@@ -778,6 +816,25 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPTLS = "", 0, "", ""
 	default:
 		return httpx.Validation("Unknown outbound kind.")
+	}
+	if creds.RefreshToken == "" {
+		cfg.OAuthGrant = ""
+	}
+	return nil
+}
+
+// checkInboundChange refuses a change of how a mailbox receives that a PATCH cannot
+// make: to IMAP while this instance has it off, or onto a Google or Microsoft sign-in,
+// which only the OAuth start route connects.
+func (s *service) checkInboundChange(prev, next string) error {
+	if next == prev {
+		return nil
+	}
+	if receivesIMAP(next) && !s.mailboxIMAP {
+		return imapOff()
+	}
+	if next == KindGoogle || next == KindMicrosoft {
+		return httpx.Validation("Connect " + providerLabel(next) + " mailboxes with POST /v1/mailboxes/oauth/" + next + "/start.")
 	}
 	return nil
 }

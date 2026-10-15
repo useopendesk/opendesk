@@ -3,7 +3,7 @@ title: Security controls
 description: The security invariants opendesk is built to, aligned with OWASP ASVS Level 1 and CASA Tier 1.
 ---
 
-opendesk requests restricted Google scopes for mailbox connections, so its Google OAuth client is assessed under the App Defense Alliance **CASA Tier 1** (OWASP ASVS 4.0.3 Level 1). The controls below are invariants: every change to opendesk must keep them. Because the hosted service and the self-hosted install are the same code, they hold in both.
+A self-hosted opendesk can sync Gmail mailboxes with a restricted Google scope, so opendesk is built to the App Defense Alliance **CASA Tier 1** controls (OWASP ASVS 4.0.3 Level 1). The controls below are invariants: every change to opendesk must keep them. Because the hosted service and the self-hosted install are the same code, they hold in both.
 
 ## Authentication
 
@@ -41,6 +41,7 @@ opendesk requests restricted Google scopes for mailbox connections, so its Googl
 - Mailbox passwords, OAuth tokens, webhook secrets and TOTP secrets are encrypted at rest with **AES-256-GCM**.
 - All traffic is encrypted in transit with TLS.
 - Logs never contain secrets, tokens, passwords, credentials or full connection strings. Request logs never include query strings or bodies.
+- A Google or Microsoft mailbox connection asks only for what its mode needs: sending, unless the instance syncs that mailbox over IMAP.
 - Gmail data obtained through Google APIs is used only to provide the helpdesk features the user enabled, in line with the Google API Services User Data Policy, including its Limited Use requirements.
 
 ## Accountability

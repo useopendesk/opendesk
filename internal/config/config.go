@@ -99,6 +99,11 @@ type Config struct {
 	// (autoconfig.thunderbird.net), which sends it the domain name. Default: on when
 	// billing is configured (the hosted service), off otherwise.
 	MailhostISPDB bool
+	// MailboxIMAP lets mailboxes receive over IMAP (MAILBOX_IMAP, default on): generic
+	// IMAP, and Google and Microsoft mailboxes connected to read the inbox. Off, every
+	// mailbox receives by forwarding and Google and Microsoft connect send-only; existing
+	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off.
+	MailboxIMAP bool
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -545,6 +550,7 @@ func Load() (*Config, error) {
 	c.GoogleMailboxOAuth = mailboxOAuth("GOOGLE_MAILBOX_OAUTH", c.GoogleMailboxClientID, c.GoogleMailboxClientSecret)
 	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftClientID, c.MicrosoftClientSecret)
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
+	c.MailboxIMAP = envBool("MAILBOX_IMAP", true)
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	for _, o := range strings.Split(env("CORS_ORIGINS", c.AppURL), ",") {

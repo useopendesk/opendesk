@@ -81,10 +81,11 @@ Never gate a feature on plan: plans differ only in limits (`contracts/billing.md
 
 ## Security and compliance invariants (CASA Tier 1 / OWASP ASVS L1)
 
-opendesk requests restricted Google scopes for mailbox connections, so the Google OAuth
-client is assessed under **ADA CASA Tier 1** (ASVS 4.0.3 Level 1). These are constraints on
-every change. The repo is public and self-hosted: **describe the invariant, never the gap**
-in comments, commits and docs.
+opendesk Cloud connects Google mailboxes send-only (`gmail.send`); IMAP sync, which needs the
+restricted `https://mail.google.com/` scope, is an instance option (`MAILBOX_IMAP`) for
+self-hosters with their own Google client. The invariants below follow **ADA CASA Tier 1**
+(ASVS 4.0.3 Level 1) and hold for every change. The repo is public and self-hosted:
+**describe the invariant, never the gap** in comments, commits and docs.
 
 Authentication
 - Passwords: Argon2id only (`auth.HashPassword`). `auth.CheckPassword` is the single gate

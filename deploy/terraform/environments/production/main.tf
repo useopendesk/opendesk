@@ -379,6 +379,8 @@ locals {
     # Mailbox sign-in per provider (variables.tf).
     GOOGLE_MAILBOX_OAUTH    = tostring(var.google_mailbox_oauth)
     MICROSOFT_MAILBOX_OAUTH = tostring(var.microsoft_mailbox_oauth)
+    # Receiving over IMAP (variables.tf); off, mailboxes receive by forwarding.
+    MAILBOX_IMAP = tostring(var.mailbox_imap)
 
     # The company in the footer of every platform email (variables.tf).
     EMAIL_LEGAL_ENTITY                = var.email_legal.entity

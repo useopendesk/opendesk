@@ -2,15 +2,13 @@ import type { DiagramSpec } from './types';
 
 // contracts/api.md "Email" and contracts/teams.md "Routing" and "Reply address".
 export const emailIntake: DiagramSpec = {
-  alt: 'How email becomes a ticket. Mail arrives by forwarding (the Email Worker, the built-in SMTP receiver or your own pipeline), from Google, from Microsoft or over IMAP. Intake skips loops and automatic mail, checks the sender\'s DMARC result, threads a reply to its ticket, stores each message once and finds or adds the contact. A reply is added to its ticket and never re-routed. A new conversation is routed to a team and becomes a new ticket, assigned by the team\'s method.',
+  alt: 'How email becomes a ticket. Mail arrives by forwarding (the Email Worker, the built-in SMTP receiver or your own pipeline), or, on a self-hosted instance with IMAP receiving on, by syncing a mailbox over IMAP (Google, Microsoft or any IMAP server). Intake skips loops and automatic mail, checks the sender\'s DMARC result, threads a reply to its ticket, stores each message once and finds or adds the contact. A reply is added to its ticket and never re-routed. A new conversation is routed to a team and becomes a new ticket, assigned by the team\'s method.',
   caption: 'Every way in ends at the same intake, so threading, sender checks and routing work the same for every mailbox.',
   width: 720,
   height: 276,
   boxes: [
-    { id: 'forwarding', x: 16, y: 16, w: 160, h: 64, title: 'Forwarding', sub: 'Email Worker, SMTP\nreceiver or a pipeline' },
-    { id: 'google', x: 16, y: 92, w: 160, h: 48, title: 'Google', sub: 'Gmail and Workspace' },
-    { id: 'microsoft', x: 16, y: 152, w: 160, h: 48, title: 'Microsoft', sub: 'Microsoft 365, Outlook' },
-    { id: 'imap', x: 16, y: 212, w: 160, h: 48, title: 'IMAP', sub: 'any other provider' },
+    { id: 'forwarding', x: 16, y: 16, w: 160, h: 132, title: 'Forwarding', sub: 'every mailbox: Email\nWorker, SMTP receiver\nor a pipeline' },
+    { id: 'imap', x: 16, y: 164, w: 160, h: 96, title: 'IMAP sync', sub: 'self-hosted option:\nGoogle, Microsoft or\nany IMAP server' },
     {
       id: 'intake',
       x: 208,
@@ -27,10 +25,8 @@ export const emailIntake: DiagramSpec = {
     { id: 'ticket', x: 480, y: 204, w: 224, h: 56, title: 'New ticket', sub: 'assigned by the team\'s method', tone: 'ink' },
   ],
   edges: [
-    { from: 'forwarding', to: 'intake', toAt: 32 / 244 },
-    { from: 'google', to: 'intake', toAt: 100 / 244 },
-    { from: 'microsoft', to: 'intake', toAt: 160 / 244 },
-    { from: 'imap', to: 'intake', toAt: 220 / 244 },
+    { from: 'forwarding', to: 'intake', toAt: 66 / 244 },
+    { from: 'imap', to: 'intake', toAt: 196 / 244 },
     { from: 'intake', to: 'existing', fromAt: 32 / 244, label: 'a reply' },
     { from: 'intake', to: 'routing', fromAt: 122 / 244, label: 'new' },
     { from: 'routing', to: 'ticket' },

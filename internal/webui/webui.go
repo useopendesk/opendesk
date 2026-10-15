@@ -26,6 +26,9 @@ type RuntimeConfig struct {
 	// "microsoft"); the API's connect options must allow them too. Always written by
 	// this binary, so an empty list hides both.
 	MailboxOAuth []string `json:"mailboxOAuth"`
+	// MailboxIMAP: mailboxes may receive over IMAP (MAILBOX_IMAP). Off, the app offers
+	// forwarding to receive and Google and Microsoft to send only. Always written.
+	MailboxIMAP bool `json:"mailboxImap"`
 	// HelpDomain puts help centers at <slug>.<helpDomain> (HELP_DOMAIN); empty: at
 	// /help/<slug> on this host (contracts/teams.md "Help center addresses").
 	HelpDomain string `json:"helpDomain,omitempty"`

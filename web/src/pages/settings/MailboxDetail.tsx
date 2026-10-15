@@ -2,11 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { InBrowserNote } from "@/components/desktop/InBrowser";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
-import { RefreshCw, Zap } from "lucide-react";
+import { Forward, RefreshCw, TriangleAlert, Zap } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Row, Section, SettingsPage } from "@/components/layout";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { EmptyState } from "@/components/ui/empty";
 import { Field, TextInput } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,20 +18,20 @@ import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { SaveBar } from "@/components/settings/SaveBar";
-import { connectionLabel, MailboxIcon, MailboxStatus, TestResults } from "@/components/mailboxes/kinds";
+import { connectionLabel, GoogleGlyph, MailboxIcon, MailboxStatus, MicrosoftGlyph, notReceiving, TestResults } from "@/components/mailboxes/kinds";
 import { ForwardingInstructions } from "@/components/mailboxes/AddMailboxWizard";
 import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
-import { CauseCallout, connectFailure, useConnectOptions, useMailDetection, type ConnectFailure } from "@/components/mailboxes/connect";
+import { CauseCallout, connectFailure, imapOn, sendProviders, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
 import { AliasesField, FromNameField, fromNameProblem, MailboxBrandField, MailboxTeamField } from "@/components/mailboxes/addressing";
 import { useBrands } from "@/components/settings2/teams";
 import { ContactFormsField } from "@/components/settings/ContactFormsField";
-import { api } from "@/lib/api/endpoints";
+import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Mailbox, MailboxConfig, MailboxTest, TlsMode } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
-import { isMicrosoftHost, mailboxHost, offersNoTls } from "@/lib/mailHost";
+import { isMicrosoftHost, mailboxHost, offersNoTls, receivesOverImap, sendOnly, signedInProvider } from "@/lib/mailHost";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 
@@ -64,6 +66,8 @@ const pick = (c: MailboxConfig, keys: readonly ServerKey[]): MailboxConfig => Ob
 
 /** Replies go out through opendesk or the mailbox's own SMTP server (not a provider sign-in). */
 const ownSending = (k: Mailbox["outbound_kind"]) => k === "system" || k === "smtp";
+
+const providerName = (p: Provider) => (p === "google" ? "Google" : "Microsoft");
 
 function toDraft(m: Mailbox): Draft {
   return {
@@ -143,6 +147,8 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const navigate = useNavigate();
   const { multi: multiBrand } = useBrands();
   const { setStatus, remove, testDialog } = useMailboxActions();
+  const confirm = useConfirm();
+  const reduce = useReducedMotion();
   const base = useMemo(() => toDraft(mailbox), [mailbox]);
   const [draft, setDraft] = useState<Draft>(base);
   const [test, setTest] = useState<MailboxTest | null>(null);
@@ -164,7 +170,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setCfg = <K extends keyof MailboxConfig>(k: K, v: MailboxConfig[K]) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
 
-  const imap = mailbox.inbound_kind === "imap";
+  // IMAP server settings are edited only where the instance still receives over IMAP.
+  const { data: opts } = useConnectOptions();
+  const imapReceiving = imapOn(opts);
+  const imap = mailbox.inbound_kind === "imap" && imapReceiving && mailbox.receiving !== "imap_off";
   const smtp = draft.outbound_kind === "smtp";
   const imapChanged = imap && (!sameKeys(draft.config, base.config, IMAP_KEYS) || !!draft.password);
   const sendChanged = draft.outbound_kind !== base.outbound_kind || (smtp && (!sameKeys(draft.config, base.config, SMTP_KEYS) || !!draft.smtp_password));
@@ -173,11 +182,11 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const sendingValid = !smtp || (!!draft.config.smtp_host?.trim() && validPort(draft.config.smtp_port ?? 0) && (!smtpPasswordNeeded || !!draft.smtp_password));
 
   // Where replies would go through the mailbox's own server: the address's SMTP server, when detection knows it.
-  const { data: opts } = useConnectOptions();
-  const detection = useMailDetection(ownSending(mailbox.outbound_kind) && mailbox.outbound_kind !== "smtp" ? mailbox.email : null).data;
-  const chooseSending = (kind: "system" | "smtp") =>
+  const forwarding = mailbox.inbound_kind === "forwarding";
+  const detection = useMailDetection(forwarding || mailbox.outbound_kind === "system" ? mailbox.email : null).data;
+  const chooseSending = (kind: Mailbox["outbound_kind"]) =>
     setDraft((d) => {
-      if (kind === "system") return { ...d, outbound_kind: kind, smtp_password: "", config: { ...d.config, ...pick(base.config, SMTP_KEYS) } };
+      if (kind !== "smtp") return { ...d, outbound_kind: kind, smtp_password: "", config: { ...d.config, ...pick(base.config, SMTP_KEYS) } };
       if (base.outbound_kind === "smtp") return { ...d, outbound_kind: kind, config: { ...d.config, ...pick(base.config, SMTP_KEYS) } };
       const found = detection?.settings?.smtp;
       return {
@@ -234,23 +243,39 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     },
   });
 
-  // The desktop app reconnects in the browser (contracts/native.md).
-  const [openedInBrowser, setOpenedInBrowser] = useState(false);
-  const reconnect = useMutation({
-    mutationFn: async () => {
+  // Signing in to Google or Microsoft: reconnecting, or connecting a forwarding mailbox to send.
+  // The desktop app does it in the browser (contracts/native.md).
+  const provider = signedInProvider(mailbox);
+  const [openedInBrowser, setOpenedInBrowser] = useState<Provider | null>(null);
+  const signIn = useMutation({
+    mutationFn: async (p: Provider) => {
       if (isDesktop) {
         openInBrowser(location.pathname);
         return null;
       }
-      return api.mailboxes.oauthStart(mailbox.inbound_kind === "microsoft" ? "microsoft" : "google", {
-        mailbox_id: mailbox.id,
-        name: mailbox.name,
-        email: mailbox.email,
-      });
+      // A sync keeps syncing where the instance still receives over IMAP; anything else connects to send only.
+      const receive: MailboxReceive = mailbox.inbound_kind === p && imapReceiving ? "sync" : "forwarding";
+      return api.mailboxes.oauthStart(p, { mailbox_id: mailbox.id, name: mailbox.name, email: mailbox.email, receive });
     },
-    onSuccess: (r) => (r ? window.location.assign(r.url) : setOpenedInBrowser(true)),
+    onSuccess: (r, p) => (r ? window.location.assign(r.url) : setOpenedInBrowser(p)),
     onError: (e) => toast.error(e),
   });
+
+  // Receiving by forwarding instead of over IMAP. Replies keep going out the way they do.
+  const toForwarding = useMutation({
+    mutationFn: () => api.mailboxes.update(mailbox.id, { inbound_kind: "forwarding" }),
+    onSuccess: (m) => {
+      upsertInList(qc, qk.mailboxes, m);
+      toast.success(t("receiving.switched"));
+      // The forwarding steps take the place of the warning: bring them into view.
+      requestAnimationFrame(() => document.getElementById("mb-forwarding")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" }));
+    },
+  });
+  const switchToForwarding = () =>
+    confirm.show(t("receiving.confirmBody", { email: mailbox.email }), () => toForwarding.mutateAsync(), {
+      title: t("receiving.confirmTitle"),
+      confirmLabel: t("receiving.switch"),
+    });
 
   const runTest = async () => {
     setTesting(true);
@@ -277,7 +302,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     }
   };
 
-  const oauth = mailbox.inbound_kind === "google" || mailbox.inbound_kind === "microsoft";
+  const off = notReceiving(mailbox);
+  const sendingOnly = sendOnly(mailbox);
+  // A forwarding mailbox sending through opendesk or SMTP can connect its provider to send as itself.
+  const connectable = forwarding && !sendingOnly ? sendProviders(detection, opts) : [];
   const microsoft = isMicrosoftHost(mailboxHost(mailbox));
   const refusedOut = refused && !refused.outbound.ok;
 
@@ -304,7 +332,19 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           </Button>
         }
       >
-        {mailbox.status === "error" && mailbox.last_error && (
+        {off && (
+          <div className="-mx-4 flex animate-rise-in items-start gap-2.5 border-b border-tone-amber-line bg-tone-amber-soft px-4 py-3.5 motion-reduce:animate-none" role="status">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-tone-amber" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-medium">{t("receiving.offTitle")}</div>
+              <p className="mt-0.5 text-[12.5px] leading-5 text-fg-2">{t("receiving.offBody", { email: mailbox.email })}</p>
+              <Button variant="primary" size="sm" className="mt-3" icon={<Forward className="size-3.5" />} loading={toForwarding.isPending} onClick={switchToForwarding}>
+                {t("receiving.switch")}
+              </Button>
+            </div>
+          </div>
+        )}
+        {!off && mailbox.status === "error" && mailbox.last_error && (
           <div className="-mx-4 border-b border-tone-red-line bg-tone-red-soft px-4 py-3" role="alert">
             <div className="flex items-start gap-2.5 text-[12.5px]">
               <span className="mt-1.5 size-1.5 shrink-0 animate-pulse-soft rounded-full bg-tone-red-solid motion-reduce:animate-none" />
@@ -320,22 +360,34 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             <TestResults result={test} />
           </div>
         )}
-        <Row label={t("detail.lastSynced")} description={mailbox.inbound_kind === "forwarding" ? t("detail.forwardingInstant") : undefined}>
+        <Row label={t("detail.lastSynced")} description={forwarding ? t("detail.forwardingInstant") : undefined}>
           <span className="mono text-xs text-fg-3">{mailbox.last_synced_at ? relLong(mailbox.last_synced_at) : t("detail.never")}</span>
         </Row>
-        {oauth && (
-          <Row label={t("detail.account")} description={t("detail.accountHint", { provider: t(`kind.${mailbox.inbound_kind}`) })}>
+        {provider && !sendingOnly && (
+          <Row
+            label={t("detail.account")}
+            description={
+              imapReceiving
+                ? t("detail.accountHint", { provider: t(`kind.${provider}`) })
+                : t("detail.accountHintNoImap", { provider: providerName(provider) })
+            }
+          >
             <span className="mono text-xs text-fg-2">{mailbox.config.oauth_email ?? mailbox.email}</span>
-            <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={reconnect.isPending} onClick={() => reconnect.mutate()}>
+            <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={signIn.isPending && signIn.variables === provider} onClick={() => signIn.mutate(provider)}>
               {t("detail.reconnect")}
             </Button>
           </Row>
         )}
-        {oauth && openedInBrowser && (
-          <InBrowserNote name={mailbox.inbound_kind === "microsoft" ? "Microsoft" : "Google"} opened className="my-3" />
+        {provider && !sendingOnly && openedInBrowser && <InBrowserNote name={providerName(provider)} opened className="my-3" />}
+        {receivesOverImap(mailbox) && !off && (
+          <Row label={t("receiving.title")} description={t("receiving.imapHint")}>
+            <Button size="sm" icon={<Forward className="size-3.5" />} loading={toForwarding.isPending} onClick={switchToForwarding}>
+              {t("receiving.switch")}
+            </Button>
+          </Row>
         )}
-        {mailbox.inbound_kind === "forwarding" && (
-          <div className="py-3.5">
+        {forwarding && (
+          <div id="mb-forwarding" className="scroll-mt-24 py-3.5">
             <ForwardingInstructions mailbox={mailbox} />
           </div>
         )}
@@ -364,7 +416,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         )}
       </Section>
 
-      {ownSending(mailbox.outbound_kind) && (
+      {(ownSending(mailbox.outbound_kind) || sendingOnly) && (
         <Section
           title={t("detail.send.title")}
           description={t("detail.send.hint")}
@@ -393,18 +445,43 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             description={
               smtp
                 ? t("connect.sendSmtpBody", { email: mailbox.email })
-                : t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: mailbox.email })
+                : draft.outbound_kind === "google" || draft.outbound_kind === "microsoft"
+                  ? t("detail.send.providerBody", { provider: providerName(draft.outbound_kind), email: mailbox.email })
+                  : t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: mailbox.email })
             }
           >
             <Segmented
-              value={smtp ? "smtp" : "system"}
+              value={draft.outbound_kind}
               onChange={chooseSending}
               options={[
-                { value: "system", label: t("connect.sendSystem") },
-                { value: "smtp", label: t("connect.sendSmtp") },
+                ...(sendingOnly && provider ? [{ value: provider, label: t("detail.send.with", { provider: providerName(provider) }) }] : []),
+                { value: "system" as const, label: t("connect.sendSystem") },
+                { value: "smtp" as const, label: t("connect.sendSmtp") },
               ]}
             />
           </Row>
+          {sendingOnly && provider && draft.outbound_kind === provider && (
+            <Row label={t("detail.account")} description={t("detail.accountSendOnly", { provider: providerName(provider) })}>
+              <span className="mono text-xs text-fg-2">{mailbox.config.oauth_email ?? mailbox.email}</span>
+              <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={signIn.isPending} onClick={() => signIn.mutate(provider)}>
+                {t("detail.reconnect")}
+              </Button>
+            </Row>
+          )}
+          {!smtp &&
+            connectable.map((p) => (
+              <Row key={p} label={t("detail.send.connectTitle", { provider: providerName(p) })} description={t("detail.send.connectHint", { email: mailbox.email, provider: providerName(p) })}>
+                <Button
+                  size="sm"
+                  icon={p === "google" ? <GoogleGlyph className="size-3.5" /> : <MicrosoftGlyph className="size-3.5" />}
+                  loading={signIn.isPending && signIn.variables === p}
+                  onClick={() => signIn.mutate(p)}
+                >
+                  {t("detail.send.connect", { provider: providerName(p) })}
+                </Button>
+              </Row>
+            ))}
+          {(sendingOnly || connectable.length > 0) && openedInBrowser && <InBrowserNote name={providerName(openedInBrowser)} opened className="my-3" />}
           {smtp && (
             <div className="flex flex-col gap-3 py-4">
               {microsoft && <p className="text-xs leading-[18px] text-tone-amber">{t("connect.sendSmtpMicrosoft")}</p>}

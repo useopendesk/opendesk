@@ -1,6 +1,6 @@
 ---
 title: Gmail and Google Workspace
-description: Connect a Gmail or Google Workspace mailbox to opendesk with an app password in three steps, or with Google sign-in when your instance offers it.
+description: Forward a Gmail or Google Workspace mailbox to opendesk and send replies from your address with Google sign-in or Gmail's SMTP server, or connect it over IMAP on your own instance.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -10,9 +10,100 @@ import Callout from '../../../../components/Callout.astro';
 import Legend from '../../../../components/Legend.astro';
 import Fold from '../../../../components/Fold.astro';
 
-A Gmail or Google Workspace mailbox connects with an **app password**: a 16-letter password Google makes for one app. opendesk uses it to read new mail over IMAP and to send replies through Gmail's SMTP server, so replies come from your address and land in your Sent folder. It takes about two minutes.
+A Gmail or Google Workspace mailbox receives by [forwarding](/guides/mailboxes/forwarding/#gmail): Gmail passes incoming mail on to a private opendesk address. Replies go out from your address in one of three ways:
 
-When your instance offers it, you can connect with **Google sign-in** instead (see [Google sign-in](#google-sign-in-when-your-instance-offers-it)). [Forwarding](/guides/mailboxes/forwarding/) works too, and needs no password at all.
+- **Google**, when your instance offers it. You approve sending once, and replies go out through Gmail and land in your Sent folder. opendesk gets permission to send mail as you and nothing else: it cannot read, change or delete your mail. See [Send with Google](#send-with-google).
+- **Gmail's SMTP server**, with an app password. See [Send through Gmail's SMTP server](#send-through-gmails-smtp-server).
+- **Through opendesk**, with your mailbox's name, and no setup.
+
+On your own instance, a Gmail mailbox can also be read directly over IMAP. See [On your own instance: receive over IMAP](#on-your-own-instance-receive-over-imap).
+
+## Send with Google
+
+<Steps>
+<Step title="Add the mailbox and pick forwarding">
+
+In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. opendesk shows **Gmail** or **Google Workspace**. Keep **Forward mail to opendesk** selected and click **Continue**.
+
+</Step>
+<Step title="Send replies with Google">
+
+Under **Replies are sent**, keep Google selected and create the mailbox. Sign in with the Google account for the address. Google asks you to let opendesk send email on your behalf. Approve, and Google sends you back to opendesk with the mailbox connected.
+
+</Step>
+<Step title="Forward the mail">
+
+opendesk shows the private address to forward to. In Gmail, add it as a forwarding address, confirm it with the code that arrives in opendesk as a ticket, and turn forwarding on. [Forwarding](/guides/mailboxes/forwarding/#gmail) has the steps. For a Google Group or a shared address, use a [routing rule](/guides/mailboxes/forwarding/#google-workspace) instead.
+
+</Step>
+<Step title="Send a test email">
+
+Write to the address from another account. It shows up in **Unassigned** as a new ticket, and your reply goes out through Gmail.
+
+</Step>
+</Steps>
+
+### What opendesk asks for
+
+| Scope | Why |
+| --- | --- |
+| `openid`, `email` | Identify which Google account was connected. |
+| `https://www.googleapis.com/auth/gmail.send` | Send the replies your team writes, from your address. |
+
+This is send-only access. opendesk cannot read, search, change or delete the mail in your mailbox with it. opendesk requests offline access, so sending keeps working after you close the browser. The refresh token is encrypted at rest with AES-GCM.
+
+### How opendesk uses Gmail data
+
+opendesk's use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Gmail is used only to send the replies your team writes and, on a self-hosted instance that syncs the mailbox, to turn its mail into tickets in your workspace. It is not used for advertising, not sold, and not read by people except as needed for security, to comply with the law, or with your permission for support.
+
+### Self-hosting
+
+On your own instance, Google sign-in for mailboxes needs your own Google OAuth client (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`), and `GOOGLE_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
+
+## Send through Gmail's SMTP server
+
+When Google sign-in isn't offered, replies can still come from your address through Gmail's SMTP server, signed in with an **app password**: a 16-letter password Google makes for one app. The account needs **2-Step Verification** on, since Google only offers app passwords on accounts that have it.
+
+<Steps>
+<Step title="Turn on 2-Step Verification">
+
+Open [myaccount.google.com/security](https://myaccount.google.com/security) while signed in to the address. Find **2-Step Verification** under **How you sign in to Google** and turn it on with a phone prompt, an authenticator app or a text message. If it is already on, continue.
+
+</Step>
+<Step title="Create an app password">
+
+Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Google may ask you to sign in again. Type **opendesk** as the app name and choose **Create**, then copy the 16 letters it shows.
+
+No app passwords page? 2-Step Verification is still off, or your Google Workspace admin has turned app passwords off. See [Google Workspace notes](#google-workspace-notes).
+
+</Step>
+<Step title="Add the mailbox with your SMTP server">
+
+Add the mailbox, choose **Forward mail to opendesk**, then, under **Replies are sent**, **Through your SMTP server**. Enter `smtp.gmail.com`, port `465` with TLS, your full address as the username and the app password. opendesk signs in before it saves anything.
+
+</Step>
+<Step title="Forward the mail">
+
+Turn on forwarding in Gmail to the address opendesk shows, as in [Forwarding](/guides/mailboxes/forwarding/#gmail).
+
+</Step>
+</Steps>
+
+<Callout>
+
+- Use the address you sign in to Google with, not an alias or a group address.
+- The app password is encrypted at rest and never shown again. Deleting it in your Google Account stops sending until you enter a new one.
+- Accounts in Google's Advanced Protection Program can't have app passwords. Send with Google, or through opendesk.
+
+</Callout>
+
+## On your own instance: receive over IMAP
+
+A self-hosted instance with IMAP receiving on (`MAILBOX_IMAP`, the default) can also read a Gmail mailbox directly instead of forwarding it, in two ways. opendesk Cloud receives by forwarding.
+
+### With an app password
+
+The wizard's **App password** way signs in to Gmail's IMAP and SMTP servers with an app password, so opendesk reads new mail over IMAP and sends replies through Gmail. It takes about two minutes.
 
 <Screenshot src="/guides/mailboxes/gmail-connect" alt="The last step of the Gmail app password walkthrough: the App password field ringed as 1, the IMAP and SMTP servers set for you ringed as 2, and the Connect button ringed as 3" />
 
@@ -24,34 +115,24 @@ When your instance offers it, you can connect with **Google sign-in** instead (s
 
 </Legend>
 
-## Connect with an app password
-
-You need the address to be a Google account you can sign in to, with **2-Step Verification** on. Google only offers app passwords on accounts that have it on.
-
 <Steps>
 <Step title="Add the mailbox and pick App password">
 
-In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and the address. opendesk shows **Gmail** or **Google Workspace** and selects **App password**. Click **Continue**.
-
-<Screenshot src="/guides/mailboxes/pick-method" alt="The ways to connect a Google Workspace address: App password, recommended and selected, ringed as 1, Choose another way ringed as 2, and Continue ringed as 3" />
+Add the mailbox and type the address. opendesk shows **Gmail** or **Google Workspace**. Click **Choose another way**, pick **App password** and click **Continue**.
 
 </Step>
 <Step title="Turn on 2-Step Verification">
 
-Click **Open Google security settings**, or open [myaccount.google.com/security](https://myaccount.google.com/security) while signed in to this address. Find **2-Step Verification** under **How you sign in to Google** and turn it on with a phone prompt, an authenticator app or a text message. Then click **It's on, continue**.
+Click **Open Google security settings** and turn on **2-Step Verification**, as above. Then click **It's on, continue**.
 
 <Screenshot src="/guides/mailboxes/gmail-2sv" alt="Step 1 of 3, Turn on 2-Step Verification: the Open Google security settings button ringed as 1, and It's on, continue ringed as 2" />
-
-If it is already on, just continue.
 
 </Step>
 <Step title="Create an app password">
 
-Click **Open app passwords**, or open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Google may ask you to sign in again. Type **opendesk** as the app name and choose **Create**, then copy the 16 letters it shows. Click **I have it, continue**.
+Click **Open app passwords**, create one named **opendesk** and copy the 16 letters. Click **I have it, continue**.
 
 <Screenshot src="/guides/mailboxes/gmail-app-password" alt="Step 2 of 3, Create an app password: the Open app passwords button ringed as 1, and I have it, continue ringed as 2" />
-
-No app passwords page? 2-Step Verification is still off, or your Google Workspace admin has turned app passwords off. See [Google Workspace notes](#google-workspace-notes).
 
 </Step>
 <Step title="Paste it and connect">
@@ -63,13 +144,9 @@ Paste the app password and click **Connect**. opendesk signs in to Gmail's IMAP 
 </Step>
 </Steps>
 
-<Callout>
+### With Google sign-in
 
-- Use the address you sign in to Google with, not an alias or a group address. For a Google Group, use [forwarding](/guides/mailboxes/forwarding/).
-- The app password is encrypted at rest and never shown again. Deleting it in your Google Account disconnects the mailbox.
-- Accounts in Google's Advanced Protection Program can't have app passwords. Use forwarding for them.
-
-</Callout>
+With IMAP receiving on, **Choose another way** also lists **Sign in with Google**, which syncs the mailbox over IMAP instead of using forwarding. This asks Google for full access to the mailbox (`https://mail.google.com/`), so opendesk can read new mail over IMAP and send through Gmail. That scope is restricted: your Google OAuth app needs Google's verification for it, as described in [Google and Microsoft OAuth](/self-hosting/oauth-apps/#google). Choose forwarding to keep the connection send-only.
 
 <Fold>
 
@@ -81,67 +158,32 @@ Nothing is saved when Google refuses. The wizard shows the cause and the fix, wi
 | --- | --- |
 | **Google needs an app password** (Google says "Application-specific password required") | The regular account password was used. Create an app password as above and paste it. |
 | **Google did not accept the app password** | Create a new app password while signed in to this exact address, not an alias or a group, and use it. A deleted app password stops working at once. |
-| **IMAP is turned off in Google** | On Google Workspace, an admin allows IMAP access (see [Google Workspace notes](#google-workspace-notes)). |
+| **IMAP is turned off in Google** | Only when the mailbox receives over IMAP. On Google Workspace, an admin allows IMAP access (see [Google Workspace notes](#google-workspace-notes)). |
 | **Google wants a browser sign-in first** | Google blocked the sign-in as unusual. Sign in to the mailbox once at [mail.google.com](https://mail.google.com), confirm any security prompt, then try again. |
 
 A note under the field also warns when what you pasted doesn't look like a 16-letter app password.
 
 </Fold>
 
-## Google sign-in, when your instance offers it
-
-When your instance offers Google sign-in for mailboxes, **Sign in with Google** is the recommended way for Gmail and Google Workspace. You approve access in Google once, and no password is stored. On opendesk Cloud, Gmail and Google Workspace connect with an app password.
-
-<Steps>
-<Step title="Pick Sign in with Google">
-
-Add the mailbox, type the address, keep **Sign in with Google** selected and click **Continue**.
-
-<Screenshot src="/guides/mailboxes/google-signin" alt="The ways to connect a Google Workspace address with Sign in with Google recommended and selected, ringed as 1, and Continue ringed as 2" />
-
-</Step>
-<Step title="Approve access in Google">
-
-Click **Continue with Google** and sign in with the Google account for the address. Review the permissions and approve. Google sends you back to opendesk with the mailbox connected.
-
-</Step>
-</Steps>
-
-### What opendesk asks for
-
-| Scope | Why |
-| --- | --- |
-| `openid`, `email` | Identify which Google account was connected. |
-| `https://mail.google.com/` | Read incoming mail over IMAP and send replies through Gmail. |
-
-opendesk requests offline access, so it keeps working after you close the browser. The refresh token is encrypted at rest with AES-GCM.
-
-### How opendesk uses Gmail data
-
-opendesk's use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Mail is read only to turn it into tickets in your workspace and to send the replies your team writes. It is not used for advertising, not sold, and not read by people except as needed for security, to comply with the law, or with your permission for support.
-
-### Self-hosting
-
-On your own instance, Google sign-in for mailboxes needs your own Google OAuth client (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`), and `GOOGLE_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
-
 ## Google Workspace notes
 
-On Google Workspace, an admin controls whether people can connect a mailbox. In the [Google Admin console](https://admin.google.com):
+On Google Workspace, an admin controls what people can set up. In the [Google Admin console](https://admin.google.com):
 
-- **2-Step Verification**: under **Security**, **Authentication**, **2-step verification**, allow users to turn it on. An organization that requires security keys only, or enrols people in Advanced Protection, has no app passwords: connect those mailboxes by forwarding.
+- **Automatic forwarding**: under **Apps**, **Google Workspace**, **Gmail**, **End User Access**, allow automatic forwarding for the organizational unit of the support account. See [Forwarding](/guides/mailboxes/forwarding/#allow-automatic-forwarding-admin).
+- **Shared addresses**: a Google Group or a routing address can't sign in or forward on its own. Route its mail with a rule instead, as in [Forwarding](/guides/mailboxes/forwarding/#google-workspace).
+- **Sending with Google**: if your organization restricts third-party apps, an admin trusts opendesk under **Security**, **Access and data control**, **API controls**, **Manage third-party app access**.
+- **2-Step Verification**: under **Security**, **Authentication**, **2-step verification**, allow users to turn it on. An organization that requires security keys only, or enrols people in Advanced Protection, has no app passwords.
 - **App passwords**: if the app passwords page is missing for a user with 2-Step Verification on, app passwords are turned off for your organization. Ask your admin to allow them for the support account.
-- **IMAP**: under **Apps**, **Google Workspace**, **Gmail**, **End User Access**, turn on **POP and IMAP access** for the organizational unit of the support account.
-- **Google sign-in**: if your organization restricts third-party apps, an admin trusts opendesk under **Security**, **Access and data control**, **API controls**, **Manage third-party app access**.
-- **Shared addresses**: a Google Group or a routing address can't sign in. Forward its mail with a routing rule instead, as in [Forwarding](/guides/mailboxes/forwarding/#google-workspace).
+- **IMAP**, only for a mailbox that receives over IMAP: under **Apps**, **Google Workspace**, **Gmail**, **End User Access**, turn on **POP and IMAP access** for the organizational unit of the support account.
 
 ## Disconnect
 
-Remove the mailbox in opendesk, under **Mailboxes**. Then, in your Google Account:
+Remove the mailbox in opendesk, under **Mailboxes**, and turn off forwarding in Gmail so mail stops going to the old address. Then, in your Google Account:
 
+- **Google**: remove opendesk under **Security**, **Your connections to third-party apps and services**.
 - **App password**: delete it at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). opendesk can no longer sign in.
-- **Google sign-in**: remove opendesk under **Security**, **Your connections to third-party apps and services**.
 
-If you delete the app password or remove access in Google first, the mailbox shows **Needs attention** until you connect it again.
+If you remove access or delete the app password in Google first, the mailbox shows **Needs attention** until you connect it again.
 
 ## Related
 

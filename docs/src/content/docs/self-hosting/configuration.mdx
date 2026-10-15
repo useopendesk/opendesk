@@ -165,7 +165,7 @@ See [Email setup](/self-hosting/email/).
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Google sign-in, and Gmail mailbox connections unless they have their own client. |
-| `GOOGLE_MAILBOX_CLIENT_ID`, `GOOGLE_MAILBOX_CLIENT_SECRET` | the sign-in client | A separate Google client for Gmail mailbox connections, for example in its own Google Cloud project for the restricted Gmail scope's review. |
+| `GOOGLE_MAILBOX_CLIENT_ID`, `GOOGLE_MAILBOX_CLIENT_SECRET` | the sign-in client | A separate Google client for Gmail mailbox connections, for example in its own Google Cloud project for the Gmail scopes' review. |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | | Microsoft sign-in and Outlook mailbox connections. |
 | `MICROSOFT_TENANT` | `common` | `common`, `organizations`, `consumers` or your tenant id. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | | GitHub sign-in. |
@@ -176,17 +176,27 @@ See [Google and Microsoft OAuth](/self-hosting/oauth-apps/). A sign-in provider 
 
 ### Mailbox sign-in
 
-Connecting a mailbox with Google or Microsoft sign-in has its own switch per provider. It is on when that provider's client is configured, and it does not change how people sign in to opendesk.
+Connecting a mailbox with Google or Microsoft sign-in has its own switch per provider. It is on when that provider's client is configured, and it does not change how people sign in to opendesk. The sign-in sends replies from the mailbox; with [receiving over IMAP](#receiving-over-imap) on, it can also sync the mailbox.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GOOGLE_MAILBOX_OAUTH` | `true` when `GOOGLE_CLIENT_ID` is set | `false` stops offering Google sign-in for new mailboxes. Mailboxes already connected with it keep syncing and can reconnect. |
+| `GOOGLE_MAILBOX_OAUTH` | `true` when `GOOGLE_CLIENT_ID` is set | `false` stops offering Google sign-in for new mailboxes. Mailboxes already connected with it keep working and can reconnect. |
 | `MICROSOFT_MAILBOX_OAUTH` | `true` when `MICROSOFT_CLIENT_ID` is set | The same for Microsoft. |
 | `MAILHOST_ISPDB` | `false` (`true` with billing configured) | When detecting a mailbox's servers, also look up unknown domains in Thunderbird's public ISPDB (`autoconfig.thunderbird.net`). The domain's own autoconfig, MX and SRV records are always used. |
 
-With a provider's mailbox sign-in off, or its client not configured, the mailbox wizard offers the other ways in: Gmail and Google Workspace connect with an app password over IMAP and SMTP, any provider can forward its mail into opendesk, and other providers connect over IMAP and SMTP with the settings the wizard detects. A Microsoft mailbox without sign-in uses forwarding, and replies go out through opendesk or the mailbox's SMTP server when the tenant allows SMTP AUTH.
+With a provider's mailbox sign-in off, or its client not configured, the mailbox wizard offers the other ways: any provider forwards its mail into opendesk, and replies go out through the mailbox's SMTP server (for Gmail and Google Workspace with an app password, for Microsoft 365 when the tenant allows SMTP AUTH) or through opendesk. With receiving over IMAP on, other providers, and Gmail and Google Workspace with an app password, can also connect over IMAP and SMTP with the settings the wizard detects.
 
 A value that is not `true` or `false` (or `1` and `0`) turns the switch off. The API answers a new connection with `403 mailbox_oauth_disabled`, and the web app reads the same list from its runtime config (`mailboxOAuth`).
+
+### Receiving over IMAP
+
+Every mailbox can receive by forwarding. A self-hosted instance can also let mailboxes receive over IMAP: generic IMAP mailboxes, and Google and Microsoft mailboxes connected to sync. opendesk Cloud runs with it off, so its mailboxes receive by forwarding and Google and Microsoft connect send-only.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MAILBOX_IMAP` | `true` | `false` turns receiving over IMAP off. The wizard then offers forwarding to receive, and Google and Microsoft sign-in to send only; SMTP sending stays available. Mailboxes that read over IMAP are kept with their tickets, but no longer polled: their page shows that receiving is off until they switch to forwarding. |
+
+With it off, the API refuses an IMAP, Google or Microsoft `inbound_kind` and a Google or Microsoft connection that syncs, with `422 imap_off`, and the web app reads the same setting from its runtime config (`mailboxImap`). Syncing Gmail needs the restricted `https://mail.google.com/` scope, and Microsoft the `IMAP.AccessAsUser.All` permission, on your OAuth apps; see [Google and Microsoft OAuth](/self-hosting/oauth-apps/).
 
 ## Profile pictures
 

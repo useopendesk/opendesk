@@ -25,7 +25,7 @@ Everything else on this page is optional. When you have these, run the [install 
 
 - A **domain** (or subdomain) with an `A`/`AAAA` record pointing at the server, such as `desk.example.com`.
 - Ports **80** and **443** open, so Caddy can obtain and renew a certificate and serve HTTPS.
-- Outbound access to your mail providers (IMAP 993, SMTP 465 or 587) and to Google and Microsoft if you connect those mailboxes.
+- Outbound access to your mail providers (SMTP 465 or 587, and IMAP 993 for mailboxes that receive over IMAP) and to Google and Microsoft if you connect those mailboxes.
 - Optional: port **25** open and an `MX` record if you want to receive forwarded mail directly on this server. See [Email setup](/self-hosting/email/).
 
 ## Optional services
@@ -33,7 +33,7 @@ Everything else on this page is optional. When you have these, run the [install 
 | For | You need |
 | --- | --- |
 | Password resets, invitations, verification email | An SMTP server, or Amazon SES. See [Email setup](/self-hosting/email/). |
-| One-click Google or Microsoft mailboxes and sign-in | Your own OAuth apps. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/). |
+| Sending from Google or Microsoft mailboxes, and sign-in | Your own OAuth apps. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/). |
 | Attachments outside the server | S3, Cloudflare R2 or MinIO. See [Storage](/self-hosting/storage/). |
 | Bot protection on sign-in | A Cloudflare Turnstile site key and secret. |
 | A managed database | Any Postgres, including Neon. See [Postgres and Neon](/self-hosting/postgres/). |

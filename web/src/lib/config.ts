@@ -15,6 +15,11 @@ export type RuntimeConfig = {
    */
   mailboxOAuth: MailboxOAuthProvider[] | null;
   /**
+   * Whether mailboxes may receive by signing in over IMAP (generic IMAP, or syncing a
+   * Google or Microsoft mailbox). Off, every mailbox receives by forwarding.
+   */
+  mailboxImap: boolean;
+  /**
    * The domain help centers live under, as https://<slug>.<helpDomain>
    * (HELP_DOMAIN), or "" when they are at /help/<slug> on the app's host.
    */
@@ -48,6 +53,22 @@ export function parseMailboxOAuth(raw: unknown, env: string | undefined): Mailbo
   return src.split(",").map((s) => s.trim()).filter(valid);
 }
 
+/**
+ * mailboxImap: a boolean (or "true"/"false") from config.js, else VITE_MAILBOX_IMAP,
+ * else on (development and self-hosted instances).
+ */
+export function parseMailboxImap(raw: unknown, env: string | undefined): boolean {
+  const read = (v: unknown): boolean | null => {
+    if (typeof v === "boolean") return v;
+    if (typeof v !== "string") return null;
+    const x = v.trim().toLowerCase();
+    if (x === "true" || x === "1" || x === "on") return true;
+    if (x === "false" || x === "0" || x === "off") return false;
+    return null;
+  };
+  return read(raw) ?? read(env) ?? true;
+}
+
 /** helpDomain: a bare hostname, lowercase, without a scheme or trailing dot; anything else is "". */
 export function parseHelpDomain(raw: string): string {
   const v = raw.trim().toLowerCase().replace(/\.$/, "");
@@ -75,6 +96,7 @@ export function readConfig(): RuntimeConfig {
     turnstileSiteKey: pick("turnstileSiteKey", env.VITE_TURNSTILE_SITE_KEY),
     selfHosted: selfHostedRaw === true || selfHostedRaw === "true" || env.VITE_SELF_HOSTED === "1",
     mailboxOAuth: parseMailboxOAuth(typeof window !== "undefined" ? window.__OPENDESK__?.mailboxOAuth : undefined, env.VITE_MAILBOX_OAUTH),
+    mailboxImap: parseMailboxImap(typeof window !== "undefined" ? window.__OPENDESK__?.mailboxImap : undefined, env.VITE_MAILBOX_IMAP),
     helpDomain: parseHelpDomain(pick("helpDomain", env.VITE_HELP_DOMAIN)),
   };
 }

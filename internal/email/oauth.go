@@ -35,11 +35,14 @@ type oauthProvider struct {
 	authURL      string
 	tokenURL     string
 	userinfoURL  string // Google OIDC userinfo; Microsoft reads Graph /me instead
-	// authScopes are consented at /authorize (Microsoft accepts several resources here).
+	// authScopes are consented at /authorize for a sync grant (Microsoft accepts several
+	// resources here); sendScopes for a send grant.
 	authScopes []string
-	// codeScope is sent with the code redemption; Microsoft's token endpoint takes
-	// scopes for exactly one resource.
-	codeScope string
+	sendScopes []string
+	// codeScope is sent with the code redemption of a sync grant, sendCodeScope with
+	// that of a send grant; Microsoft's token endpoint takes scopes for exactly one resource.
+	codeScope     string
+	sendCodeScope string
 	// graphScope is requested by exchanging the refresh token (Microsoft only).
 	graphScope string
 	authParams []oauth2.AuthCodeOption
@@ -48,6 +51,22 @@ type oauthProvider struct {
 
 func (p *oauthProvider) configured() bool {
 	return p != nil && p.clientID != "" && p.clientSecret != ""
+}
+
+// scopes are the scopes consented at /authorize for a grant.
+func (p *oauthProvider) scopes(grant string) []string {
+	if grant == GrantSend {
+		return p.sendScopes
+	}
+	return p.authScopes
+}
+
+// codeScopeFor is the scope sent with the code redemption for a grant.
+func (p *oauthProvider) codeScopeFor(grant string) string {
+	if grant == GrantSend {
+		return p.sendCodeScope
+	}
+	return p.codeScope
 }
 
 // scopeFor is the scope sent when refreshing a token for a resource ("" = unchanged).
@@ -63,6 +82,7 @@ func (p *oauthProvider) scopeFor(resource string) string {
 
 const (
 	googleIMAPScope = "https://mail.google.com/"
+	googleSendScope = "https://www.googleapis.com/auth/gmail.send"
 	msIMAPScope     = "https://outlook.office.com/IMAP.AccessAsUser.All"
 	msSendScope     = "https://graph.microsoft.com/Mail.Send"
 	msUserScope     = "https://graph.microsoft.com/User.Read"
@@ -80,6 +100,7 @@ func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
 			authURL: "https://accounts.google.com/o/oauth2/v2/auth", tokenURL: "https://oauth2.googleapis.com/token",
 			userinfoURL: "https://openidconnect.googleapis.com/v1/userinfo",
 			authScopes:  []string{"openid", "email", googleIMAPScope},
+			sendScopes:  []string{"openid", "email", googleSendScope},
 			authParams: []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"),
 				oauth2.SetAuthURLParam("include_granted_scopes", "false")},
 			imapHost: "imap.gmail.com",
@@ -87,11 +108,13 @@ func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
 		KindMicrosoft: {
 			name: KindMicrosoft, clientID: cfg.MicrosoftClientID, clientSecret: cfg.MicrosoftClientSecret,
 			authURL: ms + "/authorize", tokenURL: ms + "/token",
-			authScopes: []string{"openid", "email", "offline_access", msIMAPScope, msSendScope, msUserScope},
-			codeScope:  "openid email offline_access " + msIMAPScope,
-			graphScope: "offline_access " + msSendScope + " " + msUserScope,
-			authParams: []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("prompt", "select_account")},
-			imapHost:   "outlook.office365.com",
+			authScopes:    []string{"openid", "email", "offline_access", msIMAPScope, msSendScope, msUserScope},
+			sendScopes:    []string{"openid", "email", "offline_access", msSendScope, msUserScope},
+			codeScope:     "openid email offline_access " + msIMAPScope,
+			sendCodeScope: "openid email offline_access " + msSendScope + " " + msUserScope,
+			graphScope:    "offline_access " + msSendScope + " " + msUserScope,
+			authParams:    []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("prompt", "select_account")},
+			imapHost:      "outlook.office365.com",
 		},
 	}
 }
@@ -100,10 +123,10 @@ func (s *service) redirectURI(provider string) string {
 	return strings.TrimRight(s.d.Cfg.APIURL, "/") + "/v1/mailboxes/oauth/" + provider + "/callback"
 }
 
-// authCodeURL builds the provider URL with state and a PKCE S256 challenge.
-func (s *service) authCodeURL(p *oauthProvider, state, verifier, loginHint string) string {
+// authCodeURL builds the provider URL for a grant with state and a PKCE S256 challenge.
+func (s *service) authCodeURL(p *oauthProvider, grant, state, verifier, loginHint string) string {
 	c := &oauth2.Config{ClientID: p.clientID, Endpoint: oauth2.Endpoint{AuthURL: p.authURL, TokenURL: p.tokenURL},
-		RedirectURL: s.redirectURI(p.name), Scopes: p.authScopes}
+		RedirectURL: s.redirectURI(p.name), Scopes: p.scopes(grant)}
 	opts := append([]oauth2.AuthCodeOption{}, p.authParams...)
 	opts = append(opts, oauth2.S256ChallengeOption(verifier))
 	if loginHint != "" {
@@ -184,12 +207,12 @@ func expiryOf(tr *tokenResponse, now time.Time) time.Time {
 	return now.Add(time.Duration(tr.ExpiresIn) * time.Second)
 }
 
-// exchangeCode redeems an authorization code with the PKCE verifier.
-func (s *service) exchangeCode(ctx context.Context, p *oauthProvider, code, verifier string) (*tokenResponse, error) {
+// exchangeCode redeems an authorization code for a grant with the PKCE verifier.
+func (s *service) exchangeCode(ctx context.Context, p *oauthProvider, grant, code, verifier string) (*tokenResponse, error) {
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {s.redirectURI(p.name)},
 		"code_verifier": {verifier}}
-	if p.codeScope != "" {
-		form.Set("scope", p.codeScope)
+	if scope := p.codeScopeFor(grant); scope != "" {
+		form.Set("scope", scope)
 	}
 	return s.tokenRequest(ctx, p, form)
 }
@@ -205,15 +228,16 @@ func (s *service) refresh(ctx context.Context, p *oauthProvider, refreshToken, s
 // accessToken returns a valid access token for the mailbox and resource, refreshing
 // (and storing a rotated refresh token) under a row lock so concurrent jobs refresh once.
 func (s *service) accessToken(ctx context.Context, m *mailboxRow, resource string) (string, error) {
-	p := s.providers[m.InboundKind]
-	if m.OutboundKind == KindGoogle || m.OutboundKind == KindMicrosoft {
-		p = s.providers[m.OutboundKind]
-	}
+	provider := m.oauthProvider()
+	p := s.providers[provider]
 	if !p.configured() {
-		return "", fmt.Errorf("%s sign-in is not configured on this instance", providerLabel(m.InboundKind))
+		return "", fmt.Errorf("%s sign-in is not configured on this instance", providerLabel(provider))
 	}
 	if p.name == KindGoogle {
 		resource = resIMAP
+	} else if resource == resIMAP && m.sendOnly() {
+		// A send grant holds no IMAP consent to refresh.
+		return "", errors.New("the provider connection can only send. Reconnect the mailbox to read its inbox")
 	}
 	c, err := s.openCreds(m)
 	if err != nil {

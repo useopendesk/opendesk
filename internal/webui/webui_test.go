@@ -11,7 +11,7 @@ import (
 // TestConfigJSON: /config.json is the JSON twin of /config.js, never cached.
 func TestConfigJSON(t *testing.T) {
 	rc := RuntimeConfig{APIURL: "https://desk.example.com", GatewayURL: "wss://desk.example.com/socket", SelfHosted: true,
-		MailboxOAuth: []string{"microsoft"}}
+		MailboxOAuth: []string{"microsoft"}, MailboxIMAP: true}
 	h := Handler(rc, "default-src 'self'")
 
 	w := httptest.NewRecorder()
@@ -43,5 +43,9 @@ func TestMailboxOAuthKey(t *testing.T) {
 	list, ok := raw["mailboxOAuth"].([]any)
 	if !ok || len(list) != 0 {
 		t.Fatalf("mailboxOAuth = %#v, want []", raw["mailboxOAuth"])
+	}
+	// mailboxImap is always written too, so false is said rather than left out.
+	if v, ok := raw["mailboxImap"].(bool); !ok || v {
+		t.Fatalf("mailboxImap = %#v, want false", raw["mailboxImap"])
 	}
 }

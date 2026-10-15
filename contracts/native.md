@@ -20,7 +20,8 @@ builds) and reads the runtime config the web app already uses:
 
 ```jsonc
 { "apiUrl": "https://api.opendesk.sh", "gatewayUrl": "wss://gateway.opendesk.sh/socket",
-  "selfHosted": false, "turnstileSiteKey": "…"?, "mailboxOAuth": ["microsoft"]?, "helpDomain": "opendeskhelp.com"? }
+  "selfHosted": false, "turnstileSiteKey": "…"?, "mailboxOAuth": ["microsoft"]?, "mailboxImap": false?,
+  "helpDomain": "opendeskhelp.com"? }
 ```
 
 `helpDomain` is `HELP_DOMAIN` (`HELP_DOMAIN` on Pages too): help centers are at
@@ -32,6 +33,13 @@ flow offers. The self-hosted binary always writes it (from `GOOGLE_MAILBOX_OAUTH
 `MICROSOFT_MAILBOX_OAUTH`); on Pages it is written only when `MAILBOX_OAUTH` is set. When it is
 absent, a client follows `GET /v1/mailboxes/connect-options` alone; when present, a client
 offers a provider's sign-in only if both agree. User sign-in is not affected.
+
+`mailboxImap` is `MAILBOX_IMAP` (`MAILBOX_IMAP` on Pages too): whether mailboxes may receive over
+IMAP. When false, the add-mailbox flow receives by forwarding only and connects Google and
+Microsoft to send replies (`receive: "forwarding"`), and a mailbox that still receives over IMAP
+shows `receiving: "imap_off"` (contracts/api.md "Email"). The self-hosted binary always writes it;
+on Pages it is written only when `MAILBOX_IMAP` is set, and when it is absent a client follows
+`mailbox_imap` from `GET /v1/mailboxes/connect-options`.
 
 It is the JSON twin of `/config.js` (same keys, same values): the self-hosted binary serves
 both (`internal/webui`), and on Cloudflare Pages `write-config.mjs` writes both. Cloud's app
