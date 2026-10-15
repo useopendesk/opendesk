@@ -1,7 +1,8 @@
 # opendesk production: api.opendesk.sh and gateway.opendesk.sh on ECS Fargate
 # behind one ALB proxied by Cloudflare; PlanetScale Postgres over AWS
 # PrivateLink; NATS on ECS; S3 attachments; SES platform mail; Cloudflare Pages for the site,
-# docs and app; Cloudflare Email Routing for forwarding addresses.
+# docs and app; Cloudflare Email Routing for forwarding addresses; the help center zone
+# (<slug>.opendeskhelp.com and custom domains through Cloudflare for SaaS).
 #
 # See deploy/README.md for the architecture and the first-time runbook.
 
@@ -15,11 +16,23 @@ data "cloudflare_zone" "this" {
   }
 }
 
+data "cloudflare_zone" "help" {
+  count = var.help_domain != "" && var.help_zone_id == null ? 1 : 0
+
+  filter = {
+    name = var.help_domain
+  }
+}
+
 locals {
   env     = "production"
   cluster = "${var.name}-${local.env}"
   account = data.aws_caller_identity.current.account_id
   zone_id = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : data.cloudflare_zone.this[0].id
+
+  # Help centers (contracts/teams.md "Help center addresses"): off with help_domain = "".
+  help         = var.help_domain != ""
+  help_zone_id = !local.help ? null : var.help_zone_id != null ? var.help_zone_id : data.cloudflare_zone.help[0].id
 
   host = {
     site    = var.domain
@@ -269,6 +282,18 @@ module "cloudflare" {
   }
 }
 
+# The help center zone: DNS for the help worker, the custom hostname fallback
+# origin, no-mail records and zone settings. The worker and its routes are
+# deployed by wrangler (deploy.yml).
+module "cloudflare_help" {
+  source = "../../modules/cloudflare-help"
+  count  = local.help ? 1 : 0
+
+  zone_id              = local.help_zone_id
+  help_domain          = var.help_domain
+  manage_zone_settings = var.manage_zone_settings
+}
+
 # ── Compute ───────────────────────────────────────────────────────────────
 
 resource "aws_ecs_cluster" "this" {
@@ -360,7 +385,16 @@ locals {
     EMAIL_LEGAL_COMPANY_NUMBER        = var.email_legal.company_number
     EMAIL_LEGAL_PLACE_OF_REGISTRATION = var.email_legal.place_of_registration
     EMAIL_LEGAL_ADDRESS               = var.email_legal.address
-    }, contains(var.optional_secrets, "ANTHROPIC_API_KEY") ? {
+    }, local.help ? {
+    # Help centers at https://<slug>.<help_domain>, behind the help worker
+    # (HELP_PROXY_SECRET); custom domains CNAME to custom.<help_domain>.
+    HELP_DOMAIN       = var.help_domain
+    HELP_CNAME_TARGET = "custom.${var.help_domain}"
+    } : {}, local.help && contains(var.optional_secrets, "CLOUDFLARE_SAAS_TOKEN") ? {
+    # Custom domains become Cloudflare for SaaS custom hostnames; the zone id
+    # needs the token beside it.
+    CLOUDFLARE_SAAS_ZONE_ID = local.help_zone_id
+    } : {}, contains(var.optional_secrets, "ANTHROPIC_API_KEY") ? {
     AI_PROVIDER   = "anthropic"
     AI_MODEL      = var.ai_model
     AI_FAST_MODEL = var.ai_fast_model
@@ -374,11 +408,14 @@ locals {
     PUSH_RELAY_SERVE = tostring(var.push_relay_serve)
   } : {})
 
-  optional_secrets = { for k in var.optional_secrets : k => module.secrets.arns[k] }
+  # CLOUDFLARE_SAAS_TOKEN goes only with its zone (CLOUDFLARE_SAAS_ZONE_ID above).
+  optional_secrets = {
+    for k in var.optional_secrets : k => module.secrets.arns[k] if k != "CLOUDFLARE_SAAS_TOKEN" || local.help
+  }
 
   app_secrets = merge(
     {
-      for k in ["AUTH_SECRET", "CREDENTIALS_KEY", "INBOUND_SECRET", "NATS_TOKEN", "DATABASE_URL", "DATABASE_URL_DIRECT"] :
+      for k in ["AUTH_SECRET", "CREDENTIALS_KEY", "HELP_PROXY_SECRET", "INBOUND_SECRET", "NATS_TOKEN", "DATABASE_URL", "DATABASE_URL_DIRECT"] :
       k => module.secrets.arns[k]
     },
     local.optional_secrets,

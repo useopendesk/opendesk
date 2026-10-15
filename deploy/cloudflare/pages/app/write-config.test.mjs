@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { appleAppIds, buildConfig, mailboxOAuth, writeConfig } from "./write-config.mjs";
+import { appleAppIds, buildConfig, helpDomain, mailboxOAuth, writeConfig } from "./write-config.mjs";
 
 test("defaults to production URLs and leaves optional keys out", () => {
   assert.deepEqual(buildConfig({}), {
@@ -101,4 +101,28 @@ test("MAILBOX_OAUTH lists the providers whose mailbox sign-in is offered", () =>
   assert.equal("mailboxOAuth" in buildConfig({}), false);
   assert.deepEqual(mailboxOAuth(","), []);
   assert.throws(() => buildConfig({ MAILBOX_OAUTH: "google,yahoo" }), /MAILBOX_OAUTH/);
+});
+
+test("HELP_DOMAIN is the domain help centers live under", () => {
+  assert.equal(buildConfig({ HELP_DOMAIN: "opendeskhelp.com" }).helpDomain, "opendeskhelp.com");
+  assert.equal(buildConfig({ HELP_DOMAIN: " help.example.co.uk. " }).helpDomain, "help.example.co.uk");
+  assert.equal("helpDomain" in buildConfig({ HELP_DOMAIN: "" }), false);
+  assert.equal("helpDomain" in buildConfig({ HELP_DOMAIN: "  " }), false);
+  assert.equal("helpDomain" in buildConfig({}), false);
+});
+
+test("HELP_DOMAIN must be a lowercase hostname without a scheme", () => {
+  for (const bad of ["https://opendeskhelp.com", "OpendeskHelp.com", "opendeskhelp.com/help", "opendeskhelp.com:443", "localhost", "-x.com", "a..com", "*.opendeskhelp.com"]) {
+    assert.throws(() => buildConfig({ HELP_DOMAIN: bad }), /HELP_DOMAIN/, bad);
+  }
+  assert.throws(() => helpDomain(undefined), /HELP_DOMAIN/);
+});
+
+test("writes helpDomain into both config files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "od-config-"));
+  const files = writeConfig(dir, { HELP_DOMAIN: "opendeskhelp.com" });
+  const ctx = { window: {} };
+  vm.runInNewContext(readFileSync(files[0], "utf8"), ctx);
+  assert.equal(ctx.window.__OPENDESK__.helpDomain, "opendeskhelp.com");
+  assert.equal(JSON.parse(readFileSync(files[1], "utf8")).helpDomain, "opendeskhelp.com");
 });

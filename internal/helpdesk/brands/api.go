@@ -20,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/images"
+	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
 type helpCenterIn struct {
@@ -48,9 +49,9 @@ type brandOut struct{ Body Brand }
 
 // Register adds the brand routes and publishes brand.updated when a brand image changes.
 func Register(d *deps.Deps, api huma.API, _ chi.Router) {
-	appURL := d.Cfg.AppURL
+	cfg := d.Cfg
 	images.SetHooks(images.Hooks{Brand: func(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) error {
-		return Publish(ctx, tx, appURL, wid, id, "brand.updated")
+		return Publish(ctx, tx, cfg, wid, id, "brand.updated")
 	}})
 	h := &handler{d: d}
 	h.register(api)
@@ -63,7 +64,7 @@ func op(id, method, path, summary string, status int) huma.Operation {
 }
 
 func (h *handler) load(ctx context.Context, q db.Querier, wid, id uuid.UUID) (Brand, error) {
-	b, err := Load(ctx, q, h.d.Cfg.AppURL, wid, id)
+	b, err := Load(ctx, q, h.d.Cfg, wid, id)
 	if db.IsNotFound(err) {
 		return b, httpx.NotFound("Brand")
 	}
@@ -88,7 +89,7 @@ func (h *handler) register(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			list, err := List(ctx, h.d.DB.Pool, h.d.Cfg.AppURL, p.WorkspaceID)
+			list, err := List(ctx, h.d.DB.Pool, h.d.Cfg, p.WorkspaceID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -169,7 +170,7 @@ func (h *handler) register(api huma.API) {
 					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, p.WorkspaceID, name, slug, color, locale, enabled, title, pos); err != nil {
 					return nameTaken(err)
 				}
-				if b, err = Load(ctx, tx, h.d.Cfg.AppURL, p.WorkspaceID, id); err != nil {
+				if b, err = Load(ctx, tx, h.d.Cfg, p.WorkspaceID, id); err != nil {
 					return err
 				}
 				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "brand.created", "brand", &id, map[string]any{"name": name, "slug": slug}); err != nil {
@@ -299,7 +300,7 @@ func (h *handler) register(api huma.API) {
 						return err
 					}
 				}
-				if b, err = Load(ctx, tx, h.d.Cfg.AppURL, p.WorkspaceID, id); err != nil {
+				if b, err = Load(ctx, tx, h.d.Cfg, p.WorkspaceID, id); err != nil {
 					return err
 				}
 				if len(changed) == 0 {
@@ -389,12 +390,12 @@ func (h *handler) register(api huma.API) {
 						return err
 					}
 					if old != uuid.Nil {
-						if err := Publish(ctx, tx, h.d.Cfg.AppURL, p.WorkspaceID, old, "brand.updated"); err != nil {
+						if err := Publish(ctx, tx, h.d.Cfg, p.WorkspaceID, old, "brand.updated"); err != nil {
 							return err
 						}
 					}
 				}
-				if b, err = Load(ctx, tx, h.d.Cfg.AppURL, p.WorkspaceID, id); err != nil {
+				if b, err = Load(ctx, tx, h.d.Cfg, p.WorkspaceID, id); err != nil {
 					return err
 				}
 				if isDefault {
@@ -545,6 +546,16 @@ func (h *handler) delete(ctx context.Context, tx pgx.Tx, p *auth.Principal, id u
 	}
 	for _, g := range widgets {
 		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "widget.deleted", Data: map[string]any{"widget_id": g}}); err != nil {
+			return err
+		}
+	}
+	var provider *string
+	if err := tx.QueryRow(ctx, `SELECT provider_id FROM help_domains WHERE workspace_id = $1 AND brand_id = $2`, wid, id).Scan(&provider); err != nil && !db.IsNotFound(err) {
+		return err
+	}
+	if provider != nil {
+		// Its custom domain's certificate is released (contracts/teams.md "Help center addresses").
+		if _, err := h.d.Jobs.InsertTx(ctx, tx, jobs.HelpDomainReleaseArgs{ProviderID: *provider}, nil); err != nil {
 			return err
 		}
 	}

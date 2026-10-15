@@ -229,6 +229,10 @@ func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUI
 	if err != nil {
 		return nil, err
 	}
+	hosts, err := s.helpHosts(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
 	var out []kbSource
 	idx := map[uuid.UUID]int{}
 	for _, h := range hits {
@@ -246,7 +250,7 @@ func (s *Service) semanticKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUI
 			continue
 		}
 		idx[h.id] = len(out)
-		out = append(out, kbSource{ArticleID: h.id.String(), Title: h.title, URL: s.articleURL(h.brandSlug, h.slug), Passage: h.passage, Score: h.sim})
+		out = append(out, kbSource{ArticleID: h.id.String(), Title: h.title, URL: s.articleURL(hosts, h.brandSlug, h.slug), Passage: h.passage, Score: h.sim})
 	}
 	return out, nil
 }
@@ -255,6 +259,10 @@ func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUID, sl
 	words := keywords(query)
 	if len(words) == 0 {
 		return nil, nil
+	}
+	hosts, err := s.helpHosts(ctx, wid)
+	if err != nil {
+		return nil, err
 	}
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.title, a.slug, COALESCE(eb.slug, $5), a.excerpt, a.body_html
 		FROM kb_articles a`+kbBrandJoin+`
@@ -283,7 +291,7 @@ func (s *Service) ftsKB(ctx context.Context, wid uuid.UUID, brand *uuid.UUID, sl
 		}
 		hits := keywordHits(words, title+" "+excerpt+" "+text)
 		cov := coverage(words, title+" "+excerpt+" "+text, capWords)
-		cands = append(cands, cand{kbSource{ArticleID: id.String(), Title: title, URL: s.articleURL(brandSlug, slug),
+		cands = append(cands, cand{kbSource{ArticleID: id.String(), Title: title, URL: s.articleURL(hosts, brandSlug, slug),
 			Passage: bestPassage(text, words, passageChars), Score: min(cov, 1)}, cov, hits})
 	}
 	rows.Close()

@@ -26,6 +26,9 @@ type RuntimeConfig struct {
 	// "microsoft"); the API's connect options must allow them too. Always written by
 	// this binary, so an empty list hides both.
 	MailboxOAuth []string `json:"mailboxOAuth"`
+	// HelpDomain puts help centers at <slug>.<helpDomain> (HELP_DOMAIN); empty: at
+	// /help/<slug> on this host (contracts/teams.md "Help center addresses").
+	HelpDomain string `json:"helpDomain,omitempty"`
 }
 
 // Handler serves static assets, /config.js, /config.json, and index.html for client routes.

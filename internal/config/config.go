@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -115,6 +116,18 @@ type Config struct {
 	// PushRelayServe serves /v1/push/relay/* for other instances (needs an APNs key).
 	PushRelayServe bool
 
+	// Help center addresses (contracts/teams.md "Help center addresses"). HelpDomain puts
+	// each brand's help center at <slug>.<HelpDomain> (HELP_DOMAIN, e.g. opendeskhelp.com);
+	// without it a help center is at HelpPathBase()/help/<slug>. HelpCNAMETarget is what custom
+	// domains point at. HelpProxySecret is shared with the edge proxy in front of help
+	// centers, which names the host it was asked for. CloudflareSaaS* add custom domains to
+	// a Cloudflare for SaaS zone; without them the instance's own proxy issues certificates.
+	HelpDomain           string
+	HelpCNAMETarget      string
+	HelpProxySecret      string
+	CloudflareSaaSZoneID string
+	CloudflareSaaSToken  string
+
 	// LogoDevToken turns on logo.dev as the first source of company logos (sends the
 	// company's domain to logo.dev).
 	LogoDevToken string
@@ -217,6 +230,33 @@ func (c *Config) MailboxOAuthProviders() []string {
 		out = append(out, "microsoft")
 	}
 	return out
+}
+
+// HelpCenterURL is a brand's default help center address: https://<slug>.<HELP_DOMAIN>
+// (the scheme of APP_URL), else HelpPathBase()/help/<slug>.
+func (c *Config) HelpCenterURL(slug string) string {
+	if c.HelpDomain != "" {
+		scheme := "https"
+		if strings.HasPrefix(c.AppURL, "http://") {
+			scheme = "http"
+		}
+		return scheme + "://" + slug + "." + c.HelpDomain
+	}
+	return c.HelpPathBase() + "/help/" + slug
+}
+
+// HelpPathBase is where /help/<slug> is served without HELP_DOMAIN: APP_URL when this
+// binary serves the web app, else API_URL.
+func (c *Config) HelpPathBase() string {
+	if c.ServeWeb || c.APIURL == "" {
+		return strings.TrimRight(c.AppURL, "/")
+	}
+	return strings.TrimRight(c.APIURL, "/")
+}
+
+// CloudflareSaaS reports whether custom help center domains are Cloudflare custom hostnames.
+func (c *Config) CloudflareSaaS() bool {
+	return c.CloudflareSaaSZoneID != "" && c.CloudflareSaaSToken != ""
 }
 
 // BillingEnabled reports whether plans, limits and the AI balance are enforced.
@@ -559,6 +599,9 @@ func Load() (*Config, error) {
 			return nil, errors.New("PUSH_RELAY_URL must be an https origin, e.g. https://api.opendesk.sh")
 		}
 	}
+	if err := c.loadHelp(); err != nil {
+		return nil, err
+	}
 	c.EmailLegal = EmailLegal{Entity: env("EMAIL_LEGAL_ENTITY", ""), Number: env("EMAIL_LEGAL_COMPANY_NUMBER", ""),
 		Place: env("EMAIL_LEGAL_PLACE_OF_REGISTRATION", ""), Address: env("EMAIL_LEGAL_ADDRESS", "")}
 	if c.NotifyEmail, err = loadNotifyEmail(c.BillingEnabled()); err != nil {
@@ -569,6 +612,38 @@ func Load() (*Config, error) {
 	}
 	return c, nil
 }
+
+// loadHelp reads the help center address settings.
+func (c *Config) loadHelp() error {
+	c.HelpDomain = strings.TrimSuffix(strings.ToLower(env("HELP_DOMAIN", "")), ".")
+	c.HelpProxySecret = os.Getenv("HELP_PROXY_SECRET")
+	c.CloudflareSaaSZoneID = env("CLOUDFLARE_SAAS_ZONE_ID", "")
+	c.CloudflareSaaSToken = os.Getenv("CLOUDFLARE_SAAS_TOKEN")
+	if c.HelpDomain != "" && !hostnameRe.MatchString(c.HelpDomain) {
+		return fmt.Errorf("HELP_DOMAIN must be a domain name such as help.example.com, got %q", c.HelpDomain)
+	}
+	if c.HelpProxySecret != "" && len(c.HelpProxySecret) < MinAuthSecretLength {
+		return fmt.Errorf("HELP_PROXY_SECRET must be at least %d bytes", MinAuthSecretLength)
+	}
+	if (c.CloudflareSaaSZoneID == "") != (c.CloudflareSaaSToken == "") {
+		return errors.New("CLOUDFLARE_SAAS_ZONE_ID and CLOUDFLARE_SAAS_TOKEN are required together")
+	}
+	target := strings.TrimSuffix(strings.ToLower(env("HELP_CNAME_TARGET", "")), ".")
+	if target == "" {
+		if c.CloudflareSaaS() && c.HelpDomain != "" {
+			target = "custom." + c.HelpDomain
+		} else if u, err := url.Parse(c.AppURL); err == nil {
+			target = strings.ToLower(u.Hostname())
+		}
+	}
+	if c.CloudflareSaaS() && !hostnameRe.MatchString(target) {
+		return errors.New("HELP_CNAME_TARGET (or HELP_DOMAIN) is required with Cloudflare for SaaS")
+	}
+	c.HelpCNAMETarget = target
+	return nil
+}
+
+var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // mailboxOAuth reads a mailbox sign-in switch: off without the provider's client,
 // on when unset, else the value; anything that is not a boolean turns it off.

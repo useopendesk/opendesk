@@ -236,6 +236,11 @@ export const api = {
       http.put<T.Brand>(`/v1/brands/${id}/images/${slot}`, imageForm(file)),
     removeImage: (id: string, slot: "logo" | "help_center_logo" | "help_center_favicon") =>
       http.del<T.Brand>(`/v1/brands/${id}/images/${slot}`),
+    /** Sets the help center's custom domain and checks it right away (it can take a few seconds). */
+    setHelpDomain: (id: string, hostname: string) => http.put<T.Brand>(`/v1/brands/${id}/help-domain`, { hostname }),
+    /** Checks the custom domain now; 6 a minute per brand. */
+    checkHelpDomain: (id: string) => http.post<T.Brand>(`/v1/brands/${id}/help-domain/check`),
+    removeHelpDomain: (id: string) => http.del(`/v1/brands/${id}/help-domain`),
   },
   widgets: {
     ...crud<T.Widget, WidgetBody>("/v1/widgets"),
@@ -508,10 +513,6 @@ export const api = {
     },
   },
   public: {
-    help: (slug: string) => http.get<T.PublicHelpHome>(`/v1/public/help/${slug}`, pub),
-    collection: (slug: string, c: string) => http.get<T.PublicCollection>(`/v1/public/help/${slug}/collections/${c}`, pub),
-    article: (slug: string, a: string) => http.get<T.KbArticle>(`/v1/public/help/${slug}/articles/${a}`, pub),
-    search: (slug: string, q: string) => http.get<T.KbArticle[]>(`/v1/public/help/${slug}/search`, { ...pub, query: { q } }),
     csat: (token: string) =>
       http.get<T.CsatSurvey>(`/v1/public/csat/${token}`, pub),
     submitCsat: (token: string, b: { score: number; comment?: string }) => http.post<void>(`/v1/public/csat/${token}`, b, pub),

@@ -88,7 +88,7 @@ func testDeps(t testing.TB) *deps.Deps {
 			depsErr = err
 			return
 		}
-		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test",
+		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test", ServeWeb: true,
 			AuthSecret: testSecret, InboundDomain: "in.test", InboundSecret: "test", MailFrom: "opendesk <notifications@opendesk.test>",
 			MailDriver: "log", GoogleClientID: "gid", GoogleClientSecret: "gsecret", GoogleMailboxClientID: "gid", GoogleMailboxClientSecret: "gsecret", MicrosoftClientID: "mid",
 			MicrosoftClientSecret: "msecret", MicrosoftTenant: "common", GoogleMailboxOAuth: true, MicrosoftMailboxOAuth: true, InboundAuthservIDs: []string{"mx.in.test", "mx.test"}}

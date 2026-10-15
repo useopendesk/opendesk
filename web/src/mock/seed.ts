@@ -473,7 +473,7 @@ function seedMargin(): WsData {
     is_default: false,
     color,
     locale: "en",
-    help_center: { enabled: true, title: `${name} Help`, url: "" },
+    help_center: { enabled: true, title: `${name} Help`, url: "", default_url: "", domain: null },
     // The logo is the mark on the brand colour; the help center has its own, the mark on white.
     images: { logo: brandLogo(slug, color), help_center_logo: brandLogo(slug, color, true), help_center_favicon: brandLogo(slug, color) },
     default_mailbox_id: null,
@@ -485,7 +485,7 @@ function seedMargin(): WsData {
     ...extra,
   });
   const marginBrand = brand("Margin", "margin", "#4f46e5", 400, { is_default: true });
-  const pressBrand = brand("Pressroom", "pressroom", "#e11d48", 70, { position: 1, help_center: { enabled: false, title: "Pressroom Help Desk", url: "" } });
+  const pressBrand = brand("Pressroom", "pressroom", "#e11d48", 70, { position: 1, help_center: { enabled: false, title: "Pressroom Help Desk", url: "", default_url: "", domain: null } });
   ws.brands = [marginBrand, pressBrand];
   for (const m of ws.mailboxes) m.brand_id = m === pressroom ? pressBrand.id : marginBrand.id;
 

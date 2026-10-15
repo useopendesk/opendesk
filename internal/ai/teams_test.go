@@ -16,8 +16,15 @@ import (
 
 func TestArticleURLUsesTheBrandHelpCenter(t *testing.T) {
 	s := &Service{d: &deps.Deps{Cfg: &config.Config{AppURL: "https://app.test"}}}
-	if got := s.articleURL("acme-eu", "reset-password"); got != "https://app.test/help/acme-eu/a/reset-password" {
+	if got := s.articleURL(nil, "acme-eu", "reset-password"); got != "https://app.test/help/acme-eu/a/reset-password" {
 		t.Fatalf("article url %q", got)
+	}
+	s.d.Cfg.HelpDomain = "help.test"
+	if got := s.articleURL(nil, "acme-eu", "reset-password"); got != "https://acme-eu.help.test/a/reset-password" {
+		t.Fatalf("article url on the help domain %q", got)
+	}
+	if got := s.articleURL(map[string]string{"acme-eu": "support.acme.eu"}, "acme-eu", "reset-password"); got != "https://support.acme.eu/a/reset-password" {
+		t.Fatalf("article url on a custom domain %q", got)
 	}
 }
 

@@ -6,6 +6,7 @@
 import type { AgentReport, AgentSource, Bot, BotDraft, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
 import { botsOf, defaultBot } from "../bots";
 import { db, type WsData } from "../db";
+import { articleUrl } from "../teams";
 import { DEFAULT_MODEL, effectiveModels, fromMicro, offersModel, reserve, spend } from "../aiBalance";
 import { chunk, eventStream, get, invalid, post, wantsStream, type Ctx } from "../router";
 import { DAY, htmlToProse, isRecord, markdownToHtml } from "../util";
@@ -187,7 +188,7 @@ export function retrieve(ws: WsData, query: string, limit = 3): { source: AgentS
     .map((a) => {
       // The passage is the article's own prose; the summary only helps it rank.
       const body = htmlToProse(a.body_html);
-      return { source: { kind: "article", id: a.id, title: a.title, url: `/help/${ws.workspace.slug}/a/${a.slug}` } as AgentSource, text: body, s: score(query, a.title, `${a.excerpt} ${body}`) };
+      return { source: { kind: "article", id: a.id, title: a.title, url: articleUrl(ws, a) } as AgentSource, text: body, s: score(query, a.title, `${a.excerpt} ${body}`) };
     })
     .filter((x) => x.s >= 0.35);
   const docs = knowledgeDocs(ws)

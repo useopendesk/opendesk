@@ -107,16 +107,40 @@ export type Team = {
   created_at: string;
   updated_at: string;
 };
+/** A help center's custom domain (contracts/teams.md "Help center addresses"). */
+export type HelpDomain = {
+  /** Lowercase ASCII, e.g. help.acme.com. */
+  hostname: string;
+  /** pending: waiting for its DNS records or certificate; failed: checks gave up after 72 hours. */
+  status: "pending" | "active" | "failed";
+  problem: HelpDomainProblem;
+  /** What the customer adds at their DNS provider; ok is the last check's answer. */
+  records: HelpDomainRecord[];
+  checked_at: string | null;
+  /** Both records were found. */
+  verified_at: string | null;
+  created_at: string;
+};
+export type HelpDomainProblem = "" | "txt_missing" | "cname_missing" | "domain_taken" | "certificate_pending" | "certificate_failed" | "provider_error";
+export type HelpDomainRecord = { type: "TXT" | "CNAME"; name: string; value: string; ok: boolean };
 export type Brand = {
   id: string;
   name: string;
-  /** The help center path, APP_URL/help/<slug>. */
+  /** Names the help center's default address: <slug>.<HELP_DOMAIN>, or <base>/help/<slug> (APP_URL or API_URL). */
   slug: string;
   is_default: boolean;
   /** "#rrggbb", or "" for the workspace brand colour. */
   color: string;
   locale: string;
-  help_center: { enabled: boolean; title: string; url: string };
+  help_center: {
+    enabled: boolean;
+    title: string;
+    /** Where the help center is: the active custom domain, else default_url. */
+    url: string;
+    /** https://<slug>.<HELP_DOMAIN>, or <base>/help/<slug> (APP_URL or API_URL) without HELP_DOMAIN. */
+    default_url: string;
+    domain: HelpDomain | null;
+  };
   images: { logo: string | null; help_center_logo: string | null; help_center_favicon: string | null };
   default_mailbox_id: string | null;
   mailbox_count: number;
@@ -1049,9 +1073,6 @@ export type CsatSurvey = {
   comment: string;
   locale: string;
 };
-
-export type PublicHelpHome = { title: string; collections: KbCollection[]; featured: KbArticle[]; locale?: string; logo_url?: string | null; favicon_url?: string | null };
-export type PublicCollection = { collection: KbCollection; articles: KbArticle[] };
 
 export type TicketPatch = {
   subject?: string;

@@ -3,6 +3,11 @@
 cloudflare_account_id = "0123456789abcdef0123456789abcdef"
 # cloudflare_zone_id  = "..."            # optional; looked up from cloudflare_zone_name otherwise
 
+# Help centers at <slug>.<help_domain>; custom domains through Cloudflare for SaaS
+# on that zone (deploy/README.md, "Help centers"). "" turns the help zone off.
+# help_domain  = "opendeskhelp.com"
+# help_zone_id = "..."                   # optional; looked up from help_domain otherwise
+
 aws_region = "us-east-1"
 
 # Create the database in the PlanetScale dashboard first: Postgres, AWS
@@ -44,6 +49,9 @@ microsoft_mailbox_oauth = true
 #   "ANTHROPIC_API_KEY", "VOYAGE_API_KEY",
 #   # iPhone push: the APNs auth key (.p8). Needs apns_key_id and apns_team_id.
 #   "APNS_KEY",
+#   # Help center custom domains: a token with SSL and Certificates edit on the
+#   # help zone only. Sets CLOUDFLARE_SAAS_ZONE_ID to that zone.
+#   "CLOUDFLARE_SAAS_TOKEN",
 # ]
 # ai_model      = "claude-sonnet-5-5"
 # ai_fast_model = "claude-haiku-4-5-20251001"

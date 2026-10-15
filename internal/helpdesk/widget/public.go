@@ -49,11 +49,12 @@ type widgetRow struct {
 	BrandLocale     string
 	BrandHelpCenter bool
 	BrandImages     map[string]string
+	BrandHelpHost   string // the brand's active help center domain, or ""
 }
 
-const widgetRowSelect = `SELECT g.id, g.workspace_id, g.brand_id, g.team_id, g.secret_enc, g.settings, g.images,
+var widgetRowSelect = `SELECT g.id, g.workspace_id, g.brand_id, g.team_id, g.secret_enc, g.settings, g.images,
 	w.name, w.settings, w.avatar_url, w.brand_images,
-	b.name, b.slug, b.color, b.locale, b.help_center_enabled, b.images
+	b.name, b.slug, b.color, b.locale, b.help_center_enabled, b.images, COALESCE(` + brands.ActiveHostSQL("b.id") + `, '')
 FROM widgets g JOIN workspaces w ON w.id = g.workspace_id JOIN brands b ON b.id = g.brand_id`
 
 func scanWidgetRow(row pgx.Row) (widgetRow, error) {
@@ -61,7 +62,7 @@ func scanWidgetRow(row pgx.Row) (widgetRow, error) {
 	var raw, wsRaw []byte
 	err := row.Scan(&g.ID, &g.WorkspaceID, &g.BrandID, &g.TeamID, &g.SecretEnc, &raw, &g.Images,
 		&g.WorkspaceName, &wsRaw, &g.Logo, &g.WSImages,
-		&g.BrandName, &g.BrandSlug, &g.BrandColor, &g.BrandLocale, &g.BrandHelpCenter, &g.BrandImages)
+		&g.BrandName, &g.BrandSlug, &g.BrandColor, &g.BrandLocale, &g.BrandHelpCenter, &g.BrandImages, &g.BrandHelpHost)
 	if err != nil {
 		return g, err
 	}
@@ -306,7 +307,7 @@ func (h *handler) registerPublic(api huma.API) {
 			b.Bot.ID, b.Bot.Name, b.Bot.Role, b.Bot.AvatarURL = bot.IDPtr(), bot.Name, bot.Role, bot.AvatarURL
 			b.Bot.Look, b.Bot.Greeting = bot.Look, bot.Personality.Greeting
 			if g.BrandHelpCenter {
-				b.HelpCenterURL = brands.HelpCenterURL(h.d.Cfg.AppURL, g.BrandSlug)
+				b.HelpCenterURL = brands.HelpCenterURL(h.d.Cfg, g.BrandSlug, g.BrandHelpHost)
 			}
 			b.Topics = make([]configTopic, 0, len(ws.Topics))
 			for _, t := range ws.Topics {

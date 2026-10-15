@@ -20,8 +20,12 @@ builds) and reads the runtime config the web app already uses:
 
 ```jsonc
 { "apiUrl": "https://api.opendesk.sh", "gatewayUrl": "wss://gateway.opendesk.sh/socket",
-  "selfHosted": false, "turnstileSiteKey": "…"?, "mailboxOAuth": ["microsoft"]? }
+  "selfHosted": false, "turnstileSiteKey": "…"?, "mailboxOAuth": ["microsoft"]?, "helpDomain": "opendeskhelp.com"? }
 ```
+
+`helpDomain` is `HELP_DOMAIN` (`HELP_DOMAIN` on Pages too): help centers are at
+`https://<slug>.<helpDomain>`, else at `/help/<slug>` on the app's host. Clients link a brand's
+help center by its `help_center.url` (contracts/teams.md "Help center addresses").
 
 `mailboxOAuth` lists the providers (`google`, `microsoft`) whose sign-in the add-mailbox
 flow offers. The self-hosted binary always writes it (from `GOOGLE_MAILBOX_OAUTH` and

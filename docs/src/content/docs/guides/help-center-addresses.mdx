@@ -1,0 +1,109 @@
+---
+title: Help center addresses and custom domains
+description: Where each brand's help center lives, how to put it on your own domain such as help.example.com, and what each status means.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Fold from '../../../components/Fold.astro';
+
+Every [brand](/guides/brands-and-widgets/) has a help center of its own: a website with the brand's [articles](/guides/knowledge-base/), its title, logo and colour. It has a default address from the start, and it can move to a domain you own, such as `help.example.com`.
+
+## The default address
+
+On opendesk Cloud, a brand's help center is at `https://<slug>.opendeskhelp.com`, where the slug is the brand's **Default address** on its **Help center** tab. A brand with the slug `margin` is at `https://margin.opendeskhelp.com`.
+
+On a self-hosted instance it is at `https://<slug>.<HELP_DOMAIN>` when the instance sets [`HELP_DOMAIN`](/self-hosting/configuration/#help-centers), else at `/help/<slug>` on your opendesk address.
+
+Changing a brand's slug moves its help center to the new address. Links to the old slug stop working, so pick a slug you can keep. Links to the older `https://app.opendesk.sh/help/<slug>` addresses redirect to the new ones, page by page.
+
+## Use your own domain
+
+A help center can live on one subdomain you control, such as `help.example.com` or `support.example.com`. Use a subdomain, not the bare domain (`example.com`): the bare domain usually serves your website, and a CNAME record cannot sit there. Custom domains are on every plan, one per brand.
+
+<Steps>
+<Step title="Add the domain">
+
+Go to **Settings, Brands and widgets**, choose the brand and open its **Help center** tab. Under **Custom domain**, enter the hostname in **Domain**, for example `help.example.com`, and click **Connect**. Admins manage custom domains.
+
+</Step>
+<Step title="Add the two DNS records">
+
+opendesk shows two **DNS records**, with a copy button for each name and value. Add both at the company that runs DNS for your domain (your registrar, Cloudflare, Route 53, and so on):
+
+| Type | Name | Value |
+| --- | --- | --- |
+| `TXT` | `_opendesk-verify.help.example.com` | `opendesk-verify=…`, the token shown for your domain |
+| `CNAME` | `help.example.com` | `custom.opendeskhelp.com` on opendesk Cloud; a self-hosted instance shows its own target |
+
+Some DNS providers add your domain to the name for you: there, the names are `_opendesk-verify.help` and `help`. Copy the values exactly as shown.
+
+The TXT record proves the domain is yours, and the CNAME sends visitors to your help center. If your DNS is on Cloudflare, set the CNAME to **DNS only** (not proxied), so the certificate can be issued for it.
+
+</Step>
+<Step title="Wait for the checks">
+
+opendesk checks the records right away, then every 2 minutes for the first hour, every 15 minutes for the rest of the first day, and every hour after that, for up to 72 hours. Checks run on their own, so you can leave the page. Click **Check now** to check at once after you change a record; each record shows **Found** or **Not found**.
+
+Once both records are found, opendesk gets a certificate for the domain, and the help center is live on it over HTTPS. This usually takes a few minutes. DNS changes can take longer to reach everyone: up to the old record's TTL, and in rare cases up to 48 hours.
+
+</Step>
+</Steps>
+
+When the domain is **Active**, it is the help center's address everywhere opendesk links to it: the chat widget, emails and the knowledge base. The default address answers with a permanent redirect to the same page on your domain, so old links and bookmarks keep working.
+
+Keep the TXT record while the domain is in use. opendesk does not read it again once the domain is verified, but it is what proves the domain is yours if you ever add it again.
+
+## Statuses
+
+| Status | Meaning |
+| --- | --- |
+| **Waiting for DNS** | One or both records are not found yet. opendesk keeps checking for 72 hours. |
+| **Setting up HTTPS** | Both records are found and the certificate is being issued, usually within a few minutes. |
+| **Active** | The help center is live on the domain. opendesk still checks it every 6 hours. |
+| **Needs attention** | The domain is active, but its last check found a problem, such as a CNAME that was changed. The help center still answers there; fix it soon. |
+| **Failed** | Nothing worked for 72 hours, so the checks stopped. Fix the records, then click **Check now** to start over. |
+
+While a domain is not active yet, or when something changes on an active one, opendesk says what is wrong:
+
+| Problem | What it means | What to do |
+| --- | --- | --- |
+| TXT record not found (`txt_missing`) | No `_opendesk-verify` record with this domain's token. | Add the TXT record exactly as shown. A token from an earlier attempt does not count: every new claim gets a new token. |
+| CNAME not found (`cname_missing`) | The hostname does not point at opendesk. | Add the CNAME, or fix its value. A name with a CNAME holds no other record, so remove any A or AAAA record on it. On an active domain, this means the record was changed or removed: visitors no longer reach the help center there. |
+| Domain taken (`domain_taken`) | Another help center already uses this domain. | Remove it from the other brand or workspace first, or pick another hostname. |
+| Certificate pending (`certificate_pending`) | Both records are found and the certificate is being issued. | Nothing: this usually takes a few minutes. |
+| Certificate failed (`certificate_failed`) | The certificate could not be issued or renewed. | Check that the CNAME points at opendesk and is not proxied, and that no CAA record on your domain forbids the certificate authority, then click **Check now**. |
+| Provider error (`provider_error`) | opendesk could not reach the service that issues certificates. | Nothing: opendesk tries again at the next check. |
+
+## Change or remove the domain
+
+To move the help center to another hostname, enter the new one. It replaces the old domain and starts over with new records; until it is active, the help center is at its default address.
+
+To remove the domain, click **Remove domain** on the brand's **Help center** tab. The help center goes back to its default address at once, and its certificate is released. Then delete the two DNS records. A CNAME left behind never lets anyone else use your domain, because a new claim needs a TXT record with its own token, but there is no reason to keep it.
+
+Deleting a brand removes its custom domain too.
+
+## Search engines and sharing
+
+Help centers are built to be found:
+
+- Every page names its address as the canonical URL: your custom domain once it is active, else the default address. The permanent redirects from older addresses move search rankings along with the pages.
+- Each address has a `/sitemap.xml` that lists every published topic and article, and a `/robots.txt` that points at it. Submit `https://help.example.com/sitemap.xml` in Google Search Console or Bing Webmaster Tools to have new pages found sooner.
+- The interface is translated into every language opendesk supports. Pages link their other languages with `hreflang`, and `?lang=` picks one; articles are shown as written. Without `?lang=`, pages are in the brand's language, else the workspace's.
+- Pages carry Open Graph tags and structured data, so links shared in chat apps and social networks show the title and description, and search results can show breadcrumbs.
+- Pages are cached for about a minute, so an article you publish or edit shows up within a minute.
+
+<Fold>
+
+## On a self-hosted instance
+
+Help centers get their own hosts when the instance sets `HELP_DOMAIN`, with a wildcard DNS record such as `*.help.example.com` pointing at the server. Custom domains work without more setup: customers add the TXT record and a CNAME to the instance, and the bundled Caddy gets each certificate on the first visit, only for hosts that are a help center of the instance. See [Docker Compose](/self-hosting/docker-compose/#help-center-addresses).
+
+</Fold>
+
+## Related
+
+- [Knowledge base and help center](/guides/knowledge-base/)
+- [Brands and widgets](/guides/brands-and-widgets/)
+- [Configuration reference](/self-hosting/configuration/#help-centers)

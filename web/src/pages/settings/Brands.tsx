@@ -20,6 +20,7 @@ import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Brand } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { bareUrl, defaultHelpUrl, withSlug } from "@/lib/helpCenter";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole, useWorkspace } from "@/lib/session";
 import { tone } from "@/lib/tones";
@@ -93,7 +94,7 @@ function BrandRow({ brand }: { brand: Brand }) {
           <span className="truncate text-[13px] font-medium">{brand.name}</span>
           {brand.is_default && <span className={cn("inline-flex h-[19px] items-center rounded-sm px-1.5 text-[10.5px] font-medium", tone.blue.chip)}>{t("brands.default")}</span>}
         </div>
-        <div className="mono mt-0.5 truncate text-[11.5px] text-fg-3">/help/{brand.slug}</div>
+        <div className="mono mt-0.5 truncate text-[11.5px] text-fg-3">{bareUrl(brand.help_center.url)}</div>
       </div>
       <span className="hidden items-center gap-1 text-[12px] text-fg-3 sm:inline-flex">
         <Inbox className="size-3 text-fg-4" aria-hidden />
@@ -123,6 +124,9 @@ function NewBrandDialog({ onClose }: { onClose: () => void }) {
   const [color, setColor] = useState("");
   const [error, setError] = useState<string | null>(null);
   const shownSlug = slugTouched ? slug : slugify(name);
+  // Another brand's default address shows how this one's will look.
+  const { data: brands } = useQuery(q.brands());
+  const sample = brands?.[0];
   const slugBad = shownSlug !== "" && !SLUG.test(shownSlug);
 
   const create = useMutation({
@@ -166,7 +170,7 @@ function NewBrandDialog({ onClose }: { onClose: () => void }) {
         <Field label={t("brands.name")} error={error}>
           {({ id, invalid }) => <TextInput id={id} autoFocus invalid={invalid} value={name} maxLength={60} placeholder={t("brands.namePlaceholder")} onChange={(e) => setName(e.target.value)} />}
         </Field>
-        <Field label={t("brands.slug")} hint={slugBad ? undefined : t("brands.slugHint", { slug: shownSlug || "your-brand" })} error={slugBad ? t("brands.slugInvalid") : undefined}>
+        <Field label={t("brands.slug")} hint={slugBad ? undefined : t("brands.slugHint", { url: bareUrl(sample ? withSlug(sample, shownSlug || "your-brand") : defaultHelpUrl(shownSlug || "your-brand")) })} error={slugBad ? t("brands.slugInvalid") : undefined}>
           {({ id, invalid }) => (
             <TextInput
               id={id}

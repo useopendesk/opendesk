@@ -12,7 +12,7 @@ import type { RtChannelLike, RtSocketLike, SocketFactory } from "./realtime";
 import type { AIAction, BotIdentity, BotRef, Conversation, Message, WidgetConfig } from "./types";
 
 const WID = "00000000-0000-4000-8000-00000000d3e0";
-const HELP = "https://example.com/help/margin/articles";
+const HELP = "https://margin.opendeskhelp.com/a";
 
 type Copy = { q1: string; a1: string; q2: string; a2: string; subject: string; aiSso: string; s1: string; s2: string; human: string };
 const COPY: Record<string, Copy> = {
@@ -90,7 +90,7 @@ export function demoConfig(key: string, params = new URLSearchParams()): WidgetC
     workspace_name: "Margin",
     brand_color: null,
     greeting: "Hi there. How can we help?",
-    help_center_url: "https://example.com/help/margin",
+    help_center_url: "https://margin.opendeskhelp.com",
     require_email: false,
     locale: params.get("od_ws_lang") ?? "en",
     avatar_url: null,

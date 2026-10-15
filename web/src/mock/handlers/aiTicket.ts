@@ -12,6 +12,7 @@ import { ago, escapeHtml, MIN, nowIso, uuid } from "../util";
 import { applyDecisions, severityFor } from "../decisions";
 import { decisionEngine } from "./ai";
 import { botForTicket } from "../bots";
+import { articleUrl } from "../teams";
 
 // ─── Text helpers ───────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ function sourcesFor(ws: WsData, t: Ticket, theme: Theme): KBSource[] {
     .filter((x) => x.score > 0)
     .sort((x, y) => y.score - x.score)
     .slice(0, 2);
-  return scored.map(({ a }) => ({ article_id: a.id, title: a.title, url: `/help/${ws.workspace.slug}/a/${a.slug}` }));
+  return scored.map(({ a }) => ({ article_id: a.id, title: a.title, url: articleUrl(ws, a) }));
 }
 
 // ─── Draft ──────────────────────────────────────────────────────────────────
@@ -734,7 +735,7 @@ function seedAiTicketData() {
         {
           kind: "reply",
           direction: "outbound",
-          html: `<p>Here's what I found in the help center${article ? `: <a href="/help/${ws.workspace.slug}/a/${article.slug}">${escapeHtml(article.title)}</a>` : ""}. If that doesn't answer it, choose Talk to a person and the team will pick this up.</p>`,
+          html: `<p>Here's what I found in the help center${article ? `: <a href="${escapeHtml(articleUrl(ws, article))}">${escapeHtml(article.title)}</a>` : ""}. If that doesn't answer it, choose Talk to a person and the team will pick this up.</p>`,
           at: new Date(Date.parse(firstIn.created_at) + 20_000).toISOString(),
           bot,
           ai_rating: "up",

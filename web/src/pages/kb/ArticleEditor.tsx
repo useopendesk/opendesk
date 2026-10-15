@@ -38,6 +38,7 @@ import { useAI } from "@/lib/ai";
 import type { KBArticleDraft } from "@/lib/api/types";
 import { articleBrandId, KbBrandPick } from "@/components/kb/brand";
 import { useBrands } from "@/components/settings2/teams";
+import { defaultHelpUrl, helpCenterHref } from "@/lib/helpCenter";
 import { BrandChip } from "@/components/tickets/teams";
 import { useTranslation } from "react-i18next";
 
@@ -238,8 +239,8 @@ function EditorScreen({ article }: { article: KbArticle | null }) {
   const collectionBrand = collection?.brand_id ? brands.find((b) => b.id === collection.brand_id) : undefined;
   // The help center that shows it: its brand's, else the default brand's.
   const helpBrand = effectiveBrand ?? defaultBrand;
-  const helpSlug = helpBrand ? (helpBrand.help_center.enabled ? helpBrand.slug : null) : ws?.slug;
-  const publicUrl = current && status === "published" && helpSlug ? `/help/${helpSlug}/a/${current.slug}` : null;
+  const helpBase = helpBrand ? (helpBrand.help_center.enabled ? helpCenterHref(helpBrand) : null) : ws ? defaultHelpUrl(ws.slug) : null;
+  const publicUrl = current && status === "published" && helpBase ? `${helpBase}/a/${current.slug}` : null;
   const brandField = (
     <>
       <KbBrandPick

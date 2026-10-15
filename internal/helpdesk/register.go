@@ -4,7 +4,8 @@
 // The work is split by resource: tickets (tickets, messages, triggers, SLA, automations
 // engine, CSAT, search, reports), contacts (contacts, companies), resources (tags, saved
 // replies, views, SLA policies, automations), kb (knowledge base and help center) and
-// widget (chat widget API and attachments). Shared helpers live in hd.
+// widget (chat widget API and attachments), brands, helpdomains (help center custom
+// domains) and helpsite (the rendered help centers). Shared helpers live in hd.
 package helpdesk
 
 import (
@@ -17,6 +18,8 @@ import (
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/helpdesk/contacts"
+	"github.com/useopendesk/opendesk/internal/helpdesk/helpdomains"
+	"github.com/useopendesk/opendesk/internal/helpdesk/helpsite"
 	"github.com/useopendesk/opendesk/internal/helpdesk/kb"
 	"github.com/useopendesk/opendesk/internal/helpdesk/resources"
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
@@ -34,6 +37,8 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	kb.Register(d, api, r)
 	widget.Register(d, api, r)
 	brands.Register(d, api, r)
+	helpdomains.Register(d, api)
+	helpsite.Register(d, r)
 	routing.Register(d, api)
 	images.Register(d, r)
 }
@@ -42,12 +47,13 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	tickets.RegisterWorkers(d, w)
 	images.RegisterWorkers(d, w)
+	helpdomains.RegisterWorkers(d, w)
 	contacts.InstallImageHooks()
 }
 
 // Periodic returns this area's scheduled jobs.
 func Periodic(d *deps.Deps) []*river.PeriodicJob {
-	return append(tickets.Periodic(d), images.Periodic()...)
+	return append(append(tickets.Periodic(d), images.Periodic()...), helpdomains.Periodic(d)...)
 }
 
 // Background runs until ctx is done, in the worker role only. The helpdesk has no

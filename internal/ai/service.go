@@ -487,7 +487,31 @@ func storedSummary(custom map[string]any) StoredSummary {
 	return s
 }
 
-// articleURL is the public help center link of an article on a brand's help center.
-func (s *Service) articleURL(brandSlug, articleSlug string) string {
-	return s.d.Cfg.AppURL + "/help/" + url.PathEscape(brandSlug) + "/a/" + url.PathEscape(articleSlug)
+// articleURL is the public help center link of an article on a brand's help center:
+// on its active custom domain (hosts, by brand slug) when it has one.
+func (s *Service) articleURL(hosts map[string]string, brandSlug, articleSlug string) string {
+	base := s.d.Cfg.HelpCenterURL(url.PathEscape(brandSlug))
+	if h := hosts[brandSlug]; h != "" {
+		base = "https://" + h
+	}
+	return base + "/a/" + url.PathEscape(articleSlug)
+}
+
+// helpHosts maps the workspace's brand slugs to their active help center domains.
+func (s *Service) helpHosts(ctx context.Context, wid uuid.UUID) (map[string]string, error) {
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT b.slug, hd.hostname FROM brands b
+		JOIN help_domains hd ON hd.brand_id = b.id AND hd.status = 'active' WHERE b.workspace_id = $1`, wid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var slug, host string
+		if err := rows.Scan(&slug, &host); err != nil {
+			return nil, err
+		}
+		out[slug] = host
+	}
+	return out, rows.Err()
 }

@@ -56,6 +56,18 @@ variable "cloudflare_zone_id" {
   default     = null
 }
 
+variable "help_domain" {
+  description = "The help center zone (HELP_DOMAIN): help centers are at <slug>.<help_domain>, and custom domains CNAME to custom.<help_domain>. Empty leaves help centers at API_URL/help/<slug> and manages no help zone."
+  type        = string
+  default     = "opendeskhelp.com"
+}
+
+variable "help_zone_id" {
+  description = "The Cloudflare zone of help_domain. Set to skip the zone lookup by name; it is also CLOUDFLARE_SAAS_ZONE_ID."
+  type        = string
+  default     = null
+}
+
 variable "manage_zone_settings" {
   type    = bool
   default = true
@@ -253,7 +265,7 @@ variable "optional_secrets" {
     (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
-    ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY). See modules/secrets.
+    ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN). See modules/secrets.
   EOT
   type        = set(string)
   default     = []
@@ -262,7 +274,7 @@ variable "optional_secrets" {
     condition = alltrue([for s in var.optional_secrets : contains([
       "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
-      "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY",
+      "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY", "CLOUDFLARE_SAAS_TOKEN",
     ], s)])
     error_message = "optional_secrets may only list the operator-supplied secrets."
   }

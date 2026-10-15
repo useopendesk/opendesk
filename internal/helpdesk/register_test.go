@@ -70,6 +70,8 @@ func TestRegisterAll(t *testing.T) {
 		"/v1/assignment":                                      {"get", "patch"},
 		"/v1/triage":                                          {"get", "patch"},
 		"/v1/business-hours":                                  {"get", "put"},
+		"/v1/brands/{id}/help-domain":                         {"put", "delete"},
+		"/v1/brands/{id}/help-domain/check":                   {"post"},
 	}
 	for path, methods := range want {
 		for _, m := range methods {
@@ -84,7 +86,8 @@ func TestRegisterAll(t *testing.T) {
 
 	w := river.NewWorkers()
 	helpdesk.RegisterWorkers(e.D, w)
-	if n := len(helpdesk.Periodic(e.D)); n != 5 {
+	// The help domain sweep runs everywhere; the Cloudflare reconcile only with Cloudflare for SaaS.
+	if n := len(helpdesk.Periodic(e.D)); n != 6 {
 		t.Fatalf("periodic jobs %d", n)
 	}
 }

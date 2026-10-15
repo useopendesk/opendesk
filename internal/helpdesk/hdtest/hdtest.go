@@ -85,7 +85,7 @@ func Deps(t testing.TB) *deps.Deps {
 			initErr = err
 			return
 		}
-		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test",
+		cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test", ServeWeb: true,
 			GatewayURL: "ws://gateway.test/socket", AuthSecret: Secret, CredentialsKey: []byte("development-only-credentials-key")}
 		log := slog.New(slog.NewTextHandler(io.Discard, nil))
 		if os.Getenv("HDTEST_LOG") != "" {

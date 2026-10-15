@@ -39,6 +39,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
+	"github.com/useopendesk/opendesk/internal/helpdesk/helpsite"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/idempotency"
 	"github.com/useopendesk/opendesk/internal/integrations"
@@ -156,6 +157,9 @@ func Router(d *deps.Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID, httpx.Logger(d.Log), httpx.SecurityHeaders(strings.HasPrefix(cfg.APIURL, "https://")),
 		httpx.CORS(cfg.CORSOrigins))
+	// Help centers answer on their own hosts and at /help/<slug>, before the API's
+	// sessions are read (contracts/teams.md "Help center addresses").
+	r.Use(helpsite.Middleware(d))
 	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(cfg.TrustProxy)}
 	r.Use(resolver.Middleware, idempotency.New(d.DB.Pool, d.Box, cfg.AuthSecret, d.Log).Middleware)
 
@@ -189,7 +193,8 @@ func Router(d *deps.Deps) http.Handler {
 		csp := webCSP(cfg)
 		r.Handle("/*", webui.Handler(webui.RuntimeConfig{APIURL: cfg.APIURL, GatewayURL: cfg.GatewayURL,
 			PosthogKey: os.Getenv("WEB_POSTHOG_KEY"), PosthogHost: os.Getenv("WEB_POSTHOG_HOST"),
-			TurnstileSiteKey: cfg.TurnstileSiteKey, SelfHosted: true, MailboxOAuth: cfg.MailboxOAuthProviders()}, csp))
+			TurnstileSiteKey: cfg.TurnstileSiteKey, SelfHosted: true, MailboxOAuth: cfg.MailboxOAuthProviders(),
+			HelpDomain: cfg.HelpDomain}, csp))
 	}
 	return r
 }

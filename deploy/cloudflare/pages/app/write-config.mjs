@@ -17,8 +17,10 @@
 // Env: APP_API_URL, APP_GATEWAY_URL, WEB_POSTHOG_KEY, WEB_POSTHOG_HOST,
 // TURNSTILE_SITE_KEY, APPLE_APP_IDS (comma-separated TEAMID.bundle ids),
 // MAILBOX_OAUTH (the providers whose sign-in the mailbox wizard offers: "google",
-// "microsoft", "google,microsoft" or "none"; unset leaves it to the API). The URLs
-// default to production.
+// "microsoft", "google,microsoft" or "none"; unset leaves it to the API),
+// HELP_DOMAIN (the domain help centers live under, as <slug>.<HELP_DOMAIN>, e.g.
+// "opendeskhelp.com": a lowercase hostname without a scheme; unset puts them at
+// /help/<slug> on the app's host). The URLs default to production.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -63,6 +65,17 @@ export function mailboxOAuth(value) {
   return [...new Set(list)];
 }
 
+// HELP_DOMAIN: a lowercase hostname such as "opendeskhelp.com", no scheme, path or port.
+const HOSTNAME = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+export function helpDomain(value) {
+  const v = (value ?? "").trim().replace(/\.$/, "");
+  if (!HOSTNAME.test(v) || v.length > 253) {
+    throw new Error(`HELP_DOMAIN must be a lowercase domain name without a scheme, such as opendeskhelp.com, got ${value}`);
+  }
+  return v;
+}
+
 export function buildConfig(env = process.env) {
   const cfg = {
     apiUrl: url("APP_API_URL", env.APP_API_URL || DEFAULTS.apiUrl, ["https:", "http:"]),
@@ -74,6 +87,7 @@ export function buildConfig(env = process.env) {
   if (env.TURNSTILE_SITE_KEY) cfg.turnstileSiteKey = env.TURNSTILE_SITE_KEY;
   cfg.selfHosted = false;
   if (env.MAILBOX_OAUTH !== undefined && env.MAILBOX_OAUTH.trim() !== "") cfg.mailboxOAuth = mailboxOAuth(env.MAILBOX_OAUTH);
+  if (env.HELP_DOMAIN !== undefined && env.HELP_DOMAIN.trim() !== "") cfg.helpDomain = helpDomain(env.HELP_DOMAIN);
   return cfg;
 }
 

@@ -9,7 +9,7 @@ import { AuthField, Notice, slugify } from "@/components/auth/parts";
 import { OnboardingSteps } from "@/components/auth/OnboardingSteps";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import { appOrigin } from "@/lib/config";
+import { appOrigin, config } from "@/lib/config";
 import { reloadSession, selectWorkspace, useSession, useWorkspace } from "@/lib/session";
 import { DeleteAccountDialog } from "@/components/account/DeleteAccountDialog";
 import { track } from "@/lib/analytics";
@@ -71,7 +71,15 @@ export default function Workspace() {
         <div className="rounded-md border border-line bg-sunken px-3 py-2.5">
           <div className="text-[11.5px] text-fg-3">Your help center</div>
           <div className="mono mt-0.5 truncate text-[12.5px] text-fg-2">
-            {host}/help/<span className="text-fg">{slugify(name)}</span>
+            {config.helpDomain ? (
+              <>
+                <span className="text-fg">{slugify(name)}</span>.{config.helpDomain}
+              </>
+            ) : (
+              <>
+                {host}/help/<span className="text-fg">{slugify(name)}</span>
+              </>
+            )}
           </div>
         </div>
         <Button type="submit" variant="primary" size="lg" className="mt-1 w-full" loading={busy}>

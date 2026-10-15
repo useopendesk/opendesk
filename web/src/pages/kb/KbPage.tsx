@@ -31,6 +31,7 @@ import { AiIcon, AiTooltip } from "@/components/ai/bits";
 import { requestKbDraft } from "@/components/ai/kbDraftIntent";
 import { articleBrandId, KbBrandPick } from "@/components/kb/brand";
 import { useBrands } from "@/components/settings2/teams";
+import { defaultHelpUrl, helpCenterHref } from "@/lib/helpCenter";
 import { BrandChip } from "@/components/tickets/teams";
 import type { Brand } from "@/lib/api/types";
 
@@ -72,7 +73,13 @@ export default function KbPage() {
   // A pill names the brand of a collection or article that belongs to one, once there are two brands.
   const pillFor = (id: string | null | undefined) => (multiBrand ? brandOf(id) : undefined);
   const helpBrand = brandFilter ?? defaultBrand;
-  const helpHref = helpBrand?.help_center.enabled ? `/help/${helpBrand.slug}` : !brandFilter && ws?.settings.help_center_enabled ? `/help/${ws.slug}` : null;
+  const helpHref = helpBrand?.help_center.enabled
+    ? helpCenterHref(helpBrand)
+    : !brandFilter && ws?.settings.help_center_enabled
+      ? helpBrand
+        ? helpCenterHref(helpBrand)
+        : defaultHelpUrl(ws.slug)
+      : null;
   const current = sorted.find((c) => c.id === search.collection);
   const collectionName = (id: string | null) => sorted.find((c) => c.id === id)?.name;
   const everything = all.data ?? [];

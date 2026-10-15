@@ -151,3 +151,20 @@ func TestMailhostISPDBDefault(t *testing.T) {
 		t.Fatal("MAILHOST_ISPDB=false")
 	}
 }
+
+func TestHelpCenterURL(t *testing.T) {
+	cases := []struct {
+		c    Config
+		want string
+	}{
+		{Config{AppURL: "https://app.example", APIURL: "https://api.example", HelpDomain: "help.example"}, "https://acme.help.example"},
+		{Config{AppURL: "http://localhost:5173", HelpDomain: "help.localhost"}, "http://acme.help.localhost"},
+		{Config{AppURL: "https://desk.example", APIURL: "https://desk.example", ServeWeb: true}, "https://desk.example/help/acme"},
+		{Config{AppURL: "https://app.example", APIURL: "https://api.example/"}, "https://api.example/help/acme"},
+	}
+	for _, c := range cases {
+		if got := c.c.HelpCenterURL("acme"); got != c.want {
+			t.Errorf("HelpCenterURL(%+v) = %s, want %s", c.c, got, c.want)
+		}
+	}
+}

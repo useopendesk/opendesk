@@ -256,3 +256,30 @@ type PushBadgeArgs struct {
 }
 
 func (PushBadgeArgs) Kind() string { return "push.badge" }
+
+// HelpDomainCheckArgs checks a help center custom domain: its DNS records, then its
+// certificate (contracts/teams.md "Help center addresses"). Owner: helpdesk.
+type HelpDomainCheckArgs struct {
+	DomainID uuid.UUID `json:"domain_id"`
+}
+
+func (HelpDomainCheckArgs) Kind() string { return "help_domain.check" }
+
+// HelpDomainSweepArgs enqueues the help center domain checks that are due. Owner: helpdesk.
+type HelpDomainSweepArgs struct{}
+
+func (HelpDomainSweepArgs) Kind() string { return "help_domain.sweep" }
+
+// HelpDomainReleaseArgs removes a custom hostname from the Cloudflare for SaaS zone once
+// no domain holds it. Owner: helpdesk.
+type HelpDomainReleaseArgs struct {
+	ProviderID string `json:"provider_id"`
+}
+
+func (HelpDomainReleaseArgs) Kind() string { return "help_domain.release" }
+
+// HelpDomainReconcileArgs releases the custom hostnames the Cloudflare for SaaS zone holds
+// that no domain does. Owner: helpdesk.
+type HelpDomainReconcileArgs struct{}
+
+func (HelpDomainReconcileArgs) Kind() string { return "help_domain.reconcile" }

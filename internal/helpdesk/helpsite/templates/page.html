@@ -1,0 +1,255 @@
+{{define "page" -}}
+<!doctype html>
+<html lang="{{.Lang}}" dir="{{.Dir}}" data-langs="{{.LangList}}"{{if eq .Kind "home"}} class="is-home"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.DocTitle}}</title>
+{{- if .Description}}
+<meta name="description" content="{{.Description}}">
+{{- end}}
+{{- if .NoIndex}}
+<meta name="robots" content="noindex">
+{{- else}}
+<link rel="canonical" href="{{.Canonical}}">
+{{- range .Alternates}}
+<link rel="alternate" hreflang="{{.Lang}}" href="{{.URL}}">
+{{- end}}
+<link rel="alternate" hreflang="x-default" href="{{.XDefault}}">
+{{- end}}
+<meta property="og:site_name" content="{{.Site.Title}}">
+<meta property="og:title" content="{{.OGTitle}}">
+<meta property="og:type" content="{{.OGType}}">
+<meta property="og:url" content="{{.Canonical}}">
+<meta property="og:locale" content="{{.OGLocale}}">
+{{- if .Description}}
+<meta property="og:description" content="{{.Description}}">
+{{- end}}
+{{- if .Site.Image}}
+<meta property="og:image" content="{{.Site.Image}}">
+{{- end}}
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="{{.Site.Icon}}">
+<link rel="preload" href="{{.Asset "geist-latin-wght-normal.woff2"}}" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.Asset "help.css"}}">
+<script src="{{.Asset "boot.js"}}"></script>
+<script src="{{.Asset "help.js"}}" defer></script>
+{{- if .JSONLD}}
+<script type="application/ld+json">{{.JSONLD}}</script>
+{{- end}}
+</head>
+<body{{if .Article}} data-article="{{.Article.ID}}" data-views="{{.ViewsURL}}"{{end}}>
+<header class="hc-header">
+  <div class="wrap {{if eq .Kind "home"}}wrap-wide{{else}}wrap-narrow{{end}} hc-bar">
+    <a href="{{.Link "/"}}" class="hc-brand">
+      {{- template "glyph" .Site}}
+      <bdi>{{.Site.Title}}</bdi>
+    </a>
+    <div class="hc-actions">
+      {{- if ne .Kind "home"}}{{if ne .Kind "search"}}
+      {{template "search" (.SearchBox false)}}
+      {{- end}}{{end}}
+      <button type="button" class="icon-btn theme-toggle" data-theme-toggle aria-label="{{.T.T "help.theme_dark"}}"
+        data-label-light="{{.T.T "help.theme_light"}}" data-label-dark="{{.T.T "help.theme_dark"}}">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<main id="main">
+{{- if eq .Kind "home"}}{{template "home" .}}
+{{- else if eq .Kind "collection"}}{{template "collection" .}}
+{{- else if eq .Kind "article"}}{{template "article" .}}
+{{- else if eq .Kind "search"}}{{template "searchpage" .}}
+{{- else}}{{template "notfound" .}}{{end}}
+</main>
+<footer class="hc-footer">
+  <div class="wrap {{if eq .Kind "home"}}wrap-wide{{else}}wrap-narrow{{end}} bar">
+    <span class="copy">© {{.Year}} <bdi>{{.Site.Title}}</bdi></span>
+    <details class="lang" data-popover>
+      <summary aria-label="{{.T.T "footer.language"}}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
+        <span>{{.LangName}}</span>
+      </summary>
+      <ul aria-label="{{.T.T "footer.language"}}">
+        {{- range .Languages}}
+        <li><a href="{{.URL}}" hreflang="{{.Lang}}" lang="{{.Lang}}" dir="{{.Dir}}" data-lang="{{.Lang}}"{{if .Current}} aria-current="true"{{end}}><span>{{.Name}}</span>{{if .Current}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>{{end}}</a></li>
+        {{- end}}
+      </ul>
+    </details>
+    <a href="https://opendesk.sh" class="powered">{{.T.T "footer.powered_by"}} {{template "lockup"}}</a>
+  </div>
+</footer>
+</body>
+</html>
+{{- end}}
+
+{{define "glyph" -}}
+{{if .Logo}}<img class="glyph" src="{{.Logo}}" alt="" width="24" height="24">{{else}}<span class="glyph {{.Tone}}" aria-hidden="true">{{.Initial}}</span>{{end}}
+{{- end}}
+
+{{define "search" -}}
+<form class="search{{if .Large}} search-lg{{end}}" role="search" action="{{.Action}}" method="get">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+  <input type="search" name="q" value="{{.Value}}" placeholder="{{.Placeholder}}" aria-label="{{.Placeholder}}" maxlength="200" autocomplete="off" enterkeyhint="search"{{if .Autofocus}} data-autofocus{{end}}>
+  {{- if .Lang}}<input type="hidden" name="lang" value="{{.Lang}}">{{end}}
+</form>
+{{- end}}
+
+{{define "filetext"}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8m8 4H8m8 4H8"/></svg>{{end}}
+{{define "arrow"}}<svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>{{end}}
+{{define "chevron"}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>{{end}}
+
+{{define "rows" -}}
+<ul class="rows{{if .Compact}} compact{{end}}">
+  {{- range $i, $a := .Articles}}
+  <li class="rise {{$.Delay $i}}">
+    <a class="row" href="{{$.Page.Link (printf "/a/%s" $a.Slug)}}">
+      <span class="row-icon">{{template "filetext"}}</span>
+      <span class="row-main">
+        <span class="row-title"><bdi>{{$a.Title}}</bdi></span>
+        {{- if and (not $.Compact) $a.Excerpt}}
+        <span class="row-excerpt"><bdi>{{$a.Excerpt}}</bdi></span>
+        {{- end}}
+      </span>
+      {{- if not $.Compact}}
+      <time class="row-date" datetime="{{$.Page.ISO ($.Page.Published $a)}}" data-format="short">{{$.Page.ShortDate ($.Page.Published $a)}}</time>
+      {{- end}}
+      {{template "arrow"}}
+    </a>
+  </li>
+  {{- end}}
+</ul>
+{{- end}}
+
+{{define "crumbs" -}}
+<nav class="crumbs" aria-label="{{.Page.T.T "help.breadcrumb"}}">
+  <a href="{{.Page.Link "/"}}">{{.Page.T.T "help.default_title"}}</a>
+  {{- range .Items}}
+  <span>{{template "chevron"}}{{if .Href}}<a href="{{.Href}}"><bdi>{{.Label}}</bdi></a>{{else}}<bdi aria-current="page">{{.Label}}</bdi>{{end}}</span>
+  {{- end}}
+</nav>
+{{- end}}
+
+{{define "empty" -}}
+<div class="empty{{if .Compact}} compact{{end}}">
+  <div class="art" aria-hidden="true">
+    {{- range $i := .Cells}}
+    {{- if eq $i $.Lit}}<span class="lit {{$.Tone}}">{{$.Icon}}</span>{{else if eq $i 1}}<span><i></i></span>{{else}}<span><i class="w50"></i><i class="w34"></i></span>{{end}}
+    {{- end}}
+  </div>
+  <h2>{{.Title}}</h2>
+  {{- if .Body}}<p>{{.Body}}</p>{{end}}
+  {{- if .Action}}<a class="action" href="{{.ActionHref}}">{{.Action}}</a>{{end}}
+</div>
+{{- end}}
+
+{{define "home" -}}
+<section class="hero">
+  <div class="hero-in rise">
+    <h1>{{.T.T "help.hero_title"}}</h1>
+    <p>{{.T.T "help.hero_subtitle"}}</p>
+    {{template "search" (.SearchBox true)}}
+  </div>
+</section>
+<div class="wrap wrap-wide home-body">
+  {{- if and (not .Home.Collections) (not .Home.Featured)}}
+  {{template "empty" (.Empty 0 false (.T.T "help.empty_title") (.T.T "help.empty_body"))}}
+  {{- else}}
+  {{- if .Home.Collections}}
+  <section class="section" aria-labelledby="topics">
+    <h2 id="topics" class="label-caps section-title">{{.T.T "help.topics"}}</h2>
+    <div class="grid">
+      {{- range $i, $c := .Home.Collections}}
+      <a class="card rise {{$.Delay $i}}" href="{{$.Link (printf "/c/%s" $c.Slug)}}">
+        <span class="chip {{$.ToneFor $c.Name}}">{{template "filetext"}}</span>
+        <span class="card-title"><bdi>{{$c.Name}}</bdi></span>
+        {{- if $c.Description}}<span class="card-desc"><bdi>{{$c.Description}}</bdi></span>{{end}}
+        <span class="card-meta">{{$.T.N "help.articles" $c.ArticleCount}}{{template "arrow"}}</span>
+      </a>
+      {{- end}}
+    </div>
+  </section>
+  {{- end}}
+  {{- if .Home.Featured}}
+  <section class="section" aria-labelledby="popular">
+    <h2 id="popular" class="label-caps section-title tight">{{.T.T "help.popular"}}</h2>
+    {{template "rows" (.Rows .Home.Featured false)}}
+  </section>
+  {{- end}}
+  {{- end}}
+</div>
+{{- end}}
+
+{{define "collection" -}}
+<div class="wrap wrap-read page rise">
+  {{template "crumbs" (.Crumbs)}}
+  <span class="chip chip-lg {{.ToneFor .Collection.Collection.Name}}" aria-hidden="true">{{template "filetext"}}</span>
+  <h1 dir="auto">{{.Collection.Collection.Name}}</h1>
+  {{- if .Collection.Collection.Description}}
+  <p class="lede" dir="auto">{{.Collection.Collection.Description}}</p>
+  {{- end}}
+  <p class="count">{{.T.N "help.articles" (len .Collection.Articles)}}</p>
+  <div class="list-top">
+    {{- if .Collection.Articles}}
+    {{template "rows" (.Rows .Collection.Articles false)}}
+    {{- else}}
+    {{template "empty" (.Empty 0 true (.T.T "help.topic_empty") "")}}
+    {{- end}}
+  </div>
+</div>
+{{- end}}
+
+{{define "article" -}}
+<article class="wrap wrap-read page page-article rise">
+  {{template "crumbs" (.Crumbs)}}
+  <h1 dir="auto">{{.Article.Title}}</h1>
+  <div class="meta">
+    {{- if .Article.Author}}{{if .Article.Author.Name}}
+    {{template "avatar" (.Avatar .Article.Author.Name (.Article.Author.AvatarURL.URL))}}
+    <bdi class="who">{{.Article.Author.Name}}</bdi>
+    <span class="dot" aria-hidden="true">·</span>
+    {{- end}}{{end}}
+    <time datetime="{{.ISO .Article.UpdatedAt}}" data-format="long" data-tpl="{{.T.T "help.updated"}}">{{.T.T "help.updated" "date" (.LongDate .Article.UpdatedAt)}}</time>
+  </div>
+  <div class="prose" dir="auto">{{.Body}}</div>
+  {{- if .More}}
+  <section class="more" aria-labelledby="more">
+    <h2 id="more" class="label-caps section-title tight"><bdi>{{.ArticleCollection.Name}}</bdi></h2>
+    {{template "rows" (.Rows .More true)}}
+  </section>
+  {{- end}}
+</article>
+{{- end}}
+
+{{define "avatar" -}}
+{{if .Src}}<img class="avatar" src="{{.Src}}" alt="" width="20" height="20">{{else}}<span class="avatar glyph {{.Tone}}" aria-hidden="true">{{.Initial}}</span>{{end}}
+{{- end}}
+
+{{define "searchpage" -}}
+<div class="wrap wrap-read page">
+  {{template "crumbs" (.Crumbs)}}
+  {{template "search" (.SearchBox true)}}
+  <div class="results" aria-live="polite">
+    {{- if lt (.QueryLen) 2}}
+    {{template "empty" (.Empty 1 true (.T.T "help.search_min") "")}}
+    {{- else if not .Results}}
+    {{template "empty" (.Empty 3 false (.T.T "help.no_results_title" "term" .Query) (.T.T "help.no_results_body"))}}
+    {{- else}}
+    <p class="count">{{.T.N "help.results" (len .Results)}}</p>
+    <div class="list-top">{{template "rows" (.Rows .Results false)}}</div>
+    {{- end}}
+  </div>
+</div>
+{{- end}}
+
+{{define "notfound" -}}
+<div class="wrap wrap-narrow fill">
+  {{template "empty" (.Empty 2 false .NotFound.Title .NotFound.Body)}}
+</div>
+{{- end}}
+
+{{define "lockup"}}<svg viewBox="0 0 562 88" role="img" aria-label="opendesk" fill="none"><path transform="scale(1.375)" fill="currentColor" fill-rule="evenodd" d="M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z"/><path transform="translate(124 1)" fill="currentColor" d="M26.3 72.2C21.0333 72.2 16.4 71.0667 12.4 68.8C8.46667 66.4667 5.4 63.2 3.2 59C1.06667 54.8 0 49.9 0 44.3C0 38.6333 1.06667 33.7333 3.2 29.6C5.4 25.4 8.46667 22.1667 12.4 19.9C16.4 17.5667 21.0333 16.4 26.3 16.4C31.5667 16.4 36.1667 17.5667 40.1 19.9C44.0333 22.1667 47.0667 25.4 49.2 29.6C51.4 33.7333 52.5 38.6333 52.5 44.3C52.5 49.9 51.4 54.8 49.2 59C47.0667 63.2 44.0333 66.4667 40.1 68.8C36.1667 71.0667 31.5667 72.2 26.3 72.2ZM26.3 61.8C30.4333 61.8 33.6 60.2667 35.8 57.2C38.0667 54.1333 39.2 49.8333 39.2 44.3C39.2 38.8333 38.0667 34.5667 35.8 31.5C33.6 28.3667 30.4333 26.8 26.3 26.8C22.1667 26.8 18.9667 28.3667 16.7 31.5C14.4333 34.5667 13.3 38.8333 13.3 44.3C13.3 49.8333 14.4333 54.1333 16.7 57.2C18.9667 60.2667 22.1667 61.8 26.3 61.8ZM58.3773 86V17.6H70.6773L70.9773 29L69.6773 28.4C71.0107 24.4667 73.1773 21.5 76.1773 19.5C79.244 17.4333 82.8107 16.4 86.8773 16.4C91.944 16.4 96.144 17.6667 99.4773 20.2C102.877 22.7333 105.411 26.1 107.077 30.3C108.744 34.5 109.577 39.1667 109.577 44.3C109.577 49.4333 108.711 54.1 106.977 58.3C105.311 62.5 102.777 65.8667 99.3773 68.4C96.044 70.9333 91.844 72.2 86.7773 72.2C84.1107 72.2 81.6107 71.7333 79.2773 70.8C77.0107 69.8667 75.044 68.5333 73.3773 66.8C71.7773 65.0667 70.644 63.0333 69.9773 60.7L71.1773 59.7V86H58.3773ZM83.7773 61.8C87.644 61.8 90.6773 60.2667 92.8773 57.2C95.144 54.0667 96.2773 49.7667 96.2773 44.3C96.2773 38.8333 95.144 34.5667 92.8773 31.5C90.6773 28.3667 87.644 26.8 83.7773 26.8C81.1773 26.8 78.944 27.4667 77.0773 28.8C75.2107 30.0667 73.744 32 72.6773 34.6C71.6773 37.2 71.1773 40.4333 71.1773 44.3C71.1773 48.1667 71.6773 51.4 72.6773 54C73.6773 56.6 75.1107 58.5667 76.9773 59.9C78.9107 61.1667 81.1773 61.8 83.7773 61.8ZM138.61 72.2C133.277 72.2 128.643 71.0667 124.71 68.8C120.777 66.4667 117.743 63.2 115.61 59C113.477 54.8 112.41 49.9 112.41 44.3C112.41 38.7 113.477 33.8333 115.61 29.7C117.743 25.5 120.743 22.2333 124.61 19.9C128.543 17.5667 133.11 16.4 138.31 16.4C143.377 16.4 147.81 17.5333 151.61 19.8C155.477 22.0667 158.443 25.3333 160.51 29.6C162.577 33.8667 163.61 39 163.61 45V47.9H125.71C125.977 52.5667 127.243 56.1 129.51 58.5C131.843 60.8333 134.91 62 138.71 62C141.577 62 143.943 61.3667 145.81 60.1C147.743 58.7667 149.077 56.9333 149.81 54.6L162.91 55.4C161.443 60.6 158.543 64.7 154.21 67.7C149.943 70.7 144.743 72.2 138.61 72.2ZM125.71 39.3H150.41C150.143 34.9667 148.91 31.7667 146.71 29.7C144.51 27.5667 141.71 26.5 138.31 26.5C134.91 26.5 132.077 27.6 129.81 29.8C127.61 32 126.243 35.1667 125.71 39.3ZM169.616 71V17.6H181.216L181.716 32.6L180.216 32C180.749 28.2667 181.849 25.2667 183.516 23C185.182 20.7333 187.216 19.0667 189.616 18C192.016 16.9333 194.649 16.4 197.516 16.4C201.449 16.4 204.749 17.2667 207.416 19C210.149 20.7333 212.216 23.1333 213.616 26.2C215.016 29.2 215.716 32.7 215.716 36.7V71H202.916V40.8C202.916 37.8 202.616 35.2667 202.016 33.2C201.416 31.1333 200.416 29.5667 199.016 28.5C197.682 27.3667 195.882 26.8 193.616 26.8C190.216 26.8 187.482 28 185.416 30.4C183.416 32.8 182.416 36.2667 182.416 40.8V71H169.616ZM243.405 72.2C238.871 72.2 234.938 71.0667 231.605 68.8C228.338 66.5333 225.805 63.3 224.005 59.1C222.205 54.9 221.305 49.9667 221.305 44.3C221.305 38.6333 222.205 33.7 224.005 29.5C225.805 25.3 228.371 22.0667 231.705 19.8C235.038 17.5333 238.938 16.4 243.405 16.4C247.138 16.4 250.405 17.1667 253.205 18.7C256.071 20.2333 258.238 22.4 259.705 25.2V0H272.505V71H260.305L260.005 63.1C258.538 65.9667 256.338 68.2 253.405 69.8C250.471 71.4 247.138 72.2 243.405 72.2ZM247.305 61.8C249.971 61.8 252.205 61.1333 254.005 59.8C255.871 58.4667 257.271 56.5 258.205 53.9C259.205 51.2333 259.705 48.0333 259.705 44.3C259.705 40.5 259.205 37.3 258.205 34.7C257.271 32.1 255.871 30.1333 254.005 28.8C252.205 27.4667 249.971 26.8 247.305 26.8C243.438 26.8 240.338 28.3667 238.005 31.5C235.738 34.5667 234.605 38.8333 234.605 44.3C234.605 49.6333 235.738 53.9 238.005 57.1C240.338 60.2333 243.438 61.8 247.305 61.8ZM304.638 72.2C299.304 72.2 294.671 71.0667 290.737 68.8C286.804 66.4667 283.771 63.2 281.638 59C279.504 54.8 278.438 49.9 278.438 44.3C278.438 38.7 279.504 33.8333 281.638 29.7C283.771 25.5 286.771 22.2333 290.638 19.9C294.571 17.5667 299.137 16.4 304.337 16.4C309.404 16.4 313.838 17.5333 317.638 19.8C321.504 22.0667 324.471 25.3333 326.538 29.6C328.604 33.8667 329.638 39 329.638 45V47.9H291.737C292.004 52.5667 293.271 56.1 295.538 58.5C297.871 60.8333 300.937 62 304.737 62C307.604 62 309.971 61.3667 311.837 60.1C313.771 58.7667 315.104 56.9333 315.837 54.6L328.938 55.4C327.471 60.6 324.571 64.7 320.237 67.7C315.971 70.7 310.771 72.2 304.638 72.2ZM291.737 39.3H316.438C316.171 34.9667 314.937 31.7667 312.737 29.7C310.537 27.5667 307.737 26.5 304.337 26.5C300.937 26.5 298.104 27.6 295.837 29.8C293.637 32 292.271 35.1667 291.737 39.3ZM357.343 72.2C352.076 72.2 347.643 71.4333 344.043 69.9C340.51 68.3667 337.776 66.2333 335.843 63.5C333.91 60.7667 332.81 57.6667 332.543 54.2L345.643 53.6C346.11 56.4 347.276 58.5667 349.143 60.1C351.01 61.6333 353.776 62.4 357.443 62.4C360.443 62.4 362.776 61.9333 364.443 61C366.176 60 367.043 58.4667 367.043 56.4C367.043 55.2 366.743 54.2 366.143 53.4C365.543 52.6 364.41 51.9 362.743 51.3C361.076 50.7 358.61 50.1 355.343 49.5C349.876 48.5667 345.576 47.4333 342.443 46.1C339.31 44.7 337.076 42.9667 335.743 40.9C334.476 38.8333 333.843 36.2667 333.843 33.2C333.843 28.2 335.743 24.1667 339.543 21.1C343.41 17.9667 349.043 16.4 356.443 16.4C361.243 16.4 365.276 17.2 368.543 18.8C371.81 20.3333 374.343 22.4667 376.143 25.2C378.01 27.8667 379.176 30.9333 379.643 34.4L366.743 35C366.41 33.2 365.81 31.6333 364.943 30.3C364.076 28.9667 362.91 27.9667 361.443 27.3C359.976 26.5667 358.243 26.2 356.243 26.2C353.243 26.2 350.976 26.8 349.443 28C347.91 29.2 347.143 30.8 347.143 32.8C347.143 34.2 347.476 35.3667 348.143 36.3C348.876 37.2333 350.043 38 351.643 38.6C353.243 39.1333 355.376 39.6333 358.043 40.1C363.643 40.9667 368.043 42.1 371.243 43.5C374.51 44.8333 376.81 46.5667 378.143 48.7C379.543 50.7667 380.243 53.2667 380.243 56.2C380.243 59.6 379.276 62.5 377.343 64.9C375.476 67.3 372.81 69.1333 369.343 70.4C365.943 71.6 361.943 72.2 357.343 72.2ZM386.233 71V0H399.033V41.7L420.933 17.6H436.733L415.833 39.8L437.433 71H423.033L407.433 47.4L399.033 56.3V71H386.233Z"/></svg>{{end}}

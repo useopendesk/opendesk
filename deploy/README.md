@@ -10,7 +10,8 @@ deploy/
   docker/
     opendesk.Dockerfile        Go binary (API + workers + embedded NATS) with the web app embedded
     realtime.Dockerfile        the Phoenix gateway release (+ entrypoint, healthcheck)
-  caddy/Caddyfile              self-host: automatic HTTPS, /socket* -> realtime, rest -> opendesk
+  caddy/Caddyfile              self-host: automatic HTTPS, /socket* -> realtime, rest -> opendesk,
+                               on-demand certificates for help center hosts
   self-host/
     .env.template              every self-host setting, documented
     gen-env.sh                 .env with fresh secrets (make selfhost-env)
@@ -20,6 +21,7 @@ deploy/
     stage-assets.sh            packages what the installer downloads from a release
   cloudflare/
     email-worker/              in.opendesk.sh mail -> POST /v1/inbound/email
+    help-worker/               <slug>.opendeskhelp.com and custom domains -> the API's help centers
     pages/                     _headers, runtime config (config.js, config.json, apple-app-site-association)
                                and notes for the three Pages projects
   terraform/                   AWS + Cloudflare + PlanetScale, see terraform/README.md
@@ -35,7 +37,7 @@ docker-compose.yml             (repo root) the self-host stack the installer run
                       │               │                   │                    │
                opendesk.sh    docs.opendesk.sh    app.opendesk.sh       api.opendesk.sh
                 Pages:site      Pages:docs       Pages:app + widget    gateway.opendesk.sh
-                                                  + help center              │
+                                                                             │
                                                                              ▼
   mail to *@in.opendesk.sh                                ┌──── AWS us-east-1, one VPC, public subnets ────┐
         │                                                 │                                                 │
@@ -69,6 +71,26 @@ docker-compose.yml             (repo root) the self-host stack the installer run
                                                                                     the migration task only
                                                           Secrets Manager, CloudWatch alongside
 ```
+
+Help centers have a zone of their own, `opendeskhelp.com`, on the same Cloudflare
+account:
+
+```
+  <slug>.opendeskhelp.com ────────────┐
+  help.customer.com ── CNAME ──► custom.opendeskhelp.com (Cloudflare for SaaS
+                                      │                   custom hostname + certificate)
+                                      ▼
+                        help worker (route */*), Workers cache
+                                      │  OD-Help-Host, OD-Help-Client-IP, OD-Help-Secret
+                                      ▼
+                        https://api.opendesk.sh ──► the API renders that host's help center
+```
+
+The apex and `www` redirect to opendesk.sh. `origin.opendeskhelp.com` is the custom
+hostname fallback origin; the worker is the real origin, so it and the other
+hostnames are originless `AAAA 100::` records. The API adds and removes custom
+hostnames itself with `CLOUDFLARE_SAAS_TOKEN` (contracts/teams.md "Help center
+addresses").
 
 Events: a write commits its row and an `events` outbox row in one transaction;
 the worker's relay publishes it to NATS `od.events.<wid>`; every gateway node
@@ -104,7 +126,11 @@ Do these once, in order. Values in `<angle brackets>` are yours.
 
 - An AWS account with an admin role for Terraform (SSO recommended), the AWS
   CLI, Terraform >= 1.10, Node 24 and pnpm 12.
-- A Cloudflare account with the `opendesk.sh` zone active.
+- A Cloudflare account with the `opendesk.sh` zone active, and the help center
+  zone `opendeskhelp.com` active in the same account (the Free plan is enough).
+  On that zone, enable Cloudflare for SaaS once: **SSL/TLS > Custom Hostnames >
+  Enable**. Terraform sets the fallback origin, which Cloudflare accepts only
+  once custom hostnames are enabled. Note the zone id for `help_zone_id`.
 - A PlanetScale account. Create the database in its dashboard: **Postgres**,
   region **AWS us-east-1** (the same as `aws_region`; PrivateLink is per
   region), the size you want and single node or high availability (see
@@ -118,27 +144,35 @@ Do these once, in order. Values in `<angle brackets>` are yours.
 ### 2. Cloudflare API token
 
 Create one token (My Profile > API Tokens > Create custom token) used by both
-Terraform and CI, scoped to the opendesk.sh zone and the account:
+Terraform and CI, scoped to the opendesk.sh and opendeskhelp.com zones and the
+account:
 
-- Zone: DNS Edit, Zone Settings Edit, Zone Edit (for HSTS and security settings),
-  Email Routing Rules Edit
+- Zone (opendesk.sh): DNS Edit, Zone Settings Edit, Zone Edit (for HSTS and
+  security settings), Email Routing Rules Edit
+- Zone (opendeskhelp.com): Zone Read, DNS Edit, Zone Settings Edit, SSL and
+  Certificates Edit (the custom hostname fallback origin), Workers Routes Edit
+  (the help worker's routes, set by `wrangler deploy`)
 - Account: Cloudflare Pages Edit, Workers Scripts Edit, Email Routing Addresses Edit
+
+The API needs a second, narrower token at runtime, created in step 6.
 
 Note the account id (any zone's overview page, right column).
 
-### 3. Deploy the email worker first
+### 3. Deploy the workers first
 
-Terraform's catch-all rule points at the worker by name, and Cloudflare refuses
-a rule for a worker that does not exist:
+Terraform's catch-all rule points at the email worker by name, and Cloudflare
+refuses a rule for a worker that does not exist. The help worker is deployed
+now too, so its secret can be set in step 6:
 
 ```sh
-cd deploy/cloudflare/email-worker
-pnpm install --frozen-lockfile
 export CLOUDFLARE_API_TOKEN=<token> CLOUDFLARE_ACCOUNT_ID=<account id>
-pnpm exec wrangler deploy
+(cd deploy/cloudflare/email-worker && pnpm install --frozen-lockfile && pnpm exec wrangler deploy)
+(cd deploy/cloudflare/help-worker && pnpm install --frozen-lockfile && pnpm exec wrangler deploy)
 ```
 
-Its `INBOUND_SECRET` is set in step 6, once Terraform has generated it.
+Their secrets, `INBOUND_SECRET` and `HELP_PROXY_SECRET`, are set in step 6, once
+Terraform has generated them. Until then the help worker answers `502`, and
+nothing points at it yet.
 
 ### 4. Terraform
 
@@ -158,7 +192,10 @@ This creates the VPC, ALB and certificate, ECR, the ECS cluster and services
 (their tasks fail until the first deploy pushes images; that is expected), the
 NATS, S3, SES, every secret, the two PlanetScale roles (app and migrate) with
 the PrivateLink endpoint that reaches them, and the Cloudflare DNS, Pages
-projects, Email Routing and zone settings.
+projects, Email Routing and zone settings, and the `opendeskhelp.com` records
+(apex, `www` and `*` for the help worker, `custom` and the `origin` fallback
+origin, a null MX, SPF and DMARC for a zone that sends no mail) and its zone
+settings.
 
 Then close the database's public path. The endpoint adds a private route but
 does not remove the public one: in the database's IP restrictions in
@@ -183,17 +220,40 @@ Microsoft 365 or SMTP), not SES.
 
 ### 6. Secrets
 
-Terraform generated `AUTH_SECRET`, `CREDENTIALS_KEY`, `INBOUND_SECRET`,
-`NATS_TOKEN`, `SECRET_KEY_BASE` and the two database URLs into Secrets Manager
-as `opendesk/production/<KEY>`. **Never regenerate `CREDENTIALS_KEY`**: it
-encrypts every stored mailbox credential.
+Terraform generated `AUTH_SECRET`, `CREDENTIALS_KEY`, `HELP_PROXY_SECRET`,
+`INBOUND_SECRET`, `NATS_TOKEN`, `SECRET_KEY_BASE` and the two database URLs into
+Secrets Manager as `opendesk/production/<KEY>`. **Never regenerate
+`CREDENTIALS_KEY`**: it encrypts every stored mailbox credential.
 
-Give the email worker the inbound secret:
+Give the email worker the inbound secret, and the help worker the help proxy
+secret:
 
 ```sh
 aws secretsmanager get-secret-value --secret-id opendesk/production/INBOUND_SECRET --query SecretString --output text |
   (cd deploy/cloudflare/email-worker && pnpm exec wrangler secret put INBOUND_SECRET)
+aws secretsmanager get-secret-value --secret-id opendesk/production/HELP_PROXY_SECRET --query SecretString --output text |
+  (cd deploy/cloudflare/help-worker && pnpm exec wrangler secret put HELP_PROXY_SECRET)
 ```
+
+Help center custom domains: the API adds each verified domain to
+`opendeskhelp.com` as a custom hostname. Create its token (My Profile > API
+Tokens > Create custom token) with **Zone: SSL and Certificates Edit** on the
+`opendeskhelp.com` zone only, and nothing else. Store it, then add
+`CLOUDFLARE_SAAS_TOKEN` to `optional_secrets` and apply again, which also sets
+`CLOUDFLARE_SAAS_ZONE_ID`:
+
+```sh
+aws secretsmanager put-secret-value --secret-id opendesk/production/CLOUDFLARE_SAAS_TOKEN --secret-string '<token>'
+```
+
+Without it, help centers are served at `<slug>.opendeskhelp.com` and a custom
+domain stays `certificate_pending` once its DNS records are found.
+
+Once `curl -sI https://<slug>.opendeskhelp.com` answers from the API, set the
+repository variable `HELP_DOMAIN` to `opendeskhelp.com` and run Deploy. It turns on
+the help worker's deploy job, gives the app `helpDomain`, and adds the
+`/help/<slug>` redirects to app.opendesk.sh. Until it is set, the app's old
+`/help/<slug>` links go to the API's own `/help/<slug>`.
 
 ### 7. OAuth apps
 
@@ -394,11 +454,13 @@ Run the Deploy workflow (Actions > Deploy > Run workflow, target `all`), or
 push to `main`. It builds arm64 images into ECR tagged with the commit SHA, runs
 `opendesk migrate` as a one-off task with the migrate role, rolls the api,
 worker and gateway services, and deploys the three Pages projects and the email
-worker. Check:
+worker and the help worker. Check:
 
 ```sh
 curl -fsS https://api.opendesk.sh/healthz
 curl -fsS https://api.opendesk.sh/readyz     # database and NATS connected
+curl -sI https://opendeskhelp.com            # 301 to https://opendesk.sh
+curl -sI https://<workspace slug>.opendeskhelp.com   # 200 once its help center is published
 ```
 
 ### 13. First release
@@ -418,12 +480,12 @@ installer and the self-host files, and redeploys opendesk.sh so
   both images built and scanned by Trivy (HIGH and CRITICAL with a fix fail
   the build) and then the root compose brought up and checked through Caddy
   (`scripts/selfhost-smoke.sh`), the installer checks, Terraform fmt and
-  validate, and the email worker's tests. Migrations are applied to a fresh
+  validate, and the email and help workers' tests and bundles. Migrations are applied to a fresh
   stock Postgres twice (the second run must be a no-op); production runs
   the same Postgres.
 - **deploy.yml** (main): images, migrate, services, Pages (with the runtime
   config and, when `APPLE_APP_IDS` is set, the apple-app-site-association),
-  email worker.
+  email worker, help worker (with its routes).
   Migrations run before any service moves, so a migration must work with both
   the old and the new code (add, backfill, then remove in a later deploy).
 - **release.yml** (tags `v*`): GHCR images with SBOM and provenance,
@@ -644,10 +706,22 @@ built and signed by that key's team. With Turnstile on, `APP_ATTEST_APP_IDS`
 lets the iPhone app pass the human check with App Attest. The docs page
 "Push notifications" (self-hosting) has the details.
 
+**Help center addresses.** Without more setup each brand's help center is at
+`https://<domain>/help/<slug>`. For `https://<slug>.help.example.com`, add a
+wildcard DNS record `*.help.example.com` pointing at the machine and set
+`HELP_DOMAIN=help.example.com`; old `/help/<slug>` links redirect. Custom domains
+(`help.customer.com`) work out of the box: the customer adds a TXT record and a
+CNAME to this host (`HELP_CNAME_TARGET`, the host of `OPENDESK_URL` when empty).
+Caddy gets every help center certificate on its first visit, after asking
+opendesk (`/v1/public/help-domains/tls`) whether the host is one of its help
+centers, so no wildcard certificate is needed.
+
 **Behind another proxy.** Set `OPENDESK_DOMAIN=:80`, `HTTP_PORT` to a free
 port, and `OPENDESK_URL` / `OPENDESK_GATEWAY_URL` to the public https / wss
 URLs; the outer proxy terminates TLS and must pass WebSocket upgrades on
-`/socket`.
+`/socket`. It also gets the help center certificates: a wildcard for
+`*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, with the
+`Host` header passed on as is.
 
 ### Troubleshooting
 
@@ -715,7 +789,8 @@ Monthly, us-east-1, before traffic:
 | S3, SES, private traffic ($0.01 per GB each side) | usage | usage |
 | Anthropic, Voyage | per token; each call is charged to the workspace's AI balance at cost × `AI_USAGE_MARKUP` (`contracts/billing.md`) | usage |
 | Stripe | per charge, plus Billing and Tax fees | usage |
-| Cloudflare Pages, Email Routing, DNS, proxy | free plan; Workers free tier covers the email worker | $0 |
+| Cloudflare Pages, Email Routing, DNS, proxy | free plan; the Workers free tier (100,000 requests a day) covers the email and help workers at launch, Workers Paid ($5) beyond | $0 |
+| Cloudflare for SaaS (help center custom domains) | the first 100 custom hostnames free, then $0.10 each a month | usage |
 | **Total** | **about $135 to $145** | **about $260 to $270** |
 
 Other levers:

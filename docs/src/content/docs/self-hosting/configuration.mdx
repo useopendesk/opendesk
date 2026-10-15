@@ -25,6 +25,7 @@ opendesk checks its secrets at start and refuses to run when they are unsafe:
 - `OPENDESK_ROLE` other than `all`, `api` or `worker`.
 - `STRIPE_SECRET_KEY` set without `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_PRO`.
 - Only some of `APNS_KEY`, `APNS_KEY_ID` and `APNS_TEAM_ID` set, `PUSH_RELAY_SERVE=true` without an APNs key, or a `PUSH_RELAY_URL` that is not an `https` origin.
+- `HELP_DOMAIN` that is not a domain name, `HELP_PROXY_SECRET` shorter than 32 bytes, only one of `CLOUDFLARE_SAAS_ZONE_ID` and `CLOUDFLARE_SAAS_TOKEN`, or Cloudflare for SaaS with neither `HELP_CNAME_TARGET` nor `HELP_DOMAIN`.
 
 The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
 
@@ -54,6 +55,18 @@ The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
 | `COOKIE_SECURE` | `true` when `API_URL` is `https` | Mark cookies `Secure`. |
 
 On a self-hosted single domain, `API_URL` and `APP_URL` are both `https://desk.example.com` and `GATEWAY_URL` is `wss://desk.example.com/socket`.
+
+## Help centers
+
+Where each brand's help center lives, and how custom domains reach it. See [Help center addresses](/guides/help-center-addresses/) for what customers do, and [Docker Compose](/self-hosting/docker-compose/#help-center-addresses) for the DNS and certificates of a self-hosted instance.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HELP_DOMAIN` | empty | Puts each help center at `<slug>.HELP_DOMAIN`, such as `https://acme.help.example.com`, with the scheme of `APP_URL`. Needs a wildcard DNS record for `*.HELP_DOMAIN`. Empty keeps help centers at `APP_URL/help/<slug>`. opendesk Cloud uses `opendeskhelp.com`. |
+| `HELP_CNAME_TARGET` | `custom.HELP_DOMAIN` with Cloudflare for SaaS, else the host of `APP_URL` | The hostname customers point their custom domain's CNAME at. It must reach this instance. |
+| `HELP_PROXY_SECRET` | empty | At least 32 bytes, shared with an edge proxy in front of the help centers (opendesk Cloud's help worker). When set, the help center host is read only from a request that carries the secret (`OD-Help-Secret`), with `OD-Help-Host` and `OD-Help-Client-IP`. Leave it empty when Caddy or another proxy forwards the `Host` header as is. |
+| `CLOUDFLARE_SAAS_ZONE_ID` | empty | A Cloudflare zone with Cloudflare for SaaS: verified custom domains become custom hostnames of it, with certificates from Cloudflare. Set together with the token. |
+| `CLOUDFLARE_SAAS_TOKEN` | empty | A Cloudflare API token with **SSL and Certificates: Edit** on that zone only. Without the pair, the instance's own proxy issues certificates on demand (Caddy, asking `GET /v1/public/help-domains/tls?domain=`). |
 
 ## Database
 

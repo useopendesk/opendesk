@@ -603,7 +603,7 @@ interface WidgetConfig {
   workspace_name: string                // the widget's brand name (the workspace name for the default brand)
   brand_color: string | null            // the widget's color, else the brand's, else the workspace brand_color
   greeting: string; require_email: boolean
-  help_center_url: string | null        // APP_URL/help/<brand slug> when the brand's help center is on
+  help_center_url: string | null        // the brand's help center url (contracts/teams.md) when its help center is on
   locale: string | null                 // the brand's, else the workspace's
   avatar_url: string | null             // the widget's avatar, else the brand logo, else the workspace logo
   launcher_icon_url: string | null

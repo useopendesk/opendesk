@@ -25,7 +25,7 @@ A **brand** is what customers see: a name, colour, logo and language, the email 
 
 ## The default brand
 
-Every workspace has exactly one default brand, made with the workspace. New addresses and tickets without a brand belong to it, and its help center path starts as the workspace's own, so existing help center links keep working. The default brand can't be deleted.
+Every workspace has exactly one default brand, made with the workspace. New addresses and tickets without a brand belong to it, and its help center address starts as the workspace's slug, so existing help center links keep working. The default brand can't be deleted.
 
 Brand pickers and chips appear across opendesk once there is a second brand, on tickets, mailboxes and routing rules among others. With one brand they stay out of the way.
 
@@ -37,9 +37,9 @@ Brand pickers and chips appear across opendesk once there is a second brand, on 
 Open **Settings**, then **Brands and widgets**, and click **New brand**.
 
 </Step>
-<Step title="Name it and choose its help center path">
+<Step title="Name it and choose its help center address">
 
-Give the brand a name (up to 60 characters). The **Help center path** is where its help center lives: `/help/<path>` on your opendesk address. It takes 3 to 40 lowercase letters, numbers and dashes, and must be unique. Pick a **Colour**: its widgets, help center and emails use it unless they set their own.
+Give the brand a name (up to 60 characters). The **Help center address** names its help center's address: `https://<path>.opendeskhelp.com` on opendesk Cloud (see [Help center addresses](/guides/help-center-addresses/) for self-hosted instances). It takes 3 to 40 lowercase letters, numbers and dashes, and must be unique. Pick a **Colour**: its widgets, help center and emails use it unless they set their own.
 
 <Screenshot src="/guides/brands/new-brand" alt="The New brand dialog: the Name field ringed as 1, the Help center path ringed as 2, and the colour choices ringed as 3" />
 
@@ -77,11 +77,11 @@ To move an existing address to another brand, open it in **Settings**, **Mailbox
 
 ## Help center
 
-Each brand has its own help center at `/help/<path>`, with the brand's articles and the ones shared by every brand. On the **Help center** tab, turn on **Published** to make it public, set its title, and give it its own logo and favicon.
+Each brand has its own help center at `https://<path>.opendeskhelp.com`, or on a domain of yours such as `help.example.com`, with the brand's articles and the ones shared by every brand. On the **Help center** tab, turn on **Published** to make it public, set its title, and give it its own logo and favicon.
 
 <Screenshot src="/guides/brands/help-center" alt="The Help center tab of Margin: the Published switch ringed as 1, the public link https://app.opendesk.sh/help/margin ringed as 2, and the path after /help/ ringed as 3" />
 
-Changing the path moves the help center: links to the old path stop working. Write articles in the [knowledge base](/guides/knowledge-base/).
+Changing its **Default address** moves the help center: links to the old address stop working. To put it on your own domain, see [Help center addresses](/guides/help-center-addresses/). Write articles in the [knowledge base](/guides/knowledge-base/).
 
 ## Chat widgets
 

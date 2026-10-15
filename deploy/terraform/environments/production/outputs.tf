@@ -79,3 +79,8 @@ output "secret_arns" {
   description = "Secret key => ARN. Values are never output."
   value       = module.secrets.arns
 }
+
+output "help_cname_target" {
+  description = "What help center custom domains CNAME to (HELP_CNAME_TARGET); null without help_domain."
+  value       = local.help ? module.cloudflare_help[0].cname_target : null
+}

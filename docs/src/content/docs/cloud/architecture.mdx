@@ -13,10 +13,11 @@ The hosted service at opendesk.sh runs the same code as a self-hosted install, s
 | --- | --- | --- |
 | `opendesk.sh` | Marketing site and `install.sh` | Cloudflare Pages |
 | `docs.opendesk.sh` | This documentation | Cloudflare Pages |
-| `app.opendesk.sh` | The web app, help center, `widget/v1.js`, `config.json` for the native apps and the iPhone app's `apple-app-site-association` | Cloudflare Pages |
+| `app.opendesk.sh` | The web app, `widget/v1.js`, `config.json` for the native apps and the iPhone app's `apple-app-site-association` | Cloudflare Pages |
 | `api.opendesk.sh` | The REST API, `/docs` and `/v1/openapi.json` | AWS ECS behind an ALB |
 | `gateway.opendesk.sh` | The realtime gateway (`/socket`) | AWS ECS behind the same ALB |
 | `in.opendesk.sh` | Forwarding addresses (`<token>@in.opendesk.sh`) | Cloudflare Email Routing and an Email Worker |
+| `<slug>.opendeskhelp.com` | Help centers, and customers' own help center domains | A Cloudflare Worker in front of the API |
 
 ## Request path
 
@@ -36,6 +37,7 @@ The hosted service at opendesk.sh runs the same code as a self-hosted install, s
 
 - **DNS** and zone security settings for every domain.
 - **Pages** hosts the site, docs and web app as static builds.
+- **The help worker** answers every request to the `opendeskhelp.com` zone: `<slug>.opendeskhelp.com`, and every customer domain that points at `custom.opendeskhelp.com`, which the API adds to the zone as a Cloudflare for SaaS custom hostname with its own certificate. The worker caches pages for a minute and forwards the rest to the API, which renders the help center of that host. The zone apex redirects to opendesk.sh.
 - **Email Routing** receives all mail for `in.opendesk.sh` with a catch-all rule and hands each message to the **Email Worker**, which posts it to `POST /v1/inbound/email` with a shared secret. If the API is unavailable, the worker reports a temporary failure so the sending server retries later.
 
 ## PlanetScale

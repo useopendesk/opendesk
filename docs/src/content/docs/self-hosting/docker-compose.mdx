@@ -151,6 +151,33 @@ Combine profiles with commas: `COMPOSE_PROFILES=minio,ollama`.
 
 Caddy's access log strips the `token` query parameter and the `Authorization` and `Cookie` headers, since realtime tokens travel in `?token=`.
 
+## Help center addresses
+
+Without more setup, each brand's help center is at `/help/<slug>` on `OPENDESK_URL`. To give each one a host of its own, such as `https://acme.help.example.com`:
+
+<Steps>
+<Step title="Add a wildcard DNS record">
+
+Point `*.help.example.com` at this server: an `A` (and `AAAA`) record with the server's address, or a `CNAME` to `OPENDESK_DOMAIN`. Ports 80 and 443 must be reachable, as for the main address.
+
+</Step>
+<Step title="Set HELP_DOMAIN">
+
+In `.env`, set `HELP_DOMAIN=help.example.com`, then run `opendesk-ctl start` (or `docker compose up -d`). Links to `/help/<slug>` redirect to the new addresses.
+
+</Step>
+</Steps>
+
+There is no wildcard certificate to manage. Caddy's second site block (`https://` with `tls { on_demand }`) gets each help center's certificate from Let's Encrypt on its first visit. Before it asks for one, Caddy asks opendesk (`GET /v1/public/help-domains/tls?domain=`), which answers `200` only for `<slug>.HELP_DOMAIN` of a published help center and for active custom domains, so nobody can make the server request certificates for names it does not serve. The first visit to a new host waits a few seconds for its certificate.
+
+Custom domains work the same way, with or without `HELP_DOMAIN`. When an admin adds `help.acme.com` to a brand, they are shown a `TXT` record and a `CNAME` to this host (`HELP_CNAME_TARGET`, the host of `OPENDESK_URL` when empty). Once both are found the domain is active, and Caddy gets its certificate on the first visit. See [Help center addresses](/guides/help-center-addresses/).
+
+<Callout>
+
+Behind another proxy that terminates TLS (`OPENDESK_DOMAIN=:80`), that proxy gets the certificates: give it a wildcard certificate for `*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, and forward the `Host` header as is.
+
+</Callout>
+
 ## Volumes
 
 | Volume | Holds |

@@ -4,7 +4,8 @@ name: Deploy
 #   1. build linux/arm64 images, push to ECR tagged with the commit SHA
 #   2. run the migrations as a one-off ECS task (opendesk-migrate, direct URL)
 #   3. roll api, worker and gateway onto the new images
-#   4. build and deploy the three Cloudflare Pages projects and the email worker
+#   4. build and deploy the three Cloudflare Pages projects, the email worker and the
+#      help center worker
 #
 # AWS access is OIDC only: the role (deploy/terraform, module github-oidc)
 # trusts this repository's production environment and can do nothing else.
@@ -256,6 +257,10 @@ jobs:
           TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
           APPLE_APP_IDS: ${{ vars.APPLE_APP_IDS }}
           MAILBOX_OAUTH: ${{ vars.MAILBOX_OAUTH || 'microsoft' }}
+          # Help centers at https://<slug>.<HELP_DOMAIN> (contracts/native.md "helpDomain").
+          # The repository variable is set once the help zone and its worker serve
+          # (deploy/README.md); until then help centers stay on the API's /help/<slug>.
+          HELP_DOMAIN: ${{ vars.HELP_DOMAIN }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -263,6 +268,10 @@ jobs:
           # The app's own _headers win if web/ ever ships one.
           [ -f dist/_headers ] || cp ../deploy/cloudflare/pages/app/_headers dist/
           [ -f dist/_redirects ] || cp ../deploy/cloudflare/pages/app/_redirects dist/
+          # Old /help/<slug>/... app links move to the help center's own host for good.
+          if [ -n "$HELP_DOMAIN" ]; then
+            printf '/help/:slug https://:slug.%s/ 301\n/help/:slug/* https://:slug.%s/:splat 301\n' "$HELP_DOMAIN" "$HELP_DOMAIN" >> dist/_redirects
+          fi
           node ../deploy/cloudflare/pages/app/write-config.mjs dist
           echo "DIST=web/dist" >> "$GITHUB_ENV"
 
@@ -330,4 +339,33 @@ jobs:
       - run: pnpm test
       # INBOUND_SECRET is set once with `wrangler secret put` (deploy/README.md);
       # a deploy keeps it.
+      - run: pnpm exec wrangler deploy
+
+  help-worker:
+    name: Help worker
+    if: vars.DEPLOY_ENABLED == 'true' && vars.HELP_DOMAIN != '' && (inputs.target || 'all') == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: deploy/cloudflare/help-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      # HELP_PROXY_SECRET is set once with `wrangler secret put` (deploy/README.md);
+      # a deploy keeps it. The routes in wrangler.toml are applied by this deploy.
       - run: pnpm exec wrangler deploy

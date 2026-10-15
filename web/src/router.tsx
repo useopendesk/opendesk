@@ -68,36 +68,13 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 
 // ─── Public (no app chrome) ────────────────────────────────────────────────
 
+// Help centers are rendered by the API (contracts/teams.md "Help center addresses").
+// An old /help/<slug>/... link of the app goes on to the help center's address.
 const helpRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/help/$slug",
-  component: page(() => import("./pages/public/help/HelpLayout")),
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.publicHelp(params.slug)),
+  path: "/help/$slug/$",
+  component: page(() => import("./pages/public/HelpRedirect")),
   staticData: { title: "Help center" },
-});
-const helpHomeRoute = createRoute({
-  getParentRoute: () => helpRoute,
-  path: "/",
-  component: page(() => import("./pages/public/help/HelpHome")),
-});
-const helpCollectionRoute = createRoute({
-  getParentRoute: () => helpRoute,
-  path: "/c/$collection",
-  component: page(() => import("./pages/public/help/HelpCollection")),
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.publicCollection(params.slug, params.collection)),
-});
-const helpArticleRoute = createRoute({
-  getParentRoute: () => helpRoute,
-  path: "/a/$article",
-  component: page(() => import("./pages/public/help/HelpArticle")),
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.publicArticle(params.slug, params.article)),
-});
-const helpSearchRoute = createRoute({
-  getParentRoute: () => helpRoute,
-  path: "/search",
-  validateSearch: (s: Record<string, unknown>): { q?: string } => ({ q: str(s.q) }),
-  component: page(() => import("./pages/public/help/HelpSearch")),
-  staticData: { title: "Search" },
 });
 
 const csatRoute = createRoute({
@@ -714,7 +691,7 @@ const sIntegrations = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  helpRoute.addChildren([helpHomeRoute, helpCollectionRoute, helpArticleRoute, helpSearchRoute]),
+  helpRoute,
   csatRoute,
   authLayout.addChildren([
     loginRoute,

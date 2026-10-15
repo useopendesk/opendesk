@@ -58,10 +58,6 @@ export const qk = {
   search: (q: string) => ["search", q] as const,
   reports: (r: ReportsQuery) => ["reports", r] as const,
   widgetSettings: ["widget-settings"] as const,
-  publicHelp: (slug: string) => ["public", "help", slug] as const,
-  publicCollection: (slug: string, c: string) => ["public", "help", slug, "c", c] as const,
-  publicArticle: (slug: string, a: string) => ["public", "help", slug, "a", a] as const,
-  publicSearch: (slug: string, q: string) => ["public", "help", slug, "search", q] as const,
   csat: (token: string) => ["public", "csat", token] as const,
   invitationLookup: (token: string) => ["invitation-lookup", token] as const,
   billing: ["billing"] as const,
@@ -200,13 +196,6 @@ export const q = {
   triage: () => queryOptions({ queryKey: qk.triage, queryFn: api.triage.get }),
   businessHours: () => queryOptions({ queryKey: qk.businessHours, queryFn: api.businessHours.get }),
   onboarding: () => queryOptions({ queryKey: qk.onboarding, queryFn: api.onboarding.get, staleTime: 30_000 }),
-  publicHelp: (slug: string) => queryOptions({ queryKey: qk.publicHelp(slug), queryFn: () => api.public.help(slug) }),
-  publicCollection: (slug: string, c: string) =>
-    queryOptions({ queryKey: qk.publicCollection(slug, c), queryFn: () => api.public.collection(slug, c) }),
-  publicArticle: (slug: string, a: string) =>
-    queryOptions({ queryKey: qk.publicArticle(slug, a), queryFn: () => api.public.article(slug, a) }),
-  publicSearch: (slug: string, term: string) =>
-    queryOptions({ queryKey: qk.publicSearch(slug, term), queryFn: () => api.public.search(slug, term), enabled: term.trim().length > 1 }),
   csat: (token: string) => queryOptions({ queryKey: qk.csat(token), queryFn: () => api.public.csat(token), retry: false }),
   invitationLookup: (token: string) =>
     queryOptions({ queryKey: qk.invitationLookup(token), queryFn: () => api.invitations.lookup(token), retry: false }),

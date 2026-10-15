@@ -119,6 +119,13 @@
     "pageNotFoundBody": "The link may be broken, or the page may have moved.",
     "home": "Go home"
   },
+  "helpRedirect": {
+    "title": "Help centers live on their own address",
+    "body": "This help center link points at the app, but help centers are served by the API. Open it from the brand's help center settings instead.",
+    "devBody": "Help centers are rendered by the API, not by this dev server, so this link only works against a running API.",
+    "devTip": "In mock mode there is no API to render it. Open the brand's help center settings to see its address.",
+    "openApi": "Open it on the API"
+  },
   "connection": {
     "lost": "Connection lost. Reconnecting, changes will sync when it is back.",
     "back": "Back online"

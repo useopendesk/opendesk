@@ -102,5 +102,10 @@ point elsewhere when `write-config.mjs` runs, and the API only accepts its own
 ## Credentials
 
 `deploy.yml` uses a Cloudflare API token scoped to the account with
-**Cloudflare Pages: Edit** and **Workers Scripts: Edit** (for the email worker), stored
-as the `CLOUDFLARE_API_TOKEN` secret, plus `CLOUDFLARE_ACCOUNT_ID` as a variable.
+**Cloudflare Pages: Edit** and **Workers Scripts: Edit** (for the email and help
+workers), and on the `opendeskhelp.com` zone **Zone: Read** and **Workers Routes:
+Edit** (the help worker's routes), stored as the `CLOUDFLARE_API_TOKEN` secret,
+plus `CLOUDFLARE_ACCOUNT_ID` as a variable.
+
+`app/_redirects` sends old help center links, `app.opendesk.sh/help/<slug>/...`,
+to `https://<slug>.opendeskhelp.com/...` with a `301`.

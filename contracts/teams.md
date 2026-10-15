@@ -36,7 +36,12 @@ type Team = {
 type Brand = {
   id: string; name: string /* 1..60 */; slug: string /* help center path, 3..40 [a-z0-9-] */; is_default: boolean;
   color: string /* "#rrggbb" or "" = the workspace brand_color */; locale: string /* BCP 47 or "" */;
-  help_center: { enabled: boolean; title: string; url: string /* APP_URL/help/<slug> */ };
+  help_center: {
+    enabled: boolean; title: string;
+    url: string /* where the help center is: the active custom domain, else default_url */;
+    default_url: string /* https://<slug>.<HELP_DOMAIN>, or {base}/help/<slug> without HELP_DOMAIN (see "Help center addresses") */;
+    domain: HelpDomain | null /* its custom domain, "Help center addresses" */;
+  };
   images: { logo: string | null; help_center_logo: string | null; help_center_favicon: string | null };
   default_mailbox_id: string | null /* the brand's oldest active address */;
   mailbox_count: number; widget_count: number; position: number; created_at: string; updated_at: string;
@@ -117,6 +122,9 @@ type TicketCounts = TicketCounts & {
 | CRUD | `/v1/brands`, `/v1/brands/{id}` | read: members; write: admin. Create `{name, slug?, color?, locale?, help_center?: {enabled?, title?}}` (PATCH the same and `position`). `slug` is unique across all brands (`409 slug_taken`), derived from the name when absent; reserved words answer `422 slug_reserved`. DELETE refuses the default brand (`409 default_brand`) and a brand with addresses (`409 brand_in_use`); its widgets, collections and articles (its own and those in its collections) go with it, and its tickets move to the default brand. Audit `brand.created`/`updated`/`deleted`/`default_changed`/`image_updated`/`image_removed` |
 | PUT/DELETE | `/v1/brands/{id}/images/{slot}` | admin. `logo`, `help_center_logo`, `help_center_favicon` |
 | POST | `/v1/brands/{id}/default` | admin → makes this the default brand |
+| PUT | `/v1/brands/{id}/help-domain` | admin `{hostname}` → `Brand`: sets the help center's custom domain ("Help center addresses") and checks it right away. The same hostname again changes nothing; another hostname replaces the domain, which starts over. `422 hostname_invalid` (not a hostname, an IP address, a registrable domain such as `acme.com` rather than a subdomain, or a host of this instance or under `HELP_DOMAIN`), `409 domain_taken` (verified by another brand). Audit `brand.help_domain_set {hostname, previous}` |
+| POST | `/v1/brands/{id}/help-domain/check` | admin → `Brand`: checks the domain now (a `failed` one goes back to `pending` and its schedule starts over). 6 per minute per brand (`429`). `404` without a domain |
+| DELETE | `/v1/brands/{id}/help-domain` | admin → 204. The help center is again only at `default_url`, and its certificate is released. Audit `brand.help_domain_removed {hostname}` |
 | GET | `/v1/widgets/summary` | members (keys: `tickets:read`) → `{data: {id, name, brand_id}[]}`: every widget, for inbox filters |
 | CRUD | `/v1/widgets`, `/v1/widgets/{id}` | admin. `GET ?brand_id=`. Create `{brand_id, name, team_id?, settings?}` → `Widget & {secret?, secret_available}`: the first secret is answered only past the owner-level gate of rotating it (a user whose session verified a second factor when they have one, signed in recently); otherwise `secret` is absent, `secret_available` is `false`, and the admin rotates the secret to see one; PATCH `{name?, brand_id?, team_id?, position?, settings?}` merges `settings` keys like `/v1/widget/settings`. Deleting a widget ends its visitor sessions. Audit `widget.created`/`updated`/`deleted`/`secret_rotated`/`image_updated`/`image_removed` |
 | POST | `/v1/widgets/{id}/secret/rotate` | owner-level gate (MFA and recent login) → `{secret}` once. Each widget has its own secret; a new widget answers its first secret on create (`secret`, shown once) when the creator passes the same gate |
@@ -129,7 +137,10 @@ type TicketCounts = TicketCounts & {
 | POST | `/v1/tickets/{id}/messages` | also `mailbox_id?`: send this reply from another address the caller may send from; it becomes the ticket's reply address. A reply without `mailbox_id` from a reply address the caller may not send from is `403 reply_address_forbidden`: pick another address |
 | GET | `/v1/tickets` | also `brand_id`, `widget_id`, and `team_id` as a comma-separated list of team ids, `mine` (the caller's teams) and `none` (no team), matching any of them (at most 50; views' `filters.team_id` take the same) |
 
-Public routes resolve the brand: `/v1/public/help/{slug}` takes a brand slug (the default brand's
+Public routes resolve the brand: `GET /v1/public/help-domains/tls?domain=` answers 200 when this
+instance serves that hostname (an active custom domain, or `<slug>.<HELP_DOMAIN>` of a brand whose
+help center is on) and 404 otherwise, for a proxy that issues certificates on demand.
+`/v1/public/help/{slug}` takes a brand slug (the default brand's
 slug is the workspace slug, so existing links work) and lists only that brand's collections and
 articles plus shared ones. `/v1/widget/config?key=` and `/v1/widget/session` take any widget's key.
 `WidgetConfig` adds `topics: {id, label}[]`, `open: boolean` (the routed team's or workspace's
@@ -336,6 +347,83 @@ gateway pushes what is scoped to that team only to sockets that have it (contrac
   A team view is never `shared` (both is `422`). Members other than leads read it but do not change it.
 - **Assignment**: `assign_mode` is the team's rule in `/v1/assignment`.
 
+## Help center addresses
+
+Each brand's help center is a website of its own, rendered by the API binary (`internal/helpdesk/helpsite`)
+so search engines and link previews read it.
+
+- **Default address.** With `HELP_DOMAIN` set (opendesk Cloud: `opendeskhelp.com`) it is
+  `https://<slug>.<HELP_DOMAIN>`; without it, `{base}/help/<slug>`, where `{base}` is `APP_URL` when
+  the binary serves the web app (`SERVE_WEB`) and `API_URL` otherwise. Changing the slug moves it.
+- **Custom domain.** A brand may add one subdomain it controls, such as `help.acme.com`. Once it
+  is `active`, it is the help center's `url` and the default address answers `301` to it.
+- **Every plan**, with no limit beyond one domain per brand (contracts/billing.md).
+
+```ts
+type HelpDomain = {
+  hostname: string /* lowercase, ASCII (IDNA) */;
+  status: "pending" /* waiting for its DNS records or certificate */ | "active" | "failed" /* gave up after 72 hours */;
+  problem: "" | "txt_missing" | "cname_missing" | "domain_taken" | "certificate_pending" | "certificate_failed" | "provider_error";
+  records: { type: "TXT" | "CNAME"; name: string; value: string; ok: boolean /* at the last check */ }[];
+  checked_at: string | null; verified_at: string | null /* both records were found */; created_at: string;
+};
+```
+
+`records` are what the customer adds at their DNS provider:
+
+| type | name | value |
+| --- | --- | --- |
+| `TXT` | `_opendesk-verify.<hostname>` | `opendesk-verify=<token>`, a token of this domain alone |
+| `CNAME` | `<hostname>` | `HELP_CNAME_TARGET`: `custom.<HELP_DOMAIN>` with Cloudflare, else the host of `APP_URL` |
+
+The TXT record proves the domain is the customer's: a CNAME left pointing here after a domain is
+removed never lets another workspace take it, because the new claim gets a new token. A CNAME also
+passes when the hostname resolves to the same addresses as the target (flattened records). Once
+verified the TXT record is no longer read.
+
+**Checks.** A River job (`help_domain.check`) checks a pending domain right away, then every 2
+minutes for an hour, every 15 minutes for a day, and hourly until 72 hours, after which it is
+`failed` (POST `.../check` starts over). With both records found the domain is verified: at most one
+brand holds a verified hostname, so a second claim answers `domain_taken`. Then:
+
+- with Cloudflare for SaaS (`CLOUDFLARE_SAAS_ZONE_ID` and `CLOUDFLARE_SAAS_TOKEN`), the hostname is
+  added to the zone as a custom hostname with an HTTP-validated certificate; the domain is
+  `certificate_pending` until Cloudflare reports the hostname and certificate active, then `active`;
+- without them, the domain is `active` at once and the instance's proxy issues the certificate on the
+  first visit (Caddy on-demand TLS asking `/v1/public/help-domains/tls`).
+
+An active domain is checked every 6 hours: a CNAME that no longer points here, or a certificate
+Cloudflare could not renew, sets `problem` while it stays `active`. Removing a domain or deleting its
+brand releases the Cloudflare hostname (`help_domain.release`), and a daily sweep releases any the
+zone holds that no domain does. Every status change publishes `brand.updated`.
+
+**Serving.** The help center answers on its default address and its active domain:
+
+| path | |
+| --- | --- |
+| `/` | title, search, topics (collections) and popular articles |
+| `/c/<collection slug>` · `/a/<article slug>` | a topic, an article (with the rest of its topic) |
+| `/search?q=` | up to 20 published articles |
+| `/sitemap.xml` · `/robots.txt` | every published article and topic of the brand |
+| `/_help/*` | the stylesheet, script and fonts |
+| `POST /_help/views` | `{article_id}` from the page's script: counts an article view |
+
+- `?lang=` picks the interface language (the SUPPORTED web locales), else the brand's locale, else the
+  workspace's, else English; pages link their other languages with `hreflang`. Articles are shown as
+  written.
+- Pages carry a canonical URL on the help center's `url`, Open Graph and JSON-LD (`WebSite` with a
+  search action, `BreadcrumbList`, `Article`), and `Cache-Control: public, max-age=60`.
+- `<slug>.<HELP_DOMAIN>` and `/help/<slug>/*` on the instance's own hosts answer `301` to the help center's `url` when that
+  is elsewhere (`/help/<slug>/c/x` → `/c/x`). A brand whose help center is off, or an unknown host or
+  path, is a `404` page.
+- Responses carry a CSP of their own: scripts and styles from the page's origin only, images over
+  https, `frame-ancestors 'none'`. Article bodies are the stored sanitized HTML.
+- Cloud: `*.opendeskhelp.com` and every custom hostname reach a Cloudflare Worker
+  (`deploy/cloudflare/help-worker`) that caches pages and forwards to the API with `OD-Help-Host`
+  (the hostname asked for), `OD-Help-Client-IP` and `OD-Help-Secret` (`HELP_PROXY_SECRET`, at least
+  32 bytes). The API believes the first two only with the secret. The zone apex and `www` redirect
+  to the product site.
+
 ## Events
 
 | type | data |
@@ -349,6 +437,6 @@ gateway pushes what is scoped to that team only to sockets that have it (contrac
 
 ## Limits
 
-Brands and widgets are not limited by plan (contracts/billing.md: plans differ in mailboxes and
+Brands, widgets and help center domains are not limited by plan (contracts/billing.md: plans differ in mailboxes and
 members). At most 50 brands, 50 widgets per brand, 200 teams and 200 routing rules per workspace
 (`422 limit_reached`).

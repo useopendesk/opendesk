@@ -20,6 +20,8 @@ Only published articles are returned.
 curl https://api.opendesk.sh/v1/public/help/example/search?q=password
 ```
 
+The rendered help center is served at its own address, not under `/v1` ([Help center addresses](/guides/help-center-addresses/)). For a proxy that issues certificates on demand, `GET /v1/public/help-domains/tls?domain=<hostname>` answers `200` when the instance serves a help center on that hostname and `404` otherwise.
+
 ## CSAT
 
 | Method | Path | Description |

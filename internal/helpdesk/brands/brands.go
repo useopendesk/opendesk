@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/ai/bots"
+	"github.com/useopendesk/opendesk/internal/config"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
@@ -35,11 +36,13 @@ const (
 	maxTitleRunes      = 100
 )
 
-// BrandHelpCenter is a brand's public help center at APP_URL/help/<slug>.
+// BrandHelpCenter is a brand's public help center (contracts/teams.md "Help center addresses").
 type BrandHelpCenter struct {
-	Enabled bool   `json:"enabled"`
-	Title   string `json:"title"`
-	URL     string `json:"url"`
+	Enabled    bool        `json:"enabled"`
+	Title      string      `json:"title"`
+	URL        string      `json:"url" doc:"Where the help center is: the active custom domain, else default_url"`
+	DefaultURL string      `json:"default_url" doc:"https://<slug>.<HELP_DOMAIN>, or <base>/help/<slug> without HELP_DOMAIN (APP_URL when the binary serves the web app, else API_URL)"`
+	Domain     *HelpDomain `json:"domain" doc:"The help center's custom domain"`
 }
 
 // BrandImages are a brand's pictures (brands.images).
@@ -72,40 +75,55 @@ const brandSelect = `SELECT b.id, b.name, b.slug, b.is_default, b.color, b.local
 		ORDER BY (m.status = 'active') DESC, m.created_at, m.id LIMIT 1),
 	(SELECT count(*) FROM mailboxes m WHERE m.workspace_id = b.workspace_id AND m.brand_id = b.id),
 	(SELECT count(*) FROM widgets g WHERE g.workspace_id = b.workspace_id AND g.brand_id = b.id),
-	b.position, b.created_at, b.updated_at
-FROM brands b`
+	b.position, b.created_at, b.updated_at,
+	hd.hostname, hd.token, hd.status, hd.problem, hd.txt_ok, hd.cname_ok, hd.checked_at, hd.verified_at, hd.created_at
+FROM brands b LEFT JOIN help_domains hd ON hd.brand_id = b.id`
 
-func scan(row pgx.Row, appURL string) (Brand, error) {
+func scan(row pgx.Row, cfg *config.Config) (Brand, error) {
 	var b Brand
 	var imgs map[string]string
+	var dom domainRow
 	err := row.Scan(&b.ID, &b.Name, &b.Slug, &b.IsDefault, &b.Color, &b.Locale, &b.HelpCenter.Enabled, &b.HelpCenter.Title, &imgs,
-		&b.DefaultMailboxID, &b.MailboxCount, &b.WidgetCount, &b.Position, &b.CreatedAt, &b.UpdatedAt)
+		&b.DefaultMailboxID, &b.MailboxCount, &b.WidgetCount, &b.Position, &b.CreatedAt, &b.UpdatedAt,
+		&dom.hostname, &dom.token, &dom.status, &dom.problem, &dom.txtOK, &dom.cnameOK, &dom.checkedAt, &dom.verifiedAt, &dom.createdAt)
 	if err != nil {
 		return b, err
 	}
-	b.HelpCenter.URL = HelpCenterURL(appURL, b.Slug)
+	b.HelpCenter.Domain = dom.domain(cfg)
+	b.HelpCenter.DefaultURL = cfg.HelpCenterURL(b.Slug)
+	b.HelpCenter.URL = HelpCenterURL(cfg, b.Slug, b.HelpCenter.Domain.activeHost())
 	b.Images = BrandImages{Logo: domain.Avatar(imgs["logo"]), HelpCenterLogo: domain.Avatar(imgs["help_center_logo"]),
 		HelpCenterFavicon: domain.Avatar(imgs["help_center_favicon"])}
 	return b, nil
 }
 
-// HelpCenterURL is the public help center of a brand slug.
-func HelpCenterURL(appURL, slug string) string {
-	return strings.TrimRight(appURL, "/") + "/help/" + slug
+// HelpCenterURL is where the help center of a brand slug is: https://<activeHost> when
+// the brand has an active custom domain, else its default address.
+func HelpCenterURL(cfg *config.Config, slug, activeHost string) string {
+	if activeHost != "" {
+		return "https://" + activeHost
+	}
+	return cfg.HelpCenterURL(slug)
+}
+
+// ActiveHostSQL selects the active custom domain of the brand whose id is the SQL
+// expression brandID, or NULL.
+func ActiveHostSQL(brandID string) string {
+	return `(SELECT hdx.hostname FROM help_domains hdx WHERE hdx.brand_id = ` + brandID + ` AND hdx.status = 'active')`
 }
 
 // Load returns a brand of the workspace.
-func Load(ctx context.Context, q db.Querier, appURL string, wid, id uuid.UUID) (Brand, error) {
-	return scan(q.QueryRow(ctx, brandSelect+` WHERE b.workspace_id = $1 AND b.id = $2`, wid, id), appURL)
+func Load(ctx context.Context, q db.Querier, cfg *config.Config, wid, id uuid.UUID) (Brand, error) {
+	return scan(q.QueryRow(ctx, brandSelect+` WHERE b.workspace_id = $1 AND b.id = $2`, wid, id), cfg)
 }
 
 // List returns the workspace's brands, default first, then by position.
-func List(ctx context.Context, q db.Querier, appURL string, wid uuid.UUID) ([]Brand, error) {
+func List(ctx context.Context, q db.Querier, cfg *config.Config, wid uuid.UUID) ([]Brand, error) {
 	rows, err := q.Query(ctx, brandSelect+` WHERE b.workspace_id = $1 ORDER BY b.is_default DESC, b.position, b.name, b.id`, wid)
 	if err != nil {
 		return nil, err
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Brand, error) { return scan(r, appURL) })
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Brand, error) { return scan(r, cfg) })
 	if out == nil {
 		out = []Brand{}
 	}
@@ -182,8 +200,8 @@ func Check(ctx context.Context, q db.Querier, wid, id uuid.UUID) error {
 }
 
 // Publish sends brand.created or brand.updated with the brand.
-func Publish(ctx context.Context, tx pgx.Tx, appURL string, wid, id uuid.UUID, typ string) error {
-	b, err := Load(ctx, tx, appURL, wid, id)
+func Publish(ctx context.Context, tx pgx.Tx, cfg *config.Config, wid, id uuid.UUID, typ string) error {
+	b, err := Load(ctx, tx, cfg, wid, id)
 	if err != nil {
 		return err
 	}
@@ -217,7 +235,7 @@ type Defaults struct {
 }
 
 // CreateDefaults creates a new workspace's default brand (its slug is the workspace slug,
-// so the help center lives at /help/<workspace slug>) and its first widget, "Website",
+// so the help center's address names the workspace) and its first widget, "Website",
 // with widgetKey and a fresh identity secret.
 func CreateDefaults(ctx context.Context, tx pgx.Tx, box Sealer, wid uuid.UUID, name, slug, helpCenterTitle, widgetKey string) (Defaults, error) {
 	d := Defaults{BrandID: ids.New(), WidgetID: ids.New(), WidgetKey: widgetKey}
@@ -249,7 +267,7 @@ func CreateDefaults(ctx context.Context, tx pgx.Tx, box Sealer, wid uuid.UUID, n
 // SyncDefault applies workspace settings that the default brand mirrors (brand_color,
 // locale, help_center_enabled, help_center_title) and publishes brand.updated. Keys not in
 // patch are left alone.
-func SyncDefault(ctx context.Context, tx pgx.Tx, appURL string, wid uuid.UUID, patch map[string]any) error {
+func SyncDefault(ctx context.Context, tx pgx.Tx, cfg *config.Config, wid uuid.UUID, patch map[string]any) error {
 	var color, locale, title *string
 	var enabled *bool
 	if v, ok := patch["brand_color"].(string); ok {
@@ -278,7 +296,7 @@ func SyncDefault(ctx context.Context, tx pgx.Tx, appURL string, wid uuid.UUID, p
 	if err != nil {
 		return err
 	}
-	return Publish(ctx, tx, appURL, wid, id, "brand.updated")
+	return Publish(ctx, tx, cfg, wid, id, "brand.updated")
 }
 
 // SlugTaken reports whether a help center slug is used by any brand.

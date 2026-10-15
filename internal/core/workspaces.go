@@ -27,6 +27,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/plan"
 )
 
@@ -402,6 +403,20 @@ func (s *svc) deleteWorkspace(ctx context.Context, tx pgx.Tx, wid uuid.UUID) ([]
 	if err := billing.EnqueueCancel(ctx, s.d, tx, wid); err != nil {
 		return nil, nil, err
 	}
+	// Help center domains release their certificates (contracts/teams.md "Help center addresses").
+	rows, err = tx.Query(ctx, `SELECT provider_id FROM help_domains WHERE workspace_id = $1 AND provider_id IS NOT NULL`, wid)
+	if err != nil {
+		return nil, nil, err
+	}
+	providers, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, id := range providers {
+		if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.HelpDomainReleaseArgs{ProviderID: id}, nil); err != nil {
+			return nil, nil, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id = $1`, wid); err != nil {
 		return nil, nil, err
 	}
@@ -503,7 +518,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				if err := requeuePictures(ctx, tx, p.WorkspaceID, patch); err != nil {
 					return err
 				}
-				if err := brands.SyncDefault(ctx, tx, s.d.Cfg.AppURL, p.WorkspaceID, patch); err != nil {
+				if err := brands.SyncDefault(ctx, tx, s.d.Cfg, p.WorkspaceID, patch); err != nil {
 					return err
 				}
 				if w, err = loadWorkspace(ctx, tx, p.WorkspaceID); err != nil {

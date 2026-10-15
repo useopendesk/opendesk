@@ -66,7 +66,7 @@ func newEnv(t *testing.T) *testEnv {
 		t.Fatal(err)
 	}
 	box, _ := crypto.NewBox([]byte("development-only-credentials-key"))
-	cfg := &config.Config{Env: "development", APIURL: "http://api.test", AppURL: "http://app.test", GatewayURL: "ws://gw.test/socket",
+	cfg := &config.Config{Env: "development", APIURL: "http://api.test", AppURL: "http://app.test", ServeWeb: true, GatewayURL: "ws://gw.test/socket",
 		AuthSecret: []byte("test-auth-secret-test-auth-secret-0000"), SignupEnabled: true}
 	d := &deps.Deps{Cfg: cfg, Log: log, DB: database, NATS: nc, Mailer: nil, Analytics: analytics.New("", "", log), Box: box,
 		Tokens: auth.NewTokens(cfg.AuthSecret), Captcha: captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{Disabled: true}),

@@ -21,6 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ReauthNotice } from "@/components/settings/ReauthNotice";
 import { SaveBar } from "@/components/settings/SaveBar";
+import { useBrands } from "@/components/settings2/teams";
+import { bareUrl, defaultHelpUrl, helpCenterHref } from "@/lib/helpCenter";
 import { api } from "@/lib/api/endpoints";
 import type { Priority, TicketStatus, Workspace, WorkspaceSettings as WS } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
@@ -68,6 +70,7 @@ export default function WorkspaceSettings() {
   const role = useRole();
   const canEdit = atLeast(role, "admin");
   const qc = useQueryClient();
+  const { defaultBrand } = useBrands();
   const [draft, setDraft] = useState<Draft | null>(null);
 
   useEffect(() => {
@@ -136,7 +139,8 @@ export default function WorkspaceSettings() {
   const dirty = JSON.stringify(base) !== JSON.stringify(draft);
   const set = <K extends keyof Draft["settings"]>(k: K, v: Draft["settings"][K]) => setDraft({ ...draft, settings: { ...draft.settings, [k]: v } });
   const colorOk = !draft.settings.brand_color || hexRe.test(draft.settings.brand_color);
-  const helpUrl = `${location.origin}/help/${ws.slug}`;
+  // The workspace's help center is the default brand's.
+  const helpUrl = defaultBrand ? helpCenterHref(defaultBrand) : defaultHelpUrl(ws.slug);
 
   return (
     <SettingsPage title={t("workspace.title")} description={t("workspace.description")}>
@@ -234,7 +238,7 @@ export default function WorkspaceSettings() {
           </Row>
           <Row label={t("workspace.publicAddress")}>
             <a href={helpUrl} target="_blank" rel="noreferrer" className="mono inline-flex items-center gap-1 text-[12.5px] text-fg-2 hover:text-fg">
-              {helpUrl.replace(/^https?:\/\//, "")}
+              {bareUrl(helpUrl)}
               <ExternalLink className="size-3" />
             </a>
             <CopyButton value={helpUrl} label={t("workspace.copyLink")} />

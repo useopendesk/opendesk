@@ -8,6 +8,7 @@ import type {
   AssignMode,
   Brand,
   Channel,
+  KbArticle,
   Role,
   RoutingCondition,
   RoutingRule,
@@ -19,6 +20,7 @@ import type {
   Webhook,
   Widget,
 } from "@/lib/api/types";
+import { defaultHelpUrl } from "@/lib/helpCenter";
 import { db, userRef, type WsData } from "./db";
 
 export const APP_ORIGIN = "https://app.opendesk.sh";
@@ -122,13 +124,31 @@ export function defaultBrand(ws: WsData): Brand | undefined {
   return ws.brands.find((b) => b.is_default) ?? ws.brands[0];
 }
 
+/** url is the active custom domain, else the default address (contracts/teams.md "Help center addresses"). */
+export function helpCenterOut(b: Brand): Brand["help_center"] {
+  const default_url = defaultHelpUrl(b.slug);
+  const domain = b.help_center.domain ? structuredClone(b.help_center.domain) : null;
+  return { ...b.help_center, url: domain?.status === "active" ? `https://${domain.hostname}` : default_url, default_url, domain };
+}
+
+/** A page of the brand's help center, as links in answers and the widget carry it. */
+export const helpPageUrl = (b: Brand, path = "") => helpCenterOut(b).url + path;
+
+/** An article on its brand's help center (its collection's brand, else its own), else the default brand's. */
+export function articleUrl(ws: WsData, a: Pick<KbArticle, "slug" | "brand_id" | "collection_id">): string {
+  const col = a.collection_id ? ws.collections.find((c) => c.id === a.collection_id) : undefined;
+  const id = col?.brand_id ?? a.brand_id ?? null;
+  const b = (id && ws.brands.find((x) => x.id === id)) || defaultBrand(ws);
+  return b ? helpPageUrl(b, `/a/${a.slug}`) : `${defaultHelpUrl(ws.workspace.slug)}/a/${a.slug}`;
+}
+
 export function brandOut(ws: WsData, b: Brand): Brand {
   const boxes = ws.mailboxes
     .filter((m) => m.brand_id === b.id)
     .sort((x, y) => Date.parse(x.created_at) - Date.parse(y.created_at));
   return {
     ...b,
-    help_center: { ...b.help_center, url: `${APP_ORIGIN}/help/${b.slug}` },
+    help_center: helpCenterOut(b),
     images: { ...b.images },
     default_mailbox_id: (boxes.find((m) => m.status === "active") ?? boxes[0])?.id ?? null,
     mailbox_count: boxes.length,

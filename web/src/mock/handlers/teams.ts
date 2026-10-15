@@ -35,6 +35,7 @@ import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { parseHours, readUpload } from "./pictures";
 import { widgetPatch } from "./widget";
 import { checkBotId } from "./bots";
+import { forgetHelpDomain, registerHelpDomainRoutes } from "./helpDomains";
 
 const TEAM_ROLES: TeamRole[] = ["lead", "member", "observer"];
 const MODES: AssignMode[] = ["none", "round_robin", "load_balanced"];
@@ -324,6 +325,7 @@ function writeBrand(ctx: Ctx, b: Brand, creating: boolean) {
 const BRAND_SLOTS = ["logo", "help_center_logo", "help_center_favicon"] as const;
 
 function registerBrandRoutes() {
+  registerHelpDomainRoutes();
   get("/v1/brands", (ctx) => paginate(ctx, ctx.ws.brands.slice().sort((a, b) => a.position - b.position).map((b) => brandOut(ctx.ws, b)), 100));
   get("/v1/brands/:id", (ctx) => brandOut(ctx.ws, findBrand(ctx)));
 
@@ -338,7 +340,7 @@ function registerBrandRoutes() {
       is_default: false,
       color: "",
       locale: "",
-      help_center: { enabled: false, title: "", url: "" },
+      help_center: { enabled: false, title: "", url: "", default_url: "", domain: null },
       images: { logo: null, help_center_logo: null, help_center_favicon: null },
       default_mailbox_id: null,
       mailbox_count: 0,
@@ -375,6 +377,7 @@ function registerBrandRoutes() {
     }
     ctx.ws.widgets = ctx.ws.widgets.filter((x) => x.brand_id !== b.id);
     ctx.ws.brands = ctx.ws.brands.filter((x) => x !== b);
+    forgetHelpDomain(b.id);
     ctx.ws.brands.sort((x, y) => x.position - y.position).forEach((x, i) => (x.position = i));
     publish(ctx.ws, "brand.deleted", { brand_id: b.id });
     audit(ctx.ws, "brand.deleted", "brand", b.id, { name: b.name });
@@ -714,7 +717,7 @@ export function seedDefaultBrand(ws: WsData) {
     is_default: true,
     color: ws.workspace.settings.brand_color ?? "",
     locale: ws.workspace.settings.locale ?? "",
-    help_center: { enabled: !!ws.workspace.settings.help_center_enabled, title: ws.workspace.settings.help_center_title || `${ws.workspace.name} Help`, url: "" },
+    help_center: { enabled: !!ws.workspace.settings.help_center_enabled, title: ws.workspace.settings.help_center_title || `${ws.workspace.name} Help`, url: "", default_url: "", domain: null },
     images: { logo: ws.workspace.avatar_url, help_center_logo: ws.workspace.images.help_center_logo, help_center_favicon: ws.workspace.images.help_center_favicon },
     default_mailbox_id: null,
     mailbox_count: 0,

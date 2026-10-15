@@ -4,6 +4,12 @@
 #   everything    -> opendesk:8080  (API, web app, widget, help center, /config.js,
 #                                    and /config.json and /v1/push/instance-key for the apps)
 #
+# Help centers on their own hosts (contracts/teams.md "Help center addresses"):
+# <slug>.HELP_DOMAIN and the custom domains customers point here with a CNAME
+# reach the second site block, which gets each host's certificate on its first
+# visit. Caddy asks opendesk first, so only hosts that are a help center of this
+# instance ever get one.
+#
 # OPENDESK_DOMAIN is the site address. A public hostname gets a Let's Encrypt
 # (or ZeroSSL) certificate as soon as its DNS points here and ports 80 and 443
 # are open. "localhost" gets a certificate from Caddy's local CA. ":80" serves
@@ -13,6 +19,11 @@
 # so this file stays the same on every install.
 {
 	{$CADDY_GLOBAL_OPTIONS}
+	on_demand_tls {
+		# 200 only for <slug>.HELP_DOMAIN of a help center that is on, and for
+		# active custom domains.
+		ask http://opendesk:8080/v1/public/help-domains/tls
+	}
 	servers {
 		# Long-lived sockets must not be cut by a read timeout.
 		timeouts {
@@ -54,6 +65,36 @@
 	log {
 		output stdout
 		# Never log query strings: realtime tokens travel in ?token=.
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete token
+				}
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+			}
+		}
+	}
+}
+
+# Help centers: every other host, with a certificate issued on demand.
+https:// {
+	tls {
+		on_demand
+	}
+
+	header -Server
+	request_header -CF-Connecting-IP
+	request_header -True-Client-IP
+
+	encode zstd gzip
+	reverse_proxy opendesk:8080 {
+		lb_try_duration 10s
+	}
+
+	log {
+		output stdout
 		format filter {
 			wrap json
 			fields {

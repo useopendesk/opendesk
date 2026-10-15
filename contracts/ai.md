@@ -230,7 +230,7 @@ interface Triage { tags: string[]; suggested_tags: string[]; priority: "low" | "
   decisions: AIDecisions; suggestions: AISuggestions /* what this run left below the threshold */ }
 type Category = "question" | "problem" | "bug" | "billing" | "account" | "feature_request" | "feedback"
   | "sales" | "shipping" | "refund" | "cancellation" | "spam" | "other"
-interface KBSource { article_id: string; title: string; url: string /* {APP_URL}/help/{brand slug}/a/{slug}: the ticket's brand's help center */ }
+interface KBSource { article_id: string; title: string; url: string /* {help center url}/a/{slug}: the ticket's brand's help center (contracts/teams.md "Help center addresses") */ }
 ```
 
 Triage output is validated, never trusted: `tags` are at most 3 of the workspace's existing

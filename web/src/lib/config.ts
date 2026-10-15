@@ -14,6 +14,11 @@ export type RuntimeConfig = {
    * does not restrict them. The API's connect options must allow a provider too.
    */
   mailboxOAuth: MailboxOAuthProvider[] | null;
+  /**
+   * The domain help centers live under, as https://<slug>.<helpDomain>
+   * (HELP_DOMAIN), or "" when they are at /help/<slug> on the app's host.
+   */
+  helpDomain: string;
 };
 
 export type MailboxOAuthProvider = "google" | "microsoft";
@@ -43,6 +48,12 @@ export function parseMailboxOAuth(raw: unknown, env: string | undefined): Mailbo
   return src.split(",").map((s) => s.trim()).filter(valid);
 }
 
+/** helpDomain: a bare hostname, lowercase, without a scheme or trailing dot; anything else is "". */
+export function parseHelpDomain(raw: string): string {
+  const v = raw.trim().toLowerCase().replace(/\.$/, "");
+  return /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/.test(v) ? v : "";
+}
+
 function trimSlash(s: string) {
   return s.replace(/\/+$/, "");
 }
@@ -64,6 +75,7 @@ export function readConfig(): RuntimeConfig {
     turnstileSiteKey: pick("turnstileSiteKey", env.VITE_TURNSTILE_SITE_KEY),
     selfHosted: selfHostedRaw === true || selfHostedRaw === "true" || env.VITE_SELF_HOSTED === "1",
     mailboxOAuth: parseMailboxOAuth(typeof window !== "undefined" ? window.__OPENDESK__?.mailboxOAuth : undefined, env.VITE_MAILBOX_OAUTH),
+    helpDomain: parseHelpDomain(pick("helpDomain", env.VITE_HELP_DOMAIN)),
   };
 }
 

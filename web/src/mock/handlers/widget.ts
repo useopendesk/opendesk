@@ -4,7 +4,8 @@ import type { Widget, WidgetConfig, WidgetSettings } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, forbidden, get, invalid, patch } from "../router";
-import { defaultBrand, legacyWidget, syncLegacyWidget, widgetOut } from "../teams";
+import { defaultHelpUrl } from "@/lib/helpCenter";
+import { defaultBrand, helpPageUrl, legacyWidget, syncLegacyWidget, widgetOut } from "../teams";
 import { hasControl, isRecord, nowIso, oneLine, uuid } from "../util";
 import { aiOff } from "./ai";
 import { widgetBot } from "../bots";
@@ -130,7 +131,7 @@ export function widgetConfig(ws: WsData, widget?: Widget): WidgetConfig {
     workspace_name: brand?.name ?? ws.workspace.name,
     brand_color: w.color || brand?.color || wsSettings.brand_color || null,
     greeting: w.greeting,
-    help_center_url: helpOn ? `/help/${brand?.slug ?? ws.workspace.slug}` : null,
+    help_center_url: helpOn ? (brand ? helpPageUrl(brand) : defaultHelpUrl(ws.workspace.slug)) : null,
     require_email: w.require_email,
     locale: brand?.locale || wsSettings.locale || null,
     avatar_url: row?.images.avatar ?? ws.workspace.images.widget_avatar ?? brand?.images.logo ?? ws.workspace.avatar_url,

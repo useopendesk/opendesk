@@ -1,0 +1,33 @@
+# Cloudflare Worker in front of the help centers (contracts/teams.md "Help
+# center addresses"): <slug>.opendeskhelp.com and every customer domain that
+# reaches the opendeskhelp.com zone as a Cloudflare for SaaS custom hostname.
+# It caches pages and forwards to the API with the host it was asked for.
+# DNS, zone settings and the custom hostname fallback origin are managed by
+# Terraform (deploy/terraform/modules/cloudflare-help).
+#
+# Secret, set once per environment (same value as the API's HELP_PROXY_SECRET):
+#   wrangler secret put HELP_PROXY_SECRET
+name = "opendesk-help"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+# "*/*" is the Cloudflare for SaaS catch-all: it matches every request that
+# enters the zone, custom hostnames included, whatever the customer's own DNS
+# proxy setting. The two zone routes are named too, so the apex and the
+# subdomains run here even before custom hostnames are enabled on the zone.
+routes = [
+  { pattern = "opendeskhelp.com/*", zone_name = "opendeskhelp.com" },
+  { pattern = "*.opendeskhelp.com/*", zone_name = "opendeskhelp.com" },
+  { pattern = "*/*", zone_name = "opendeskhelp.com" },
+]
+
+[vars]
+ORIGIN = "https://api.opendesk.sh"
+SITE_URL = "https://opendesk.sh"
+HELP_DOMAIN = "opendeskhelp.com"
+
+[observability]
+enabled = true
+head_sampling_rate = 1

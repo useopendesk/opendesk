@@ -124,6 +124,7 @@ export default defineConfig({
             { label: 'Teams and roles', slug: 'guides/teams-and-roles' },
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Knowledge base and help center', slug: 'guides/knowledge-base' },
+            { label: 'Help center addresses', slug: 'guides/help-center-addresses' },
             { label: 'Labels and custom fields', slug: 'guides/labels-and-custom-fields' },
             { label: 'Automations', slug: 'guides/automations' },
             { label: 'SLA policies', slug: 'guides/sla-policies' },

@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Row, Section, SettingsPage } from "@/components/layout";
 import { SaveBar } from "@/components/settings/SaveBar";
 import { StatePill } from "@/components/settings2/bits";
+import { HelpDomainSection } from "@/components/settings2/helpDomain";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { BrandMark, Note, TeamChip, TeamPick, useTeams } from "@/components/settings2/teams";
@@ -35,6 +36,7 @@ import { errorMessage } from "@/lib/api/client";
 import type { Brand } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { relLong } from "@/lib/format";
+import { bareUrl, helpAddressForm, withSlug } from "@/lib/helpCenter";
 import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
 import { atLeast, useRole, useWorkspace } from "@/lib/session";
 import { tone } from "@/lib/tones";
@@ -160,7 +162,7 @@ function BrandEditor({ brand, brands }: { brand: Brand; brands: Brand[] }) {
               <span className="truncate">{brand.name}</span>
               {brand.is_default && <span className={cn("inline-flex h-[19px] items-center rounded-sm px-1.5 text-[10.5px] font-medium tracking-normal", tone.blue.chip)}>{t("brands.default")}</span>}
             </span>
-            <span className="mono block truncate text-[12px] font-normal tracking-normal text-fg-3">/help/{brand.slug}</span>
+            <span className="mono block truncate text-[12px] font-normal tracking-normal text-fg-3">{bareUrl(brand.help_center.url)}</span>
           </span>
         </span>
       }
@@ -497,9 +499,10 @@ function NewWidgetDialog({ brand, onClose }: { brand: Brand; onClose: () => void
 function HelpCenter({ brand, draft, setDraft, base }: { brand: Brand; draft: Draft; setDraft: (f: (d: Draft) => Draft) => void; base: Draft }) {
   const { t } = useTranslation("settingsTeams");
   const ws = useWorkspace();
-  const url = brand.help_center.url.replace(/\/help\/[^/]+$/, `/help/${draft.slug}`);
   const slugChanged = draft.slug !== base.slug;
   const slugBad = !SLUG.test(draft.slug);
+  const form = helpAddressForm(brand);
+  const onDomain = brand.help_center.domain?.status === "active";
   return (
     <>
       <Section title={t("help.title")} description={t("help.hint", { name: brand.name })}>
@@ -517,29 +520,36 @@ function HelpCenter({ brand, draft, setDraft, base }: { brand: Brand; draft: Dra
             onChange={(e) => setDraft((d) => ({ ...d, help_center: { ...d.help_center, title: e.target.value } }))}
           />
         </Row>
-        <Row label={t("help.url")} description={brand.help_center.enabled ? t("help.urlHint") : t("help.urlOff")}>
-          <span className={cn("mono max-w-[300px] truncate text-[12px]", brand.help_center.enabled ? "text-fg-2" : "text-fg-4")}>{brand.help_center.url}</span>
-          <CopyButton value={brand.help_center.url} />
-          {brand.help_center.enabled && (
-            <Button size="sm" variant="ghost" square asChild aria-label={t("help.open")}>
-              <a href={brand.help_center.url.replace(/^https?:\/\/[^/]+/, "")} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-3.5" />
-              </a>
-            </Button>
+        <Row label={t("help.url")} description={!brand.help_center.enabled ? t("help.urlOff") : onDomain ? t("help.urlHintDomain") : t("help.urlHint")}>
+          {brand.help_center.enabled ? (
+            <a
+              href={brand.help_center.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t("help.open")}
+              className="mono group inline-flex max-w-[300px] items-center gap-1 rounded-sm text-[12px] text-fg-2 hover:text-fg"
+            >
+              <span className="truncate">{bareUrl(brand.help_center.url)}</span>
+              <ExternalLink className="size-3 shrink-0 text-fg-3 group-hover:text-fg" aria-hidden />
+            </a>
+          ) : (
+            <span className="mono max-w-[300px] truncate text-[12px] text-fg-4">{bareUrl(brand.help_center.url)}</span>
           )}
+          <CopyButton value={brand.help_center.url} label={t("help.copy")} />
         </Row>
         <Row label={t("help.slug")} description={t("help.slugHint")} stack>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-0">
-              <span className="mono flex h-8 items-center rounded-l-md border border-r-0 border-line bg-sunken px-2.5 text-[12px] text-fg-3">/help/</span>
+              {form.kind === "path" && <span className="mono flex h-8 items-center rounded-l-md border border-r-0 border-line bg-sunken px-2.5 text-[12px] text-fg-3">{form.prefix}</span>}
               <TextInput
-                className="mono w-[220px] rounded-l-none"
+                className={cn("mono w-[220px]", form.kind === "path" ? "rounded-l-none" : "rounded-r-none")}
                 aria-label={t("help.slug")}
                 value={draft.slug}
                 maxLength={40}
                 invalid={slugBad}
                 onChange={(e) => setDraft((d) => ({ ...d, slug: e.target.value.toLowerCase() }))}
               />
+              {form.kind === "subdomain" && <span className="mono flex h-8 items-center rounded-r-md border border-l-0 border-line bg-sunken px-2.5 text-[12px] text-fg-3">.{form.suffix}</span>}
             </div>
             {slugBad && (
               <p role="alert" className="text-[12px] text-danger-fg">
@@ -548,12 +558,15 @@ function HelpCenter({ brand, draft, setDraft, base }: { brand: Brand; draft: Dra
             )}
             {slugChanged && !slugBad && (
               <Note tone="amber" icon={<AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />}>
-                {t("help.slugWarning", { old: base.slug, url })}
+                {onDomain
+                  ? t("help.slugWarningDomain", { old: bareUrl(brand.help_center.default_url), url: bareUrl(withSlug(brand, draft.slug)), domain: brand.help_center.domain!.hostname })
+                  : t("help.slugWarning", { old: bareUrl(brand.help_center.default_url), url: bareUrl(withSlug(brand, draft.slug)) })}
               </Note>
             )}
           </div>
         </Row>
       </Section>
+      <HelpDomainSection brand={brand} />
       <Section title={t("help.look")} description={t("help.lookHint")}>
         <BrandImageRow
           brand={brand}

@@ -5,3 +5,7 @@
 # fallback. A "/* /index.html 200" rule would also shadow real files, so it is
 # deliberately absent. HTML is served with Pages' default
 # "Cache-Control: public, max-age=0, must-revalidate", so every visit revalidates.
+
+# The deploy appends the /help/<slug> rules when HELP_DOMAIN is set: old links to
+# /help/<slug>/... move to https://<slug>.<HELP_DOMAIN> for good (/help/<slug>/c/x
+# to /c/x). A help center with an active custom domain answers 301 to it from there.
