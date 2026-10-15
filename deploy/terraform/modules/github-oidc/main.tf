@@ -84,6 +84,19 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
+  # A new revision carries the tags of the one it is rendered from, and ECS checks
+  # TagResource for them; only while registering a task definition.
+  statement {
+    sid       = "TagTaskDefinitions"
+    actions   = ["ecs:TagResource"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ecs:CreateAction"
+      values   = ["RegisterTaskDefinition"]
+    }
+  }
+
   statement {
     sid       = "Services"
     actions   = ["ecs:DescribeServices", "ecs:UpdateService"]
