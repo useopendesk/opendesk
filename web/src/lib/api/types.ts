@@ -430,6 +430,8 @@ export type Message = {
   auth_failed?: boolean;
   /** Inbound email: the trusted contact form address it came through; from_email is then the visitor. Agents only. */
   form_sender?: string;
+  /** Inbound email: the address of ours it was written to (its mailbox's address or an alias), else "". Agents only. */
+  received_at?: string;
   created_at: string;
 };
 /** contracts/agent.md "Visitor actions". */
@@ -478,6 +480,8 @@ export type TicketFilters = {
   /** A team id, "mine" (the caller's teams) or "none". */
   team_id?: string;
   mailbox_id?: string;
+  /** The address a ticket was first written to: a mailbox's address or an alias. */
+  received_at?: string;
   brand_id?: string;
   widget_id?: string;
   tag?: string;
@@ -702,6 +706,8 @@ export type Mailbox = {
   brand_id: string;
   /** Other addresses that deliver into this mailbox, at most 20. */
   aliases: string[];
+  /** An alias to the team its new tickets go to instead of team_id. None on a private team's address. */
+  alias_teams?: Record<string, string>;
   /** {agent} {agent_first} {team} {brand} {mailbox}. */
   from_name_format: string;
   /** Its team is private: only that team's members send from it. */

@@ -368,3 +368,33 @@ func TestViewerBecomesObserver(t *testing.T) {
 		t.Fatal("promotion changed the team role")
 	}
 }
+
+// Mailbox aliases that route to a deleted team follow it to move_to, else go back to their mailbox's team.
+func TestDeleteTeamMovesAliasTeams(t *testing.T) {
+	f := newTeamFixture(t)
+	mk := func(name string) uuid.UUID {
+		r := f.owner.do("POST", "/v1/teams", map[string]any{"name": name})
+		if r.Status != 201 {
+			t.Fatalf("create %s: %d %s", name, r.Status, r.Raw)
+		}
+		return uuid.MustParse(r.str("id"))
+	}
+	a, b, c, keep := mk("Projects"), mk("Projects 2"), mk("Ops"), mk("Sales")
+	mb := uuid.New()
+	f.exec(`INSERT INTO mailboxes (id, workspace_id, name, email, inbound_kind, forwarding_token, outbound_kind, brand_id, aliases, alias_teams)
+		VALUES ($1, $2, 'Support', $3, 'forwarding', $4, 'smtp', $5, '{p@example.com,o@example.com,s@example.com}',
+		jsonb_build_object('p@example.com', $6::text, 'o@example.com', $7::text, 's@example.com', $8::text))`,
+		mb, f.wid, "support-"+mb.String()[:8]+"@example.com", mb.String(), f.brand, a.String(), c.String(), keep.String())
+
+	if r := f.owner.do("DELETE", "/v1/teams/"+a.String()+"?move_to="+b.String(), nil); r.Status != 204 {
+		t.Fatalf("delete with move_to: %d %s", r.Status, r.Raw)
+	}
+	if r := f.owner.do("DELETE", "/v1/teams/"+c.String(), nil); r.Status != 204 {
+		t.Fatalf("delete: %d %s", r.Status, r.Raw)
+	}
+	var got map[string]string
+	f.scalar(`SELECT alias_teams FROM mailboxes WHERE id = $1`, &got, mb)
+	if len(got) != 2 || got["p@example.com"] != b.String() || got["s@example.com"] != keep.String() {
+		t.Fatalf("alias_teams %v", got)
+	}
+}

@@ -19,9 +19,9 @@ import { cn } from "@/lib/cn";
 import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailboxHost, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
 import { qk, upsertInList } from "@/lib/queries";
 import { tone } from "@/lib/tones";
-import { useBrands } from "@/components/settings2/teams";
+import { useBrands, useTeams } from "@/components/settings2/teams";
 import { GoogleGlyph, MicrosoftGlyph, TestResults } from "./kinds";
-import { AliasesField, DEFAULT_FROM, FromNameField, fromNameProblem, MailboxBrandField, MailboxTeamField } from "./addressing";
+import { AliasesField, aliasTeamsFor, AliasTeamsField, DEFAULT_FROM, FromNameField, fromNameProblem, MailboxBrandField, MailboxTeamField } from "./addressing";
 import {
   AppPasswordGuide,
   CauseCallout,
@@ -68,6 +68,8 @@ type Form = {
   team_id: string;
   brand_id: string;
   aliases: string[];
+  /** An alias to its own team; cleared when the mailbox's team is private. */
+  alias_teams: Record<string, string>;
   from_name_format: string;
 };
 
@@ -91,6 +93,7 @@ const empty: Form = {
   team_id: "",
   brand_id: "",
   aliases: [],
+  alias_teams: {},
   from_name_format: DEFAULT_FROM,
 };
 
@@ -103,11 +106,13 @@ type Errors = Partial<Record<keyof Form, string>>;
 type T = TFunction<"settingsChannels">;
 
 /** Brand, aliases, From name and team, as the create body takes them. */
-function addressing(f: Form): Pick<CreateMailboxBody, "team_id" | "brand_id" | "aliases" | "from_name_format"> {
+function addressing(f: Form): Pick<CreateMailboxBody, "team_id" | "brand_id" | "aliases" | "alias_teams" | "from_name_format"> {
+  const aliasTeams = aliasTeamsFor(f.alias_teams, f.aliases, false);
   return {
     team_id: f.team_id || null,
     ...(f.brand_id ? { brand_id: f.brand_id } : {}),
     ...(f.aliases.length ? { aliases: f.aliases } : {}),
+    ...(Object.keys(aliasTeams).length ? { alias_teams: aliasTeams } : {}),
     from_name_format: f.from_name_format.trim() || DEFAULT_FROM,
   };
 }
@@ -390,6 +395,7 @@ export function AddMailboxWizard({
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.mailboxes });
+      void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
       go(2);
     },
     onError: (e) => {
@@ -1111,8 +1117,14 @@ function AddressingFields({
   defaultOpen?: boolean;
 }) {
   const { multi: multiBrand } = useBrands();
+  const { teams } = useTeams();
   const { t } = useTranslation("settingsChannels");
   const [open, setOpen] = useState(!!defaultOpen || !!errors.from_name_format);
+  const setTeam = (id: string | null) => {
+    set("team_id", id ?? "");
+    // A private team's address delivers every alias to that team.
+    if (teams.find((x) => x.id === id)?.private) set("alias_teams", {});
+  };
   const reduce = useReducedMotion();
   useEffect(() => {
     if (errors.from_name_format) setOpen(true);
@@ -1144,7 +1156,7 @@ function AddressingFields({
                   {({ id }) => <TextInput id={id} value={form.display_name} placeholder={t("wizard.senderPlaceholder")} onChange={(e) => set("display_name", e.target.value)} />}
                 </Field>
                 <Field label={t("addressing.team")} optional hint={t("addressing.teamHint")}>
-                  {() => <MailboxTeamField className="w-full" value={form.team_id || null} onChange={(v) => set("team_id", v ?? "")} />}
+                  {() => <MailboxTeamField className="w-full" value={form.team_id || null} onChange={setTeam} />}
                 </Field>
                 {multiBrand && (
                   <Field label={t("addressing.brand")} hint={t("addressing.brandHint")}>
@@ -1165,7 +1177,12 @@ function AddressingFields({
                 )}
               </Field>
               <Field label={t("addressing.aliases")} optional hint={t("addressing.aliasesHint")}>
-                {() => <AliasesField value={form.aliases} onChange={(v) => set("aliases", v)} email={form.email} />}
+                {() => (
+                  <div className="flex flex-col gap-3">
+                    <AliasesField value={form.aliases} onChange={(v) => set("aliases", v)} email={form.email} />
+                    <AliasTeamsField aliases={form.aliases} value={form.alias_teams} onChange={(v) => set("alias_teams", v)} teamId={form.team_id || null} />
+                  </div>
+                )}
               </Field>
             </div>
           </motion.div>

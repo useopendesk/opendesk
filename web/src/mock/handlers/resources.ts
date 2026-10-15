@@ -709,6 +709,7 @@ function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_nam
     ...init,
     brand_id: defaultBrand(ws)?.id ?? "",
     aliases: [],
+    alias_teams: {},
     trusted_form_senders: [],
     from_name_format: "{agent} at {mailbox}",
     private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
@@ -813,6 +814,20 @@ function writeAddressing(ctx: Ctx, m: Mailbox) {
       if (ctx.ws.mailboxes.some((x) => x !== m && (x.email === a || x.aliases.includes(a)))) throw new HttpError(409, "conflict", `${a} already delivers into another mailbox`);
     }
     m.aliases = clean;
+    // A removed alias takes its team with it.
+    m.alias_teams = Object.fromEntries(Object.entries(m.alias_teams ?? {}).filter(([a]) => clean.includes(a)));
+  }
+  if ("alias_teams" in b) {
+    const raw = b.alias_teams;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid("alias_teams must map aliases to team ids");
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const a = k.trim().toLowerCase();
+      if (!m.aliases.includes(a)) throw invalid(`alias_teams: ${a} is not an alias of this mailbox`);
+      if (typeof v !== "string" || !ctx.ws.teams.some((x) => x.id === v)) throw invalid("alias_teams names a team that does not exist in this workspace");
+      next[a] = v;
+    }
+    m.alias_teams = next;
   }
   if ("from_name_format" in b) {
     const f = typeof b.from_name_format === "string" ? b.from_name_format.replace(/\s+/g, " ").trim() : "";
@@ -823,6 +838,9 @@ function writeAddressing(ctx: Ctx, m: Mailbox) {
     m.from_name_format = f || "{agent} at {mailbox}";
   }
   m.private = !!m.team_id && !!ctx.ws.teams.find((t) => t.id === m.team_id)?.private;
+  if (m.private && Object.keys(m.alias_teams ?? {}).length && ("alias_teams" in b || "team_id" in b)) {
+    throw invalid("A private team's address delivers all its aliases to that team.");
+  }
 }
 
 function findContact(ctx: Ctx): Contact {

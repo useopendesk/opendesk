@@ -29,7 +29,7 @@ import Fold from '../../../components/Fold.astro';
 
 A new ticket gets its team in this order:
 
-1. **Where it arrived.** An email gets the team of the address it was sent to. A chat gets the team of the topic the visitor picked, else the widget's team. A ticket created through the API gets the team it names.
+1. **Where it arrived.** An email gets the team of the address it was sent to. An alias can have a team of its own, say `projects@` to the Projects team while the rest of the mailbox goes to Support; set it next to the alias in the mailbox's settings. A chat gets the team of the topic the visitor picked, else the widget's team. A ticket created through the API gets the team it names.
 2. **Routing rules**, from the top. The first rule that is on and matches moves the ticket to its team, whatever step 1 chose. The rules after it are not checked.
 3. **Triage**, when the ticket still has no team and triage sorts tickets into teams. See [Triage and assignment](/guides/triage-and-assignment/).
 4. **Automations** run next and can still move the ticket to a team. See [Automations](/guides/automations/).

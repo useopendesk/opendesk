@@ -68,6 +68,7 @@ export function ticketMatches(query: TicketListQuery, t: Ticket, me: string, vie
     if (!m) return false;
   }
   if (f.mailbox_id && t.mailbox_id !== f.mailbox_id) return false;
+  if (f.received_at && (t.received_at ?? "").toLowerCase() !== f.received_at.toLowerCase()) return false;
   if (f.brand_id && t.brand_id !== f.brand_id) return false;
   if (f.widget_id && t.widget_id !== f.widget_id) return false;
   if (f.channel && t.channel !== f.channel) return false;

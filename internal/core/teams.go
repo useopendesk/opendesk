@@ -864,6 +864,14 @@ func (s *svc) registerTeams(api huma.API) {
 					p.WorkspaceID, id, uuidText(dst)); err != nil {
 					return err
 				}
+				// So do mailbox aliases that route to it; without a team to move to they go to their mailbox's.
+				if _, err := tx.Exec(ctx, `UPDATE mailboxes SET alias_teams = (
+						SELECT COALESCE(jsonb_object_agg(e.key, CASE WHEN e.value = $2::text THEN to_jsonb($3::text) ELSE to_jsonb(e.value) END), '{}'::jsonb)
+						FROM jsonb_each_text(alias_teams) e WHERE e.value <> $2::text OR $3::text IS NOT NULL), updated_at = now()
+					WHERE workspace_id = $1 AND EXISTS (SELECT 1 FROM jsonb_each_text(alias_teams) e WHERE e.value = $2::text)`,
+					p.WorkspaceID, id, uuidText(dst)); err != nil {
+					return err
+				}
 				if dst != nil {
 					if _, err := tx.Exec(ctx, `UPDATE routing_rules SET team_id = $3, updated_at = now() WHERE workspace_id = $1 AND team_id = $2`,
 						p.WorkspaceID, id, *dst); err != nil {

@@ -61,11 +61,16 @@ func TestListFilters(t *testing.T) {
 	other := e.NewWorkspace()
 	createTicket(t, e, other, map[string]any{"subject": "Refund for order 1001"})
 
+	// t3 was written to an alias of its mailbox.
+	e.Exec(`UPDATE tickets SET received_at = 'sales@acme.test' WHERE id = $1`, t3.ID)
+
 	cases := []struct {
 		q    string
 		want []uuid.UUID
 	}{
 		{"", []uuid.UUID{t1.ID, t2.ID, t3.ID, t5.ID}},
+		{"received_at=Sales%40Acme.test", []uuid.UUID{t3.ID}},
+		{"received_at=other%40acme.test", []uuid.UUID{}},
 		{"status=open,pending", []uuid.UUID{t1.ID, t2.ID, t3.ID}},
 		{"status=solved", []uuid.UUID{t5.ID}},
 		{"priority=urgent,high", []uuid.UUID{t1.ID, t3.ID}},

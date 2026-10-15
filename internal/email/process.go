@@ -285,6 +285,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			To: pm.To, Cc: pm.Cc, EmailMessageID: msgID, InReplyTo: pm.InReplyTo, References: pm.References,
 			InboundEmailID: &inboundID, AttachmentIDs: attIDs, Trigger: trigger, MailboxID: &m.ID,
 			ReplyTo: replyTo, AuthFailed: authFailed, NoAutoReply: noAuto, FormSender: formSender, NoReopen: authFailed && !created,
+			ReceivedAt: receivedAt,
 		})
 		if err != nil {
 			return err

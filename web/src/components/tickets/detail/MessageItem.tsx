@@ -167,6 +167,7 @@ function useMessageAddress(m: Message, receivedAt?: string | null) {
   if (!multi || receivedAt === null) return null;
   const mb = m.mailbox_id ? mailboxes?.find((x) => x.id === m.mailbox_id) : undefined;
   if (m.direction === "inbound") {
+    if (m.received_at) return m.received_at;
     const ours = (a: string) => !!mb && (a.toLowerCase() === mb.email.toLowerCase() || (mb.aliases ?? []).some((x) => x.toLowerCase() === a.toLowerCase()));
     return m.to.find(ours) ?? mb?.email ?? (receivedAt || null);
   }

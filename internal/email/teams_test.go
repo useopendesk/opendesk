@@ -87,6 +87,85 @@ func TestInboundRoutingAndAlias(t *testing.T) {
 	}
 }
 
+func TestAliasTeams(t *testing.T) {
+	w := newWorld(t)
+	support := w.team("Support", false, "")
+	projects := w.team("Projects", false, "")
+	m := w.mailbox(InboundForwarding, OutboundSystem, func(m *mailboxRow, _ *credentials) {
+		m.TeamID = &support
+		m.Aliases = []string{"projects@acme.test", "hello@acme.test"}
+	})
+	mustExec(t, w.d, `UPDATE mailboxes SET alias_teams = jsonb_build_object('projects@acme.test', $2::text) WHERE id = $1`, m.ID, projects.String())
+
+	// Written to an alias with a team: that team, routed by its address. The message records the alias.
+	msg := w.messageFor(w.receive(m, rawMail(customer(), "Projects <Projects@acme.test>", "Kickoff", "")))
+	tk := w.ticket(msg.TicketID)
+	if tk.TeamID == nil || *tk.TeamID != projects || tk.Routed == nil || tk.Routed.Via != "address" || tk.ReceivedAt != "projects@acme.test" {
+		t.Fatalf("alias team: %v %+v %q", tk.TeamID, tk.Routed, tk.ReceivedAt)
+	}
+	var at string
+	w.d.DB.Pool.QueryRow(w.ctx, `SELECT received_at FROM messages WHERE id = $1`, msg.ID).Scan(&at)
+	if at != "projects@acme.test" {
+		t.Fatalf("message received_at %q", at)
+	}
+	// An alias without a team, and the address itself: the mailbox's team.
+	for _, to := range []string{"hello@acme.test", m.Email} {
+		tk := w.ticket(w.messageFor(w.receive(m, rawMail(customer(), to, "Hi", ""))).TicketID)
+		if tk.TeamID == nil || *tk.TeamID != support {
+			t.Fatalf("%s: team %v", to, tk.TeamID)
+		}
+	}
+	// A private team's address delivers every alias to that team.
+	vault := w.team("Vault", true, "")
+	mustExec(t, w.d, `UPDATE mailboxes SET team_id = $2 WHERE id = $1`, m.ID, vault)
+	if tk := w.ticket(w.messageFor(w.receive(m, rawMail(customer(), "projects@acme.test", "Again", ""))).TicketID); tk.TeamID == nil || *tk.TeamID != vault {
+		t.Fatalf("private mailbox: team %v", tk.TeamID)
+	}
+}
+
+func TestAliasTeamsAPI(t *testing.T) {
+	w := newWorld(t)
+	srv := w.api(w.admin)
+	support := w.team("Support", false, "")
+	projects := w.team("Projects", false, "")
+	foreign := newWorld(t).team("Theirs", false, "")
+	var a Mailbox
+	if code := doJSON(t, http.MethodPost, srv.URL+"/v1/mailboxes", map[string]any{"name": "Help", "email": "help-" + crypto.RandomString(5) + "@acme.test",
+		"inbound_kind": "forwarding", "outbound_kind": "system", "team_id": support, "aliases": []string{"projects@acme.test", "hello@acme.test"},
+		"alias_teams": map[string]any{"Projects@Acme.test": projects}}, &a); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	if len(a.AliasTeams) != 1 || a.AliasTeams["projects@acme.test"] != projects {
+		t.Fatalf("alias_teams %v", a.AliasTeams)
+	}
+	url := srv.URL + "/v1/mailboxes/" + a.ID.String()
+	for _, bad := range []map[string]any{
+		{"alias_teams": map[string]any{"other@acme.test": projects}}, // not an alias
+		{"alias_teams": map[string]any{"hello@acme.test": foreign}},  // another workspace's team
+	} {
+		if code := doJSON(t, http.MethodPatch, url, bad, nil); code != 422 {
+			t.Errorf("patch %v: %d, want 422", bad, code)
+		}
+	}
+	// A private team's address takes no alias teams.
+	vault := w.team("Vault", true, "")
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"team_id": vault.String()}, nil); code != 422 {
+		t.Fatalf("private team with alias teams: %d", code)
+	}
+	// Removing an alias drops its team.
+	a = Mailbox{}
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"aliases": []string{"hello@acme.test"}}, &a); code != 200 || len(a.AliasTeams) != 0 {
+		t.Fatalf("drop alias: %d %v", code, a.AliasTeams)
+	}
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"alias_teams": map[string]any{"hello@acme.test": projects}}, &a); code != 200 ||
+		a.AliasTeams["hello@acme.test"] != projects {
+		t.Fatalf("set: %d %v", code, a.AliasTeams)
+	}
+	if n := w.count(`SELECT count(*) FROM audit_logs WHERE workspace_id = $1 AND action = 'mailbox.updated' AND data ? 'alias_teams'`, w.wid); n != 2 {
+		t.Fatalf("audit alias_teams %d", n)
+	}
+}
+
 func TestMailBetweenWorkspaceMailboxes(t *testing.T) {
 	w := newWorld(t)
 	a := w.mailbox(InboundForwarding, OutboundSystem, nil)

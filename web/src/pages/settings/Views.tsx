@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Trash2, UserRound, Users, UsersRound, X } from "lucide-react";
+import { ArrowUpRight, AtSign, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Trash2, UserRound, Users, UsersRound, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
@@ -115,6 +115,13 @@ function FilterChips({ f }: { f: TicketFilters }) {
             name: mailboxes?.find((x) => x.id === f.mailbox_id)?.email ?? t("views.aMailbox"),
           })}
         </span>
+      </span>,
+    );
+  if (f.received_at)
+    out.push(
+      <span key="r" className={chip}>
+        <AtSign />
+        <span className="truncate">{t("views.writtenTo", { address: f.received_at })}</span>
       </span>,
     );
   if (f.tag) out.push(<TagChip key="g" name={f.tag} color={tags?.find((x) => x.name === f.tag)?.color} className="h-5" />);
@@ -317,6 +324,12 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
   const members = useMemberItems();
   const teams = useTeamItems();
   const mailboxes = useMailboxItems();
+  // Every address tickets can be written to: each mailbox's own and its aliases.
+  const mailboxRows = useQuery(q.mailboxes()).data;
+  const addresses = useMemo(
+    () => (mailboxRows ?? []).flatMap((m) => [m.email, ...(m.aliases ?? [])].map((a) => ({ value: a.toLowerCase(), label: a.toLowerCase(), group: m.display_name || m.name }))),
+    [mailboxRows],
+  );
 
   const initial = JSON.stringify({
     name: view?.name ?? "",
@@ -477,6 +490,9 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
               <FilterRow label={t("views.filters.mailbox")} onClear={f.mailbox_id ? () => set("mailbox_id", undefined) : undefined}>
                 <SinglePick items={mailboxes} value={f.mailbox_id} onChange={(v) => set("mailbox_id", v)} placeholder={t("views.any.mailbox")} width={300} />
               </FilterRow>
+              <FilterRow label={t("views.filters.writtenTo")} onClear={f.received_at ? () => set("received_at", undefined) : undefined}>
+                <SinglePick items={addresses} value={f.received_at} onChange={(v) => set("received_at", v)} placeholder={t("views.any.writtenTo")} width={300} />
+              </FilterRow>
               <FilterRow label={t("views.filters.tag")} onClear={f.tag ? () => set("tag", undefined) : undefined}>
                 <TagPick value={f.tag} onChange={(v) => set("tag", v)} placeholder={t("views.any.tag")} />
               </FilterRow>
@@ -546,6 +562,7 @@ function clean(f: TicketFilters): TicketFilters {
   if (f.assignee) out.assignee = f.assignee;
   if (f.team_id) out.team_id = f.team_id;
   if (f.mailbox_id) out.mailbox_id = f.mailbox_id;
+  if (f.received_at) out.received_at = f.received_at;
   if (f.tag) out.tag = f.tag;
   if (f.channel) out.channel = f.channel;
   if (f.q?.trim()) out.q = f.q.trim();

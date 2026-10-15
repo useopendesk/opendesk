@@ -100,6 +100,7 @@
       "assignee": "Assignee",
       "team": "Team",
       "mailbox": "Mailbox",
+      "writtenTo": "Written to",
       "tag": "Label",
       "channel": "Channel",
       "keyword": "Keyword"
@@ -111,6 +112,7 @@
       "assignee": "Anyone",
       "team": "Any team",
       "mailbox": "Any mailbox",
+      "writtenTo": "Any address",
       "tag": "Any label",
       "channel": "Any channel"
     },
@@ -125,6 +127,7 @@
     "unknown": "unknown",
     "inMailbox": "In {{name}}",
     "aMailbox": "a mailbox",
+    "writtenTo": "Written to {{address}}",
     "matching": "Matching “{{q}}”",
     "emptyTips": {
       "sidebar": "Shared views sit in everyone's sidebar",

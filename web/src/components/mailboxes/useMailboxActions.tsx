@@ -47,6 +47,8 @@ export function useMailboxActions() {
       removeFromList(qc, qk.mailboxes, m.id);
       try {
         await api.mailboxes.remove(m.id);
+        // Frees a seat under the plan's mailbox limit.
+        void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
         toast.success(t("actions.removed"));
         after?.();
       } catch (e) {

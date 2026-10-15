@@ -67,6 +67,7 @@ type Widget = {
 type Mailbox = Mailbox /* contracts/api.md */ & {
   brand_id: string;
   aliases: string[] /* at most 20 addresses that deliver into this mailbox */;
+  alias_teams: Record<string, string> /* an alias to the team its new tickets go to instead of team_id; none on a private team's address */;
   from_name_format: string /* up to 80; {agent} {agent_first} {team} {brand} {mailbox}; default "{agent} at {mailbox}" */;
   private: boolean /* its team is private: only that team's members send from it */;
 };
@@ -166,7 +167,9 @@ other brands, and their live previews, never reach it (contracts/realtime.md).
 
 A new ticket gets its team, in order:
 
-1. **Address**: an email gets the default team of the mailbox it arrived at (`routed.via = "address"`).
+1. **Address**: an email gets the team of the alias it was written to (`alias_teams`), else the default
+   team of the mailbox it arrived at (`routed.via = "address"`). A private team's address delivers every
+   alias to that team.
    **Widget**: a chat gets the topic's team (`topic`), else the widget's team (`widget`).
    **API**: `team_id` from the body (`api`), else the mailbox's team.
 2. **Routing rules**, in `position` order: the first enabled rule whose conditions match moves the
@@ -193,7 +196,8 @@ forwarding address never is: it stands for the mailbox).
 The team's assignment method then picks an assignee (contracts/api.md "Assignment"): the pool is the
 team's `lead` and `member` users, never `observer`s or viewers. `team_changed` activities carry
 `{from, to, via}`. A reply on an existing ticket threads into it wherever it was sent and never
-re-routes; the message records `mailbox_id`, and the ticket's `received_at` stays the first address.
+re-routes; the message records `mailbox_id` and its own `received_at`, and the ticket's `received_at`
+stays the first address. Ticket lists and views filter on the ticket's `received_at`.
 
 ## Reply address
 

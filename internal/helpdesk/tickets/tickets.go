@@ -37,22 +37,23 @@ type patchedTicketOut struct {
 
 type listIn struct {
 	httpx.ListParams
-	Status    string `query:"status" doc:"Comma separated statuses"`
-	Priority  string `query:"priority" doc:"Comma separated priorities"`
-	Severity  string `query:"severity" doc:"Comma separated severities (sev1..sev4), none for tickets without one"`
-	Assignee  string `query:"assignee" doc:"me, none or a user id"`
-	TeamID    string `query:"team_id" doc:"Comma-separated team ids, mine (the caller's teams) and none: tickets of any of them"`
-	MailboxID string `query:"mailbox_id"`
-	BrandID   string `query:"brand_id"`
-	WidgetID  string `query:"widget_id"`
-	Tag       string `query:"tag" doc:"Label name"`
-	Channel   string `query:"channel" enum:"email,chat,api,portal,"`
-	ContactID string `query:"contact_id"`
-	ViewID    string `query:"view_id" doc:"Apply a saved view's filters; explicit filters override it"`
-	Q         string `query:"q" maxLength:"200" doc:"Full text over subjects and messages, or #number"`
-	Spam      string `query:"spam" enum:"true,false,any," doc:"Default false (spam hidden); true lists only spam"`
-	Sort      string `query:"sort" maxLength:"60" doc:"last_message_at (default), created_at, priority, severity, due or field.<key>"`
-	Order     string `query:"order" enum:"asc,desc," doc:"Default desc, asc for due"`
+	Status     string `query:"status" doc:"Comma separated statuses"`
+	Priority   string `query:"priority" doc:"Comma separated priorities"`
+	Severity   string `query:"severity" doc:"Comma separated severities (sev1..sev4), none for tickets without one"`
+	Assignee   string `query:"assignee" doc:"me, none or a user id"`
+	TeamID     string `query:"team_id" doc:"Comma-separated team ids, mine (the caller's teams) and none: tickets of any of them"`
+	MailboxID  string `query:"mailbox_id"`
+	ReceivedAt string `query:"received_at" maxLength:"254" doc:"Tickets first written to this address (a mailbox's address or one of its aliases)"`
+	BrandID    string `query:"brand_id"`
+	WidgetID   string `query:"widget_id"`
+	Tag        string `query:"tag" doc:"Label name"`
+	Channel    string `query:"channel" enum:"email,chat,api,portal,"`
+	ContactID  string `query:"contact_id"`
+	ViewID     string `query:"view_id" doc:"Apply a saved view's filters; explicit filters override it"`
+	Q          string `query:"q" maxLength:"200" doc:"Full text over subjects and messages, or #number"`
+	Spam       string `query:"spam" enum:"true,false,any," doc:"Default false (spam hidden); true lists only spam"`
+	Sort       string `query:"sort" maxLength:"60" doc:"last_message_at (default), created_at, priority, severity, due or field.<key>"`
+	Order      string `query:"order" enum:"asc,desc," doc:"Default desc, asc for due"`
 
 	fields    []hd.FieldFilter
 	fieldsErr error
@@ -197,7 +198,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 				return nil, in.fieldsErr
 			}
 			req := hd.TicketFilters{Status: hd.SplitCSV(in.Status), Priority: hd.SplitCSV(in.Priority), Severity: hd.SplitCSV(in.Severity), Assignee: in.Assignee,
-				TeamID: in.TeamID, MailboxID: in.MailboxID, BrandID: in.BrandID, WidgetID: in.WidgetID, Tag: in.Tag, Channel: in.Channel, Q: in.Q, Fields: in.fields}
+				TeamID: in.TeamID, MailboxID: in.MailboxID, ReceivedAt: in.ReceivedAt, BrandID: in.BrandID, WidgetID: in.WidgetID, Tag: in.Tag, Channel: in.Channel, Q: in.Q, Fields: in.fields}
 			f := req
 			if in.ViewID != "" {
 				view, err := loadView(ctx, d.DB.Pool, p, in.ViewID)

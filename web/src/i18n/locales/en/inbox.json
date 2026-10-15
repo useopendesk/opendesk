@@ -208,6 +208,8 @@
     "team": "Team",
     "brand": "Brand",
     "address": "Address",
+    "alias": "Alias",
+    "writtenTo": "Written to",
     "searchAddresses": "Search addresses",
     "noAddresses": "No addresses match"
   },

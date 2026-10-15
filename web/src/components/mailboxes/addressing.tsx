@@ -1,5 +1,5 @@
 // A mailbox's addressing (contracts/teams.md "Addresses"): its brand, its
-// aliases, the From name customers see and the team its new tickets go to.
+// aliases and their teams, the From name customers see and the team its new tickets go to.
 // Shared by the add-mailbox wizard and the mailbox page.
 
 import { Lock } from "lucide-react";
@@ -157,6 +157,72 @@ export function AliasesField({ value, onChange, email }: { value: string[]; onCh
       aria-label={t("addressing.aliases")}
       empty={t("addressing.noAliases")}
     />
+  );
+}
+
+/**
+ * The alias teams to save: only aliases that still exist, and none on a private
+ * team's address (it delivers every alias to that team).
+ */
+export function aliasTeamsFor(value: Record<string, string>, aliases: string[], teamPrivate: boolean): Record<string, string> {
+  if (teamPrivate) return {};
+  return Object.fromEntries(aliases.filter((a) => value[a]).map((a) => [a, value[a]]));
+}
+
+export function sameAliasTeams(a: Record<string, string>, b: Record<string, string>) {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}
+
+/** Where new tickets to each alias go: the mailbox's team, or one of their own. */
+export function AliasTeamsField({
+  aliases,
+  value,
+  onChange,
+  teamId,
+}: {
+  aliases: string[];
+  value: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+  /** The mailbox's own team. */
+  teamId: string | null;
+}) {
+  const { t } = useTranslation("settingsChannels");
+  const { teams } = useTeams();
+  if (!aliases.length || !teams.length) return null;
+  const team = teams.find((x) => x.id === teamId);
+  if (team?.private) {
+    return (
+      <Note tone="violet" icon={<Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />}>
+        {t("addressing.aliasTeamsPrivate", { name: team.name })}
+      </Note>
+    );
+  }
+  const set = (alias: string, id: string | null) => {
+    const next = { ...value };
+    if (id && id !== teamId) next[alias] = id;
+    else delete next[alias];
+    onChange(next);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12px] text-fg-3">{t("addressing.aliasTeams")}</span>
+      <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
+        {aliases.map((a) => (
+          <li key={a} className="flex items-center gap-3 px-3 py-1.5">
+            <span className="mono min-w-0 flex-1 truncate text-[12px] text-fg-2" title={a}>
+              {a}
+            </span>
+            <TeamPick
+              className="w-[220px]"
+              value={value[a] ?? null}
+              noneLabel={team ? t("addressing.aliasTeamSame", { name: team.name }) : t("addressing.aliasTeamNone")}
+              onChange={(id) => set(a, id)}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

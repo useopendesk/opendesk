@@ -168,6 +168,9 @@ func applyFilters(b *sqlBuilder, wid uuid.UUID, me *uuid.UUID, f listQuery) erro
 		}
 		b.add(ref.col + " = " + b.arg(id))
 	}
+	if a := strings.ToLower(strings.TrimSpace(f.ReceivedAt)); a != "" {
+		b.add("t.received_at = " + b.arg(a))
+	}
 	if f.Tag != "" {
 		b.add(`EXISTS (SELECT 1 FROM ticket_tags ftt JOIN tags fg ON fg.id = ftt.tag_id
 			WHERE ftt.ticket_id = t.id AND fg.workspace_id = t.workspace_id AND lower(fg.name) = lower(` + b.arg(f.Tag) + `))`)
@@ -437,7 +440,7 @@ func mergeFilters(view, req hd.TicketFilters) hd.TicketFilters {
 	}
 	for _, f := range []struct{ dst, src *string }{{&out.Assignee, &req.Assignee}, {&out.TeamID, &req.TeamID},
 		{&out.MailboxID, &req.MailboxID}, {&out.Tag, &req.Tag}, {&out.Channel, &req.Channel}, {&out.Q, &req.Q},
-		{&out.BrandID, &req.BrandID}, {&out.WidgetID, &req.WidgetID}} {
+		{&out.BrandID, &req.BrandID}, {&out.WidgetID, &req.WidgetID}, {&out.ReceivedAt, &req.ReceivedAt}} {
 		if *f.src != "" {
 			*f.dst = *f.src
 		}

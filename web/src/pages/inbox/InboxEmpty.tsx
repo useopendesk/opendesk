@@ -62,7 +62,7 @@ export function InboxEmpty({
   const navigate = useNavigate();
   const me = useSession((s) => s.user?.id);
   const toFolder = (f: FolderId) => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: f, ticketId: undefined } });
-  const filtered = !!(search.q || search.priority || search.severity || search.channel || search.tag || search.mailbox || search.team || search.brand || search.fields);
+  const filtered = !!(search.q || search.priority || search.severity || search.channel || search.tag || search.mailbox || search.to || search.team || search.brand || search.fields);
   const wantsReport = folder === "mine" || folder === "solved";
   const range = useToday();
   const month = { from: format(new Date(Date.now() - 29 * 86_400_000), "yyyy-MM-dd"), to: range.to };

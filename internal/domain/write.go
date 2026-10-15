@@ -121,7 +121,7 @@ func CreateTicket(ctx context.Context, tx pgx.Tx, nt NewTicket) (Ticket, error) 
 		brand_id, widget_id, origin_mailbox_id, received_at, page_url, routed)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 		id, nt.WorkspaceID, number, subject, nt.Status, nt.Priority, nt.Channel, nt.MailboxID, nt.ContactID, nt.AssigneeID, nt.TeamID, nt.Custom, nt.Fields, nt.Severity,
-		brandID, nt.WidgetID, nt.OriginMailboxID, nt.ReceivedAt, truncateRunes(nt.PageURL, 500), nt.Routed)
+		brandID, nt.WidgetID, nt.OriginMailboxID, strings.ToLower(strings.TrimSpace(nt.ReceivedAt)), truncateRunes(nt.PageURL, 500), nt.Routed)
 	if err != nil {
 		return Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
@@ -181,6 +181,9 @@ type NewMessage struct {
 	AuthFailed  bool
 	NoAutoReply bool
 	FormSender  string
+	// ReceivedAt is the address of ours an inbound email was written to (its mailbox's
+	// address or an alias).
+	ReceivedAt string
 	// NoReopen keeps the ticket's status when an inbound reply would reopen it, and
 	// records that it was kept (status_changed with reason "sender_unverified").
 	NoReopen bool
@@ -213,12 +216,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	_, err := tx.Exec(ctx, `INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, author_user_id,
 		author_contact_id, body_html, body_text, full_html, subject, from_email, from_name, to_emails, cc_emails, bcc_emails,
 		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action, mailbox_id,
-		reply_to, auth_failed, no_auto_reply, form_sender, bot_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
+		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)`,
 		id, nm.WorkspaceID, nm.TicketID, nm.Kind, nm.Direction, nm.AuthorType, nm.AuthorUserID, nm.AuthorContactID,
 		nm.BodyHTML, nm.BodyText, nm.FullHTML, truncateRunes(nm.Subject, 500), nm.FromEmail, nm.FromName, nm.To, nm.Cc, nm.Bcc,
 		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction, nm.MailboxID,
-		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID)
+		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID,
+		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320))
 	if err != nil {
 		return Message{}, fmt.Errorf("insert message: %w", err)
 	}

@@ -89,6 +89,8 @@ type Mailbox struct {
 	BrandID uuid.UUID `json:"brand_id"`
 	// Aliases are other addresses that deliver into this mailbox.
 	Aliases []string `json:"aliases"`
+	// AliasTeams are the aliases whose new tickets go to a team of their own instead of TeamID.
+	AliasTeams map[string]uuid.UUID `json:"alias_teams" doc:"An alias to the team its new tickets go to, instead of team_id"`
 	// FromNameFormat is the From name of its emails: {agent}, {agent_first}, {team}, {brand}, {mailbox}.
 	FromNameFormat string `json:"from_name_format"`
 	// TrustedFormSenders are the website contact forms whose authenticated mail is from the
@@ -144,7 +146,7 @@ const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kin
 	config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html,
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
 	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
-	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id`
+	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
@@ -152,7 +154,7 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 		&m.OutboundKind, &m.Config, &m.CredentialsEnc, &m.TeamID, &m.SignatureHTML, &m.AutoReplyEnabled,
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
 		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
-		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID)
+		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +163,9 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	}
 	if m.TrustedFormSenders == nil {
 		m.TrustedFormSenders = []string{}
+	}
+	if m.AliasTeams == nil {
+		m.AliasTeams = map[string]uuid.UUID{}
 	}
 	return &m, nil
 }

@@ -145,6 +145,7 @@ export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): 
   if (f.assignee && f.assignee !== "me" && f.assignee !== "none" && t.assignee?.id !== f.assignee) return false;
   if (f.team_id && !teamMatches(ws, f.team_id, t, meId)) return false;
   if (f.mailbox_id && t.mailbox_id !== f.mailbox_id) return false;
+  if (f.received_at && t.received_at.toLowerCase() !== f.received_at.toLowerCase()) return false;
   if (f.brand_id && t.brand_id !== f.brand_id) return false;
   if (f.widget_id && t.widget_id !== f.widget_id) return false;
   if (f.channel && t.channel !== f.channel) return false;
@@ -473,6 +474,7 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     delivery_status: m.kind === "note" || inbound || !isEmail ? "none" : (m.delivery ?? "sent"),
     delivery_error: m.delivery_error ?? "",
     reply_to: inbound && isEmail ? (m.reply_to ?? "") : "",
+    received_at: inbound && isEmail ? (t.received_at || mailbox?.email || "").toLowerCase() : "",
     auth_failed: inbound && isEmail && !!m.auth_failed,
     form_sender: inbound && isEmail ? (m.form_sender ?? "") : "",
     created_at: at,

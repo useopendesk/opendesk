@@ -5,7 +5,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { ArrowRight, ChevronDown, Clock, Eye, Globe, Inbox, Lock, LogOut, MessageCircle, Plus, Route, Shuffle, Ticket, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowRight, AtSign, ChevronDown, Clock, Eye, Globe, Inbox, Lock, LogOut, MessageCircle, Plus, Route, Shuffle, Ticket, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, ListRow, Row, Section, SettingsPage } from "@/components/layout";
@@ -174,6 +174,10 @@ function TeamEditor({ team }: { team: Team }) {
   };
 
   const addresses = (mailboxes ?? []).filter((m) => team.mailbox_ids.includes(m.id) || m.team_id === team.id);
+  // Aliases of other addresses whose new tickets come here.
+  const aliasRows = (mailboxes ?? []).flatMap((m) =>
+    m.private ? [] : Object.entries(m.alias_teams ?? {}).flatMap(([alias, id]) => (id === team.id ? [{ mailbox: m, alias }] : [])),
+  );
   const membersHidden = team.private && !team.members.length && team.member_ids.length === 0 && !admin;
 
   return (
@@ -297,7 +301,7 @@ function TeamEditor({ team }: { team: Team }) {
             )
           }
         >
-          {!addresses.length ? (
+          {!addresses.length && !aliasRows.length ? (
             <div className="flex items-center gap-3 px-4 py-4 text-[12.5px] text-fg-3">
               <Inbox className="size-4 text-fg-4" aria-hidden />
               {t("addresses.empty")}
@@ -314,6 +318,20 @@ function TeamEditor({ team }: { team: Team }) {
                     <Inbox className="size-3.5 text-fg-4" aria-hidden />
                     <span className="mono min-w-0 flex-1 truncate text-[12.5px]">{m.email}</span>
                     {m.aliases.length > 0 && <span className="text-[11.5px] text-fg-4">{t("addresses.aliases", { count: m.aliases.length })}</span>}
+                    <ArrowRight className="size-3.5 text-fg-4 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
+                  </Link>
+                </MotionRow>
+              ))}
+              {aliasRows.map(({ mailbox: m, alias }) => (
+                <MotionRow key={`${m.id}:${alias}`}>
+                  <Link
+                    to="/settings/mailboxes/$mailboxId"
+                    params={{ mailboxId: m.id }}
+                    className="group flex min-h-11 items-center gap-3 border-b border-line-soft px-4 py-2 last:border-0 hover:bg-sunken"
+                  >
+                    <AtSign className="size-3.5 text-fg-4" aria-hidden />
+                    <span className="mono min-w-0 flex-1 truncate text-[12.5px]">{alias}</span>
+                    <span className="min-w-0 truncate text-[11.5px] text-fg-4">{t("addresses.aliasOf", { email: m.email })}</span>
                     <ArrowRight className="size-3.5 text-fg-4 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
                   </Link>
                 </MotionRow>

@@ -14,6 +14,8 @@ export type TicketListQuery = ListQuery & {
   /** A team id, "mine" or "none". */
   team_id?: string;
   mailbox_id?: string;
+  /** The address a ticket was first written to: a mailbox's address or an alias. */
+  received_at?: string;
   brand_id?: string;
   widget_id?: string;
   tag?: string;
@@ -93,6 +95,8 @@ export type CreateMailboxBody = {
   team_id?: string | null;
   brand_id?: string;
   aliases?: string[];
+  /** An alias to the team its new tickets go to. */
+  alias_teams?: Record<string, string>;
   from_name_format?: string;
   /** Sign in to the servers first; a refusal is 422 mailbox_connection_failed and nothing is saved. */
   verify?: boolean;

@@ -29,6 +29,7 @@ function filtersFrom(ctx: Ctx): ListFilters {
     assignee: q.get("assignee") ?? undefined,
     team_id: q.get("team_id") ?? undefined,
     mailbox_id: q.get("mailbox_id") ?? undefined,
+    received_at: q.get("received_at")?.trim().toLowerCase() || undefined,
     brand_id: q.get("brand_id") ?? undefined,
     widget_id: q.get("widget_id") ?? undefined,
     tag: q.get("tag") ?? undefined,

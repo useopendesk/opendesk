@@ -233,6 +233,14 @@ function registerTeamRoutes() {
         publish(ws, "routing_rule.deleted", { routing_rule_id: r.id });
       }
     }
+    // Aliases routed to the team follow it, else go back to their mailbox's team.
+    for (const m of ws.mailboxes) {
+      for (const [a, id] of Object.entries(m.alias_teams ?? {})) {
+        if (id !== t.id) continue;
+        if (moveTo) m.alias_teams![a] = moveTo;
+        else delete m.alias_teams![a];
+      }
+    }
     for (const v of ws.views) if (v.team_id === t.id) v.team_id = null;
     for (const r of ws.savedReplies) if (r.team_id === t.id) r.team_id = null;
     for (const p of ws.sla) if (p.team_id === t.id) p.team_id = null;

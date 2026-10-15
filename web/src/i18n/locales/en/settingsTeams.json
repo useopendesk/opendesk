@@ -159,6 +159,7 @@
     "empty": "No address goes to this team yet. Set its team on a mailbox, or route to it with a rule.",
     "aliases_one": "{{count}} alias",
     "aliases_other": "{{count}} aliases",
+    "aliasOf": "Alias of {{email}}",
     "alsoRouted": "Also routed here:",
     "topic": "{{label}} in {{widget}}"
   },

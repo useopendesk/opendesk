@@ -24,8 +24,17 @@ import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import { CauseCallout, connectFailure, imapOn, sendProviders, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
-import { AliasesField, FromNameField, fromNameProblem, MailboxBrandField, MailboxTeamField } from "@/components/mailboxes/addressing";
-import { useBrands } from "@/components/settings2/teams";
+import {
+  AliasesField,
+  aliasTeamsFor,
+  AliasTeamsField,
+  FromNameField,
+  fromNameProblem,
+  MailboxBrandField,
+  MailboxTeamField,
+  sameAliasTeams,
+} from "@/components/mailboxes/addressing";
+import { useBrands, useTeams } from "@/components/settings2/teams";
 import { ContactFormsField } from "@/components/settings/ContactFormsField";
 import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
@@ -41,6 +50,7 @@ type Draft = {
   team_id: string | null;
   brand_id: string;
   aliases: string[];
+  alias_teams: Record<string, string>;
   trusted_form_senders: string[];
   from_name_format: string;
   signature_html: string;
@@ -76,6 +86,7 @@ function toDraft(m: Mailbox): Draft {
     team_id: m.team_id,
     brand_id: m.brand_id ?? "",
     aliases: [...(m.aliases ?? [])],
+    alias_teams: { ...(m.alias_teams ?? {}) },
     trusted_form_senders: [...(m.trusted_form_senders ?? [])],
     from_name_format: m.from_name_format ?? "",
     signature_html: m.signature_html,
@@ -146,6 +157,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { multi: multiBrand } = useBrands();
+  const { teams } = useTeams();
   const { setStatus, remove, testDialog } = useMailboxActions();
   const confirm = useConfirm();
   const reduce = useReducedMotion();
@@ -166,6 +178,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
+  const aliasTeams = aliasTeamsFor(draft.alias_teams, draft.aliases, !!teams.find((x) => x.id === draft.team_id)?.private);
   const dirty = JSON.stringify(draft) !== JSON.stringify(base);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setCfg = <K extends keyof MailboxConfig>(k: K, v: MailboxConfig[K]) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
@@ -210,6 +223,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         team_id: draft.team_id ?? "", // "" clears the team; null would mean "unchanged"
         ...(draft.brand_id && draft.brand_id !== base.brand_id ? { brand_id: draft.brand_id } : {}),
         ...(JSON.stringify(draft.aliases) !== JSON.stringify(base.aliases) ? { aliases: draft.aliases } : {}),
+        ...(sameAliasTeams(aliasTeams, base.alias_teams) ? {} : { alias_teams: aliasTeams }),
         ...(JSON.stringify(draft.trusted_form_senders) !== JSON.stringify(base.trusted_form_senders) ? { trusted_form_senders: draft.trusted_form_senders } : {}),
         ...(draft.from_name_format !== base.from_name_format ? { from_name_format: draft.from_name_format.trim() } : {}),
         signature_html: draft.signature_html,
@@ -532,7 +546,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           />
         </Row>
         <Row label={t("addressing.aliases")} description={t("addressing.aliasesHint")} stack>
-          <AliasesField value={draft.aliases} onChange={(v) => set("aliases", v)} email={mailbox.email} />
+          <div className="flex flex-col gap-3">
+            <AliasesField value={draft.aliases} onChange={(v) => set("aliases", v)} email={mailbox.email} />
+            <AliasTeamsField aliases={draft.aliases} value={draft.alias_teams} onChange={(v) => set("alias_teams", v)} teamId={draft.team_id} />
+          </div>
         </Row>
       </Section>
 

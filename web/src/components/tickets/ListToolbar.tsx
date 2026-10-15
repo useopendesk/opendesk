@@ -17,6 +17,9 @@ import { TagSwatch } from "./TagSwatch";
 import { ChannelIcon, PriorityIcon, SeverityChip, channelLabel, priorityLabel, priorityOrder, severityLabel, severityOrder } from "./bits";
 import { addressLabel, BrandChip, sortTeams, TeamDot, useTeamsCtx } from "./teams";
 
+/** Address picker values for an alias: the address a ticket was written to. */
+const TO = "to:";
+
 export type InboxLayout = "split" | "list";
 
 const sorts = ["last_message_at", "created_at", "priority", "severity", "due"] as const;
@@ -135,21 +138,37 @@ export function ListToolbar({
   const teamLabel = (v: string) => (v === "mine" ? t("teams.myTeams") : v === "none" ? t("props.noTeam") : (teams.team(v)?.name ?? t("teams.team")));
   const showTeams = teams.hasTeams && !inTeam;
   const brandSel = teams.multiBrand ? teams.brand(search.brand) : undefined;
-  const addressItems = mailboxes.map((m) => ({
-    value: m.id,
-    label: addressLabel(m),
-    keywords: [m.email, ...(m.aliases ?? [])],
-    group: teams.multiBrand ? (teams.brand(m.brand_id)?.name ?? "") : undefined,
-    icon: <TeamDot team={teams.team(m.team_id)} />,
-    hint: m.private ? <Lock className="size-3" /> : undefined,
-  }));
+  // Each mailbox, then its aliases: an alias filters on the address the ticket was written to.
+  const addressItems = mailboxes.flatMap((m) => {
+    const group = teams.multiBrand ? (teams.brand(m.brand_id)?.name ?? "") : undefined;
+    return [
+      {
+        value: m.id,
+        label: addressLabel(m),
+        keywords: [m.email, ...(m.aliases ?? [])],
+        group,
+        icon: <TeamDot team={teams.team(m.team_id)} />,
+        hint: m.private ? <Lock className="size-3" /> : undefined,
+      },
+      ...(m.aliases ?? []).map((a) => ({
+        value: TO + a,
+        label: a,
+        keywords: [m.email, m.name],
+        group,
+        icon: <TeamDot team={teams.team(m.alias_teams?.[a] ?? m.team_id)} />,
+        hint: <span className="text-[11px] text-fg-4">{t("filter.alias")}</span>,
+      })),
+    ];
+  });
   const activeMailbox = mailboxes.find((m) => m.id === search.mailbox);
+  const activeAddress = activeMailbox?.email ?? search.to;
   const activeFilters =
     priorities.length +
     severities.length +
     (search.channel ? 1 : 0) +
     (search.tag ? 1 : 0) +
     (search.mailbox ? 1 : 0) +
+    (search.to ? 1 : 0) +
     teamSel.length +
     (brandSel ? 1 : 0) +
     fieldFilters.length;
@@ -319,7 +338,7 @@ export function ListToolbar({
               >
                 <span className="flex items-center justify-between gap-2">
                   {t("filter.address")}
-                  {activeMailbox && <span className="mono truncate text-[11px] text-fg-4">{activeMailbox.email}</span>}
+                  {activeAddress && <span className="mono truncate text-[11px] text-fg-4">{activeAddress}</span>}
                 </span>
               </MenuItem>
             )}
@@ -372,9 +391,13 @@ export function ListToolbar({
           width={320}
           placeholder={t("filter.searchAddresses")}
           emptyText={t("filter.noAddresses")}
-          value={search.mailbox ?? null}
+          value={search.mailbox ?? (search.to ? TO + search.to : null)}
           items={addressItems}
-          onSelect={(v) => onSearch({ ...search, mailbox: search.mailbox === v ? undefined : v })}
+          onSelect={(v) => {
+            const to = v.startsWith(TO) ? v.slice(TO.length) : undefined;
+            const mailbox = to ? undefined : v;
+            onSearch({ ...search, mailbox: mailbox && search.mailbox !== mailbox ? mailbox : undefined, to: to && search.to !== to ? to : undefined });
+          }}
           trigger={<span aria-hidden className="pointer-events-none -ml-1.5 h-7 w-0" />}
         />
         <Menu>
@@ -483,6 +506,13 @@ export function ListToolbar({
                   <Chip key="mailbox" label={t("filter.remove")} onRemove={() => onSearch({ ...search, mailbox: undefined })}>
                     <Mail />
                     <span className="mono text-[11.5px]">{activeMailbox?.email ?? t("filter.address")}</span>
+                  </Chip>
+                )}
+                {search.to && (
+                  <Chip key="to" label={t("filter.remove")} onRemove={() => onSearch({ ...search, to: undefined })}>
+                    <Mail />
+                    <span className="text-fg-3">{t("filter.writtenTo")}</span>
+                    <span className="mono text-[11.5px]">{search.to}</span>
                   </Chip>
                 )}
                 {teamSel.map((v) => (

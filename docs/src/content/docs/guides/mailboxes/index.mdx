@@ -167,7 +167,9 @@ Open a mailbox from the list to change how it works. The **Sending** section set
 
 1. **New tickets to this address go to** a team. [Routing](/guides/routing/) rules can still send a ticket elsewhere.
 2. **From name**: what customers see as the sender. Click a variable to add it: `{agent}`, `{agent_first}`, `{team}`, `{brand}` or `{mailbox}`. The mailbox's **sender name**, just above, fills `{mailbox}`. The preview shows a reply and an auto-reply as customers will see them.
-3. **Aliases**: up to 20 other addresses that deliver into this mailbox, like `help@`. Replies go out as the address the customer wrote to.
+3. **Aliases**: up to 20 other addresses that deliver into this mailbox, like `help@`. Replies go out as the address the customer wrote to. Give an alias its own team when it belongs to another project or group: new tickets written to it go to that team instead of the mailbox's. A mailbox of a private team sends every alias to that team.
+
+Every email in a ticket shows the address it was written to, and the inbox's **Address** filter lists each alias on its own, so you can see only the tickets written to `sales@`, for example.
 
 </Legend>
 

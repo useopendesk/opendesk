@@ -217,7 +217,10 @@ type Message struct {
 	AuthFailed bool `json:"auth_failed"`
 	// FormSender is the trusted contact form address an inbound email came through; FromEmail
 	// is then the visitor its Reply-To named. "" otherwise.
-	FormSender string    `json:"form_sender"`
+	FormSender string `json:"form_sender"`
+	// ReceivedAt is the address of ours an inbound email was written to: its mailbox's
+	// address or one of its aliases. "" otherwise.
+	ReceivedAt string    `json:"received_at"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

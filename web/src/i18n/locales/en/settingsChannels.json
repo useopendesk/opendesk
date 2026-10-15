@@ -303,9 +303,13 @@
       "mailbox": "This address's sender name"
     },
     "aliases": "Aliases",
-    "aliasesHint": "Other addresses that deliver into this mailbox, like help@. Replies go out as the address the customer wrote to. Up to 20.",
+    "aliasesHint": "Other addresses that deliver into this mailbox, like help@. Replies go out as the address the customer wrote to. Up to 20. Give an alias its own team when it belongs to another project.",
     "noAliases": "No aliases",
-    "aliasSame": "That's this mailbox's own address."
+    "aliasSame": "That's this mailbox's own address.",
+    "aliasTeams": "New tickets to each alias go to",
+    "aliasTeamSame": "{{name}}, like the mailbox",
+    "aliasTeamNone": "No team, like the mailbox",
+    "aliasTeamsPrivate": "{{name}} is private, so new tickets to every alias go to it too."
   },
   "forms": {
     "title": "Contact forms",

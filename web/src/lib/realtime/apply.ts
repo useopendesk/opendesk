@@ -31,6 +31,8 @@ const onboardingResources = new Set(["mailbox", "member", "tag", "kb_article", "
 const agentSetupResources = new Set(["mailbox", "kb_article", "workspace", "ai_knowledge", "ai_mcp_server", "bot"]);
 // Bots list where they answer, so widget and address changes move their usage too.
 const botResources = new Set(["bot", "widget", "mailbox"]);
+// Events that move a plan limit's count (billing usage).
+const limitEvents = new Set(["mailbox.created", "mailbox.deleted", "member.added", "member.removed"]);
 
 export type ApplyContext = {
   me: string;
@@ -135,6 +137,7 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
   if (agentSetupResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.agentSetup });
   // A new default or an order touches every row, so the short list is refetched whole.
   if (botResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.bots });
+  if (limitEvents.has(env.type)) void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
   if (resource === "bot") return;
 
   switch (env.type) {
@@ -343,6 +346,11 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     else if (d.team) upsertInList(qc, qk.teams, d.team as Team);
     const after = teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).join(",");
     if (before !== after || verb === "deleted") void qc.invalidateQueries({ queryKey: ["tickets"] });
+    // Addresses, widgets and aliases of a deleted team moved with it.
+    if (verb === "deleted") {
+      void qc.invalidateQueries({ queryKey: qk.mailboxes });
+      void qc.invalidateQueries({ queryKey: qk.widgets });
+    }
     refreshCounts(qc);
     return;
   }

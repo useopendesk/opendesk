@@ -46,6 +46,8 @@ export type InboxSearch = {
   channel?: string;
   tag?: string;
   mailbox?: string;
+  /** The address a ticket was written to (a mailbox's address or an alias). */
+  to?: string;
   /** Team filter: ids, "mine" and "none", joined by ",". */
   team?: string;
   brand?: string;
@@ -78,6 +80,7 @@ export function listQuery(base: TicketListQuery, s: InboxSearch): TicketListQuer
   if (s.channel) q.channel = s.channel as TicketListQuery["channel"];
   if (s.tag) q.tag = s.tag;
   if (s.mailbox) q.mailbox_id = s.mailbox;
+  if (s.to) q.received_at = s.to;
   // A team inbox is already one team (or the caller's teams).
   if (s.team && !base.team_id) q.team_id = s.team;
   if (s.brand) q.brand_id = s.brand;
@@ -99,6 +102,7 @@ export function parseInboxSearch(raw: Record<string, unknown>): InboxSearch {
     channel: str(raw.channel),
     tag: str(raw.tag),
     mailbox: str(raw.mailbox),
+    to: str(raw.to),
     team: str(raw.team),
     brand: str(raw.brand),
     tab: teamTabs.includes(raw.tab as TeamTab) ? (raw.tab as TeamTab) : undefined,

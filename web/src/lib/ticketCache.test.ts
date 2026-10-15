@@ -35,6 +35,12 @@ describe("ticketMatches", () => {
     expect(ticketMatches({ severity: ["none"] }, t, "u1")).toBe(false);
   });
 
+  it("filters by the address a ticket was written to, ignoring case", () => {
+    const t = ticket({ received_at: "projects@acme.test" });
+    expect(ticketMatches({ received_at: "Projects@acme.test" }, t, "u1")).toBe(true);
+    expect(ticketMatches({ received_at: "support@acme.test" }, t, "u1")).toBe(false);
+  });
+
   it("can't decide full-text or unknown views", () => {
     expect(ticketMatches({ q: "refund" }, ticket(), "u1")).toBeNull();
     expect(ticketMatches({ view_id: "v1" }, ticket(), "u1", [])).toBeNull();

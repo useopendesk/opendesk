@@ -181,12 +181,18 @@ func firstStep(ctx context.Context, q db.Querier, in Input) (*uuid.UUID, string,
 	}
 }
 
+// mailboxTeam is the team of the alias the message was written to, else the mailbox's. A
+// private team's address delivers every alias to that team.
 func mailboxTeam(ctx context.Context, q db.Querier, in Input) (*uuid.UUID, error) {
 	if in.MailboxID == nil {
 		return nil, nil
 	}
 	var team *uuid.UUID
-	err := q.QueryRow(ctx, `SELECT team_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, in.WorkspaceID, *in.MailboxID).Scan(&team)
+	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT at.id FROM teams at
+			WHERE at.workspace_id = m.workspace_id AND at.id::text = m.alias_teams ->> $3
+			AND NOT EXISTS (SELECT 1 FROM teams pt WHERE pt.id = m.team_id AND pt.private)), m.team_id)
+		FROM mailboxes m WHERE m.workspace_id = $1 AND m.id = $2`,
+		in.WorkspaceID, *in.MailboxID, strings.ToLower(strings.TrimSpace(in.ReceivedAt))).Scan(&team)
 	if db.IsNotFound(err) {
 		return nil, nil
 	}

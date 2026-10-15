@@ -260,7 +260,12 @@ export function evaluateRouting(ws: WsData, input: RoutingInput): RoutingTest & 
 
   let team: string | null = null;
   let routed: TicketRouted | null = null;
-  if (mailbox?.team_id) {
+  // An alias with a team of its own, unless the address belongs to a private team.
+  const aliasTeam = mailbox && !mailbox.private ? mailbox.alias_teams?.[lc(input.to)] : undefined;
+  if (aliasTeam && ws.teams.some((x) => x.id === aliasTeam)) {
+    team = aliasTeam;
+    routed = { via: "address" };
+  } else if (mailbox?.team_id) {
     team = mailbox.team_id;
     routed = { via: "address" };
   } else if (topic?.team_id) {

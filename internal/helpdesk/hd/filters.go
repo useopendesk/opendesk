@@ -32,11 +32,13 @@ type TicketFilters struct {
 	Assignee  string   `json:"assignee,omitempty"`
 	TeamID    string   `json:"team_id,omitempty" doc:"A team id, mine (the caller's teams) or none"`
 	MailboxID string   `json:"mailbox_id,omitempty"`
-	BrandID   string   `json:"brand_id,omitempty"`
-	WidgetID  string   `json:"widget_id,omitempty"`
-	Tag       string   `json:"tag,omitempty"`
-	Channel   string   `json:"channel,omitempty" enum:"email,chat,api,portal"`
-	Q         string   `json:"q,omitempty" maxLength:"200"`
+	// ReceivedAt is the address a ticket was first written to: a mailbox's address or an alias.
+	ReceivedAt string `json:"received_at,omitempty" maxLength:"254" doc:"Tickets first written to this address (a mailbox's address or one of its aliases)"`
+	BrandID    string `json:"brand_id,omitempty"`
+	WidgetID   string `json:"widget_id,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+	Channel    string `json:"channel,omitempty" enum:"email,chat,api,portal"`
+	Q          string `json:"q,omitempty" maxLength:"200"`
 	// Fields are custom field filters, ANDed.
 	Fields []FieldFilter `json:"fields,omitempty" maxItems:"20"`
 }
@@ -112,6 +114,10 @@ func (f *TicketFilters) Normalize(ctx context.Context, q db.Querier, wid uuid.UU
 			return err
 		}
 		*ref.v = id.String()
+	}
+	f.ReceivedAt = strings.ToLower(strings.TrimSpace(f.ReceivedAt))
+	if len(f.ReceivedAt) > 254 {
+		return httpx.Validation("received_at must be 254 characters or less")
 	}
 	f.Tag = strings.TrimSpace(f.Tag)
 	if len([]rune(f.Tag)) > 50 {
