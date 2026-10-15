@@ -151,7 +151,8 @@ See [Email setup](/self-hosting/email/).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Google sign-in and Gmail mailbox connections. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Google sign-in, and Gmail mailbox connections unless they have their own client. |
+| `GOOGLE_MAILBOX_CLIENT_ID`, `GOOGLE_MAILBOX_CLIENT_SECRET` | the sign-in client | A separate Google client for Gmail mailbox connections, for example in its own Google Cloud project for the restricted Gmail scope's review. |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | | Microsoft sign-in and Outlook mailbox connections. |
 | `MICROSOFT_TENANT` | `common` | `common`, `organizations`, `consumers` or your tenant id. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | | GitHub sign-in. |

@@ -119,6 +119,20 @@ func TestMailboxOAuthSwitch(t *testing.T) {
 	if c, _ = Load(); c.MicrosoftMailboxOAuth {
 		t.Fatal("MICROSOFT_MAILBOX_OAUTH=false")
 	}
+	// Mailboxes use the sign-in client unless they have their own.
+	t.Setenv("GOOGLE_MAILBOX_OAUTH", "")
+	if c, _ = Load(); c.GoogleMailboxClientID != "gid" || c.GoogleMailboxClientSecret != "gsecret" {
+		t.Fatalf("mailbox client defaults to sign-in: %q", c.GoogleMailboxClientID)
+	}
+	t.Setenv("GOOGLE_MAILBOX_CLIENT_ID", "mbid")
+	t.Setenv("GOOGLE_MAILBOX_CLIENT_SECRET", "mbsecret")
+	if c, _ = Load(); c.GoogleMailboxClientID != "mbid" || c.GoogleMailboxClientSecret != "mbsecret" || c.GoogleClientID != "gid" || !c.GoogleMailboxOAuth {
+		t.Fatalf("own mailbox client: %q %q", c.GoogleMailboxClientID, c.GoogleClientID)
+	}
+	t.Setenv("GOOGLE_MAILBOX_CLIENT_SECRET", "")
+	if c, _ = Load(); c.GoogleMailboxOAuth {
+		t.Fatal("a mailbox client without its secret must be off")
+	}
 }
 
 func TestMailhostISPDBDefault(t *testing.T) {

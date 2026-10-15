@@ -76,7 +76,7 @@ func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
 	ms := "https://login.microsoftonline.com/" + url.PathEscape(tenant) + "/oauth2/v2.0"
 	return map[string]*oauthProvider{
 		KindGoogle: {
-			name: KindGoogle, clientID: cfg.GoogleClientID, clientSecret: cfg.GoogleClientSecret,
+			name: KindGoogle, clientID: cfg.GoogleMailboxClientID, clientSecret: cfg.GoogleMailboxClientSecret,
 			authURL: "https://accounts.google.com/o/oauth2/v2/auth", tokenURL: "https://oauth2.googleapis.com/token",
 			userinfoURL: "https://openidconnect.googleapis.com/v1/userinfo",
 			authScopes:  []string{"openid", "email", googleIMAPScope},

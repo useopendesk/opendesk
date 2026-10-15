@@ -203,6 +203,12 @@ variable "google_client_id" {
   default = ""
 }
 
+variable "google_mailbox_client_id" {
+  description = "GOOGLE_MAILBOX_CLIENT_ID: the Google client for Gmail mailbox connections, when it is not the sign-in client. Its secret is GOOGLE_MAILBOX_CLIENT_SECRET."
+  type        = string
+  default     = ""
+}
+
 variable "microsoft_client_id" {
   type    = string
   default = ""
@@ -238,7 +244,7 @@ variable "turnstile_site_key" {
 variable "optional_secrets" {
   description = <<-EOT
     Operator-supplied secrets the tasks should reference, once they have a value
-    (GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
+    (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
     ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY). See modules/secrets.
@@ -248,7 +254,7 @@ variable "optional_secrets" {
 
   validation {
     condition = alltrue([for s in var.optional_secrets : contains([
-      "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
+      "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
       "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY",
     ], s)])

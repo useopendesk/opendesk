@@ -24,6 +24,7 @@ github_repo = "opendesk/opendesk"
 # existing_github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
 
 google_client_id    = ""
+# google_mailbox_client_id = ""   # Gmail mailboxes in their own Google project (secret GOOGLE_MAILBOX_CLIENT_SECRET)
 microsoft_client_id = ""
 github_client_id    = ""
 turnstile_site_key  = ""

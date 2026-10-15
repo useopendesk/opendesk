@@ -71,17 +71,22 @@ type Config struct {
 	// are believed (INBOUND_AUTHSERV_ID, comma-separated), e.g. mx.cloudflare.net.
 	InboundAuthservIDs []string
 
-	GoogleClientID        string
-	GoogleClientSecret    string
-	MicrosoftClientID     string
-	MicrosoftClientSecret string
-	MicrosoftTenant       string
-	GitHubClientID        string
-	GitHubClientSecret    string
-	OIDCIssuer            string
-	OIDCClientID          string
-	OIDCClientSecret      string
-	OIDCName              string
+	GoogleClientID     string
+	GoogleClientSecret string
+	// GoogleMailboxClientID and GoogleMailboxClientSecret are the Google client mailbox
+	// connections use (GOOGLE_MAILBOX_CLIENT_ID, GOOGLE_MAILBOX_CLIENT_SECRET), when it is
+	// not the sign-in client; the sign-in client otherwise.
+	GoogleMailboxClientID     string
+	GoogleMailboxClientSecret string
+	MicrosoftClientID         string
+	MicrosoftClientSecret     string
+	MicrosoftTenant           string
+	GitHubClientID            string
+	GitHubClientSecret        string
+	OIDCIssuer                string
+	OIDCClientID              string
+	OIDCClientSecret          string
+	OIDCName                  string
 	// GoogleMailboxOAuth and MicrosoftMailboxOAuth allow connecting a new mailbox with
 	// that provider's sign-in (GOOGLE_MAILBOX_OAUTH, MICROSOFT_MAILBOX_OAUTH). Each is on
 	// when the provider's client is configured, unless set to false. Reconnecting a
@@ -493,7 +498,11 @@ func Load() (*Config, error) {
 	if c.DatabaseURLDirect == "" {
 		c.DatabaseURLDirect = c.DatabaseURL
 	}
-	c.GoogleMailboxOAuth = mailboxOAuth("GOOGLE_MAILBOX_OAUTH", c.GoogleClientID, c.GoogleClientSecret)
+	c.GoogleMailboxClientID, c.GoogleMailboxClientSecret = env("GOOGLE_MAILBOX_CLIENT_ID", ""), env("GOOGLE_MAILBOX_CLIENT_SECRET", "")
+	if c.GoogleMailboxClientID == "" {
+		c.GoogleMailboxClientID, c.GoogleMailboxClientSecret = c.GoogleClientID, c.GoogleClientSecret
+	}
+	c.GoogleMailboxOAuth = mailboxOAuth("GOOGLE_MAILBOX_OAUTH", c.GoogleMailboxClientID, c.GoogleMailboxClientSecret)
 	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftClientID, c.MicrosoftClientSecret)
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")

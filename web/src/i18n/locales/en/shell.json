@@ -155,5 +155,10 @@
     "paletteAdd": "Add an account",
     "paletteLogoutAll": "Log out of all accounts",
     "reauthAs": "Sign in as {{email}}"
+  },
+  "signIn": {
+    "popupWaiting": "Finish signing in with {{name}} in the window that opened.",
+    "popupBlocked": "Your browser blocked the {{name}} window. Allow pop-ups from the address bar to finish there.",
+    "popupThisTab": "Continue in this tab"
   }
 }

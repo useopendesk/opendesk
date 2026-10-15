@@ -193,6 +193,25 @@ func TestNativeOAuthPKCE(t *testing.T) {
 	if got := cb("error=access_denied&state=forged"); !strings.HasPrefix(got, "http://app.test/auth/callback?error=") {
 		t.Fatalf("forged state: %s", got)
 	}
+
+	// A popup sign-in returns to /auth/popup with its id; a malformed id falls back to the
+	// page flow, and a native flow ignores it.
+	popupID := crypto.RandomToken(16)
+	w = start("popup=" + popupID)
+	loc, _ = url.Parse(w.Header().Get("Location"))
+	if st, err := e.d.Tokens.Verify(loc.Query().Get("state"), auth.PurposeOAuthState); err != nil || st.Data["popup"] != popupID {
+		t.Fatalf("popup state: %v %v", err, st)
+	}
+	if got := cb("error=access_denied&state=" + url.QueryEscape(loc.Query().Get("state"))); got != "http://app.test/auth/popup?error=access_denied&popup="+popupID {
+		t.Fatalf("popup denied: %s", got)
+	}
+	for _, q := range []string{"popup=short", "popup=" + url.QueryEscape("bad id with spaces!"), "client=native&code_challenge=" + challenge + "&popup=" + popupID} {
+		w = start(q)
+		loc, _ = url.Parse(w.Header().Get("Location"))
+		if st, err := e.d.Tokens.Verify(loc.Query().Get("state"), auth.PurposeOAuthState); err != nil || st.Data["popup"] != "" {
+			t.Fatalf("%s: popup kept: %v %v", q, err, st)
+		}
+	}
 }
 
 // attestDevice is an App Attest key the test controls, stored as if attested.

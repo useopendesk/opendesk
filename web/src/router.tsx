@@ -164,6 +164,14 @@ const callbackRoute = createRoute({
   component: page(() => import("./pages/auth/Callback")),
   staticData: { title: "Signing in" },
 });
+// Where a sign-in that ran in a popup window returns; it hands the code to the tab that opened it.
+const popupDoneRoute = createRoute({
+  getParentRoute: () => authLayout,
+  path: "/auth/popup",
+  validateSearch: (s: Record<string, unknown>): { code?: string; error?: string; popup?: string } => ({ code: str(s.code), error: str(s.error), popup: str(s.popup) }),
+  component: page(() => import("./pages/auth/PopupDone")),
+  staticData: { title: "Signing in" },
+});
 // The footer link of notification emails. It never acts on load (link scanners open it), only on the click.
 const unsubscribeRoute = createRoute({
   getParentRoute: () => authLayout,
@@ -715,6 +723,7 @@ const routeTree = rootRoute.addChildren([
     resetRoute,
     verifyRoute,
     callbackRoute,
+    popupDoneRoute,
     inviteRoute,
     unsubscribeRoute,
     oauthConsentRoute,

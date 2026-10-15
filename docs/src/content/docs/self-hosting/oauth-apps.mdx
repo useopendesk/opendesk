@@ -7,6 +7,8 @@ import { Steps, Aside } from '@astrojs/starlight/components';
 
 Self-hosted instances use their own OAuth apps. One app per provider covers both **sign-in** and **mailbox connections**. Without them, password sign-in and IMAP, SMTP and forwarding mailboxes still work.
 
+Gmail mailbox connections can also use a separate Google client, for example in its own Google Cloud project while the restricted Gmail scope is reviewed: set `GOOGLE_MAILBOX_CLIENT_ID` and `GOOGLE_MAILBOX_CLIENT_SECRET`, and register only the mailbox redirect URI on it.
+
 ## Redirect URIs
 
 Register both of these, with `API_URL` exactly as configured (on a single domain, your site URL):

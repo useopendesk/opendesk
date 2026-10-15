@@ -56,6 +56,9 @@ const nativeCallbackURL = "opendesk://auth/callback"
 var (
 	// pkceChallengeRe is BASE64URL(SHA256(verifier)) without padding.
 	pkceChallengeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	// The id a browser gives a sign-in it runs in a popup window, so the waiting tab
+	// can tell its own result from another tab's.
+	popupIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
 	// pkceVerifierRe is RFC 7636's code_verifier.
 	pkceVerifierRe = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 )
@@ -372,19 +375,23 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 	native := q.Get("client") == "native"
 	challenge := q.Get("code_challenge")
 	if native && !pkceChallengeRe.MatchString(challenge) {
-		s.oauthFail(w, r, true, "invalid_request")
+		s.oauthFail(w, r, true, "", "invalid_request")
 		return
+	}
+	popup := ""
+	if !native && popupIDRe.MatchString(q.Get("popup")) {
+		popup = q.Get("popup")
 	}
 	cfg, err := s.oauth.ensure(r.Context(), p)
 	if err != nil {
 		s.d.Log.Error("oauth provider unavailable", "provider", p.id, "err", err)
-		s.oauthFail(w, r, native, "provider_unavailable")
+		s.oauthFail(w, r, native, popup, "provider_unavailable")
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
 	sealed, err := s.d.Box.Seal([]byte(verifier))
 	if err != nil {
-		s.oauthFail(w, r, native, "server_error")
+		s.oauthFail(w, r, native, popup, "server_error")
 		return
 	}
 	nonce := crypto.RandomToken(16)
@@ -396,9 +403,12 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 	if native {
 		data["client"], data["cc"] = "native", challenge
 	}
+	if popup != "" {
+		data["popup"] = popup
+	}
 	state, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeOAuthState, Data: data}, "", auth.OAuthStateTTL)
 	if err != nil {
-		s.oauthFail(w, r, native, "server_error")
+		s.oauthFail(w, r, native, popup, "server_error")
 		return
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
@@ -414,19 +424,24 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // oauthDone sends the browser back with a one-time code or an error code: to the app's
-// /auth/callback, or to the native app's callback URL for a native flow.
-func (s *svc) oauthDone(w http.ResponseWriter, r *http.Request, native bool, key, value string) {
+// /auth/callback, to its /auth/popup for a sign-in running in a popup window (which hands
+// the result to the tab that opened it), or to the native app's callback URL for a native
+// flow.
+func (s *svc) oauthDone(w http.ResponseWriter, r *http.Request, native bool, popup, key, value string) {
 	http.SetCookie(w, s.bindCookie("", -1))
 	w.Header().Set("Cache-Control", "no-store")
 	target := s.appLink("/auth/callback", key, value)
-	if native {
+	switch {
+	case native:
 		target = nativeCallbackURL + "?" + url.Values{key: {value}}.Encode()
+	case popup != "":
+		target = s.d.Cfg.AppURL + "/auth/popup?" + url.Values{key: {value}, "popup": {popup}}.Encode()
 	}
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-func (s *svc) oauthFail(w http.ResponseWriter, r *http.Request, native bool, code string) {
-	s.oauthDone(w, r, native, "error", code)
+func (s *svc) oauthFail(w http.ResponseWriter, r *http.Request, native bool, popup, code string) {
+	s.oauthDone(w, r, native, popup, "error", code)
 }
 
 func (s *svc) oauthCallback(w http.ResponseWriter, r *http.Request) {
@@ -439,40 +454,44 @@ func (s *svc) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	c, stateErr := s.d.Tokens.Verify(q.Get("state"), auth.PurposeOAuthState)
 	stateOK := stateErr == nil && c.Data["flow"] == stateFlowLogin && c.Data["provider"] == p.id
-	// Only a verified state can send the browser to the native app.
+	// Only a verified state can send the browser to the native app or a popup's opener.
 	native := stateOK && c.Data["client"] == "native"
+	popup := ""
+	if stateOK && !native {
+		popup = c.Data["popup"]
+	}
 	if q.Get("error") != "" {
-		s.oauthFail(w, r, native, "access_denied")
+		s.oauthFail(w, r, native, popup, "access_denied")
 		return
 	}
 	if !stateOK {
-		s.oauthFail(w, r, false, "invalid_state")
+		s.oauthFail(w, r, false, "", "invalid_state")
 		return
 	}
 	bc, err := r.Cookie(oauthBindCookie)
 	if err != nil || !constantTimeEq(bindHash(bc.Value), c.Data["bind"]) {
-		s.oauthFail(w, r, native, "invalid_state")
+		s.oauthFail(w, r, native, popup, "invalid_state")
 		return
 	}
 	sealed, err := base64.RawURLEncoding.DecodeString(c.Data["v"])
 	if err != nil {
-		s.oauthFail(w, r, native, "invalid_state")
+		s.oauthFail(w, r, native, popup, "invalid_state")
 		return
 	}
 	verifier, err := s.d.Box.Open(sealed)
 	if err != nil {
-		s.oauthFail(w, r, native, "invalid_state")
+		s.oauthFail(w, r, native, popup, "invalid_state")
 		return
 	}
 	code := q.Get("code")
 	if code == "" || len(code) > 4096 {
-		s.oauthFail(w, r, native, "invalid_request")
+		s.oauthFail(w, r, native, popup, "invalid_request")
 		return
 	}
 	id, err := s.oauth.exchange(ctx, p, code, string(verifier), c.Data["nonce"])
 	if err != nil {
 		s.d.Log.Warn("oauth sign-in failed", "provider", p.id, "err", err)
-		s.oauthFail(w, r, native, "provider_error")
+		s.oauthFail(w, r, native, popup, "provider_error")
 		return
 	}
 	ri := s.readReqInfo(r)
@@ -482,10 +501,10 @@ func (s *svc) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	loginCode, errCode := s.resolveIdentity(ctx, id, c.Data["rt"], codeChallenge, ri)
 	if errCode != "" {
-		s.oauthFail(w, r, native, errCode)
+		s.oauthFail(w, r, native, popup, errCode)
 		return
 	}
-	s.oauthDone(w, r, native, "code", loginCode)
+	s.oauthDone(w, r, native, popup, "code", loginCode)
 }
 
 // resolveIdentity binds the identity to a user and returns a one-time login code, or an

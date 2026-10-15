@@ -3,11 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
-import { forwardRef, useId, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { AuthProvider, TokenResponse } from "@/lib/api/types";
 import { config } from "@/lib/config";
 import { desktop, setOAuthHandoff } from "@/lib/desktop";
+import { newPopupId, openSignInPopup, waitForPopup } from "@/lib/oauthPopup";
 import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
 import { signIn } from "@/lib/session";
@@ -180,10 +181,14 @@ function ProviderGlyph({ id }: { id: AuthProvider["id"] }) {
   }
 }
 
-function oauthStartUrl(provider: AuthProvider["id"], next?: string | null) {
-  // redirect_to is where to land after sign-in; the API always returns to /auth/callback first.
+function oauthStartUrl(provider: AuthProvider["id"], next?: string | null, popup?: string) {
+  // redirect_to is where to land after sign-in; the API always returns to /auth/callback
+  // first, or to /auth/popup for a sign-in running in a popup window.
   const n = safeNext(next);
-  const q = n ? `?redirect_to=${encodeURIComponent(n)}` : "";
+  const p = new URLSearchParams();
+  if (n) p.set("redirect_to", n);
+  if (popup) p.set("popup", popup);
+  const q = p.size ? `?${p}` : "";
   return new URL(`${config.apiUrl}/v1/auth/oauth/${provider}/start${q}`, location.href).toString();
 }
 
@@ -213,12 +218,52 @@ export function ProviderButtons({ next, verb = "Continue" }: { next?: string | n
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
+  // A sign-in running in a popup window: which provider, and whether the browser blocked it.
+  const [popup, setPopup] = useState<{ provider: AuthProvider["id"]; blocked: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const flow = useRef(0);
+  const stopWaiting = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => stopWaiting.current?.(), []);
+
+  const toCallback = (code: string) => {
+    const n = safeNext(next);
+    router.history.push(`/auth/callback?code=${encodeURIComponent(code)}${n ? `&next=${encodeURIComponent(n)}` : ""}`);
+  };
+
+  // In a browser the provider opens in a popup window, so this page stays put. If the
+  // browser blocks it, the person can allow it from the address bar and still finish,
+  // or carry on in this tab.
+  const startPopup = (id: AuthProvider["id"]) => {
+    stopWaiting.current?.();
+    const popupId = newPopupId();
+    stopWaiting.current = waitForPopup(popupId, (r) => {
+      stopWaiting.current = null;
+      setPopup(null);
+      if (r.code) {
+        setPending(id);
+        toCallback(r.code);
+      } else setError(oauthErrorMessage(r.error));
+    });
+    const win = openSignInPopup(oauthStartUrl(id, next, popupId));
+    setPending(null);
+    setPopup({ provider: id, blocked: !win });
+  };
+  const cancelPopup = () => {
+    stopWaiting.current?.();
+    stopWaiting.current = null;
+    setPopup(null);
+  };
+  const inThisTab = (id: AuthProvider["id"]) => {
+    cancelPopup();
+    setPending(id);
+    startOAuth(id, next);
+  };
 
   const start = async (id: AuthProvider["id"]) => {
-    setPending(id);
     setError(null);
+    if (!desktop && import.meta.env.VITE_MOCK !== "1") return startPopup(id);
+    setPending(id);
     if (!desktop || import.meta.env.VITE_MOCK === "1") return startOAuth(id, next);
     const mine = ++flow.current;
     setWaiting(true);
@@ -226,10 +271,8 @@ export function ProviderButtons({ next, verb = "Continue" }: { next?: string | n
     if (mine !== flow.current) return;
     setWaiting(false);
     setPending(null);
-    if ("code" in r) {
-      const n = safeNext(next);
-      router.history.push(`/auth/callback?code=${encodeURIComponent(r.code)}${n ? `&next=${encodeURIComponent(n)}` : ""}`);
-    } else if (r.error !== "cancelled") {
+    if ("code" in r) toCallback(r.code);
+    else if (r.error !== "cancelled") {
       setError(r.error === "timeout" ? t("desktop.oauthTimeout") : r.error === "browser_unavailable" ? t("desktop.oauthBrowser") : oauthErrorMessage(r.error));
     }
   };
@@ -282,6 +325,22 @@ export function ProviderButtons({ next, verb = "Continue" }: { next?: string | n
           {verb} with {p.id === "oidc" ? p.name || "SSO" : p.name}
         </Button>
       ))}
+      {popup && (
+        <Notice tone="info">
+          {popup.blocked ? t("signIn.popupBlocked", { name: providerName(popup.provider) }) : t("signIn.popupWaiting", { name: providerName(popup.provider) })}{" "}
+          <button type="button" onClick={() => inThisTab(popup.provider)} className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+            {t("signIn.popupThisTab")}
+          </button>
+          {!popup.blocked && (
+            <>
+              {" · "}
+              <button type="button" onClick={cancelPopup} className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
+                {t("desktop.oauthCancel")}
+              </button>
+            </>
+          )}
+        </Notice>
+      )}
       {waiting && (
         <Notice tone="info">
           {t("desktop.oauthWaiting")}{" "}
