@@ -134,11 +134,13 @@ below).
 
 Production is applied by the Deploy workflow, from `main`, never by hand:
 
-- **Terraform code** changes by pull request. The PR gets a plan: its job
-  summary and one comment list each resource address with its action (create,
-  update, replace, delete) and the counts, never a value. Merging runs Deploy,
-  which plans and applies before the migrations and the service roll, so new
-  env vars and secrets exist before the code that reads them.
+- **Terraform code** changes by pull request. Pull requests run fmt, validate
+  and the plan summary tests, with no cloud credentials: planning reads the
+  state, which holds generated secrets, so only code on `main` plans. Merging
+  runs Deploy, which plans (its job summary lists each resource address with its
+  action and the counts, never a value) and applies before the migrations and
+  the service roll, so new env vars and secrets exist before the code that
+  reads them.
 - **Approval.** A plan that deletes, replaces or forgets anything other than an
   `aws_ecs_task_definition` (a new revision on every env change is routine)
   waits in Actions for a reviewer of the `infrastructure-approval` environment;
@@ -153,7 +155,7 @@ Production is applied by the Deploy workflow, from `main`, never by hand:
   stores one in Secrets Manager. A new optional secret also goes in
   `optional_secrets` in the settings.
 
-Logs, job summaries and PR comments are public, so the workflows read a plan
+Logs and job summaries are public, so the workflows read a plan
 only through `scripts/tfplan.sh` (addresses and actions); Terraform's own output
 is discarded and only its errors are printed. No plan file is uploaded.
 
@@ -163,11 +165,17 @@ The roles (module `github-oidc`):
   the state and settings objects, and the project's secret values (a refresh
   reads the versions Terraform generated), through Secrets Manager only. It
   writes nothing, so its plans run with `-lock=false`, and it reads no object
-  outside the state bucket and no log line. The state holds the generated
-  secrets: who can push a branch to this repository can plan with this role.
+  outside the state bucket and no log line.
 - `opendesk-github-terraform-apply`, for `infrastructure` and
   `infrastructure-approval`, which deploy only from `main`: administrator, for
   one hour.
+
+Every credential that can read a secret (these roles, the deploy role, and the
+environments' Cloudflare and PlanetScale tokens) is given only to a job running
+from `main`: each environment allows only `main`, and each Terraform role
+trusts only its environments' OIDC subjects. Code reaches `main` only
+through the merge queue. Pull requests, including those from forks, get no
+secret and no cloud credential.
 
 ### One-time setup
 
@@ -181,7 +189,7 @@ An operator does this once, from a machine with admin AWS credentials:
 
    | environment | deployment branches | reviewers | `AWS_TERRAFORM_ROLE_ARN` |
    | --- | --- | --- | --- |
-   | `infrastructure-plan` | no rule (pull requests plan in it) | none | `github_terraform_plan_role_arn` |
+   | `infrastructure-plan` | `main` only | none | `github_terraform_plan_role_arn` |
    | `infrastructure` | `main` only | none | `github_terraform_apply_role_arn` |
    | `infrastructure-approval` | `main` only | required reviewer | `github_terraform_apply_role_arn` |
 

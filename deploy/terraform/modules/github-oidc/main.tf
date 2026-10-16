@@ -18,8 +18,9 @@
 #                                    applies the reviewed configuration.
 #
 # Who may run in an environment is configured in GitHub (deploy/terraform/README.md,
-# "Applying changes"): infrastructure and infrastructure-approval deploy only from
-# main, and infrastructure-approval waits for a required reviewer.
+# "Applying changes"): all three deploy only from main, and infrastructure-approval
+# waits for a required reviewer. The Terraform roles trust only these environment
+# subjects, so no other branch and no pull request can assume them.
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}

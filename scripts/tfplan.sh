@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What a Terraform plan does, without its values. The workflows read a plan only
-# through this script, so logs, job summaries and PR comments carry resource
+# through this script, so logs and job summaries carry resource
 # addresses and actions, never an attribute, a variable or an output value.
 #
 #   terraform show -json tfplan | scripts/tfplan.sh reduce > actions.json

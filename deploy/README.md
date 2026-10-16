@@ -503,9 +503,7 @@ installer and the self-host files, and redeploys opendesk.sh so
   both images built and scanned by Trivy (HIGH and CRITICAL with a fix fail
   the build) and then the root compose brought up and checked through Caddy
   (`scripts/selfhost-smoke.sh`), the installer checks, Terraform fmt and
-  validate, a production plan for pull requests from this repository that change
-  `deploy/terraform` (a summary of addresses and actions in the job summary and
-  one PR comment), and the email and help workers' tests and bundles. Migrations are applied to a fresh
+  validate and the plan summary tests (no cloud credentials), and the email and help workers' tests and bundles. Migrations are applied to a fresh
   stock Postgres twice (the second run must be a no-op); production runs
   the same Postgres.
 - **deploy.yml** (main): Terraform (plan, then apply; a plan that deletes or
@@ -534,8 +532,9 @@ Production infrastructure is applied by Deploy, never by hand
 (`terraform/README.md`, "Applying changes", has the details and the one-time
 setup):
 
-- Terraform code changes by pull request: the PR shows the plan as addresses and
-  actions, and merging applies it before the migrations and the service roll.
+- Terraform code changes by pull request; merging plans it on `main` (the Deploy
+  run's summary lists addresses and actions) and applies it before the
+  migrations and the service roll. Only code on `main` gets credentials.
   A plan that deletes, replaces or forgets anything other than a task
   definition waits for a reviewer in Actions (environment
   `infrastructure-approval`).
