@@ -3,6 +3,16 @@ output "github_deploy_role_arn" {
   value       = module.github_oidc.role_arn
 }
 
+output "github_terraform_plan_role_arn" {
+  description = "GitHub variable AWS_TERRAFORM_ROLE_ARN in the infrastructure-plan environment."
+  value       = module.github_oidc.terraform_plan_role_arn
+}
+
+output "github_terraform_apply_role_arn" {
+  description = "GitHub variable AWS_TERRAFORM_ROLE_ARN in the infrastructure and infrastructure-approval environments."
+  value       = module.github_oidc.terraform_apply_role_arn
+}
+
 output "ecr_opendesk_url" {
   value = aws_ecr_repository.this["opendesk"].repository_url
 }

@@ -617,4 +617,9 @@ module "github_oidc" {
   pass_role_arns = flatten([
     for m in [module.api, module.worker, module.gateway, module.migrate] : [m.task_role_arn, m.execution_role_arn]
   ])
+
+  # The Terraform roles deploy.yml and ci.yml assume (deploy/terraform/README.md, "Applying changes").
+  terraform_state_bucket = var.terraform_state_bucket != "" ? var.terraform_state_bucket : "${var.name}-terraform-state-${local.account}"
+  secret_prefix          = "${var.name}/${local.env}"
+  kms_key_arn            = aws_kms_key.this.arn
 }

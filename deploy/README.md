@@ -245,7 +245,7 @@ Tokens > Create custom token) with **Zone: SSL and Certificates Edit** on the
 `CLOUDFLARE_SAAS_ZONE_ID`:
 
 ```sh
-aws secretsmanager put-secret-value --secret-id opendesk/production/CLOUDFLARE_SAAS_TOKEN --secret-string '<token>'
+scripts/put-secret.sh CLOUDFLARE_SAAS_TOKEN
 ```
 
 Without it, help centers are served at `<slug>.opendeskhelp.com` and a custom
@@ -306,8 +306,8 @@ callback `https://api.opendesk.sh/v1/auth/oauth/github/callback`.
 Then store the secrets and switch them on:
 
 ```sh
-aws secretsmanager put-secret-value --secret-id opendesk/production/GOOGLE_CLIENT_SECRET --secret-string '<secret>'
-aws secretsmanager put-secret-value --secret-id opendesk/production/MICROSOFT_CLIENT_SECRET --secret-string '<secret>'
+scripts/put-secret.sh GOOGLE_CLIENT_SECRET
+scripts/put-secret.sh MICROSOFT_CLIENT_SECRET
 ```
 
 The client ids are not secret: set `google_client_id`, `microsoft_client_id`
@@ -378,8 +378,7 @@ is unset:
 
 ```sh
 for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PRICE_PRO STRIPE_PRICE_PRO_YEARLY STRIPE_PRICE_CREDITS; do
-  printf '%s: ' "$k"; read -r v
-  aws secretsmanager put-secret-value --secret-id "opendesk/production/$k" --secret-string "$v"
+  scripts/put-secret.sh "$k"
 done
 ```
 
@@ -397,8 +396,8 @@ Create an Anthropic API key (console.anthropic.com, an organization with a
 spending limit) and a Voyage key (dash.voyageai.com), then:
 
 ```sh
-aws secretsmanager put-secret-value --secret-id opendesk/production/ANTHROPIC_API_KEY --secret-string '<key>'
-aws secretsmanager put-secret-value --secret-id opendesk/production/VOYAGE_API_KEY --secret-string '<key>'
+scripts/put-secret.sh ANTHROPIC_API_KEY
+scripts/put-secret.sh VOYAGE_API_KEY
 ```
 
 Add `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` to `optional_secrets` and apply.
@@ -421,7 +420,7 @@ app (`sh.opendesk.app`) needs three things (`contracts/native.md`):
    it and switch push on:
 
    ```sh
-   aws secretsmanager put-secret-value --secret-id opendesk/production/APNS_KEY --secret-string file://AuthKey_<key id>.p8
+   scripts/put-secret.sh APNS_KEY < AuthKey_<key id>.p8
    ```
 
    In `terraform.tfvars` set `apns_key_id`, `apns_team_id` (and `apns_topic` if
@@ -465,6 +464,10 @@ In the `production` environment, from `terraform output`:
 | variable | `MAILBOX_IMAP` | whether mailboxes may receive over IMAP, matching the API's `MAILBOX_IMAP` (default `false`, step 7) |
 | secret | `CLOUDFLARE_API_TOKEN` | the token from step 2 |
 
+Terraform runs in three more environments, `infrastructure-plan`,
+`infrastructure` and `infrastructure-approval`, with their own role, state
+bucket and provider tokens: `terraform/README.md`, "Applying changes".
+
 Branch protection on `main`: require the **CI status** check and "require
 branches to be up to date" (the migration duplicate check depends on it).
 
@@ -500,10 +503,14 @@ installer and the self-host files, and redeploys opendesk.sh so
   both images built and scanned by Trivy (HIGH and CRITICAL with a fix fail
   the build) and then the root compose brought up and checked through Caddy
   (`scripts/selfhost-smoke.sh`), the installer checks, Terraform fmt and
-  validate, and the email and help workers' tests and bundles. Migrations are applied to a fresh
+  validate, a production plan for pull requests from this repository that change
+  `deploy/terraform` (a summary of addresses and actions in the job summary and
+  one PR comment), and the email and help workers' tests and bundles. Migrations are applied to a fresh
   stock Postgres twice (the second run must be a no-op); production runs
   the same Postgres.
-- **deploy.yml** (main): images, migrate, services, Pages (with the runtime
+- **deploy.yml** (main): Terraform (plan, then apply; a plan that deletes or
+  replaces anything but a task definition waits for approval), images, migrate,
+  services, Pages (with the runtime
   config and, when `APPLE_APP_IDS` is set, the apple-app-site-association),
   email worker, help worker (with its routes).
   Migrations run before any service moves, so a migration must work with both
@@ -515,7 +522,32 @@ installer and the self-host files, and redeploys opendesk.sh so
 
 Rollback: re-run the Deploy workflow of an earlier commit (Actions > Deploy >
 that run > Re-run). Its images are still in ECR (the last 30 are kept), so the
-build step is skipped. A migration is not rolled back automatically.
+build step is skipped. A migration is not rolled back automatically. Re-running
+the whole run also plans that commit's Terraform, which undoes later
+infrastructure changes (and waits for approval if that deletes or replaces
+anything); to roll back only the code, re-run its "Build and push images" job,
+which re-runs the migration and the roll after it.
+
+### Applying changes
+
+Production infrastructure is applied by Deploy, never by hand
+(`terraform/README.md`, "Applying changes", has the details and the one-time
+setup):
+
+- Terraform code changes by pull request: the PR shows the plan as addresses and
+  actions, and merging applies it before the migrations and the service roll.
+  A plan that deletes, replaces or forgets anything other than a task
+  definition waits for a reviewer in Actions (environment
+  `infrastructure-approval`).
+- Settings (`terraform.tfvars`) live in the state bucket, not in git:
+  `scripts/tfvars.sh pull`, edit, `scripts/tfvars.sh push`, then run Deploy with
+  target `infrastructure`.
+- Secret values go straight to Secrets Manager with `scripts/put-secret.sh NAME`,
+  never through GitHub; a new optional secret also goes in `optional_secrets`.
+
+The first-time setup above applies from a machine with admin AWS credentials;
+once the infrastructure environments exist, every later `terraform apply` in
+this file means: change the settings or the code as above and let Deploy apply.
 
 ## Self-hosting operations
 

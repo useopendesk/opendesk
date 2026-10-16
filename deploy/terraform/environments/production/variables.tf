@@ -106,6 +106,12 @@ variable "existing_github_oidc_provider_arn" {
   default = null
 }
 
+variable "terraform_state_bucket" {
+  description = "The state bucket (backend.tf), which also holds the settings. Empty means opendesk-terraform-state-<account id>."
+  type        = string
+  default     = ""
+}
+
 variable "image_tag" {
   description = "Tag for the initial task definitions. deploy.yml registers later revisions."
   type        = string

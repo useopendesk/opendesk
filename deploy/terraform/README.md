@@ -21,7 +21,7 @@ modules/
   cloudflare/    DNS, Pages projects and domains, Email Routing, zone settings
   cloudflare-help/  the help center zone (opendeskhelp.com): records for the help
                  worker, the custom hostname fallback origin, no-mail records, zone settings
-  github-oidc/   the role deploy.yml assumes (no long-lived AWS keys)
+  github-oidc/   the roles deploy.yml and ci.yml assume (no long-lived AWS keys)
 ```
 
 Names other tooling depends on: cluster `opendesk-production`; services and task
@@ -102,8 +102,8 @@ below).
    is unset):
 
    ```sh
-   aws secretsmanager put-secret-value --secret-id opendesk/production/GOOGLE_CLIENT_SECRET --secret-string '...'
-   aws secretsmanager put-secret-value --secret-id opendesk/production/APNS_KEY --secret-string file://AuthKey_<key id>.p8   # PEM as is
+   scripts/put-secret.sh GOOGLE_CLIENT_SECRET                  # prompts, without echo
+   scripts/put-secret.sh APNS_KEY < AuthKey_<key id>.p8         # PEM as is
    ```
 
    then add the key to `optional_secrets` in `terraform.tfvars` and apply again.
@@ -125,17 +125,85 @@ below).
 
 5. **GitHub configuration** from the outputs (`terraform output`):
    `AWS_DEPLOY_ROLE_ARN` = `github_deploy_role_arn`, `ECS_MIGRATE_NETWORK` =
-   `migrate_network_configuration`. Then
+   `migrate_network_configuration`, and the infrastructure environments
+   ([Applying changes](#applying-changes), "One-time setup"). Then
    run the deploy workflow: it pushes images, runs `opendesk-migrate` and updates
    the services.
 
+## Applying changes
+
+Production is applied by the Deploy workflow, from `main`, never by hand:
+
+- **Terraform code** changes by pull request. The PR gets a plan: its job
+  summary and one comment list each resource address with its action (create,
+  update, replace, delete) and the counts, never a value. Merging runs Deploy,
+  which plans and applies before the migrations and the service roll, so new
+  env vars and secrets exist before the code that reads them.
+- **Approval.** A plan that deletes, replaces or forgets anything other than an
+  `aws_ecs_task_definition` (a new revision on every env change is routine)
+  waits in Actions for a reviewer of the `infrastructure-approval` environment;
+  every other plan applies on its own. The applying job plans again with the
+  state lock and applies only a plan with the same addresses and actions as the
+  one summarized, and of the class its gate is for.
+- **Settings** (`terraform.tfvars`) are not in git. They live in the state
+  bucket, at `opendesk/production.tfvars`: `scripts/tfvars.sh pull`, edit,
+  `scripts/tfvars.sh push` (it shows the diff and asks), then run Deploy with
+  target `infrastructure`. `scripts/tfvars.sh diff` compares the two copies.
+- **Secret values** never pass through GitHub: `scripts/put-secret.sh NAME`
+  stores one in Secrets Manager. A new optional secret also goes in
+  `optional_secrets` in the settings.
+
+Logs, job summaries and PR comments are public, so the workflows read a plan
+only through `scripts/tfplan.sh` (addresses and actions); Terraform's own output
+is discarded and only its errors are printed. No plan file is uploaded.
+
+The roles (module `github-oidc`):
+
+- `opendesk-github-terraform-plan`, for `infrastructure-plan`: AWS read-only,
+  the state and settings objects, and the project's secret values (a refresh
+  reads the versions Terraform generated), through Secrets Manager only. It
+  writes nothing, so its plans run with `-lock=false`, and it reads no object
+  outside the state bucket and no log line. The state holds the generated
+  secrets: who can push a branch to this repository can plan with this role.
+- `opendesk-github-terraform-apply`, for `infrastructure` and
+  `infrastructure-approval`, which deploy only from `main`: administrator, for
+  one hour.
+
+### One-time setup
+
+An operator does this once, from a machine with admin AWS credentials:
+
+1. Apply locally once (`terraform apply`, as in the bootstrap) to create the two
+   roles; note `github_terraform_plan_role_arn` and
+   `github_terraform_apply_role_arn` from `terraform output`.
+2. Upload the settings: `scripts/tfvars.sh push`.
+3. Create three environments (Settings > Environments):
+
+   | environment | deployment branches | reviewers | `AWS_TERRAFORM_ROLE_ARN` |
+   | --- | --- | --- | --- |
+   | `infrastructure-plan` | no rule (pull requests plan in it) | none | `github_terraform_plan_role_arn` |
+   | `infrastructure` | `main` only | none | `github_terraform_apply_role_arn` |
+   | `infrastructure-approval` | `main` only | required reviewer | `github_terraform_apply_role_arn` |
+
+   In each, the variables `AWS_REGION` (`us-east-1`), `TF_STATE_BUCKET`
+   (`opendesk-terraform-state-<account id>`) and `AWS_TERRAFORM_ROLE_ARN`, and
+   the secrets `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_SERVICE_TOKEN_ID` and
+   `PLANETSCALE_SERVICE_TOKEN`. The two apply environments hold the tokens of
+   [Credentials](#credentials); `infrastructure-plan` only plans, so it holds
+   read-only ones: a Cloudflare token with read on what the apply token edits,
+   and a PlanetScale service token that reads the database's branches and roles.
+
+From then on a local `terraform plan -lock=false` is a read-only look; applies
+go through Deploy.
+
 ## Day two
 
-- **Deploys never go through Terraform.** `deploy.yml` registers a new revision
+- **Images never go through Terraform.** `deploy.yml` registers a new revision
   of each family from the latest one, with only the image changed. The services
   ignore `task_definition` and `desired_count`, so `terraform apply` after a
   deploy changes neither. An apply that changes a task definition (new env or
-  secret) registers a new revision, which the next deploy builds on.
+  secret) registers a new revision; Deploy applies before it rolls the services,
+  so the roll builds on it.
 - **Images are immutable and tagged by commit SHA.** The repositories keep the
   last 30.
 - **Secrets never rotate on their own.** A new `CREDENTIALS_KEY` makes every
@@ -161,6 +229,7 @@ below).
 ## Checks
 
 ```sh
+scripts/check-tfplan.sh            # the plan summary and risk class
 terraform fmt -check -recursive deploy/terraform
 for d in deploy/terraform/environments/* deploy/terraform/modules/*; do
   (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate)

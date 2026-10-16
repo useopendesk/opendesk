@@ -9,8 +9,8 @@
 # keys and price ids, the Anthropic and Voyage API keys, the APNs key, the
 # Cloudflare for SaaS token) are
 # created empty. Set them with
-#   aws secretsmanager put-secret-value --secret-id <name>/<env>/<KEY> --secret-string '...'
-# and then list the key in `optional_secrets` in the environment so the task
+#   scripts/put-secret.sh <KEY>
+# (it reads this list) and then list the key in `optional_secrets` in the environment so the task
 # definitions start referencing it. A task that references a secret with no
 # value would fail to start, which is why they are opt-in.
 
