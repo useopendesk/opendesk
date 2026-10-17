@@ -198,11 +198,11 @@ func (w *writer) progress(ctx context.Context, tx pgx.Tx, force bool) error {
 }
 
 func (w *writer) problem(item, msg string) {
-	w.x.Problems = addProblem(w.x.Problems, Problem{At: time.Now().UTC(), Item: item, Message: msg})
+	w.x.Problems = addProblem(w.x.Problems, ImportProblem{At: time.Now().UTC(), Item: item, Message: msg})
 }
 
-func addProblem(list []Problem, p Problem) []Problem {
-	list = append([]Problem{p}, list...)
+func addProblem(list []ImportProblem, p ImportProblem) []ImportProblem {
+	list = append([]ImportProblem{p}, list...)
 	if len(list) > maxProblems {
 		list = list[:maxProblems]
 	}

@@ -60,38 +60,38 @@ func notFound(err error) error {
 	return err
 }
 
-// checkInput names a source and what reads it: credentials, or a CSV upload and its mapping.
-type checkInput struct {
+// importCheckBody names a source and what reads it: credentials, or a CSV upload and its mapping.
+type importCheckBody struct {
 	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
 	Credentials map[string]string `json:"credentials,omitempty" doc:"The source's fields (contracts/imports.md); never stored by a check"`
 	UploadID    *uuid.UUID        `json:"upload_id,omitempty" doc:"CSV only"`
-	Mapping     *CSVMapping       `json:"mapping,omitempty" doc:"CSV only; default the mapping guessed from the headers"`
+	Mapping     *ImportCSVMapping `json:"mapping,omitempty" doc:"CSV only; default the mapping guessed from the headers"`
 }
 
-type createInput struct {
+type importCreateBody struct {
 	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
 	Credentials map[string]string `json:"credentials,omitempty"`
 	UploadID    *uuid.UUID        `json:"upload_id,omitempty" doc:"CSV only"`
-	Options     *Options          `json:"options,omitempty"`
-	Mapping     *Mapping          `json:"mapping,omitempty"`
+	Options     *ImportOptions    `json:"options,omitempty"`
+	Mapping     *ImportMapping    `json:"mapping,omitempty"`
 }
 
-// CSVUpload is an uploaded file ready to map (contracts/imports.md CsvUpload).
-type CSVUpload struct {
-	UploadID  uuid.UUID   `json:"upload_id"`
-	Filename  string      `json:"filename"`
-	Rows      int         `json:"rows"`
-	Columns   []CSVColumn `json:"columns"`
-	Suggested CSVMapping  `json:"suggested"`
-	Preview   []Sample    `json:"preview"`
+// ImportCSVUpload is an uploaded file ready to map (contracts/imports.md CsvUpload).
+type ImportCSVUpload struct {
+	UploadID  uuid.UUID         `json:"upload_id"`
+	Filename  string            `json:"filename"`
+	Rows      int               `json:"rows"`
+	Columns   []ImportCSVColumn `json:"columns"`
+	Suggested ImportCSVMapping  `json:"suggested"`
+	Preview   []ImportSample    `json:"preview"`
 }
 
-type CSVColumn struct {
+type ImportCSVColumn struct {
 	Name    string   `json:"name"`
 	Samples []string `json:"samples"`
 }
 
-type uploadForm struct {
+type importUploadForm struct {
 	File huma.FormFile `form:"file" required:"true" doc:"A .csv file, at most 50 MB"`
 }
 
@@ -117,7 +117,7 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 	huma.Register(api, huma.Operation{OperationID: "check-import-source", Method: http.MethodPost, Path: "/v1/imports/check",
 		Summary: "Check an import source", Tags: tags,
 		Description: "Signs in to the source with the credentials and answers what it has: the account, counts, agents and groups matched to members and teams, and sample tickets. Nothing is stored."},
-		func(ctx context.Context, in *struct{ Body checkInput }) (*struct{ Body Check }, error) {
+		func(ctx context.Context, in *struct{ Body importCheckBody }) (*struct{ Body ImportCheck }, error) {
 			p, err := requireAdminUser(ctx)
 			if err != nil {
 				return nil, err
@@ -151,7 +151,7 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 			if err != nil {
 				return nil, err
 			}
-			return &struct{ Body Check }{out}, nil
+			return &struct{ Body ImportCheck }{out}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "upload-import-csv", Method: http.MethodPost, Path: "/v1/imports/csv",
@@ -159,8 +159,8 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 		Middlewares: huma.Middlewares{limitBody(api)},
 		Description: "UTF-8 or UTF-16 with a byte order mark, separated by commas, semicolons or tabs, with a header row. Answers its columns, a few values of each and the mapping guessed from the headers."},
 		func(ctx context.Context, in *struct {
-			RawBody huma.MultipartFormFiles[uploadForm]
-		}) (*struct{ Body CSVUpload }, error) {
+			RawBody huma.MultipartFormFiles[importUploadForm]
+		}) (*struct{ Body ImportCSVUpload }, error) {
 			if in.RawBody.Form != nil {
 				defer func(f *multipart.Form) { _ = f.RemoveAll() }(in.RawBody.Form)
 			}
@@ -180,7 +180,7 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return &struct{ Body CSVUpload }{out}, nil
+			return &struct{ Body ImportCSVUpload }{out}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "list-imports", Method: http.MethodGet, Path: "/v1/imports",
@@ -237,7 +237,7 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 	huma.Register(api, huma.Operation{OperationID: "create-import", Method: http.MethodPost, Path: "/v1/imports",
 		Summary: "Start an import", Tags: tags, DefaultStatus: http.StatusCreated,
 		Description: "Starts at once and runs in the background; `import.updated` events follow its progress."},
-		func(ctx context.Context, in *struct{ Body createInput }) (*importOut, error) {
+		func(ctx context.Context, in *struct{ Body importCreateBody }) (*importOut, error) {
 			p, err := requireAdminUser(ctx)
 			if err != nil {
 				return nil, err
@@ -353,43 +353,43 @@ func auditData(x row) map[string]any {
 
 // upload stores a CSV file after reading it once, so a file that cannot be imported is
 // refused before it is kept.
-func (s *Service) upload(ctx context.Context, p *auth.Principal, f huma.FormFile) (CSVUpload, error) {
+func (s *Service) upload(ctx context.Context, p *auth.Principal, f huma.FormFile) (ImportCSVUpload, error) {
 	if f.Size > maxCSVBytes {
-		return CSVUpload{}, httpx.E(http.StatusRequestEntityTooLarge, "too_large", "CSV files can be at most 50 MB.")
+		return ImportCSVUpload{}, httpx.E(http.StatusRequestEntityTooLarge, "too_large", "CSV files can be at most 50 MB.")
 	}
 	filename := hd.CleanFilename(f.Filename)
 	if ext := strings.ToLower(filepath.Ext(filename)); ext != ".csv" && ext != ".tsv" && ext != ".txt" {
-		return CSVUpload{}, httpx.E(http.StatusUnprocessableEntity, "file_type_refused", "Upload a .csv file. Spreadsheets can save one with File, then Download or Export, as CSV.")
+		return ImportCSVUpload{}, httpx.E(http.StatusUnprocessableEntity, "file_type_refused", "Upload a .csv file. Spreadsheets can save one with File, then Download or Export, as CSV.")
 	}
 	raw, err := io.ReadAll(io.LimitReader(f.File, maxCSVBytes+1))
 	if err != nil {
-		return CSVUpload{}, err
+		return ImportCSVUpload{}, err
 	}
 	if len(raw) > maxCSVBytes {
-		return CSVUpload{}, httpx.E(http.StatusRequestEntityTooLarge, "too_large", "CSV files can be at most 50 MB.")
+		return ImportCSVUpload{}, httpx.E(http.StatusRequestEntityTooLarge, "too_large", "CSV files can be at most 50 MB.")
 	}
 	if len(raw) == 0 {
-		return CSVUpload{}, httpx.Validation("the file is empty")
+		return ImportCSVUpload{}, httpx.Validation("the file is empty")
 	}
 	parsed, err := parseCSV(raw)
 	if err != nil {
-		return CSVUpload{}, httpx.E(http.StatusUnprocessableEntity, "csv_unreadable", err.Error())
+		return ImportCSVUpload{}, httpx.E(http.StatusUnprocessableEntity, "csv_unreadable", err.Error())
 	}
 	sum := sha256.Sum256(raw)
 	sha := hex.EncodeToString(sum[:])
 	id := ids.New()
 	key := "workspaces/" + p.WorkspaceID.String() + "/imports/" + id.String() + ".csv"
 	if err := s.d.Storage.Put(ctx, key, bytes.NewReader(raw), int64(len(raw)), "text/csv"); err != nil {
-		return CSVUpload{}, err
+		return ImportCSVUpload{}, err
 	}
 	if _, err := s.d.DB.Pool.Exec(ctx, `INSERT INTO import_uploads (id, workspace_id, storage_key, filename, sha256, size_bytes, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, p.WorkspaceID, key, filename, sha, len(raw), p.ActorUserID()); err != nil {
 		_ = s.d.Storage.Delete(context.WithoutCancel(ctx), key)
-		return CSVUpload{}, err
+		return ImportCSVUpload{}, err
 	}
-	out := CSVUpload{UploadID: id, Filename: filename, Rows: len(parsed.Rows), Columns: []CSVColumn{}, Suggested: suggestMapping(parsed.Header), Preview: []Sample{}}
+	out := ImportCSVUpload{UploadID: id, Filename: filename, Rows: len(parsed.Rows), Columns: []ImportCSVColumn{}, Suggested: suggestMapping(parsed.Header), Preview: []ImportSample{}}
 	for i, h := range parsed.Header {
-		col := CSVColumn{Name: h, Samples: []string{}}
+		col := ImportCSVColumn{Name: h, Samples: []string{}}
 		for _, rec := range parsed.Rows {
 			if len(col.Samples) >= 3 {
 				break
@@ -435,12 +435,12 @@ func (s *Service) loadUpload(ctx context.Context, wid, id uuid.UUID) (upload, *c
 }
 
 // defaultOptions are what an import brings when the request names nothing.
-func defaultOptions(src string) Options {
-	return Options{Tickets: true, Articles: src != CSV, Attachments: true, Tag: defaultTag(src), Statuses: "keep"}
+func defaultOptions(src string) ImportOptions {
+	return ImportOptions{Tickets: true, Articles: src != CSV, Attachments: true, Tag: defaultTag(src), Statuses: "keep"}
 }
 
 // cleanOptions checks options against the workspace.
-func cleanOptions(ctx context.Context, q db.Querier, wid uuid.UUID, o Options) (Options, error) {
+func cleanOptions(ctx context.Context, q db.Querier, wid uuid.UUID, o ImportOptions) (ImportOptions, error) {
 	if o.Statuses == "" {
 		o.Statuses = "keep"
 	}
@@ -480,7 +480,7 @@ func cleanOptions(ctx context.Context, q db.Querier, wid uuid.UUID, o Options) (
 }
 
 // cleanMapping checks that every member and team the mapping names is the workspace's.
-func cleanMapping(ctx context.Context, q db.Querier, wid uuid.UUID, m Mapping) (Mapping, error) {
+func cleanMapping(ctx context.Context, q db.Querier, wid uuid.UUID, m ImportMapping) (ImportMapping, error) {
 	if m.Agents == nil {
 		m.Agents = map[string]*uuid.UUID{}
 	}
@@ -522,7 +522,7 @@ func cleanMapping(ctx context.Context, q db.Querier, wid uuid.UUID, m Mapping) (
 }
 
 // create checks the source once more and starts the import.
-func (s *Service) create(ctx context.Context, p *auth.Principal, in createInput) (Import, error) {
+func (s *Service) create(ctx context.Context, p *auth.Principal, in importCreateBody) (Import, error) {
 	wid := p.WorkspaceID
 	opts := defaultOptions(in.Source)
 	if in.Options != nil {
@@ -535,7 +535,7 @@ func (s *Service) create(ctx context.Context, p *auth.Principal, in createInput)
 	if err != nil {
 		return Import{}, err
 	}
-	mapping := Mapping{}
+	mapping := ImportMapping{}
 	if in.Mapping != nil {
 		mapping = *in.Mapping
 	}
@@ -589,7 +589,7 @@ func (s *Service) create(ctx context.Context, p *auth.Principal, in createInput)
 	if !opts.Tickets && !opts.Articles {
 		return Import{}, httpx.Validation("This account has no help center, so choose tickets to import.")
 	}
-	var totals Totals
+	var totals ImportTotals
 	if scan.Tickets >= 0 && opts.Tickets {
 		n := scan.Tickets
 		totals.Tickets = &n
@@ -621,7 +621,7 @@ func (s *Service) create(ctx context.Context, p *auth.Principal, in createInput)
 			options, mapping, credentials_enc, storage_key, totals, counts, started_by)
 			VALUES ($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,$10,$11,$12,$13,$14)`,
 			id, wid, in.Source, scan.Account.Key, hd.Truncate(scan.Account.Name, 200), scan.Account.URL, phase, opts, mapping, sealed, key,
-			totals, Counts{}, p.ActorUserID())
+			totals, ImportCounts{}, p.ActorUserID())
 		if db.IsUniqueViolation(err, "imports_one_active_uq") {
 			return errRunning
 		}

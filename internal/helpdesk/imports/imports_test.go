@@ -335,7 +335,7 @@ func (e *env) quietly(t *testing.T, since int64) {
 
 func TestCheckSource(t *testing.T) {
 	e := newEnv(t)
-	var c Check
+	var c ImportCheck
 	resp := e.Do("POST", "/v1/imports/check", e.admin, map[string]any{"source": "zendesk", "credentials": map[string]string{"token": "secret-token"}}).Want(t, 200)
 	resp.JSON(t, &c)
 	if c.Account.Name != "Acme Support" || c.Account.URL != "https://acme.zendesk.com" || !c.HasArticles {
@@ -414,7 +414,7 @@ func TestRunImport(t *testing.T) {
 	if done.Status != StatusCompleted || done.Phase != PhaseDone || done.FinishedAt == nil || done.LastError != "" {
 		t.Fatalf("finished %+v", done.Import)
 	}
-	want := Counts{Tickets: 3, Messages: 7, Contacts: 3, Companies: 1, Articles: 2, Attachments: 1, Skipped: 1}
+	want := ImportCounts{Tickets: 3, Messages: 7, Contacts: 3, Companies: 1, Articles: 2, Attachments: 1, Skipped: 1}
 	if done.Counts != want {
 		t.Fatalf("counts %+v, want %+v (problems %+v)", done.Counts, want, done.Problems)
 	}
@@ -641,7 +641,7 @@ func TestCSVImport(t *testing.T) {
 	e.Upload("/v1/imports/csv", e.admin, "export.xlsx", []byte(csvData)).Want(t, 422)
 	e.Upload("/v1/imports/csv", e.ws.Agent.As(e.ws), "export.csv", []byte(csvData)).Want(t, 403)
 
-	var up CSVUpload
+	var up ImportCSVUpload
 	e.Upload("/v1/imports/csv", e.admin, "export.csv", []byte(csvData)).Want(t, 201).JSON(t, &up)
 	if up.Rows != 3 || len(up.Columns) != 10 || up.Suggested.TicketID != "Ticket ID" || up.Suggested.Author != "Author type" ||
 		up.Suggested.FromEmail != "From email" || len(up.Preview) != 2 || up.Preview[0].MessageCount != 2 {
@@ -651,7 +651,7 @@ func TestCSVImport(t *testing.T) {
 		t.Errorf("columns %+v", up.Columns)
 	}
 
-	var c Check
+	var c ImportCheck
 	e.Do("POST", "/v1/imports/check", e.admin, map[string]any{"source": "csv", "upload_id": up.UploadID}).Want(t, 200).JSON(t, &c)
 	if c.Totals.Tickets == nil || *c.Totals.Tickets != 2 || len(c.Agents) != 1 || c.Agents[0].UserID == nil || *c.Agents[0].UserID != e.ws.Agent.ID {
 		t.Fatalf("check %+v", c)

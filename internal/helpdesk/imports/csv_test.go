@@ -114,29 +114,29 @@ func TestSuggestMapping(t *testing.T) {
 	cases := []struct {
 		name   string
 		header []string
-		want   CSVMapping
+		want   ImportCSVMapping
 	}{
 		{"zendesk", []string{"Id", "Subject", "Description", "Requester", "Requester email", "Status", "Priority", "Tags",
 			"Created at", "Assignee", "Group", "Organization"},
-			CSVMapping{TicketID: "Id", Subject: "Subject", Body: "Description", FromName: "Requester", FromEmail: "Requester email",
+			ImportCSVMapping{TicketID: "Id", Subject: "Subject", Body: "Description", FromName: "Requester", FromEmail: "Requester email",
 				Status: "Status", Priority: "Priority", Tags: "Tags", CreatedAt: "Created at", AssigneeEmail: "Assignee", Team: "Group",
 				Company: "Organization"}},
 		{"freshdesk", []string{"Ticket ID", "Subject", "Description", "Status", "Priority", "Source", "Agent", "Group",
 			"Created time", "Last update time", "Tags", "Full name", "Email", "Company Name"},
-			CSVMapping{TicketID: "Ticket ID", Subject: "Subject", Body: "Description", Status: "Status", Priority: "Priority",
+			ImportCSVMapping{TicketID: "Ticket ID", Subject: "Subject", Body: "Description", Status: "Status", Priority: "Priority",
 				AssigneeEmail: "Agent", Team: "Group", CreatedAt: "Created time", Tags: "Tags", FromName: "Full name", FromEmail: "Email",
 				Company: "Company Name"}},
 		{"help scout", []string{"Conversation ID", "Customer Name", "Customer Email", "Subject", "Status", "Tags", "Assigned To",
 			"Mailbox", "Created At", "Body"},
-			CSVMapping{TicketID: "Conversation ID", FromName: "Customer Name", FromEmail: "Customer Email", Subject: "Subject",
+			ImportCSVMapping{TicketID: "Conversation ID", FromName: "Customer Name", FromEmail: "Customer Email", Subject: "Subject",
 				Status: "Status", Tags: "Tags", AssigneeEmail: "Assigned To", Team: "Mailbox", CreatedAt: "Created At",
 				Body: "Body"}},
 		{"jira", []string{"Summary", "Issue key", "Issue id", "Issue Type", "Status", "Priority", "Assignee", "Reporter",
 			"Reporter Email", "Created", "Labels", "Description"},
-			CSVMapping{Subject: "Summary", TicketID: "Issue key", Status: "Status", Priority: "Priority", AssigneeEmail: "Assignee",
+			ImportCSVMapping{Subject: "Summary", TicketID: "Issue key", Status: "Status", Priority: "Priority", AssigneeEmail: "Assignee",
 				FromName: "Reporter", FromEmail: "Reporter Email", CreatedAt: "Created", Tags: "Labels", Body: "Description"}},
 		{"plain", []string{"ticket_id", "from-email", "FROM NAME", "author_type", "message", "date"},
-			CSVMapping{TicketID: "ticket_id", FromEmail: "from-email", FromName: "FROM NAME", Author: "author_type", Body: "message",
+			ImportCSVMapping{TicketID: "ticket_id", FromEmail: "from-email", FromName: "FROM NAME", Author: "author_type", Body: "message",
 				CreatedAt: "date"}},
 	}
 	for _, c := range cases {
@@ -153,19 +153,19 @@ func TestSuggestMapping(t *testing.T) {
 
 func TestCheckMapping(t *testing.T) {
 	header := []string{"Subject", "Body", "Email"}
-	if err := checkMapping(CSVMapping{Body: "Body"}, header); err != nil {
+	if err := checkMapping(ImportCSVMapping{Body: "Body"}, header); err != nil {
 		t.Errorf("body only: %v", err)
 	}
-	if err := checkMapping(CSVMapping{Subject: "Subject"}, header); err != nil {
+	if err := checkMapping(ImportCSVMapping{Subject: "Subject"}, header); err != nil {
 		t.Errorf("subject only: %v", err)
 	}
-	if err := checkMapping(CSVMapping{FromEmail: "Email"}, header); err == nil || !strings.Contains(err.Error(), "subject") {
+	if err := checkMapping(ImportCSVMapping{FromEmail: "Email"}, header); err == nil || !strings.Contains(err.Error(), "subject") {
 		t.Errorf("nothing to import: %v", err)
 	}
-	if err := checkMapping(CSVMapping{Body: "Body", Status: "State"}, header); err == nil || !strings.Contains(err.Error(), `"State"`) {
+	if err := checkMapping(ImportCSVMapping{Body: "Body", Status: "State"}, header); err == nil || !strings.Contains(err.Error(), `"State"`) {
 		t.Errorf("missing column: %v", err)
 	}
-	if err := checkMapping(CSVMapping{Body: "body"}, header); err == nil {
+	if err := checkMapping(ImportCSVMapping{Body: "body"}, header); err == nil {
 		t.Error("column names are exact")
 	}
 }
@@ -271,7 +271,7 @@ func TestCSVSourcePages(t *testing.T) {
 		fmt.Fprintf(&b, "Ticket %d\n", i)
 	}
 	f := mustParse(t, []byte(b.String()))
-	src := newCSVSource(f, CSVMapping{Subject: "Subject"}, "x.csv", "csv:x")
+	src := newCSVSource(f, ImportCSVMapping{Subject: "Subject"}, "x.csv", "csv:x")
 	p1, _ := src.Tickets(t.Context(), "", nil, nil)
 	if len(p1.Items) != csvPageSize || p1.Next == "" {
 		t.Fatalf("page 1: %d next %q", len(p1.Items), p1.Next)

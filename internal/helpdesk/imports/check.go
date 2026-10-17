@@ -16,49 +16,49 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
-// Check is what checking a source found (contracts/imports.md ImportCheck).
-type Check struct {
-	Account     Account      `json:"account"`
-	Totals      Totals       `json:"totals"`
-	Agents      []CheckAgent `json:"agents"`
-	Groups      []CheckGroup `json:"groups"`
-	Samples     []Sample     `json:"samples"`
-	HasArticles bool         `json:"has_articles"`
+// ImportCheck is what checking a source found (contracts/imports.md ImportCheck).
+type ImportCheck struct {
+	Account     ImportAccount      `json:"account"`
+	Totals      ImportTotals       `json:"totals"`
+	Agents      []ImportCheckAgent `json:"agents"`
+	Groups      []ImportCheckGroup `json:"groups"`
+	Samples     []ImportSample     `json:"samples"`
+	HasArticles bool               `json:"has_articles"`
 }
 
-// CheckAgent is a source agent and the member with their email, if any.
-type CheckAgent struct {
+// ImportCheckAgent is a source agent and the member with their email, if any.
+type ImportCheckAgent struct {
 	ID     string     `json:"id"`
 	Name   string     `json:"name"`
 	Email  string     `json:"email"`
 	UserID *uuid.UUID `json:"user_id"`
 }
 
-// CheckGroup is a source group and the team with its name, if any.
-type CheckGroup struct {
+// ImportCheckGroup is a source group and the team with its name, if any.
+type ImportCheckGroup struct {
 	ID     string     `json:"id"`
 	Name   string     `json:"name"`
 	TeamID *uuid.UUID `json:"team_id"`
 }
 
-// Sample is a source ticket as it will look here, shortened.
-type Sample struct {
-	Ref          string          `json:"ref"`
-	Subject      string          `json:"subject"`
-	Status       string          `json:"status" enum:"open,pending,on_hold,solved,closed"`
-	CreatedAt    time.Time       `json:"created_at"`
-	Requester    *SamplePerson   `json:"requester"`
-	Messages     []SampleMessage `json:"messages"`
-	MessageCount int             `json:"message_count"`
-	Tags         []string        `json:"tags"`
+// ImportSample is a source ticket as it will look here, shortened.
+type ImportSample struct {
+	Ref          string                `json:"ref"`
+	Subject      string                `json:"subject"`
+	Status       string                `json:"status" enum:"open,pending,on_hold,solved,closed"`
+	CreatedAt    time.Time             `json:"created_at"`
+	Requester    *ImportSamplePerson   `json:"requester"`
+	Messages     []ImportSampleMessage `json:"messages"`
+	MessageCount int                   `json:"message_count"`
+	Tags         []string              `json:"tags"`
 }
 
-type SamplePerson struct {
+type ImportSamplePerson struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
 }
 
-type SampleMessage struct {
+type ImportSampleMessage struct {
 	Author      string    `json:"author"`
 	Agent       bool      `json:"agent"`
 	Note        bool      `json:"note"`
@@ -108,13 +108,13 @@ func sourceError(src string, err error) error {
 }
 
 // check reads what a source has and how it maps onto the workspace.
-func (s *Service) check(ctx context.Context, wid uuid.UUID, srcKey string, src source.Source) (Check, source.Scan, error) {
+func (s *Service) check(ctx context.Context, wid uuid.UUID, srcKey string, src source.Source) (ImportCheck, source.Scan, error) {
 	scan, err := src.Check(ctx)
 	if err != nil {
-		return Check{}, scan, sourceError(srcKey, err)
+		return ImportCheck{}, scan, sourceError(srcKey, err)
 	}
-	out := Check{Account: Account{Name: scan.Account.Name, URL: scan.Account.URL}, Agents: []CheckAgent{}, Groups: []CheckGroup{},
-		Samples: []Sample{}, HasArticles: scan.HasArticles}
+	out := ImportCheck{Account: ImportAccount{Name: scan.Account.Name, URL: scan.Account.URL}, Agents: []ImportCheckAgent{}, Groups: []ImportCheckGroup{},
+		Samples: []ImportSample{}, HasArticles: scan.HasArticles}
 	if scan.Tickets >= 0 {
 		n := scan.Tickets
 		out.Totals.Tickets = &n
@@ -154,14 +154,14 @@ func (s *Service) check(ctx context.Context, wid uuid.UUID, srcKey string, src s
 	}
 	rows.Close()
 	for _, a := range scan.Agents {
-		ca := CheckAgent{ID: a.ID, Name: a.Name, Email: strings.ToLower(a.Email)}
+		ca := ImportCheckAgent{ID: a.ID, Name: a.Name, Email: strings.ToLower(a.Email)}
 		if id, ok := members[ca.Email]; ok && ca.Email != "" {
 			ca.UserID = &id
 		}
 		out.Agents = append(out.Agents, ca)
 	}
 	for _, g := range scan.Groups {
-		cg := CheckGroup{ID: g.ID, Name: g.Name}
+		cg := ImportCheckGroup{ID: g.ID, Name: g.Name}
 		if id, ok := teams[strings.ToLower(strings.TrimSpace(g.Name))]; ok {
 			cg.TeamID = &id
 		}
@@ -173,10 +173,10 @@ func (s *Service) check(ctx context.Context, wid uuid.UUID, srcKey string, src s
 
 // samples loads the first few tickets as they will look. Any trouble leaves them out:
 // the check itself passed.
-func samples(ctx context.Context, src source.Source) []Sample {
+func samples(ctx context.Context, src source.Source) []ImportSample {
 	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
-	out := []Sample{}
+	out := []ImportSample{}
 	cursor := ""
 	for range 3 {
 		page, err := src.Tickets(ctx, cursor, nil, nil)
@@ -206,8 +206,8 @@ func samples(ctx context.Context, src source.Source) []Sample {
 	return out
 }
 
-func sampleOf(t *source.Ticket) Sample {
-	sm := Sample{Ref: t.Ref, Subject: t.Subject, Status: t.Status, CreatedAt: t.CreatedAt, Messages: []SampleMessage{},
+func sampleOf(t *source.Ticket) ImportSample {
+	sm := ImportSample{Ref: t.Ref, Subject: t.Subject, Status: t.Status, CreatedAt: t.CreatedAt, Messages: []ImportSampleMessage{},
 		MessageCount: len(t.Messages), Tags: t.Tags}
 	if sm.Tags == nil {
 		sm.Tags = []string{}
@@ -216,7 +216,7 @@ func sampleOf(t *source.Ticket) Sample {
 		sm.Status = "open"
 	}
 	if t.Requester != nil {
-		sm.Requester = &SamplePerson{Name: t.Requester.Name, Email: strings.ToLower(t.Requester.Email)}
+		sm.Requester = &ImportSamplePerson{Name: t.Requester.Name, Email: strings.ToLower(t.Requester.Email)}
 	}
 	for _, m := range t.Messages {
 		if len(sm.Messages) >= maxSampleMessages {
@@ -230,7 +230,7 @@ func sampleOf(t *source.Ticket) Sample {
 		if author == "" {
 			author = m.Author.Email
 		}
-		sm.Messages = append(sm.Messages, SampleMessage{Author: author, Agent: m.Agent, Note: m.Note, Text: hd.Excerpt(text, 400),
+		sm.Messages = append(sm.Messages, ImportSampleMessage{Author: author, Agent: m.Agent, Note: m.Note, Text: hd.Excerpt(text, 400),
 			CreatedAt: m.CreatedAt, Attachments: len(m.Attachments)})
 	}
 	if sm.Subject == "" && len(sm.Messages) > 0 {

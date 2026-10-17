@@ -167,7 +167,7 @@ func normHeader(h string) string {
 
 // suggestMapping guesses the column of each field from the header names. A column is used
 // for one field only; aliases earlier in a field's list win.
-func suggestMapping(header []string) CSVMapping {
+func suggestMapping(header []string) ImportCSVMapping {
 	normed := make([]string, len(header))
 	for i, h := range header {
 		normed[i] = normHeader(h)
@@ -184,14 +184,14 @@ func suggestMapping(header []string) CSVMapping {
 			}
 		}
 	}
-	return CSVMapping{TicketID: pick["ticket_id"], Subject: pick["subject"], Body: pick["body"], FromEmail: pick["from_email"],
+	return ImportCSVMapping{TicketID: pick["ticket_id"], Subject: pick["subject"], Body: pick["body"], FromEmail: pick["from_email"],
 		FromName: pick["from_name"], Author: pick["author"], Status: pick["status"], Priority: pick["priority"], Tags: pick["tags"],
 		CreatedAt: pick["created_at"], AssigneeEmail: pick["assignee_email"], Team: pick["team"], Company: pick["company"]}
 }
 
 // checkMapping refuses a mapping that names a column the file does not have, or has
 // nothing to import.
-func checkMapping(m CSVMapping, header []string) error {
+func checkMapping(m ImportCSVMapping, header []string) error {
 	for _, c := range m.columns() {
 		if c != "" && !slices.Contains(header, c) {
 			return fmt.Errorf("The file has no column %q.", c)
@@ -203,7 +203,7 @@ func checkMapping(m CSVMapping, header []string) error {
 	return nil
 }
 
-func (m CSVMapping) columns() []string {
+func (m ImportCSVMapping) columns() []string {
 	return []string{m.TicketID, m.Subject, m.Body, m.FromEmail, m.FromName, m.Author, m.Status, m.Priority, m.Tags,
 		m.CreatedAt, m.AssigneeEmail, m.Team, m.Company}
 }
@@ -218,13 +218,13 @@ type csvSource struct {
 	agents []source.Agent
 	groups []source.Group
 	// problems are rows left out, with why.
-	problems []Problem
+	problems []ImportProblem
 }
 
 // csvPageSize is how many tickets one page of a CSV source holds.
 const csvPageSize = 100
 
-func newCSVSource(f *csvFile, m CSVMapping, filename, key string) *csvSource {
+func newCSVSource(f *csvFile, m ImportCSVMapping, filename, key string) *csvSource {
 	col := map[string]int{}
 	for i, h := range f.Header {
 		if _, ok := col[h]; !ok {
@@ -265,7 +265,7 @@ func newCSVSource(f *csvFile, m CSVMapping, filename, key string) *csvSource {
 		line := f.Lines[n]
 		body, subject := get(rec, m.Body), get(rec, m.Subject)
 		if body == "" && subject == "" {
-			s.problems = append(s.problems, Problem{At: now, Item: "Row " + strconv.Itoa(line), Message: "No message or subject, so it was left out."})
+			s.problems = append(s.problems, ImportProblem{At: now, Item: "Row " + strconv.Itoa(line), Message: "No message or subject, so it was left out."})
 			continue
 		}
 		id := get(rec, m.TicketID)

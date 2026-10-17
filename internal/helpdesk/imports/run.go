@@ -191,7 +191,7 @@ func (s *Service) step(ctx context.Context, w *writer) (bool, error) {
 	return true, nil
 }
 
-func sinceOf(o Options) *time.Time {
+func sinceOf(o ImportOptions) *time.Time {
 	if o.Since == nil {
 		return nil
 	}

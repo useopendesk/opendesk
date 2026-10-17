@@ -115,8 +115,8 @@ func service(d *deps.Deps) *Service {
 	return svc
 }
 
-// Options are what an import brings over and how (contracts/imports.md ImportOptions).
-type Options struct {
+// ImportOptions are what an import brings over and how (contracts/imports.md ImportOptions).
+type ImportOptions struct {
 	Tickets          bool       `json:"tickets"`
 	Articles         bool       `json:"articles"`
 	Attachments      bool       `json:"attachments"`
@@ -127,24 +127,24 @@ type Options struct {
 	ArticlesAsDrafts bool       `json:"articles_as_drafts"`
 }
 
-// Mapping maps source agents to members and groups to teams; csv maps columns to fields.
-type Mapping struct {
-	Agents IDMap       `json:"agents" nullable:"false"`
-	Groups IDMap       `json:"groups" nullable:"false"`
-	CSV    *CSVMapping `json:"csv,omitempty"`
+// ImportMapping maps source agents to members and groups to teams; csv maps columns to fields.
+type ImportMapping struct {
+	Agents ImportIDMap       `json:"agents" nullable:"false"`
+	Groups ImportIDMap       `json:"groups" nullable:"false"`
+	CSV    *ImportCSVMapping `json:"csv,omitempty"`
 }
 
-// IDMap maps source ids to members or teams. A null value maps to none: an agent keeps
+// ImportIDMap maps source ids to members or teams. A null value maps to none: an agent keeps
 // their name only, a group gets no team.
-type IDMap map[string]*uuid.UUID
+type ImportIDMap map[string]*uuid.UUID
 
 // Schema lets a value be null, as the contract says.
-func (IDMap) Schema(huma.Registry) *huma.Schema {
+func (ImportIDMap) Schema(huma.Registry) *huma.Schema {
 	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: &huma.Schema{Type: huma.TypeString, Format: "uuid", Nullable: true}}
 }
 
-// CSVMapping names the column of each field (contracts/imports.md CsvMapping).
-type CSVMapping struct {
+// ImportCSVMapping names the column of each field (contracts/imports.md CsvMapping).
+type ImportCSVMapping struct {
 	TicketID      string `json:"ticket_id,omitempty" maxLength:"200"`
 	Subject       string `json:"subject,omitempty" maxLength:"200"`
 	Body          string `json:"body,omitempty" maxLength:"200"`
@@ -160,20 +160,20 @@ type CSVMapping struct {
 	Company       string `json:"company,omitempty" maxLength:"200"`
 }
 
-// Account is the source account an import reads.
-type Account struct {
+// ImportAccount is the source account an import reads.
+type ImportAccount struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
 }
 
-// Totals are what the source said it has; nil is unknown.
-type Totals struct {
+// ImportTotals are what the source said it has; nil is unknown.
+type ImportTotals struct {
 	Tickets  *int `json:"tickets"`
 	Articles *int `json:"articles"`
 }
 
-// Counts are what an import has done so far, over all its runs.
-type Counts struct {
+// ImportCounts are what an import has done so far, over all its runs.
+type ImportCounts struct {
 	Tickets     int `json:"tickets"`
 	Updated     int `json:"updated"`
 	Messages    int `json:"messages"`
@@ -185,8 +185,8 @@ type Counts struct {
 	Failed      int `json:"failed"`
 }
 
-// Problem is something an import could not bring over.
-type Problem struct {
+// ImportProblem is something an import could not bring over.
+type ImportProblem struct {
 	At      time.Time `json:"at"`
 	Item    string    `json:"item"`
 	Message string    `json:"message"`
@@ -199,15 +199,15 @@ const maxProblems = 50
 type Import struct {
 	ID               uuid.UUID       `json:"id"`
 	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
-	Account          Account         `json:"account"`
+	Account          ImportAccount   `json:"account"`
 	Status           string          `json:"status" enum:"running,paused,completed,failed,canceled,undoing,undone"`
 	Phase            string          `json:"phase" enum:"articles,tickets,done"`
 	Run              int             `json:"run"`
-	Options          Options         `json:"options"`
-	Mapping          Mapping         `json:"mapping"`
-	Totals           Totals          `json:"totals"`
-	Counts           Counts          `json:"counts"`
-	Problems         []Problem       `json:"problems"`
+	Options          ImportOptions   `json:"options"`
+	Mapping          ImportMapping   `json:"mapping"`
+	Totals           ImportTotals    `json:"totals"`
+	Counts           ImportCounts    `json:"counts"`
+	Problems         []ImportProblem `json:"problems"`
 	LastError        string          `json:"last_error"`
 	NeedsCredentials bool            `json:"needs_credentials"`
 	WaitingUntil     *time.Time      `json:"waiting_until"`
@@ -266,7 +266,7 @@ func scanRow(r pgx.Row) (row, error) {
 		x.Cursor = map[string]string{}
 	}
 	if x.Problems == nil {
-		x.Problems = []Problem{}
+		x.Problems = []ImportProblem{}
 	}
 	if x.Mapping.Agents == nil {
 		x.Mapping.Agents = map[string]*uuid.UUID{}
