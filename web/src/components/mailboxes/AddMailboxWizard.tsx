@@ -2,21 +2,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { InBrowserNote } from "@/components/desktop/InBrowser";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
-import { ArrowRight, Check, ChevronDown, ChevronLeft, Forward, KeyRound, LockKeyhole, Send, Server, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronLeft, Forward, KeyRound, LockKeyhole, Send, Server, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirm } from "@/components/ui/confirm";
-import { CopyField } from "@/components/ui/copy-button";
 import { Field, TextInput } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { api, type CreateMailboxBody, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { MailDetection, MailHost, Mailbox, MailboxConnectOptions, MailboxTest, TlsMode } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
-import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailboxHost, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
+import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
 import { qk, upsertInList } from "@/lib/queries";
 import { tone } from "@/lib/tones";
 import { useBrands, useTeams } from "@/components/settings2/teams";
@@ -41,6 +40,7 @@ import {
   useMailDetection,
   type ConnectFailure,
 } from "./connect";
+import { ForwardingInstructions } from "./forwarding";
 import { PortInput, validPort } from "./PortInput";
 import { SmtpPresets } from "./smtpPresets";
 
@@ -1301,67 +1301,3 @@ function DoneStep({ mailbox, method, test }: { mailbox: Mailbox; method: Method;
   );
 }
 
-type Guide = "gmail" | "workspace" | "microsoft" | "outlook" | "other";
-const GUIDES: readonly Guide[] = ["gmail", "workspace", "microsoft", "outlook", "other"];
-/** How many steps each provider's guide has (forwarding.steps.<guide>.s1..sN). */
-const GUIDE_STEPS: Record<Guide, number> = { gmail: 4, workspace: 4, microsoft: 4, outlook: 3, other: 2 };
-
-/** The forwarding guide that fits the mailbox's host. */
-function forwardingGuide(m: Mailbox): Guide {
-  const h = mailboxHost(m);
-  if (h === "google_workspace") return "workspace";
-  if (h === "microsoft365") return "microsoft";
-  if (h === "outlook") return "outlook";
-  if (h && h !== "gmail") return "other";
-  return "gmail";
-}
-
-export function ForwardingInstructions({ mailbox }: { mailbox: Mailbox }) {
-  const { t } = useTranslation("settingsChannels");
-  const [g, setG] = useState<Guide>(() => forwardingGuide(mailbox));
-  const code = <span className="mono" />;
-  const steps = Array.from({ length: GUIDE_STEPS[g] }, (_, i) => `s${i + 1}`);
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <div className="mb-1.5 text-[12.5px] font-medium">
-          <Trans t={t} i18nKey="forwarding.forwardTo" values={{ email: mailbox.email }} components={{ code }} />
-        </div>
-        <CopyField value={mailbox.forwarding_address} />
-      </div>
-      <div className="flex flex-col gap-3">
-        {/* Five providers: in a narrow column the tabs wrap whole, never mid-label. */}
-        <Segmented
-          size="xs"
-          className="flex-wrap self-start [&_button]:whitespace-nowrap"
-          value={g}
-          onChange={setG}
-          options={GUIDES.map((x) => ({ value: x, label: t(`forwarding.${x}`) }))}
-        />
-        {g === "microsoft" && (
-          <p key="ms" className="flex animate-rise-in gap-2 rounded-md border border-line bg-sunken px-3 py-2.5 text-xs leading-[18px] text-fg-2 motion-reduce:animate-none">
-            <TriangleAlert className="mt-px size-3.5 shrink-0 text-tone-amber" aria-hidden />
-            <span>{t("forwarding.microsoftBlocked")}</span>
-          </p>
-        )}
-        <ol key={g} className="flex flex-col gap-2.5">
-          {steps.map((k, i) => (
-            <li
-              key={k}
-              className="flex animate-rise-in gap-2.5 text-[12.5px] leading-5 text-fg-2 motion-reduce:animate-none [&_b]:font-medium [&_b]:text-fg"
-              style={{ animationDelay: `${i * 30}ms` }}
-            >
-              <span className="mono flex size-5 shrink-0 items-center justify-center rounded-sm border border-line bg-sunken text-[10.5px] text-fg-3">{i + 1}</span>
-              <span>
-                <Trans t={t} i18nKey={`forwarding.steps.${g}.${k}` as "forwarding.steps.gmail.s1"} components={{ b: <b /> }} />
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
-      <p className="rounded-md border border-line bg-sunken px-3 py-2.5 text-xs leading-[18px] text-fg-3">
-        <Trans t={t} i18nKey="forwarding.checkIt" values={{ email: mailbox.email }} components={{ code: <span className="mono text-fg-2" /> }} />
-      </p>
-    </div>
-  );
-}

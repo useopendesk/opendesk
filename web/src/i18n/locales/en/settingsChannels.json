@@ -266,27 +266,39 @@
     "outlook": "Outlook.com",
     "other": "Other",
     "microsoftBlocked": "Microsoft 365 blocks automatic forwarding to outside addresses by default. An admin allows it once, then the forward is set on the mailbox.",
+    "open": {
+      "gmail": "Open Gmail forwarding settings",
+      "googleAdmin": "Open Gmail routing in the Admin console",
+      "defender": "Open anti-spam policies",
+      "exchange": "Open mailboxes in the Exchange admin center",
+      "outlookForwarding": "Open Outlook forwarding settings",
+      "outlookCom": "Open Outlook.com forwarding settings"
+    },
+    "help": "{{provider}}'s guide",
+    "docs": "Full guide in the opendesk docs",
+    "sendTest": "Write a test email",
+    "testSubject": "Testing opendesk",
     "steps": {
       "gmail": {
-        "s1": "In Gmail, open <b>Settings</b>, <b>See all settings</b>, then <b>Forwarding and POP/IMAP</b>.",
+        "s1": "Open Gmail's <b>Forwarding and POP/IMAP</b> settings, signed in as this address.",
         "s2": "Choose <b>Add a forwarding address</b> and paste the address above.",
         "s3": "Gmail sends a confirmation email. It arrives in opendesk as a ticket: open it and click the link, or copy the code into Gmail.",
         "s4": "Back in Gmail, select <b>Forward a copy of incoming mail to</b> the new address and save."
       },
       "workspace": {
         "s1": "For one mailbox, follow the Gmail steps while signed in as that user.",
-        "s2": "For a group or many users, open the Google Admin console, then <b>Apps</b>, <b>Google Workspace</b>, <b>Gmail</b>, <b>Routing</b>.",
-        "s3": "Add a routing rule for the address, choose <b>Also deliver to</b> and add the address above as a recipient.",
+        "s2": "For a group or many users, an admin opens <b>Routing</b> in the Google Admin console (<b>Apps</b>, <b>Google Workspace</b>, <b>Gmail</b>).",
+        "s3": "Add a routing rule for <b>Inbound</b> mail to the address, choose <b>Modify message</b>, then <b>Add more recipients</b>, and add the address above.",
         "s4": "Save. Changes can take a few minutes to apply."
       },
       "microsoft": {
-        "s1": "An admin opens <b>Microsoft Defender</b>, then <b>Policies</b>, <b>Anti-spam</b>, <b>Outbound policy</b>, and sets <b>Automatic forwarding rules</b> to <b>On</b>.",
-        "s2": "In the <b>Exchange admin center</b>, open <b>Recipients</b>, <b>Mailboxes</b> and select the mailbox.",
+        "s1": "An admin opens the <b>Anti-spam</b> policies in Microsoft Defender, edits the <b>Outbound</b> policy and sets <b>Automatic forwarding rules</b> to <b>On</b>.",
+        "s2": "In the <b>Exchange admin center</b>, open <b>Mailboxes</b> and select the mailbox.",
         "s3": "Under <b>Mail flow settings</b>, edit <b>Email forwarding</b>: turn it on, paste the address above and keep a copy in the mailbox.",
-        "s4": "No access to the admin center? After step 1, add an Outlook rule that forwards every message to the address above."
+        "s4": "No access to the admin center? After step 1, open <b>Forwarding</b> in Outlook's settings as the mailbox, turn it on, paste the address above and keep a copy."
       },
       "outlook": {
-        "s1": "In Outlook.com, open <b>Settings</b>, <b>Mail</b>, then <b>Forwarding</b>.",
+        "s1": "Open Outlook.com's <b>Forwarding</b> settings, signed in as this address.",
         "s2": "Turn on <b>Enable forwarding</b> and paste the address above.",
         "s3": "Turn on <b>Keep a copy of forwarded messages</b> and save."
       },

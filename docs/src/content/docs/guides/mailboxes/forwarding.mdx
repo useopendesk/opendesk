@@ -19,7 +19,7 @@ A mailbox that sends through Google or Microsoft receives this way too: that con
 <Legend>
 
 1. **The address to forward to**, with a copy button. It is also on the mailbox's page.
-2. **Steps for your provider**: Gmail, Google Workspace or Microsoft 365. The one that fits your address is selected.
+2. **Steps for your provider**: Gmail, Google Workspace, Microsoft 365, Outlook.com, or your detected provider under Other. The one that fits your address is selected. Each step has a button that opens the settings page it names, and below the steps are the provider's own guide and this page.
 
 </Legend>
 
@@ -45,7 +45,7 @@ Click **Continue with Microsoft** or **Continue with Google** (or **Connect** fo
 </Step>
 <Step title="Copy the forwarding address">
 
-The last step shows the private address and short steps for your provider. Copy the address.
+The last step shows the private address and short steps for your provider, with a button on each step that opens the right settings page. Copy the address.
 
 </Step>
 <Step title="Turn on forwarding at your provider">
@@ -55,7 +55,7 @@ Follow the steps for your provider below. Microsoft 365 and some Google Workspac
 </Step>
 <Step title="Send a test email">
 
-Write to your support address from another account. It shows up in **Unassigned** as a new ticket.
+Write to your support address from another account (**Write a test email** under the steps opens one). It shows up in **Unassigned** as a new ticket.
 
 </Step>
 </Steps>
@@ -69,7 +69,7 @@ Write to your support address from another account. It shows up in **Unassigned*
 
 ## Gmail
 
-1. In Gmail, open **Settings** (the gear), then **See all settings**, then **Forwarding and POP/IMAP**.
+1. In Gmail, open **Settings** (the gear), then **See all settings**, then **Forwarding and POP/IMAP**, or go straight to [Forwarding and POP/IMAP](https://mail.google.com/mail/#settings/fwdandpop) signed in as the support address.
 2. Click **Add a forwarding address** and paste your opendesk forwarding address. Click **Next**, then **Proceed**.
 3. Gmail sends a confirmation email to that address. It arrives in opendesk as a ticket. Open it and either click the confirmation link or copy the code.
 4. Back in Gmail's **Forwarding and POP/IMAP** tab, enter the code and click **Verify** (not needed if you clicked the link), then choose **Forward a copy of incoming mail to** your opendesk address.
@@ -81,7 +81,7 @@ To forward only some mail, skip step 4 and create a filter instead: **Create a f
 
 Each user can set up forwarding the same way as Gmail above. For a shared address or a Google Group, an admin can route mail at the domain level instead, without a mailbox sign-in:
 
-1. In the [Google Admin console](https://admin.google.com), go to **Apps**, **Google Workspace**, **Gmail**, **Routing**.
+1. In the Google Admin console, go to **Apps**, **Google Workspace**, **Gmail**, [**Routing**](https://admin.google.com/ac/apps/gmail/routing).
 2. Under **Routing**, click **Configure** (or **Add another rule**).
 3. Under **Email messages to affect**, choose **Inbound** (and **Internal - receiving** if colleagues email support too).
 4. Under **For the above types of messages, do the following**, choose **Modify message**. Under **Envelope recipient**, check **Add more recipients**, click **Add**, and enter the opendesk forwarding address.
@@ -105,7 +105,7 @@ Microsoft 365 blocks automatic forwarding to outside addresses by default, throu
 
 ### Allow forwarding to outside addresses (admin)
 
-1. Open the [Microsoft Defender portal](https://security.microsoft.com), then **Email & collaboration**, **Policies & rules**, **Threat policies**, **Anti-spam**.
+1. Open the Microsoft Defender portal, then **Email & collaboration**, **Policies & rules**, **Threat policies**, [**Anti-spam**](https://security.microsoft.com/antispam).
 2. Choose one:
    - **A policy for the support mailbox only** (the tidier choice): click **Create policy**, then **Outbound**. Name it, and under **Users** add the support mailbox.
    - **Every mailbox**: open **Anti-spam outbound policy (Default)** and click **Edit protection settings**.
@@ -117,21 +117,44 @@ It can take a few minutes to apply. Until it does, Microsoft returns forwarded m
 
 Either set forwarding on the mailbox (admin):
 
-1. In the [Exchange admin center](https://admin.exchange.microsoft.com), open **Recipients**, **Mailboxes**, and select the mailbox. In the [Microsoft 365 admin center](https://admin.microsoft.com), the same is under **Users**, **Active users** (or **Teams & groups**, **Shared mailboxes**).
+1. In the Exchange admin center, open **Recipients**, [**Mailboxes**](https://admin.exchange.microsoft.com/#/mailboxes), and select the mailbox. In the [Microsoft 365 admin center](https://admin.microsoft.com), the same is under **Users**, **Active users** (or **Teams & groups**, **Shared mailboxes**).
 2. Under **Mail flow settings**, find **Email forwarding** and choose **Manage email forwarding** (on the **Mail** tab in the Microsoft 365 admin center).
 3. Turn on forwarding, enter the opendesk forwarding address, and keep **Deliver to both** on so the mailbox keeps a copy. Save.
 
 Or create a rule in Outlook on the web (user):
 
-1. Open **Settings**, **Mail**, **Rules**, **Add new rule**.
+1. Open **Settings**, **Mail**, [**Rules**](https://outlook.office.com/mail/options/mail/rules), **Add new rule**.
 2. Name it and add the condition **Apply to all messages** (or narrower conditions).
 3. Add the action **Forward to** (or **Redirect to**) and enter the opendesk forwarding address. Save.
+
+Or, simpler, turn on [**Forwarding**](https://outlook.office.com/mail/options/mail/forwarding) in Outlook's settings as the mailbox, enter the opendesk forwarding address and keep a copy.
+
+On Outlook.com, it is the same [**Forwarding**](https://outlook.live.com/mail/0/options/mail/forwarding) setting: turn on **Enable forwarding**, enter the address and keep a copy.
 
 **Redirect** keeps the original sender. Both work, since opendesk reads the original headers, but redirect is the cleaner choice. To send replies from the mailbox itself, connect it with Microsoft sign-in, or send through Microsoft's SMTP server. See [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
 
 ## Any other provider
 
 Look for "forwarding" or "redirect" in your provider's mail settings or admin panel, and forward to your opendesk address. Most providers send a confirmation message first; it appears in opendesk as a ticket. Proton Mail can forward on its paid plans.
+
+When opendesk recognizes your provider, the **Other** tab is named after it and links its guide:
+
+| Provider | Guide |
+| --- | --- |
+| Zoho Mail | [Email forwarding](https://www.zoho.com/mail/help/email-forwarding.html) |
+| Yahoo Mail | [Automatic forwarding](https://help.yahoo.com/kb/SLN22028.html) |
+| iCloud Mail | [Automatically forward email](https://support.apple.com/guide/icloud/mm6b1a3960/icloud) |
+| Fastmail | [Set up mail forwarding](https://www.fastmail.help/hc/en-us/articles/360058753434) |
+| GoDaddy | [Forward Professional Email](https://www.godaddy.com/help/forward-professional-email-messages-to-another-address-32282) |
+| Namecheap Private Email | [Set up forwarding](https://www.namecheap.com/support/knowledgebase/article.aspx/10784/2306/new-how-to-set-up-forwarding-in-namecheap-private-email/) |
+| IONOS | [Forwarding for email addresses](https://www.ionos.com/help/email/setting-up-mail-basic/setting-up-forwarding-for-email-addresses/) |
+| Hostinger | [Set up a forwarder](https://www.hostinger.com/support/1583221-how-to-set-up-a-forwarder-for-hostinger-email/) |
+| OVHcloud | [Aliases and redirections](https://docs.ovhcloud.com/en/guides/web-cloud/email-and-collaborative-solutions/common-email-features/feature-redirections) |
+| Migadu | [Forwarding](https://migadu.com/guides/forwarding/) |
+| Purelymail | [Routing](https://purelymail.com/docs/routing) |
+| Rackspace Email | [Set up forwarding](https://docs.rackspace.com/docs/set-up-rackspace-email-forwarding) |
+| Yandex Mail | [Forwarding to another address](https://www.yandex.com/support/mail/web/preferences/filters/forwarding.html) |
+| Proton Mail | [Email forwarding](https://proton.me/support/email-forwarding) |
 
 <Fold>
 

@@ -19,7 +19,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { SaveBar } from "@/components/settings/SaveBar";
 import { connectionLabel, GoogleGlyph, MailboxIcon, MailboxStatus, MicrosoftGlyph, notReceiving, TestResults } from "@/components/mailboxes/kinds";
-import { ForwardingInstructions } from "@/components/mailboxes/AddMailboxWizard";
+import { ForwardingInstructions } from "@/components/mailboxes/forwarding";
 import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import { CauseCallout, connectFailure, imapOn, sendProviders, systemSendOn, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
