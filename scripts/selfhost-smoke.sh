@@ -49,10 +49,10 @@ code() { curl -sk -o /dev/null -w '%{http_code}' "$@"; }
 [[ $(code "$BASE/readyz") == 200 ]] || fail "/readyz through Caddy (database or NATS not ready)"
 pass "/healthz and /readyz answer 200 through Caddy"
 
-curl -sk "$BASE/" | grep -qi '<!doctype html' || fail "the web index is not served"
-curl -sk "$BASE/config.js" | grep -q 'window.__OPENDESK__' || fail "/config.js is not served"
+grep -qi '<!doctype html' <<<"$(curl -sk "$BASE/")" || fail "the web index is not served"
+grep -q 'window.__OPENDESK__' <<<"$(curl -sk "$BASE/config.js")" || fail "/config.js is not served"
 [[ $(code "$BASE/widget/v1.js") == 200 ]] || fail "/widget/v1.js is not served"
-curl -sk -D - -o /dev/null "$BASE/widget/v1.js" | grep -qi '^access-control-allow-origin: \*' ||
+grep -qi '^access-control-allow-origin: \*' <<<"$(curl -sk -D - -o /dev/null "$BASE/widget/v1.js")" ||
   fail "/widget/v1.js lacks Access-Control-Allow-Origin: *"
 pass "web index, /config.js and /widget/v1.js are served"
 

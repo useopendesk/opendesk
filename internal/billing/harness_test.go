@@ -88,7 +88,7 @@ func newEnv(t *testing.T, stripeOn bool) *env {
 	box, _ := crypto.NewBox([]byte("development-only-credentials-key"))
 	cfg := &config.Config{Env: "development", Role: "all", APIURL: "http://api.test", AppURL: "http://app.test", ServeWeb: true,
 		GatewayURL: "ws://gw.test/socket", AuthSecret: []byte("test-auth-secret-test-auth-secret-0000"), SignupEnabled: true,
-		InboundDomain: "in.test", MailFrom: "opendesk <notifications@opendesk.test>"}
+		InboundDomain: "in.test", MailFrom: "opendesk <notifications@opendesk.test>", MailboxSystemSend: true}
 	e := &env{t: t, run: crypto.RandomString(8)}
 	if stripeOn {
 		e.fake = newFakeStripe()
