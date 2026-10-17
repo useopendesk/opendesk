@@ -7,6 +7,9 @@
 // Receiving over IMAP follows the app's runtime config (VITE_MAILBOX_IMAP, on by
 // default), and localStorage["od.mock.mailboxImap"] = "off" | "on" overrides it for a
 // demo of an instance that receives by forwarding only (reload after setting it).
+//
+// Sending through opendesk is on; localStorage["od.mock.systemSend"] = "off" turns it off,
+// as on opendesk Cloud, where every mailbox sends through Google, Microsoft or SMTP.
 
 import type { Mailbox, MailDetection, MailEndpoint, MailHost, MailboxCause, MailboxTestLeg, PasswordAuth } from "@/lib/api/types";
 import { config } from "@/lib/config";
@@ -16,6 +19,7 @@ import catalogue from "../mailCauses.json";
 
 const OAUTH_KEY = "od.mock.mailboxOAuth";
 const IMAP_KEY = "od.mock.mailboxImap";
+const SYSTEM_SEND_KEY = "od.mock.systemSend";
 
 /** Applies the localStorage override of IMAP receiving to the app's config, before anything renders. */
 export function applyMockImap(): void {
@@ -42,9 +46,31 @@ export function receivingOf(m: Pick<Mailbox, "inbound_kind">): NonNullable<Mailb
   return m.inbound_kind === "forwarding" || mockImapOn() ? "ok" : "imap_off";
 }
 
-/** Brings every mailbox's receiving state up to date (the IMAP switch can change under them in tests). */
+/** Whether mailboxes may send through opendesk. */
+export function mockSystemSendOn(): boolean {
+  try {
+    return localStorage.getItem(SYSTEM_SEND_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export const systemSendOff = () =>
+  new HttpError(422, "system_send_off", "Sending through opendesk is off on this instance. Connect Google or Microsoft, or add SMTP.");
+export const cannotSend = () =>
+  new HttpError(422, "mailbox_cannot_send", "This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings.");
+
+/** The read-only sending state the API reports. */
+export function sendingOf(m: Pick<Mailbox, "outbound_kind">): NonNullable<Mailbox["sending"]> {
+  return m.outbound_kind !== "system" || mockSystemSendOn() ? "ok" : "system_off";
+}
+
+/** Brings every mailbox's receiving and sending state up to date (the switches can change under them in tests). */
 export function syncReceiving(mailboxes: Mailbox[]): void {
-  for (const m of mailboxes) m.receiving = receivingOf(m);
+  for (const m of mailboxes) {
+    m.receiving = receivingOf(m);
+    m.sending = sendingOf(m);
+  }
 }
 
 export function mockOAuthEnabled(p: "google" | "microsoft"): boolean {
@@ -67,6 +93,7 @@ export function connectOptions(forwardingDomain: string) {
     microsoft: { configured: true, oauth: mockOAuthEnabled("microsoft") },
     forwarding: { enabled: true, domain: forwardingDomain },
     system_sender: "noreply@opendesk.sh",
+    system_send: mockSystemSendOn(),
     mailbox_imap: mockImapOn(),
   };
 }

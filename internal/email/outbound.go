@@ -242,6 +242,9 @@ func (s *service) deliver(ctx context.Context, m *mailboxRow, out *outMessage, e
 		}
 		return out.MessageID, s.sendGraph(ctx, m, raw)
 	case OutboundSystem:
+		if !s.systemSend {
+			return "", permanent(domain.ErrCannotSend.Detail)
+		}
 		raw, err := buildMIME(out, false)
 		if err != nil {
 			return "", err
@@ -586,7 +589,7 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 	if err != nil {
 		return err
 	}
-	if m.Status == "disabled" {
+	if m.Status == "disabled" || !s.canSend(m) {
 		return nil
 	}
 	names := t.names

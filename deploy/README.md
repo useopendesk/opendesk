@@ -216,7 +216,11 @@ Identities > opendesk.sh shows "Verified", usually within minutes):
 - Approval usually takes a day. Until then only verified recipients get mail.
 
 Ticket replies to customers go out through each workspace's own mailbox (Gmail,
-Microsoft 365 or SMTP), not SES. Mail comes in by forwarding, through the email
+Microsoft 365, or SMTP through its mail server or a sending service it verified
+its domain with), never SES: the cloud runs with `MAILBOX_SYSTEM_SEND=false`
+(Terraform `mailbox_system_send`), so the API refuses sending through opendesk
+and a mailbox still set to it sends nothing until it connects a way to send.
+Mail comes in by forwarding, through the email
 worker: the cloud runs with `MAILBOX_IMAP=false` (Terraform `mailbox_imap`), so
 no mailbox is read over IMAP and Google and Microsoft connect send-only.
 
@@ -324,7 +328,7 @@ default `microsoft`). With a provider off, the mailbox wizard does not offer its
 sign-in and the API refuses new connections with `403 mailbox_oauth_disabled`;
 mailboxes already connected that way keep sending and can reconnect. Gmail and
 Google Workspace mailboxes still receive by forwarding, and send through Gmail's
-SMTP server with an app password, or through opendesk. When Google verifies the
+SMTP server with an app password, or through a sending service. When Google verifies the
 app's `gmail.send` scope, set `google_mailbox_oauth = true`, `terraform apply`,
 set `MAILBOX_OAUTH` to `google,microsoft` and redeploy Pages.
 
@@ -721,6 +725,13 @@ mailboxes can sync instead of connecting send-only, which needs the extra OAuth
 scopes in the docs page "Google and Microsoft OAuth". `MAILBOX_IMAP=false`
 receives by forwarding only, as opendesk Cloud does; mailboxes that read over
 IMAP are kept, stop receiving, and switch to forwarding from their page.
+
+**Sending through opendesk.** On by default (`MAILBOX_SYSTEM_SEND=true`): a
+mailbox without its own way to send can send replies through the platform email
+(`MAIL_DRIVER`), from `MAIL_FROM` with the mailbox's name. `MAILBOX_SYSTEM_SEND=false`
+makes every mailbox send through Google, Microsoft or SMTP, as opendesk Cloud
+does; mailboxes that sent through opendesk are kept, send nothing, and say so on
+their page until they connect a way to send.
 
 **AI.** Optional, and off without a provider. Self-hosted instances have no
 plans, limits or AI balance; nothing about Stripe applies. Three ways:

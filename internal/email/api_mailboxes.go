@@ -185,6 +185,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if receivesIMAP(b.InboundKind) && !s.mailboxIMAP {
 				return nil, imapOff()
 			}
+			if b.OutboundKind == OutboundSystem && !s.systemSend {
+				return nil, systemSendOff()
+			}
 			if b.InboundKind == KindGoogle || b.InboundKind == KindMicrosoft {
 				return nil, httpx.Validation("Connect " + providerLabel(b.InboundKind) + " mailboxes with POST /v1/mailboxes/oauth/" + b.InboundKind + "/start.")
 			}
@@ -276,9 +279,12 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				if err != nil {
 					return err
 				}
-				prevInbound := m.InboundKind
+				prevInbound, prevOutbound := m.InboundKind, m.OutboundKind
 				changes, resetSync := applyPatch(m, &creds, in)
 				if err := s.checkInboundChange(prevInbound, m.InboundKind); err != nil {
+					return err
+				}
+				if err := s.checkOutboundChange(prevOutbound, m.OutboundKind); err != nil {
 					return err
 				}
 				if in.Body.BotID.Set {
@@ -929,6 +935,15 @@ func (s *service) checkInboundChange(prev, next string) error {
 	}
 	if next == KindGoogle || next == KindMicrosoft {
 		return httpx.Validation("Connect " + providerLabel(next) + " mailboxes with POST /v1/mailboxes/oauth/" + next + "/start.")
+	}
+	return nil
+}
+
+// checkOutboundChange refuses a move to sending through the platform mailer while this
+// instance has it off. A mailbox that already sends through it keeps it until it moves.
+func (s *service) checkOutboundChange(prev, next string) error {
+	if next != prev && next == OutboundSystem && !s.systemSend {
+		return systemSendOff()
 	}
 	return nil
 }

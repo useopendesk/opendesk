@@ -27,7 +27,7 @@ import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { aiOff } from "./ai";
 import { defaultBrand, isAdmin, teamOut } from "../teams";
 import { checkLimit } from "./billing";
-import { authRefusedCause, connectOptions, detect, imapOff, mockImapOn, mockOAuthEnabled, receivingOf, refusal, syncReceiving } from "./mailhost";
+import { authRefusedCause, connectOptions, detect, imapOff, mockImapOn, mockOAuthEnabled, mockSystemSendOn, receivingOf, refusal, sendingOf, syncReceiving, systemSendOff } from "./mailhost";
 import { assign, crud } from "./crud";
 import { checkBotId } from "./bots";
 
@@ -371,6 +371,7 @@ export function registerResources() {
   get("/v1/mailboxes/:id", (ctx) => {
     const m = findMailbox(ctx);
     m.receiving = receivingOf(m);
+    m.sending = sendingOf(m);
     return m;
   });
   post("/v1/mailboxes", (ctx) => {
@@ -380,6 +381,7 @@ export function registerResources() {
     const inbound = (s(ctx, "inbound_kind") ?? "forwarding") as Mailbox["inbound_kind"];
     const outbound = (s(ctx, "outbound_kind") ?? "system") as Mailbox["outbound_kind"];
     if (inbound !== "forwarding" && !mockImapOn()) throw imapOff();
+    if (outbound === "system" && !mockSystemSendOn()) throw systemSendOff();
     if ((outbound === "google" || outbound === "microsoft") && inbound !== outbound)
       throw invalid(`Sending with ${outbound === "google" ? "Google" : "Microsoft"} needs its sign-in: connect it from the mailbox.`);
     const config = isRecord(ctx.body.config) ? (ctx.body.config as MailboxConfig) : {};
@@ -403,6 +405,7 @@ export function registerResources() {
   });
   patch("/v1/mailboxes/:id", (ctx) => {
     const m = findMailbox(ctx);
+    if (ctx.body.outbound_kind === "system" && m.outbound_kind !== "system" && !mockSystemSendOn()) throw systemSendOff();
     patchReceiving(ctx, m);
     assign(m, ctx.body, ["name", "display_name", "signature_html", "auto_reply_enabled", "auto_reply_subject", "auto_reply_html", "status"]);
     const prevTeam = m.team_id;
@@ -419,6 +422,7 @@ export function registerResources() {
       m.last_error = "";
     }
     m.receiving = receivingOf(m);
+    m.sending = sendingOf(m);
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return m;
   });
@@ -471,6 +475,7 @@ export function registerResources() {
       m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: inbound, outbound_kind: provider, config: { oauth_email: email }, team_id: teamRef(ctx, ctx.body.team_id) });
       writeAddressing(ctx, m);
       m.receiving = receivingOf(m);
+    m.sending = sendingOf(m);
       publish(ctx.ws, "mailbox.created", { mailbox: m });
     } else {
       if (m.inbound_kind !== "forwarding" && inbound === "forwarding") stopImap(m);
@@ -482,6 +487,7 @@ export function registerResources() {
       for (const k of SMTP_KEYS) delete m.config[k];
       mailboxSecrets.delete(m.id);
       m.receiving = receivingOf(m);
+    m.sending = sendingOf(m);
       publish(ctx.ws, "mailbox.updated", { mailbox: m });
     }
     return respond(200, { url: `/settings/mailboxes?connected=${m.id}` });
@@ -727,6 +733,7 @@ function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "display_nam
     last_error: "",
     last_synced_at: init.inbound_kind === "forwarding" ? null : nowIso(),
     receiving: receivingOf(init),
+    sending: sendingOf(init),
     created_at: nowIso(),
   };
   ws.mailboxes.push(m);

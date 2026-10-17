@@ -33,6 +33,8 @@ type service struct {
 	// mailboxIMAP: mailboxes may receive over IMAP (MAILBOX_IMAP). Off, no IMAP server
 	// is dialled and Google and Microsoft connect send-only.
 	mailboxIMAP bool
+	// systemSend: mailboxes may send through the platform mailer (MAILBOX_SYSTEM_SEND).
+	systemSend bool
 
 	// rawSend replaces the platform transport for outbound_kind=system (tests).
 	rawSend func(ctx context.Context, from string, to []string, raw []byte) error
@@ -48,6 +50,7 @@ func newService(d *deps.Deps) *service {
 		graphBase: "https://graph.microsoft.com/v1.0",
 
 		mailboxIMAP: d.Cfg.MailboxIMAP,
+		systemSend:  d.Cfg.MailboxSystemSend,
 	}
 	s.providers = defaultProviders(d.Cfg)
 	s.detector = mailhost.NewDetector(nil, s.guard.httpClient(), mailhost.NewMemoryCache(detectCacheTTL, detectCacheMax))

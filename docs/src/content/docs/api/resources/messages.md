@@ -62,6 +62,12 @@ curl https://api.opendesk.sh/v1/tickets/1042/messages \
 
 `status` sets the ticket status in the same step. A reply on an email ticket is queued for delivery through the mailbox; watch `delivery_status` change from `pending` to `sent` (or `failed` or `bounced`) through the `message.updated` event.
 
+A reply from a mailbox with no way to send (`sending: "system_off"`, see [Mailboxes](/api/resources/mailboxes/#sending-through-opendesk)) is `422 mailbox_cannot_send` and stores nothing:
+
+```json
+{ "status": 422, "code": "mailbox_cannot_send", "detail": "This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings." }
+```
+
 ## Add a note
 
 ```sh

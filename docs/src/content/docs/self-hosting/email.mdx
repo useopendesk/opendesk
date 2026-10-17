@@ -14,7 +14,7 @@ opendesk handles three kinds of email, each configured separately.
 | --- | --- | --- |
 | Inbound, forwarding | Mail forwarded to `<token>@INBOUND_DOMAIN`, for every mailbox | `INBOUND_DOMAIN`, plus a receiver below |
 | Inbound, over IMAP | IMAP mailboxes, and Google and Microsoft mailboxes connected to sync, are read directly | each mailbox, while `MAILBOX_IMAP` is on (the default; see [Receiving over IMAP](/self-hosting/configuration/#receiving-over-imap)), plus [OAuth apps](/self-hosting/oauth-apps/) for Google and Microsoft |
-| Outbound replies | Replies to customers | each mailbox: SMTP, Google or Microsoft, or `system` |
+| Outbound replies | Replies to customers | each mailbox: SMTP, Google or Microsoft, or `system` while `MAILBOX_SYSTEM_SEND` is on (the default; see [Sending through opendesk](/self-hosting/configuration/#sending-through-opendesk)) |
 | Platform email | Verification, password reset, invitations | `MAIL_DRIVER` and friends |
 
 ## From mailbox to ticket
@@ -120,7 +120,7 @@ Replies to customers go out **through the customer's own mailbox**: SMTP, Gmail 
 
 Failed sends are retried, up to 8 attempts, and the message shows its delivery status in the ticket.
 
-The `system` outbound option sends replies through platform email instead. Use it only when a mailbox cannot send for itself.
+The `system` outbound option sends replies through platform email instead, from `MAIL_FROM` with the mailbox's name. Use it only when a mailbox cannot send for itself. `MAILBOX_SYSTEM_SEND=false` turns it off, as on opendesk Cloud: mailboxes then send through SMTP (their mail server or a sending service), Google or Microsoft, and one already on `system` sends nothing until it connects one. See [Sending through opendesk](/self-hosting/configuration/#sending-through-opendesk).
 
 ## Platform email
 

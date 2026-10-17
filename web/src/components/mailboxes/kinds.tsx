@@ -76,13 +76,26 @@ export function notReceiving(m: Pick<Mailbox, "status" | "receiving">): boolean 
   return m.status !== "disabled" && m.receiving === "imap_off";
 }
 
-export function MailboxStatus({ mailbox }: { mailbox: Pick<Mailbox, "status" | "last_error" | "receiving"> }) {
+/** An enabled mailbox that sends through opendesk on an instance where that is off: no reply goes out. */
+export function notSending(m: Pick<Mailbox, "status" | "sending">): boolean {
+  return m.status !== "disabled" && m.sending === "system_off";
+}
+
+export function MailboxStatus({ mailbox }: { mailbox: Pick<Mailbox, "status" | "last_error" | "receiving" | "sending"> }) {
   const { t } = useTranslation("settingsChannels");
   if (notReceiving(mailbox))
     return (
       <Tooltip content={t("receiving.pillHint")}>
         <span className="inline-flex">
           <StatePill state="paused">{t("receiving.pill")}</StatePill>
+        </span>
+      </Tooltip>
+    );
+  if (notSending(mailbox))
+    return (
+      <Tooltip content={t("sendingOff.pillHint")}>
+        <span className="inline-flex">
+          <StatePill state="paused">{t("sendingOff.pill")}</StatePill>
         </span>
       </Tooltip>
     );

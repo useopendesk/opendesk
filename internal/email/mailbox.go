@@ -39,6 +39,12 @@ const (
 	ReceivingIMAPOff = "imap_off"
 )
 
+// Sending states (Mailbox.Sending).
+const (
+	SendingOK        = "ok"
+	SendingSystemOff = "system_off"
+)
+
 // TLS modes for IMAP and SMTP.
 const (
 	TLSImplicit = "tls"
@@ -102,7 +108,11 @@ type Mailbox struct {
 	Private bool `json:"private"`
 	// Receiving is imap_off when the mailbox receives over IMAP and this instance has
 	// IMAP off (MAILBOX_IMAP): it is kept but not polled until it switches to forwarding.
-	Receiving    string     `json:"receiving" enum:"ok,imap_off"`
+	Receiving string `json:"receiving" enum:"ok,imap_off"`
+	// Sending is system_off when the mailbox sends through the platform mailer and this
+	// instance has that off (MAILBOX_SYSTEM_SEND): it sends nothing until it connects
+	// Google, Microsoft or SMTP.
+	Sending      string     `json:"sending" enum:"ok,system_off"`
 	Status       string     `json:"status" enum:"active,error,disabled"`
 	LastError    string     `json:"last_error"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
@@ -259,6 +269,10 @@ func (s *service) api(m *mailboxRow, withConfig bool) Mailbox {
 	if receivesIMAP(m.InboundKind) && !s.mailboxIMAP {
 		out.Receiving = ReceivingIMAPOff
 	}
+	out.Sending = SendingOK
+	if !s.canSend(m) {
+		out.Sending = SendingSystemOff
+	}
 	if out.Config.OAuthGrant == "" && m.oauthProvider() != "" {
 		out.Config.OAuthGrant = GrantSync
 	}
@@ -267,6 +281,12 @@ func (s *service) api(m *mailboxRow, withConfig bool) Mailbox {
 		out.TrustedFormSenders = []string{}
 	}
 	return out
+}
+
+// canSend reports whether the mailbox has a way to send: anything but the platform
+// mailer while this instance has that off.
+func (s *service) canSend(m *mailboxRow) bool {
+	return m.OutboundKind != OutboundSystem || s.systemSend
 }
 
 func (s *service) openCreds(m *mailboxRow) (credentials, error) {

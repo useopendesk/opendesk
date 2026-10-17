@@ -47,13 +47,15 @@ const TALL = { width: 1440, height: 1300 };
 
 /**
  * Opens the wizard from the Mailboxes page with the provider sign-in the instance offers
- * (the mock reads localStorage["od.mock.mailboxOAuth"]; null offers both). opendesk Cloud
- * offers Microsoft sign-in only, so most shots use "microsoft".
+ * (the mock reads localStorage["od.mock.mailboxOAuth"]; null offers both). As on opendesk
+ * Cloud, mailboxes send through their own provider, never through opendesk
+ * (localStorage["od.mock.systemSend"]).
  */
 async function start(page, oauth = 'microsoft') {
   await page.evaluate((o) => {
     if (o === null) localStorage.removeItem('od.mock.mailboxOAuth');
     else localStorage.setItem('od.mock.mailboxOAuth', o);
+    localStorage.setItem('od.mock.systemSend', 'off');
   }, oauth);
   await button(page, 'Add mailbox').click();
   await settle(page);
@@ -271,7 +273,7 @@ export const shots = [
     ],
   },
 
-  // Microsoft without its sign-in: forwarding in, replies through opendesk or SMTP.
+  // Microsoft without its sign-in: forwarding in, replies through SMTP.
   {
     name: 'mailboxes/microsoft-detect',
     path: '/settings/mailboxes',
@@ -292,14 +294,14 @@ export const shots = [
     path: '/settings/mailboxes',
     viewport: TALL,
     run: async (page) => {
-      await start(page, 'google');
+      await start(page, 'microsoft');
       await address(page, 'Support', 'support@contoso.com');
       await next(page);
     },
     clip: wizard,
     highlight: [
-      { target: (p) => [text(p, 'Replies are sent'), p.getByText('From noreply@opendesk.sh', { exact: false })], label: 1, inset: 8 },
-      { target: (p) => button(p, 'Create mailbox'), label: 2, badge: 'l' },
+      { target: (p) => [text(p, 'How replies are sent'), way(p, /Your SMTP server/)], label: 1, inset: 8 },
+      { target: (p) => button(p, 'Continue with Microsoft'), label: 2, badge: 'l' },
     ],
   },
   {
@@ -310,14 +312,30 @@ export const shots = [
       await start(page, 'google');
       await address(page, 'Support', 'support@contoso.com');
       await next(page);
-      await button(page, 'Through your SMTP server').click();
+    },
+    clip: wizard,
+    highlight: [
+      { target: (p) => way(p, /Your SMTP server/), label: 1, inset: 4, badge: 'r' },
+      { target: (p) => p.getByText('Microsoft is phasing out password sign-in', { exact: false }), label: 2, inset: { x: 8, y: 5 } },
+      { target: (p) => fieldset(p, 'Outgoing mail (SMTP)'), label: 3, inset: 3 },
+    ],
+  },
+  // A sending service over SMTP: the preset fills the server, the API key goes in the password.
+  {
+    name: 'mailboxes/smtp-service',
+    path: '/settings/mailboxes',
+    viewport: TALL,
+    run: async (page) => {
+      await start(page, 'microsoft');
+      await address(page, 'Support', 'support@brightline.co');
+      await next(page);
+      await button(page, 'Resend').click();
       await settle(page);
     },
     clip: wizard,
     highlight: [
-      { target: (p) => [button(p, 'Through opendesk'), button(p, 'Through your SMTP server')], label: 1, inset: 4, badge: 'r' },
-      { target: (p) => p.getByText("Microsoft's SMTP server needs SMTP AUTH", { exact: false }), label: 2, inset: { x: 8, y: 5 } },
-      { target: (p) => fieldset(p, 'Outgoing mail (SMTP)'), label: 3, inset: 3 },
+      { target: (p) => text(p, 'Using a sending service?').locator('xpath=..'), label: 1, inset: 4 },
+      { target: (p) => fieldset(p, 'Outgoing mail (SMTP)'), label: 2, inset: 3 },
     ],
   },
   {

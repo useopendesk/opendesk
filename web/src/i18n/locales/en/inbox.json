@@ -439,7 +439,8 @@
     "changeAddress": "Change the address this reply goes out from",
     "signature": "Signature",
     "addressChosen": "This reply and the next ones go from this address.",
-    "addressMoved": "Switched to this address when the ticket moved to {{team}}."
+    "addressMoved": "Switched to this address when the ticket moved to {{team}}.",
+    "cannotSend": "This address can't send replies yet. An admin can connect a way to send in its mailbox settings."
   },
   "message": {
     "from": "Message from {{name}}",
@@ -503,7 +504,8 @@
     "discard": "Discard",
     "needTo": "Add a recipient.",
     "needSubject": "Add a subject.",
-    "needBody": "Write a message."
+    "needBody": "Write a message.",
+    "cannotSend": "This address can't send email yet. Pick another, or ask an admin to connect a way to send."
   },
   "contact": {
     "unnamed": "Unnamed contact",

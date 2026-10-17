@@ -78,6 +78,9 @@ The cloud is the self-host plus configuration. Billing is on only when `STRIPE_S
 is set; without it every workspace is `self_hosted` with no limits. AI is on when a provider
 key is set (`ANTHROPIC_API_KEY`, or any OpenAI-compatible endpoint, including local models).
 Never gate a feature on plan: plans differ only in limits (`contracts/billing.md`).
+Customer replies go out through each mailbox's own Google, Microsoft or SMTP connection; the
+platform mailer (SES on the cloud) sends only platform mail. Sending replies through it is an
+instance option (`MAILBOX_SYSTEM_SEND`), off on the cloud.
 
 ## Security and compliance invariants (CASA Tier 1 / OWASP ASVS L1)
 

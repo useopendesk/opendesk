@@ -27,6 +27,13 @@ func Configure(publicAPIURL string, secret []byte) {
 	attachmentKey = append([]byte("attachment-url:"), secret...)
 }
 
+// systemSending: mailboxes with outbound_kind "system" send through the platform mailer
+// (MAILBOX_SYSTEM_SEND).
+var systemSending = true
+
+// ConfigureSending sets whether mailboxes may send through the platform mailer. Call once at boot.
+func ConfigureSending(system bool) { systemSending = system }
+
 // AttachmentURL is a link valid for 24h so <img> tags and downloads work without a bearer token.
 func AttachmentURL(id uuid.UUID) string {
 	exp := strconv.FormatInt(time.Now().Add(24*time.Hour).Truncate(time.Hour).Unix(), 10)

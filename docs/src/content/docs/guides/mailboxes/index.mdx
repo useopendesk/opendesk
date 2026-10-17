@@ -1,6 +1,6 @@
 ---
 title: Connect a mailbox
-description: Forward your support address to opendesk, and send replies from it with Google or Microsoft, your SMTP server, or opendesk.
+description: Forward your support address to opendesk, and send replies from it with Google or Microsoft, your mail server, or a sending service such as Resend or Postmark.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -15,7 +15,7 @@ A **mailbox** is a support address, such as `support@example.com`, connected to 
 Every mailbox has two halves:
 
 - **Receiving.** Your provider forwards the address's mail to a private opendesk address, such as `margin-care-cace@in.opendesk.sh`. Forwarding works with every provider and shares no password. See [Forwarding](/guides/mailboxes/forwarding/).
-- **Sending.** Connect Google or Microsoft to send replies through Gmail or Microsoft 365 from your own address, or use your SMTP server. Either way, replies come from your address and land in its Sent folder. Without one, replies go out through opendesk with your mailbox's name, and customers' answers come back to your address.
+- **Sending.** Connect Google or Microsoft to send replies through Gmail or Microsoft 365 from your own address, and they land in its Sent folder. Or add SMTP: your mail server, or a sending service such as Resend, Postmark or Amazon SES. Either way, replies come from the address customers wrote to.
 
 Connecting Google or Microsoft lets opendesk send mail from the address you connect, and nothing else: it cannot read the mailbox. Mail reaches opendesk only because you forward it.
 
@@ -58,13 +58,18 @@ On an instance that receives over IMAP, **Choose another way** also lists ways t
 </Step>
 <Step title="Choose how replies are sent">
 
-Under **Replies are sent**, the ways that fit the provider are listed, the best one selected:
+Under **How replies are sent**, the ways that fit the provider are listed, the best one selected:
 
-- **Google** or **Microsoft**, for Gmail, Google Workspace, Microsoft 365 and Outlook.com addresses when your instance offers it: you approve sending at the provider, and replies go out through it from your address. See [Gmail and Google Workspace](/guides/mailboxes/google/) and [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
-- **Through your SMTP server**: replies go out from your address through your provider's server. opendesk signs in to it before it saves anything. If it refuses, you see why and how to fix it (see [When a connection fails](#when-a-connection-fails)).
-- **Through opendesk**: replies go out from opendesk's sending address with your mailbox's name, and customers' answers come back to your address. Nothing to set up.
+- **Connect Google** or **Connect Microsoft**, for Gmail, Google Workspace, Microsoft 365 and Outlook.com addresses when your instance offers it: you approve sending at the provider, and replies go out through it from your address. See [Gmail and Google Workspace](/guides/mailboxes/google/) and [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/).
+- **Your SMTP server**: replies go out from your address through your provider's server, or through a sending service such as Resend or Postmark. Pick the service under **Using a sending service?** and the server settings are filled in for you (see [Send with a sending service](#send-with-a-sending-service)). opendesk signs in to the server before it saves anything. If it refuses, you see why and how to fix it (see [When a connection fails](#when-a-connection-fails)).
 
-<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for a forwarding mailbox: Replies are sent, Through opendesk, ringed as 1, and the Create mailbox button ringed as 2" />
+<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for support@contoso.com: How replies are sent, with Connect Microsoft selected and Your SMTP server below it, ringed as 1, and the Continue with Microsoft button ringed as 2" />
+
+<Callout>
+
+On your own instance, mailboxes can also send **through opendesk**, which is on by default: replies go out from the instance's sending address with your mailbox's name, and customers' answers come back to your address. See [Sending through opendesk](/self-hosting/configuration/#sending-through-opendesk).
+
+</Callout>
 
 </Step>
 <Step title="Forward the mail">
@@ -99,10 +104,31 @@ Every provider can forward its mail to opendesk. What differs is how replies go 
 | Yahoo Mail, AOL Mail, iCloud Mail, Fastmail, Yandex Mail | No | With an app password |
 | Zoho Mail | No | With the mailbox's password, or an app password when two-factor authentication is on |
 | GoDaddy, Namecheap, IONOS, Hostinger, OVHcloud, Migadu, Purelymail, Rackspace, GMX | No | With the mailbox's password, or an app password if your account needs one |
-| Proton Mail | No | No. Replies go out through opendesk |
+| Proton Mail | No | Not from opendesk. Send through a sending service |
 | Any other host | No | With detected or typed settings |
 
-Any mailbox can send through opendesk instead, with no setup. On your own instance, see [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in) to offer Google and Microsoft sign-in.
+Any mailbox can also send through a [sending service](#send-with-a-sending-service) that has verified its domain. On your own instance, see [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in) to offer Google and Microsoft sign-in, and [Sending through opendesk](/self-hosting/configuration/#sending-through-opendesk).
+
+## Send with a sending service
+
+A sending service, such as Resend, Postmark, SendGrid, Mailgun, Brevo or Amazon SES, sends your replies over SMTP from your support address. It suits a provider that has no SMTP server for opendesk, such as Proton Mail, or a team that already sends through one.
+
+1. At the service, verify the domain of your support address. The service shows the DNS records to add (SPF and DKIM), so replies pass your customers' checks.
+2. Create the SMTP credentials at the service, as in the table below.
+3. In the wizard, under **How replies are sent**, choose **Your SMTP server**, then pick the service under **Using a sending service?**. The server, port, security and, where the service fixes it, the username are filled in. Paste the password and click **Connect**.
+
+<Screenshot src="/guides/mailboxes/smtp-service" alt="The SMTP step for support@brightline.co: Using a sending service? with Resend picked, ringed as 1, and the outgoing mail settings filled in with smtp.resend.com, port 465, TLS and the username resend, ringed as 2" />
+
+| Service | Server and port | Username | Password |
+| --- | --- | --- | --- |
+| Resend | `smtp.resend.com`, 465 with TLS | `resend` | An API key |
+| Postmark | `smtp.postmarkapp.com`, 587 with STARTTLS | The server API token | The same server API token |
+| SendGrid | `smtp.sendgrid.net`, 587 with STARTTLS | `apikey` | An API key with Mail Send access |
+| Mailgun | `smtp.mailgun.org` (EU domains: `smtp.eu.mailgun.org`), 587 with STARTTLS | The domain's SMTP username | The domain's SMTP password |
+| Brevo | `smtp-relay.brevo.com`, 587 with STARTTLS | The SMTP login | An SMTP key |
+| Amazon SES | `email-smtp.<region>.amazonaws.com`, 587 with STARTTLS | The SES SMTP username | The SES SMTP password |
+
+Any other service that relays over SMTP works the same way: type its server settings. Replies sent through a service don't land in your mailbox's Sent folder; the ticket keeps every reply.
 
 Every provider's details: [Forwarding](/guides/mailboxes/forwarding/), [Gmail and Google Workspace](/guides/mailboxes/google/), [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/) and [Other providers](/guides/mailboxes/imap-smtp/).
 
@@ -132,7 +158,7 @@ The same causes show on a connected mailbox when **Test connection** fails.
 | **IMAP is turned off in Google** | Only when the mailbox receives over IMAP. On Google Workspace, an admin allows IMAP in the Admin console under **Apps**, **Google Workspace**, **Gmail**, **End User Access**. |
 | **Yahoo needs an app password**, and the same for AOL, iCloud, Fastmail and Yandex | Create an app password at the provider and use it instead of the account password. See [Other providers](/guides/mailboxes/imap-smtp/#app-passwords-by-provider). |
 | **Microsoft needs Microsoft sign-in** | Microsoft does not accept a password over IMAP. Forward the mail instead, and send with Microsoft. See [Microsoft 365 and Outlook](/guides/mailboxes/microsoft/). |
-| **SMTP sign-in is turned off in Microsoft 365** | An admin turns on SMTP AUTH for the mailbox, or you send replies through opendesk. See [Turn on SMTP AUTH](/guides/mailboxes/microsoft/#turn-on-smtp-auth). |
+| **SMTP sign-in is turned off in Microsoft 365** | An admin turns on SMTP AUTH for the mailbox, or you send with Microsoft instead. See [Turn on SMTP AUTH](/guides/mailboxes/microsoft/#turn-on-smtp-auth). |
 | **The server refused the sign-in** | Check the username, usually the full address, and the password. If the account has two-step sign-in, use an app password. |
 | **The mail port did not answer** | The SMTP port is blocked on the way. Use port 587 with STARTTLS. See [Ports and security](/guides/mailboxes/imap-smtp/#ports-and-security). |
 | **The secure connection failed** | The security setting doesn't match the port: 465 and 993 use TLS, 587 and 143 use STARTTLS. |
@@ -152,7 +178,7 @@ The **Mailboxes** page lists every address with how it connects and whether it i
 1. **Add mailbox** starts the setup for a new address.
 2. **Summary**: how many mailboxes you have, and how many are active, need attention or are disabled.
 3. **Connection**: the provider and how the mailbox connects: sign-in, app password, password or forwarding.
-4. **Status**: **Active**, or **Needs attention** when the mailbox last failed to receive or send. Open the mailbox to see the error.
+4. **Status**: **Active**, or **Needs attention** when the mailbox last failed to receive or send. **Not sending** means it has no way to send replies. Open the mailbox to see why.
 5. **Actions**: test the connection, disable the mailbox, or remove it.
 
 </Legend>
@@ -195,11 +221,13 @@ Further down, every mailbox has its own signature and an optional auto-reply.
 
 ## Fix a mailbox that needs attention
 
-A mailbox is **Active**, **Needs attention** (it last failed to receive or send) or **Disabled**. When it needs attention, its page shows the provider's last error and when it last worked.
+A mailbox is **Active**, **Needs attention** (it last failed to receive or send), **Not sending** (it has no way to send replies) or **Disabled**. When it needs attention, its page shows the provider's last error and when it last worked.
 
 <Screenshot src="/guides/mailboxes/connection-error" alt="A mailbox's Connection section: the last sync error ringed as 1, and the Test connection button ringed as 2" />
 
 Fix the cause, often a changed password or an app password that was deleted, then click **Test connection**. The test checks receiving and sending separately and names the cause and the fix when one fails. For a password mailbox, enter the new password in the server settings below and save.
+
+A mailbox marked **Not sending** has no way to send replies, such as one that sent through opendesk on an instance that has turned that off. Its page says **This mailbox can't send replies**. Its tickets and settings stay, and new mail still arrives, but no reply goes out from its address. The reply box in its tickets says so, automations skip their email replies, auto-replies and satisfaction surveys aren't sent, and Ollie leaves its answers as suggested replies instead of sending them. In its **Sending** section, choose SMTP (your mail server or a [sending service](#send-with-a-sending-service)), or connect Google or Microsoft.
 
 A mailbox that read its mail over IMAP stops receiving when its instance turns IMAP receiving off; its page says so. Its tickets and settings stay. Switch it to forwarding on its page, then turn on forwarding at your provider with the address it shows, as in [Forwarding](/guides/mailboxes/forwarding/).
 

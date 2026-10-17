@@ -383,6 +383,8 @@ locals {
     MICROSOFT_MAILBOX_OAUTH = tostring(var.microsoft_mailbox_oauth)
     # Receiving over IMAP (variables.tf); off, mailboxes receive by forwarding.
     MAILBOX_IMAP = tostring(var.mailbox_imap)
+    # Sending through the platform mailer (variables.tf); off, mailboxes send through their own server.
+    MAILBOX_SYSTEM_SEND = tostring(var.mailbox_system_send)
 
     # The company in the footer of every platform email (variables.tf).
     EMAIL_LEGAL_ENTITY                = var.email_legal.entity

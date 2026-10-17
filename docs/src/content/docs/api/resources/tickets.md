@@ -116,7 +116,7 @@ curl https://api.opendesk.sh/v1/tickets \
 | `kind` | `reply` or `note` |
 | `priority`, `severity`, `assignee_id`, `team_id`, `tags`, `fields`, `status` | optional |
 
-An `email` ticket created with a `reply` sends that reply to the contact from the mailbox.
+An `email` ticket created with a `reply` sends that reply to the contact from the mailbox. When that mailbox has no way to send (`sending: "system_off"`, see [Mailboxes](/api/resources/mailboxes/#sending-through-opendesk)), the request is `422 mailbox_cannot_send` and no ticket is created.
 
 ## Get a ticket
 

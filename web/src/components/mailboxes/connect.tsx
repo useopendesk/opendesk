@@ -39,6 +39,11 @@ export function imapOn(opts?: MailboxConnectOptions): boolean {
   return config.mailboxImap && opts?.mailbox_imap !== false;
 }
 
+/** Sending through opendesk is offered unless the API has it off. */
+export function systemSendOn(opts?: MailboxConnectOptions): boolean {
+  return opts?.system_send !== false;
+}
+
 /** Sign-in is offered when the API allows it and the deployment's runtime config does not hide it. */
 export function oauthOffered(opts: MailboxConnectOptions | undefined, p: Provider): boolean {
   if (!opts?.[p].oauth) return false;

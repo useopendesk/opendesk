@@ -10,6 +10,7 @@ Mailboxes are settings: an `admin` user, or an API key with `settings:read` and 
 | `GET`, `POST` | `/v1/mailboxes` | List or create mailboxes |
 | `GET`, `PATCH`, `DELETE` | `/v1/mailboxes/{id}` | |
 | `POST` | `/v1/mailboxes/{id}/test` | Test inbound and outbound |
+| `GET` | `/v1/mailboxes/connect-options` | How this instance lets mailboxes connect |
 | `POST` | `/v1/mailboxes/oauth/{provider}/start` | Start a Google or Microsoft connection |
 | `GET` | `/v1/mailboxes/oauth/{provider}/callback` | OAuth redirect target |
 | `POST` | `/v1/inbound/email` | Receive a raw email (forwarding) |
@@ -25,6 +26,7 @@ type Mailbox = {
   inbound_kind: "forwarding" | "imap" | "google" | "microsoft";
   outbound_kind: "smtp" | "google" | "microsoft" | "system";
   receiving: "ok" | "imap_off"; // read-only
+  sending: "ok" | "system_off"; // read-only
   forwarding_address: string;
   config: {
     imap_host?: string;
@@ -53,8 +55,9 @@ type Mailbox = {
 Passwords and tokens are write-only: they are accepted on create and update, encrypted, and never returned.
 
 - `inbound_kind` is how mail comes in: `forwarding` to `forwarding_address`, or read directly over IMAP (`imap`, or `google` and `microsoft` for a mailbox connected to sync).
-- `outbound_kind` is how replies go out: through the mailbox's SMTP server, through Gmail or Microsoft for a mailbox connected with that sign-in, or `system` through opendesk.
+- `outbound_kind` is how replies go out: `smtp` through the mailbox's mail server or a sending service, `google` or `microsoft` through Gmail or Microsoft for a mailbox connected with that sign-in, or `system` through the instance's own mailer, from its sending address with the mailbox's name. `system` is available only where the instance allows it (below).
 - `receiving` is `imap_off` for a mailbox that reads over IMAP while the instance has receiving over IMAP turned off (`MAILBOX_IMAP=false`, as on opendesk Cloud). It receives nothing until you switch it to forwarding (below). Otherwise `ok`.
+- `sending` is `system_off` for a mailbox with `outbound_kind` `system` while the instance has sending through opendesk turned off (`MAILBOX_SYSTEM_SEND=false`, as on opendesk Cloud). It sends nothing until you switch it to SMTP or connect Google or Microsoft (below). Otherwise `ok`.
 
 ## Receiving over IMAP
 
@@ -70,6 +73,26 @@ curl -X PATCH https://api.opendesk.sh/v1/mailboxes/0192f0c4-... \
   -H "Authorization: Bearer od_live_..." \
   -H "Content-Type: application/json" \
   -d '{ "inbound_kind": "forwarding" }'
+```
+
+## Sending through opendesk
+
+Every mailbox can send through Google, Microsoft or SMTP. Sending through the instance's own mailer (`outbound_kind` `system`) is an instance option for self-hosted instances, on by default; opendesk Cloud has it off. While it is off:
+
+- Creating a mailbox with `outbound_kind` `system`, or changing a mailbox to it, is `422 system_send_off`.
+- A mailbox already on `system` keeps it, with `sending: "system_off"`, and its other settings stay editable. An email reply from it is `422 mailbox_cannot_send` and stores nothing (see [Messages](/api/resources/messages/#send-a-reply)). Automations skip their email replies, Ollie's email answers wait as suggested replies, and auto-replies and satisfaction surveys are not sent. A reply queued before the setting changed fails with that reason.
+
+Switch such a mailbox to SMTP with `PATCH`, or connect Google or Microsoft with `mailbox_id` (below):
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/mailboxes/0192f0c4-... \
+  -H "Authorization: Bearer od_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "outbound_kind": "smtp",
+    "config": { "smtp_host": "smtp.resend.com", "smtp_port": 465, "smtp_username": "resend", "smtp_tls": "tls" },
+    "smtp_password": "re_..."
+  }'
 ```
 
 ## Contact forms
@@ -104,7 +127,7 @@ curl https://api.opendesk.sh/v1/mailboxes \
   }'
 ```
 
-Read `forwarding_address` from the response and forward the support address's mail to it. Use `"outbound_kind": "system"`, without SMTP settings, to send through opendesk.
+Read `forwarding_address` from the response and forward the support address's mail to it. The SMTP server can be a sending service such as Resend or Postmark that has verified the address's domain. Where the instance allows it, `"outbound_kind": "system"`, without SMTP settings, sends through opendesk instead; elsewhere, as on opendesk Cloud, it is `422 system_send_off`.
 
 On an instance that receives over IMAP, an IMAP and SMTP mailbox:
 
@@ -153,6 +176,23 @@ curl -X POST https://api.opendesk.sh/v1/mailboxes/0192f0c4-.../test -H "Authoriz
 ```
 
 A send-only connection cannot read the mailbox: forward its mail to `forwarding_address`.
+
+## Connect options
+
+`GET /v1/mailboxes/connect-options` answers how this instance lets mailboxes connect, as the add-mailbox wizard shows it:
+
+```json
+{
+  "google": { "configured": true, "oauth": true },
+  "microsoft": { "configured": true, "oauth": true },
+  "forwarding": { "enabled": true, "domain": "in.opendesk.sh" },
+  "mailbox_imap": false,
+  "system_send": false,
+  "system_sender": "noreply@opendesk.sh"
+}
+```
+
+`configured` is whether the provider's OAuth client is set up, and `oauth` whether new mailboxes may connect with it. `mailbox_imap` is whether mailboxes may receive over IMAP. `system_send` is whether mailboxes may send through opendesk, from `system_sender` with the mailbox's name; while it is `false`, every mailbox sends through Google, Microsoft or SMTP.
 
 ## Inbound email
 

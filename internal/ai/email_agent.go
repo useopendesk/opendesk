@@ -380,6 +380,10 @@ func (s *Service) postEmailAnswer(ctx context.Context, in agentInput, mode strin
 			m, err := domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: "reply",
 				Direction: "outbound", AuthorType: "system", BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject,
 				Trigger: "none", AI: true, FromName: in.bot.Name, BotID: in.bot.IDPtr(), DeliveryStatus: "pending"})
+			if errors.Is(err, domain.ErrCannotSend) {
+				// The mailbox cannot send yet: the answer waits for a teammate instead.
+				return s.suggestReply(ctx, tx, wid, tid, trigger, body, toSources(cited), tools)
+			}
 			if err != nil {
 				return err
 			}

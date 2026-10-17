@@ -141,6 +141,13 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 	r.Get("/v1/mailboxes/oauth/{provider}/callback", s.oauthCallback)
 }
 
+// systemSendOff answers a request to send through the platform mailer while this
+// instance has it off.
+func systemSendOff() error {
+	return httpx.E(http.StatusUnprocessableEntity, "system_send_off",
+		"Sending through opendesk is off on this instance. Connect Google or Microsoft, or add SMTP.")
+}
+
 // imapOff answers a request to receive over IMAP while this instance has it off.
 func imapOff() error {
 	return httpx.E(http.StatusUnprocessableEntity, "imap_off", "Receiving over IMAP is off on this instance. Forward the address to opendesk instead.")

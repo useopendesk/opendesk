@@ -33,13 +33,14 @@ In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and t
 </Step>
 <Step title="Choose how replies are sent">
 
-- **Google** or **Microsoft**, for Gmail, Google Workspace, Microsoft 365 and Outlook.com addresses when your instance offers it: replies come from your address through the provider. You approve sending at the provider when you create the mailbox. opendesk can only send with this access, not read your mail.
-- **Through your SMTP server**: replies come from your address itself. Enter the SMTP server, port, security, username and password. opendesk signs in to it before it saves anything.
-- **Through opendesk**: replies come from opendesk's sending address with your mailbox's name, and the customer's answers come back to your address.
+- **Connect Google** or **Connect Microsoft**, for Gmail, Google Workspace, Microsoft 365 and Outlook.com addresses when your instance offers it: replies come from your address through the provider. You approve sending at the provider when you create the mailbox. opendesk can only send with this access, not read your mail.
+- **Your SMTP server**: replies come from your address itself, through your mail server or a [sending service](/guides/mailboxes/#send-with-a-sending-service) such as Resend or Postmark. Enter the SMTP server, port, security, username and password, or pick the service to fill in its settings. opendesk signs in to it before it saves anything.
 
-<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for a forwarding mailbox: Replies are sent, Through opendesk, ringed as 1, and the Create mailbox button ringed as 2" />
+On your own instance, **Through opendesk** can be listed too: replies come from the instance's sending address with your mailbox's name. See [Sending through opendesk](/self-hosting/configuration/#sending-through-opendesk).
 
-Click **Create mailbox** (or **Connect** for SMTP). With Google or Microsoft, approve sending at the provider; it sends you back to opendesk.
+<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for support@contoso.com: How replies are sent, with Connect Microsoft selected and Your SMTP server below it, ringed as 1, and the Continue with Microsoft button ringed as 2" />
+
+Click **Continue with Microsoft** or **Continue with Google** (or **Connect** for SMTP). With Google or Microsoft, approve sending at the provider; it sends you back to opendesk.
 
 </Step>
 <Step title="Copy the forwarding address">
@@ -61,7 +62,7 @@ Write to your support address from another account. It shows up in **Unassigned*
 
 <Callout>
 
-- Sending through opendesk needs no setup, but replies don't land in your mailbox's Sent folder. Sending with Google or Microsoft sign-in, or through your SMTP server, sends from your address with your domain's own SPF and DKIM, and keeps a copy in Sent.
+- Sending with Google or Microsoft sign-in sends from your address with your domain's own SPF and DKIM, and keeps a copy in the mailbox's Sent folder. SMTP sends from your address too, through your mail server or a sending service that has verified your domain.
 - Self-hosted instances use their own inbound domain (`INBOUND_DOMAIN`). See [Email setup](/self-hosting/email/).
 
 </Callout>

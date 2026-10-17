@@ -681,6 +681,8 @@ export type MailboxConnectOptions = {
   microsoft: { configured: boolean; oauth: boolean };
   forwarding: { enabled: boolean; domain: string };
   system_sender: string;
+  /** Mailboxes may send through opendesk (MAILBOX_SYSTEM_SEND). Off, each sends through Google, Microsoft or SMTP. */
+  system_send?: boolean;
   /** Mailboxes may receive over IMAP (MAILBOX_IMAP). Off, they receive by forwarding and sign-ins only send. */
   mailbox_imap?: boolean;
 };
@@ -701,6 +703,11 @@ export type Mailbox = {
    * over IMAP is now off, so no mail arrives until it is switched to forwarding.
    */
   receiving?: "ok" | "imap_off";
+  /**
+   * Read-only. system_off: the mailbox sends through opendesk on an instance where that
+   * is off, so no reply goes out until it connects Google, Microsoft or SMTP.
+   */
+  sending?: "ok" | "system_off";
   config: MailboxConfig;
   team_id: string | null;
   brand_id: string;

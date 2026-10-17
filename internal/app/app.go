@@ -113,6 +113,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 		Analytics: analytics.New(cfg.PosthogKey, cfg.PosthogHost, log), Box: box, Tokens: auth.NewTokens(cfg.AuthSecret),
 		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AIUsageMarkup)}
 	domain.Configure(cfg.APIURL, cfg.AuthSecret)
+	domain.ConfigureSending(cfg.MailboxSystemSend)
 	if cfg.APNsKey != "" {
 		if d.APNs, err = push.NewAPNs(cfg.APNsKey, cfg.APNsKeyID, cfg.APNsTeamID, cfg.APNsTopic); err != nil {
 			return nil, nil, err

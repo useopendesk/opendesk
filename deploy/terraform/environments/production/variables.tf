@@ -262,6 +262,12 @@ variable "mailbox_imap" {
   default     = false
 }
 
+variable "mailbox_system_send" {
+  description = "MAILBOX_SYSTEM_SEND: let mailboxes send replies through the platform mailer (SES, from MAIL_FROM). Off, every mailbox sends through its own Google, Microsoft or SMTP server, so customer mail is never sent from this account."
+  type        = bool
+  default     = false
+}
+
 variable "microsoft_tenant" {
   type    = string
   default = "common"

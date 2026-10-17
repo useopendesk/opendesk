@@ -2,6 +2,8 @@ package email
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -10,6 +12,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/useopendesk/opendesk/internal/crypto"
+	"github.com/useopendesk/opendesk/internal/domain"
 )
 
 // TestGoogleSendOnlyConnect: by default Google connects with gmail.send only, the
@@ -375,5 +381,76 @@ func TestConnectProviderToForwardingMailbox(t *testing.T) {
 	if got.Email != "support@acme.test" || got.InboundKind != InboundForwarding || got.OutboundKind != KindGoogle ||
 		got.Config.OAuthEmail != "jane@acme.test" || got.Config.OAuthGrant != GrantSend {
 		t.Fatalf("mailbox %+v %+v", got.Mailbox, got.Config)
+	}
+}
+
+// TestSystemSendOff: with MAILBOX_SYSTEM_SEND off no mailbox starts sending through the
+// platform mailer, and one that already does sends nothing until it connects a way to send.
+func TestSystemSendOff(t *testing.T) {
+	w := newWorld(t)
+	w.s.systemSend = false
+	domain.ConfigureSending(false)
+	t.Cleanup(func() { domain.ConfigureSending(true) })
+	srv := w.api(w.admin)
+	sends := 0
+	w.s.rawSend = func(context.Context, string, []string, []byte) error { sends++; return nil }
+
+	var opts connectOptions
+	if code := doJSON(t, http.MethodGet, srv.URL+"/v1/mailboxes/connect-options", nil, &opts); code != 200 || opts.SystemSend {
+		t.Fatalf("connect options: %d %+v", code, opts)
+	}
+	r := rawJSON(t, http.MethodPost, srv.URL+"/v1/mailboxes", map[string]any{"name": "X", "email": "new@acme.test",
+		"inbound_kind": "forwarding", "outbound_kind": "system"})
+	if r.code != 422 || !strings.Contains(r.body, `"system_send_off"`) {
+		t.Fatalf("create: %d %s", r.code, r.body)
+	}
+
+	// An existing one is reported and can still be edited.
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	var got Mailbox
+	if code := doJSON(t, http.MethodPatch, srv.URL+"/v1/mailboxes/"+m.ID.String(), map[string]any{"name": "Renamed"}, &got); code != 200 ||
+		got.Sending != SendingSystemOff {
+		t.Fatalf("rename: %d %q", code, got.Sending)
+	}
+
+	// Its replies are refused before anything is stored, and nothing automatic goes out.
+	in := w.receive(m, fixture(t, "new_plain.eml", "{{FROM}}", customer(), "{{TO}}", w.forwardAddr(m, ""), "{{ID}}", crypto.RandomString(8)))
+	tk := w.ticket(w.messageFor(in).TicketID)
+	before := w.count(`SELECT count(*) FROM messages WHERE ticket_id = $1`, tk.ID)
+	err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+		_, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, domain.NewMessage{WorkspaceID: w.wid, TicketID: tk.ID, Kind: "reply",
+			Direction: "outbound", AuthorType: "user", AuthorUserID: &w.uid, BodyHTML: "<p>Hi</p>", BodyText: "Hi", DeliveryStatus: "pending"})
+		return err
+	})
+	if !errors.Is(err, domain.ErrCannotSend) {
+		t.Fatalf("reply: %v", err)
+	}
+	if n := w.count(`SELECT count(*) FROM messages WHERE ticket_id = $1`, tk.ID); n != before {
+		t.Fatalf("messages %d, want %d", n, before)
+	}
+	if err := w.s.sendTicketEmail(w.ctx, jobsSendTicketEmail(w.wid, tk.ID, "Got it", "<p>Got it</p>")); err != nil || sends != 0 {
+		t.Fatalf("auto-reply: %v, %d sent", err, sends)
+	}
+
+	// A reply queued before the switch fails with the reason, unsent.
+	domain.ConfigureSending(true)
+	mid := w.agentReply(tk.ID, "Queued", "")
+	domain.ConfigureSending(false)
+	if err := w.s.sendMessage(w.ctx, w.wid, mid, false); err == nil {
+		t.Fatal("sent through the platform mailer")
+	}
+	if msg := w.message(mid); msg.Delivery != "failed" || !strings.Contains(msg.DelivError, "Connect Google or Microsoft, or add SMTP") || sends != 0 {
+		t.Fatalf("queued reply: %s %q, %d sent", msg.Delivery, msg.DelivError, sends)
+	}
+
+	// Moving to SMTP sends again; moving back is refused.
+	got = Mailbox{}
+	if code := doJSON(t, http.MethodPatch, srv.URL+"/v1/mailboxes/"+m.ID.String(), map[string]any{"outbound_kind": "smtp", "smtp_password": "pw",
+		"config": map[string]any{"smtp_host": "smtp.acme.test", "smtp_port": 587}}, &got); code != 200 || got.Sending != SendingOK {
+		t.Fatalf("to smtp: %d %+v", code, got)
+	}
+	r = rawJSON(t, http.MethodPatch, srv.URL+"/v1/mailboxes/"+m.ID.String(), map[string]any{"outbound_kind": "system"})
+	if r.code != 422 || !strings.Contains(r.body, `"system_send_off"`) {
+		t.Fatalf("back to system: %d %s", r.code, r.body)
 	}
 }

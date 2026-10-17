@@ -8,6 +8,7 @@ import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
+import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
@@ -170,6 +171,7 @@ export function registerTickets() {
     const mailboxId = s(ctx, "mailbox_id") ?? (channel === "chat" ? null : (fallback?.id ?? null));
     const box = mailboxId ? ws.mailboxes.find((m) => m.id === mailboxId) : undefined;
     if (mailboxId && (!box || !canSendFrom(ws, box, db.meId))) throw invalid("You can't send from that address");
+    if (box && (s(ctx, "kind") ?? "reply") === "reply" && sendingOf(box) === "system_off") throw cannotSend();
     const t = newTicket(ws, {
       subject,
       contact: contact ? contactRef(contact) : null,
@@ -283,6 +285,8 @@ export function registerTickets() {
     const myRef = userRef(db.meId);
     // A reply from another address makes it the ticket's reply address.
     const from = kind === "reply" ? s(ctx, "mailbox_id") : undefined;
+    const sendsFrom = kind === "reply" && t.channel === "email" ? ctx.ws.mailboxes.find((m) => m.id === (from ?? t.mailbox_id)) : undefined;
+    if (sendsFrom && sendingOf(sendsFrom) === "system_off") throw cannotSend();
     if (from && from !== t.mailbox_id) {
       checkPatch(ctx.ws, t, { mailbox_id: from });
       applyPatch(ctx.ws, t, { mailbox_id: from }, myRef);

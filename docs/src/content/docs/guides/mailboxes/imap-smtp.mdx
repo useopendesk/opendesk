@@ -24,7 +24,7 @@ In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and t
 </Step>
 <Step title="Enter the SMTP server">
 
-Under **Replies are sent**, choose **Through your SMTP server**. Enter the server, port and security from [Providers](#providers) below, your full address as the username, and the password your provider takes for mail apps: often an [app password](#app-passwords-by-provider). opendesk signs in to the server before it saves anything.
+Under **How replies are sent**, choose **Your SMTP server**. Enter the server, port and security from [Providers](#providers) below, your full address as the username, and the password your provider takes for mail apps: often an [app password](#app-passwords-by-provider). For a sending service such as Resend or Postmark, pick it under **Using a sending service?** instead (see [Send with a sending service](/guides/mailboxes/#send-with-a-sending-service)). opendesk signs in to the server before it saves anything.
 
 </Step>
 <Step title="Forward the mail">
@@ -203,7 +203,7 @@ Nothing is saved when a server refuses. The wizard shows the cause and the fix, 
 
 ## Proton Mail
 
-Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Connect a Proton address by [forwarding](/guides/mailboxes/forwarding/) its mail, and send replies through opendesk. Forwarding is available on Proton's paid plans.
+Proton Mail offers IMAP only through Proton Mail Bridge, an app on your own computer that opendesk can't reach. Connect a Proton address by [forwarding](/guides/mailboxes/forwarding/) its mail, and send replies through a [sending service](/guides/mailboxes/#send-with-a-sending-service) that has verified your domain. Forwarding is available on Proton's paid plans.
 
 ## Security
 

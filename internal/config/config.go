@@ -109,6 +109,12 @@ type Config struct {
 	// mailbox receives by forwarding and Google and Microsoft connect send-only; existing
 	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off.
 	MailboxIMAP bool
+	// MailboxSystemSend lets mailboxes send replies through the platform mailer
+	// (MAILBOX_SYSTEM_SEND, default on): outbound_kind "system", from MAIL_FROM. Off,
+	// every mailbox sends through its own Google, Microsoft or SMTP server, and one that
+	// sends through the platform mailer sends nothing until it connects one. opendesk
+	// Cloud turns it off.
+	MailboxSystemSend bool
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -560,6 +566,7 @@ func Load() (*Config, error) {
 	c.MicrosoftMailboxOAuth = mailboxOAuth("MICROSOFT_MAILBOX_OAUTH", c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret)
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.MailboxIMAP = envBool("MAILBOX_IMAP", true)
+	c.MailboxSystemSend = envBool("MAILBOX_SYSTEM_SEND", true)
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	for _, o := range strings.Split(env("CORS_ORIGINS", c.AppURL), ",") {

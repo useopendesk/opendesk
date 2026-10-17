@@ -3,6 +3,7 @@ package tickets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -496,6 +497,9 @@ func (r *triggerRun) addMessage(ctx context.Context, act hd.Action, f facts) err
 		nm.DeliveryStatus = "pending"
 	}
 	_, err := domain.AddMessage(ctx, r.tx, r.d.Jobs, nm)
+	if errors.Is(err, domain.ErrCannotSend) {
+		return nil // the ticket's mailbox has no way to send: nothing to answer with
+	}
 	return err
 }
 

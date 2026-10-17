@@ -10,13 +10,13 @@ import Callout from '../../../../components/Callout.astro';
 import Legend from '../../../../components/Legend.astro';
 import Fold from '../../../../components/Fold.astro';
 
-A Gmail or Google Workspace mailbox receives by [forwarding](/guides/mailboxes/forwarding/#gmail): Gmail passes incoming mail on to a private opendesk address. Replies go out from your address in one of three ways:
+A Gmail or Google Workspace mailbox receives by [forwarding](/guides/mailboxes/forwarding/#gmail): Gmail passes incoming mail on to a private opendesk address. Replies go out from your address in one of these ways:
 
 - **Google**, when your instance offers it. You approve sending once, and replies go out through Gmail and land in your Sent folder. opendesk gets permission to send mail as you and nothing else: it cannot read, change or delete your mail. See [Send with Google](#send-with-google).
 - **Gmail's SMTP server**, with an app password. See [Send through Gmail's SMTP server](#send-through-gmails-smtp-server).
-- **Through opendesk**, with your mailbox's name, and no setup.
+- **A sending service** such as Resend or Postmark, over SMTP, once it has verified your domain. See [Send with a sending service](/guides/mailboxes/#send-with-a-sending-service).
 
-On your own instance, a Gmail mailbox can also be read directly over IMAP. See [On your own instance: receive over IMAP](#on-your-own-instance-receive-over-imap).
+On your own instance, a mailbox can also send [through opendesk](/self-hosting/configuration/#sending-through-opendesk), and a Gmail mailbox can be read directly over IMAP. See [On your own instance: receive over IMAP](#on-your-own-instance-receive-over-imap).
 
 ## Send with Google
 
@@ -28,7 +28,7 @@ In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and t
 </Step>
 <Step title="Send replies with Google">
 
-Under **Replies are sent**, keep Google selected and create the mailbox. Sign in with the Google account for the address. Google asks you to let opendesk send email on your behalf. Approve, and Google sends you back to opendesk with the mailbox connected.
+Under **How replies are sent**, keep **Connect Google** selected and click **Continue with Google**. Sign in with the Google account for the address. Google asks you to let opendesk send email on your behalf. Approve, and Google sends you back to opendesk with the mailbox connected.
 
 </Step>
 <Step title="Forward the mail">
@@ -79,7 +79,7 @@ No app passwords page? 2-Step Verification is still off, or your Google Workspac
 </Step>
 <Step title="Add the mailbox with your SMTP server">
 
-Add the mailbox, choose **Forward mail to opendesk**, then, under **Replies are sent**, **Through your SMTP server**. Enter `smtp.gmail.com`, port `465` with TLS, your full address as the username and the app password. opendesk signs in before it saves anything.
+Add the mailbox, choose **Forward mail to opendesk**, then, under **How replies are sent**, **Your SMTP server**. Enter `smtp.gmail.com`, port `465` with TLS, your full address as the username and the app password. opendesk signs in before it saves anything.
 
 </Step>
 <Step title="Forward the mail">
@@ -93,7 +93,7 @@ Turn on forwarding in Gmail to the address opendesk shows, as in [Forwarding](/g
 
 - Use the address you sign in to Google with, not an alias or a group address.
 - The app password is encrypted at rest and never shown again. Deleting it in your Google Account stops sending until you enter a new one.
-- Accounts in Google's Advanced Protection Program can't have app passwords. Send with Google, or through opendesk.
+- Accounts in Google's Advanced Protection Program can't have app passwords. Send with Google, or through a [sending service](/guides/mailboxes/#send-with-a-sending-service).
 
 </Callout>
 

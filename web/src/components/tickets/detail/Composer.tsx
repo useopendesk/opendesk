@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, Paperclip, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, Paperclip, TriangleAlert, X } from "lucide-react";
 import { Morph } from "@/components/motion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -236,7 +236,9 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   };
 
   const busyUploads = uploads.some((u) => u.status === "uploading");
-  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy;
+  // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
+  const noSender = mode === "reply" && ticket.channel === "email" && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off";
+  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender;
 
   // The send button's moment: sending while the request is out, then a check.
   const [sent, setSent] = useState(false);
@@ -607,6 +609,12 @@ function ReplyingAs({
           </Tooltip>
         )}
       </div>
+      {mailbox.sending === "system_off" && (
+        <p className="flex items-start gap-1.5 px-3 pb-1.5 text-[11.5px] leading-4 text-fg-2 animate-fade-in motion-reduce:animate-none" role="status">
+          <TriangleAlert className="mt-px size-3 shrink-0 text-tone-amber" aria-hidden />
+          {t("composer.cannotSend")}
+        </p>
+      )}
       {(moved || chosen) && (
         <p className="flex items-center gap-1.5 px-3 pb-1.5 text-[11.5px] text-fg-3 animate-fade-in motion-reduce:animate-none">
           <ArrowRightLeft className="size-3 shrink-0 text-fg-4" />

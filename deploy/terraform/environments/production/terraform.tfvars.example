@@ -41,6 +41,7 @@ turnstile_site_key  = ""
 google_mailbox_oauth    = false
 microsoft_mailbox_oauth = true
 # mailbox_imap = true   # also receive over IMAP; match the Pages variable MAILBOX_IMAP
+# mailbox_system_send = true   # let mailboxes send replies through SES
 
 # After `aws secretsmanager put-secret-value` for each:
 # optional_secrets = [

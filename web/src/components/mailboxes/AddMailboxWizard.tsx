@@ -36,11 +36,13 @@ import {
   sendProviders,
   ServerSummary,
   Steps,
+  systemSendOn,
   useConnectOptions,
   useMailDetection,
   type ConnectFailure,
 } from "./connect";
 import { PortInput, validPort } from "./PortInput";
+import { SmtpPresets } from "./smtpPresets";
 
 export type Method = "google" | "microsoft" | "app_password" | "password" | "forwarding" | "imap";
 
@@ -182,14 +184,15 @@ function allWays(det: MailDetection | undefined, opts: MailboxConnectOptions | u
   return out;
 }
 
-/** The ways replies can leave a forwarding mailbox: a send-only sign-in where the instance offers one, SMTP, or opendesk. */
+/** The ways replies can leave a forwarding mailbox: a send-only sign-in where the instance offers one, SMTP, or opendesk where it sends for mailboxes. */
 function sendWays(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): SendVia[] {
-  return [...sendProviders(det, opts), "smtp", "system"];
+  return [...sendProviders(det, opts), "smtp", ...(systemSendOn(opts) ? (["system"] as const) : [])];
 }
 
-/** Replies go out from the address itself when its provider's sign-in is offered, else through opendesk. */
+/** Replies go out from the address itself when its provider's sign-in is offered, else through opendesk, else SMTP. */
 function defaultSendVia(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): SendVia {
-  return det?.oauth && oauthOffered(opts, det.oauth) ? det.oauth : "system";
+  if (det?.oauth && oauthOffered(opts, det.oauth)) return det.oauth;
+  return systemSendOn(opts) ? "system" : "smtp";
 }
 
 /** Arrow keys move the choice within a radio group, as a native one does. */
@@ -927,6 +930,17 @@ function ConnectStep({
         </div>
         {via === "smtp" && (
           <ServerFields
+            presets={
+              <SmtpPresets
+                host={form.smtp_host}
+                onPick={(p) => {
+                  set("smtp_host", p.host);
+                  set("smtp_port", p.port);
+                  set("smtp_tls", p.tls);
+                  set("smtp_username", p.username ?? "");
+                }}
+              />
+            }
             title={t("wizard.outgoing")}
             host={form.smtp_host}
             port={form.smtp_port}
@@ -1194,6 +1208,8 @@ function AddressingFields({
 
 function ServerFields(p: {
   title: string;
+  /** Above the server: sending services that fill it in. */
+  presets?: ReactNode;
   host: string;
   port: number;
   tls: TlsMode;
@@ -1214,6 +1230,7 @@ function ServerFields(p: {
   return (
     <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-sunken/50 p-3.5">
       <legend className="px-1 text-[12.5px] font-medium">{p.title}</legend>
+      {p.presets}
       <div className={cn("grid gap-3", p.compact ? "grid-cols-[1fr_96px]" : "grid-cols-[1fr_110px]")}>
         <Field label={t("wizard.server")} error={p.errors.host}>
           {({ id, invalid }) => <TextInput id={id} className="mono" invalid={invalid} value={p.host} placeholder={p.hostPlaceholder} onChange={(e) => p.onHost(e.target.value)} />}

@@ -94,6 +94,7 @@ type connectOptions struct {
 		Domain  string `json:"domain" doc:"The domain forwarding addresses live on"`
 	} `json:"forwarding"`
 	MailboxIMAP  bool   `json:"mailbox_imap" doc:"Mailboxes may receive over IMAP (MAILBOX_IMAP): generic IMAP and Google or Microsoft sync. Off, mailboxes receive by forwarding and Google and Microsoft connect send-only"`
+	SystemSend   bool   `json:"system_send" doc:"Mailboxes may send through opendesk (MAILBOX_SYSTEM_SEND). Off, every mailbox sends through Google, Microsoft or SMTP"`
 	SystemSender string `json:"system_sender" doc:"The address replies come from when a mailbox sends through opendesk"`
 }
 
@@ -128,6 +129,7 @@ func (s *service) registerConnectRoutes(api huma.API) {
 			out.Forwarding.Enabled = cfg.InboundSecret != "" || cfg.InboundSMTPAddr != ""
 			out.Forwarding.Domain = s.inboundDomain()
 			out.MailboxIMAP = s.mailboxIMAP
+			out.SystemSend = s.systemSend
 			out.SystemSender = s.systemFrom().Address
 			return &struct{ Body connectOptions }{out}, nil
 		})
@@ -283,6 +285,9 @@ func (s *service) verifyPatch(ctx context.Context, wid, id uuid.UUID, in *update
 		return out, nil
 	}
 	if err := s.checkInboundChange(before.InboundKind, m.InboundKind); err != nil {
+		return out, err
+	}
+	if err := s.checkOutboundChange(before.OutboundKind, m.OutboundKind); err != nil {
 		return out, err
 	}
 	if err := s.validateMailbox(m, creds); err != nil {

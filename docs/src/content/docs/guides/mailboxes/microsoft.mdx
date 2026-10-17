@@ -1,6 +1,6 @@
 ---
 title: Microsoft 365 and Outlook
-description: Forward a Microsoft 365 or Outlook.com mailbox to opendesk and send replies from your address with Microsoft sign-in, Microsoft's SMTP server or opendesk.
+description: Forward a Microsoft 365 or Outlook.com mailbox to opendesk and send replies from your address with Microsoft sign-in, Microsoft's SMTP server or a sending service.
 ---
 
 import Screenshot from '../../../../components/Screenshot.astro';
@@ -10,11 +10,13 @@ import Callout from '../../../../components/Callout.astro';
 import Legend from '../../../../components/Legend.astro';
 import Fold from '../../../../components/Fold.astro';
 
-A Microsoft 365 or Outlook.com mailbox receives by [forwarding](/guides/mailboxes/forwarding/#microsoft-365-and-outlook): Microsoft passes incoming mail on to a private opendesk address. Replies go out from your address in one of three ways:
+A Microsoft 365 or Outlook.com mailbox receives by [forwarding](/guides/mailboxes/forwarding/#microsoft-365-and-outlook): Microsoft passes incoming mail on to a private opendesk address. Replies go out from your address in one of these ways:
 
 - **Microsoft**, when your instance offers it. You approve sending once, and replies go out through Microsoft 365 and land in the mailbox's Sent folder. opendesk gets permission to send mail as you and nothing else: it cannot read, change or delete your mail. See [Send with Microsoft](#send-with-microsoft).
 - **Microsoft's SMTP server**, when your admin allows SMTP AUTH. See [Turn on SMTP AUTH](#turn-on-smtp-auth).
-- **Through opendesk**, with your mailbox's name, and no setup.
+- **A sending service** such as Resend or Postmark, over SMTP, once it has verified your domain. See [Send with a sending service](/guides/mailboxes/#send-with-a-sending-service).
+
+On your own instance, a mailbox can also send [through opendesk](/self-hosting/configuration/#sending-through-opendesk).
 
 Microsoft 365 blocks forwarding to outside addresses until an admin allows it, so plan for one admin step. See [Allow forwarding to outside addresses](/guides/mailboxes/forwarding/#allow-forwarding-to-outside-addresses-admin).
 
@@ -28,7 +30,9 @@ In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and t
 </Step>
 <Step title="Send replies with Microsoft">
 
-Under **Replies are sent**, keep Microsoft selected and create the mailbox. Pick the Microsoft account for the address and accept the permissions. Microsoft sends you back to opendesk with the mailbox connected.
+Under **How replies are sent**, keep **Connect Microsoft** selected and click **Continue with Microsoft**. Pick the Microsoft account for the address and accept the permissions. Microsoft sends you back to opendesk with the mailbox connected.
+
+<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for support@contoso.com: How replies are sent, with Connect Microsoft selected and Your SMTP server below it, ringed as 1, and the Continue with Microsoft button ringed as 2" />
 
 Some organizations require an admin to approve new apps. If you see **Need admin approval**, ask a Microsoft 365 admin to grant consent for opendesk.
 
@@ -60,9 +64,9 @@ This is send-only access. opendesk cannot read, search, change or delete the mai
 
 On your own instance, Microsoft sign-in for mailboxes needs your own Microsoft app (`MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`), and `MICROSOFT_MAILBOX_OAUTH` turns it on or off for new mailboxes. See [Google and Microsoft OAuth](/self-hosting/oauth-apps/) and [Mailbox sign-in](/self-hosting/configuration/#mailbox-sign-in).
 
-## Send through SMTP or opendesk
+## Send through SMTP
 
-When your instance doesn't offer Microsoft for sending, replies go out through opendesk or Microsoft's SMTP server.
+When your instance doesn't offer Microsoft for sending, replies go out through Microsoft's SMTP server, or a [sending service](/guides/mailboxes/#send-with-a-sending-service) that has verified your domain.
 
 <Screenshot src="/guides/mailboxes/microsoft-detect" alt="Add a mailbox for support@contoso.com: Microsoft 365 detected from the domain's MX records ringed as 1, the note that Microsoft turned off password sign-in over IMAP ringed as 2, and Forward mail to opendesk, recommended, ringed as 3" />
 
@@ -82,19 +86,16 @@ In **Settings**, open **Mailboxes** and click **Add mailbox**. Type a name and t
 </Step>
 <Step title="Choose how replies are sent">
 
-- **Through opendesk**: replies come from opendesk's sending address with your mailbox's name, and the customer's answers come back to your address. Nothing to set up.
-- **Through your SMTP server**: replies come from your address itself, through `smtp.office365.com` on port 587 with STARTTLS. This needs SMTP AUTH turned on for the mailbox (see [Turn on SMTP AUTH](#turn-on-smtp-auth)).
+Under **How replies are sent**, **Your SMTP server** is the way listed. Replies come from your address itself, through `smtp.office365.com` on port 587 with STARTTLS. This needs SMTP AUTH turned on for the mailbox (see [Turn on SMTP AUTH](#turn-on-smtp-auth)). The server, port and security are filled in; type the mailbox's password and click **Connect**. opendesk signs in to the SMTP server before it saves anything.
 
-<Screenshot src="/guides/mailboxes/microsoft-forwarding" alt="The connect step for support@contoso.com: Replies are sent, Through opendesk, ringed as 1, and the Create mailbox button ringed as 2" />
+<Screenshot src="/guides/mailboxes/microsoft-smtp" alt="The connect step for support@contoso.com: Your SMTP server, the only way listed, ringed as 1, the note that Microsoft is phasing out password sign-in for SMTP AUTH ringed as 2, and the outgoing mail settings for smtp.office365.com on port 587 with STARTTLS ringed as 3" />
 
-To send through Microsoft, choose **Through your SMTP server**. The server, port and security are filled in; type the mailbox's password and click **Connect**. opendesk signs in to the SMTP server before it saves anything.
-
-<Screenshot src="/guides/mailboxes/microsoft-smtp" alt="Through your SMTP server selected, ringed as 1, the note that Microsoft's SMTP server needs SMTP AUTH ringed as 2, and the outgoing mail settings for smtp.office365.com on port 587 with STARTTLS ringed as 3" />
+To send through a sending service instead, pick it under **Using a sending service?** and paste its credentials.
 
 </Step>
 <Step title="Copy the forwarding address">
 
-After you click **Create mailbox** (or **Connect**), the last step shows the private address to forward to, with a copy button, and the steps for Microsoft 365. You can find both again on the mailbox's page.
+After you click **Connect**, the last step shows the private address to forward to, with a copy button, and the steps for Microsoft 365. You can find both again on the mailbox's page.
 
 <Screenshot src="/guides/mailboxes/microsoft-forward-to" alt="Add a mailbox, done: the private forwarding address ringed as 1, and the four Microsoft 365 forwarding steps ringed as 2" />
 
@@ -141,11 +142,11 @@ Set-CASMailbox -Identity support@contoso.com -SmtpClientAuthenticationDisabled $
 - The per-mailbox setting wins over the organization's default, under **Settings**, **Mail flow** in the Exchange admin center.
 - **Security defaults** in Microsoft Entra, and Conditional Access policies that block legacy sign-in, refuse a password over SMTP for the whole organization. Turning SMTP AUTH on for the mailbox doesn't change that.
 - The account signs in with its password alone: an account that asks for multi-factor sign-in can't send this way.
-- Microsoft is phasing out password sign-in for SMTP AUTH in Exchange Online. When your organization no longer accepts it, send replies through opendesk.
+- Microsoft is phasing out password sign-in for SMTP AUTH in Exchange Online. When your organization no longer accepts it, send with Microsoft, or through a sending service.
 
 </Callout>
 
-If your admin keeps SMTP AUTH off, send with Microsoft, or choose **Through opendesk**.
+If your admin keeps SMTP AUTH off, send with Microsoft, or through a [sending service](/guides/mailboxes/#send-with-a-sending-service).
 
 <Fold>
 
@@ -155,9 +156,9 @@ Nothing is saved when Microsoft refuses. The wizard shows the cause and the fix,
 
 | What you see | What to do |
 | --- | --- |
-| **SMTP sign-in is turned off in Microsoft 365** | Turn on SMTP AUTH for the mailbox, as above, or send replies through opendesk. |
-| **Microsoft security defaults block passwords** | Security defaults refuse passwords over SMTP and IMAP. Send with Microsoft, or through opendesk. |
-| **A Microsoft sign-in policy blocked this** | A Conditional Access policy refused the password. Send with Microsoft or through opendesk, or ask your admin to allow SMTP AUTH for this mailbox. |
+| **SMTP sign-in is turned off in Microsoft 365** | Turn on SMTP AUTH for the mailbox, as above, or send with Microsoft. |
+| **Microsoft security defaults block passwords** | Security defaults refuse passwords over SMTP and IMAP. Send with Microsoft, or through a sending service. |
+| **A Microsoft sign-in policy blocked this** | A Conditional Access policy refused the password. Send with Microsoft or through a sending service, or ask your admin to allow SMTP AUTH for this mailbox. |
 | **Microsoft needs Microsoft sign-in** | Exchange Online doesn't accept a password over IMAP. Forward the mail, and send with Microsoft. |
 | **Microsoft did not accept the password** | Check the address and password, including the sign-in address if it differs from the mailbox address. An account with multi-factor sign-in can't use a password here. |
 

@@ -22,7 +22,8 @@ import { connectionLabel, GoogleGlyph, MailboxIcon, MailboxStatus, MicrosoftGlyp
 import { ForwardingInstructions } from "@/components/mailboxes/AddMailboxWizard";
 import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
-import { CauseCallout, connectFailure, imapOn, sendProviders, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
+import { CauseCallout, connectFailure, imapOn, sendProviders, systemSendOn, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
+import { SmtpPresets } from "@/components/mailboxes/smtpPresets";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
 import {
   AliasesField,
@@ -322,6 +323,9 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   const connectable = forwarding && !sendingOnly ? sendProviders(detection, opts) : [];
   const microsoft = isMicrosoftHost(mailboxHost(mailbox));
   const refusedOut = refused && !refused.outbound.ok;
+  // Where the instance has sending through opendesk off, it is offered only to a mailbox still on it.
+  const systemOffered = systemSendOn(opts) || base.outbound_kind === "system";
+  const noSender = mailbox.sending === "system_off";
 
   return (
     <SettingsPage
@@ -444,6 +448,15 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             </Tooltip>
           }
         >
+          {noSender && (
+            <div className="-mx-4 flex animate-rise-in items-start gap-2.5 border-b border-tone-amber-line bg-tone-amber-soft px-4 py-3.5 motion-reduce:animate-none" role="status">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-tone-amber" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium">{t("sendingOff.title")}</div>
+                <p className="mt-0.5 text-[12.5px] leading-5 text-fg-2">{t("sendingOff.body", { email: mailbox.email })}</p>
+              </div>
+            </div>
+          )}
           {refusedOut && (
             <div className="border-b border-line-soft py-3.5">
               <CauseCallout failure={refused} />
@@ -461,7 +474,9 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
                 ? t("connect.sendSmtpBody", { email: mailbox.email })
                 : draft.outbound_kind === "google" || draft.outbound_kind === "microsoft"
                   ? t("detail.send.providerBody", { provider: providerName(draft.outbound_kind), email: mailbox.email })
-                  : t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: mailbox.email })
+                  : noSender && draft.outbound_kind === "system"
+                    ? t("sendingOff.choose")
+                    : t("connect.sendSystemBody", { sender: opts?.system_sender || "opendesk", email: mailbox.email })
             }
           >
             <Segmented
@@ -469,7 +484,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
               onChange={chooseSending}
               options={[
                 ...(sendingOnly && provider ? [{ value: provider, label: t("detail.send.with", { provider: providerName(provider) }) }] : []),
-                { value: "system" as const, label: t("connect.sendSystem") },
+                ...(systemOffered ? [{ value: "system" as const, label: t("connect.sendSystem") }] : []),
                 { value: "smtp" as const, label: t("connect.sendSmtp") },
               ]}
             />
@@ -499,6 +514,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           {smtp && (
             <div className="flex flex-col gap-3 py-4">
               {microsoft && <p className="text-xs leading-[18px] text-tone-amber">{t("connect.sendSmtpMicrosoft")}</p>}
+              <SmtpPresets
+                host={draft.config.smtp_host}
+                onPick={(p) => setDraft((d) => ({ ...d, config: { ...d.config, smtp_host: p.host, smtp_port: p.port, smtp_tls: p.tls, smtp_username: p.username ?? "" } }))}
+              />
               <ServerEdit
                 title={t("detail.send.server")}
                 host={draft.config.smtp_host ?? ""}

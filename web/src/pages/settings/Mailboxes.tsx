@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { SummaryStrip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
-import { connectionLabel, MailboxIcon, MailboxStatus, notReceiving } from "@/components/mailboxes/kinds";
+import { connectionLabel, MailboxIcon, MailboxStatus, notReceiving, notSending } from "@/components/mailboxes/kinds";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import type { Mailbox } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
@@ -20,6 +20,9 @@ import { atLeast, useRole } from "@/lib/session";
 import { cn } from "@/lib/cn";
 import { PlanLimitHint, showLimit } from "@/components/billing/PlanLimit";
 import { useLimit } from "@/components/billing/hooks";
+
+/** A mailbox that no longer receives or sends needs attention whatever its status says. */
+const needsAttention = (m: Mailbox) => m.status === "error" || notReceiving(m) || notSending(m);
 
 /** "Add mailbox", or the upgrade prompt when Free's one mailbox is taken. */
 function AddMailboxButton({ children, size }: { children: React.ReactNode; size?: "sm" | "md" }) {
@@ -84,7 +87,7 @@ export default function Mailboxes() {
   }, [search.connected, search.error, navigate, t, isLoading, data]);
 
   const sorted = useMemo(() => {
-    const rank = (m: Mailbox) => (m.status === "error" || notReceiving(m) ? 0 : m.status === "active" ? 1 : 2);
+    const rank = (m: Mailbox) => (needsAttention(m) ? 0 : m.status === "active" ? 1 : 2);
     return [...(data ?? [])].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [data]);
   const teamName = (id: string | null) => (id ? teams?.find((x) => x.id === id)?.name : undefined);
@@ -96,9 +99,8 @@ export default function Mailboxes() {
       </SettingsPage>
     );
 
-  // A mailbox that no longer receives needs attention whatever its status says.
   const count = (s: Mailbox["status"]) =>
-    sorted.filter((m) => (s === "error" ? m.status === "error" || notReceiving(m) : s === "active" ? m.status === "active" && !notReceiving(m) : m.status === s)).length;
+    sorted.filter((m) => (s === "error" ? needsAttention(m) : s === "active" ? m.status === "active" && !needsAttention(m) : m.status === s)).length;
 
   return (
     <SettingsPage title={t("list.title")} description={t("list.description")} actions={<AddMailboxButton>{t("list.add")}</AddMailboxButton>}>

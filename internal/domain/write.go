@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
@@ -189,17 +191,52 @@ type NewMessage struct {
 	NoReopen bool
 }
 
+// ErrCannotSend answers an email reply from a mailbox that sends through the platform
+// mailer while this instance has that off (MAILBOX_SYSTEM_SEND): it sends nothing until
+// it connects Google, Microsoft or SMTP.
+var ErrCannotSend = httpx.E(http.StatusUnprocessableEntity, "mailbox_cannot_send",
+	"This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings.")
+
+// checkCanSend refuses a reply from a mailbox that cannot send (ErrCannotSend). A ticket
+// without a mailbox is checked when it is sent.
+func checkCanSend(ctx context.Context, tx pgx.Tx, wid uuid.UUID, mailbox *uuid.UUID) error {
+	if systemSending || mailbox == nil {
+		return nil
+	}
+	var kind string
+	err := tx.QueryRow(ctx, `SELECT outbound_kind FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *mailbox).Scan(&kind)
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if kind == "system" {
+		return ErrCannotSend
+	}
+	return nil
+}
+
 // AddMessage inserts a message, updates the ticket's activity fields, publishes events and
 // queues the email send and ticket triggers, all in tx.
 func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message, error) {
 	var channel, status string
 	var firstResponded *time.Time
-	var contactID *uuid.UUID
+	var contactID, ticketMailbox *uuid.UUID
 	var brandID uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT channel, status, first_responded_at, contact_id, brand_id FROM tickets
+	if err := tx.QueryRow(ctx, `SELECT channel, status, first_responded_at, contact_id, brand_id, mailbox_id FROM tickets
 		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, nm.WorkspaceID, nm.TicketID).
-		Scan(&channel, &status, &firstResponded, &contactID, &brandID); err != nil {
+		Scan(&channel, &status, &firstResponded, &contactID, &brandID, &ticketMailbox); err != nil {
 		return Message{}, fmt.Errorf("lock ticket: %w", err)
+	}
+	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
+		from := nm.MailboxID
+		if from == nil {
+			from = ticketMailbox
+		}
+		if err := checkCanSend(ctx, tx, nm.WorkspaceID, from); err != nil {
+			return Message{}, err
+		}
 	}
 	if nm.DeliveryStatus == "" {
 		nm.DeliveryStatus = "none"

@@ -56,12 +56,14 @@ export default function NewTicketDialog() {
   const fromChoices = teams.multiBrand && brand ? sendable.filter((m) => m.brand_id === brand) : sendable;
   useEffect(() => {
     if (mailbox && fromChoices.some((m) => m.id === mailbox)) return;
-    const next = fromChoices.find((m) => m.status === "active") ?? fromChoices[0];
+    const next = fromChoices.find((m) => m.status === "active" && m.sending !== "system_off") ?? fromChoices.find((m) => m.status === "active") ?? fromChoices[0];
     if (next?.id !== mailbox) setMailbox(next?.id);
   }, [fromChoices.map((m) => m.id).join(), mailbox]); // eslint-disable-line react-hooks/exhaustive-deps
   // The team follows the address's default team until someone picks one.
   const teamId = team !== undefined ? team : (teams.mailbox(mailbox)?.team_id ?? null);
   const teamRow = teams.team(teamId);
+  // An address with no way to send cannot email the first message (mailbox_cannot_send).
+  const noSender = kind === "reply" && teams.mailbox(mailbox)?.sending === "system_off";
 
   const contacts = useQuery({
     queryKey: ["contacts", "pick", toQuery],
@@ -107,6 +109,7 @@ export default function NewTicketDialog() {
     if (!to) return setError(tr("newTicket.needTo"));
     if (!subject.trim()) return setError(tr("newTicket.needSubject"));
     if (!body) return setError(tr("newTicket.needBody"));
+    if (noSender) return setError(tr("newTicket.cannotSend"));
     create.mutate();
   };
 
@@ -196,7 +199,7 @@ export default function NewTicketDialog() {
               )
             }
           </Field>
-          <Field label={tr("newTicket.from")}>
+          <Field label={tr("newTicket.from")} error={noSender ? tr("newTicket.cannotSend") : undefined}>
             {({ id }) => (
               <Select
                 id={id}

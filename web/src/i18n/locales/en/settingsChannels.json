@@ -102,6 +102,24 @@
     "title": "Receiving",
     "imapHint": "opendesk signs in to the mailbox to fetch new mail. Forwarding works without signing in."
   },
+  "sendingOff": {
+    "pill": "Not sending",
+    "pillHint": "This mailbox has no way to send replies. Connect Google or Microsoft, or add SMTP.",
+    "title": "This mailbox can't send replies",
+    "body": "Replies from {{email}} go out through your own email provider. Connect Google or Microsoft, or add SMTP from your mail server or a sending service such as Resend or Postmark. Until then, replies can't be sent.",
+    "choose": "Pick SMTP, or connect your provider below."
+  },
+  "smtpPresets": {
+    "label": "Using a sending service?",
+    "hint": {
+      "resend": "The password is a Resend API key. Verify your domain in Resend first.",
+      "postmark": "The username and the password are both your Postmark server API token. Verify your domain in Postmark first.",
+      "sendgrid": "The password is a SendGrid API key with Mail Send access. Verify your domain in SendGrid first.",
+      "mailgun": "Use the SMTP username and password from your domain in Mailgun. Domains in the EU region use smtp.eu.mailgun.org.",
+      "brevo": "Use the SMTP login and an SMTP key from Brevo's SMTP and API settings. Verify your domain in Brevo first.",
+      "ses": "Use SMTP credentials from the Amazon SES console, and put your region in the server name. Verify your domain in SES first."
+    }
+  },
   "detail": {
     "fallbackTitle": "Mailbox",
     "back": "Mailboxes",
@@ -385,7 +403,7 @@
       "microsoft": "Connect Microsoft",
       "microsoftBody": "Replies go out from {{email}} itself. This only lets opendesk send as the address. It does not read the mailbox.",
       "smtp": "Your SMTP server",
-      "smtpBody": "Replies go out from {{email}} through its own server, with the server's password.",
+      "smtpBody": "Replies go out from {{email}} through your mail server, or a sending service such as Resend or Postmark.",
       "system": "Through opendesk",
       "systemBody": "From {{sender}} with your mailbox's name. Customers' answers come back to {{email}}."
     },
@@ -394,7 +412,7 @@
     "sendSystemBody": "From {{sender}} with your mailbox's name, and replies to the customer come back to {{email}}.",
     "sendSmtp": "Through your SMTP server",
     "sendSmtpBody": "From {{email}} itself.",
-    "sendSmtpMicrosoft": "Microsoft is phasing out password sign-in for SMTP AUTH in Exchange Online, and many admins already have it off. If the sign-in is refused, send through opendesk instead.",
+    "sendSmtpMicrosoft": "Microsoft is phasing out password sign-in for SMTP AUTH in Exchange Online, and many admins already have it off. If the sign-in is refused, send with Microsoft or through a sending service instead.",
     "failedTitle": "Couldn't connect",
     "legInbound": "IMAP",
     "legOutbound": "SMTP",

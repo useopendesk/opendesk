@@ -115,7 +115,7 @@ See [Storage](/self-hosting/storage/).
 
 ## Platform email
 
-Verification, password reset and invitation emails. Replies to customers go through each mailbox, not this.
+Verification, password reset and invitation emails. Replies to customers go through each mailbox, not this, except from a mailbox that [sends through opendesk](#sending-through-opendesk).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -185,7 +185,7 @@ Connecting a mailbox with Google or Microsoft sign-in has its own switch per pro
 | `MICROSOFT_MAILBOX_OAUTH` | `true` when `MICROSOFT_CLIENT_ID` is set | The same for Microsoft. |
 | `MAILHOST_ISPDB` | `false` (`true` with billing configured) | When detecting a mailbox's servers, also look up unknown domains in Thunderbird's public ISPDB (`autoconfig.thunderbird.net`). The domain's own autoconfig, MX and SRV records are always used. |
 
-With a provider's mailbox sign-in off, or its client not configured, the mailbox wizard offers the other ways: any provider forwards its mail into opendesk, and replies go out through the mailbox's SMTP server (for Gmail and Google Workspace with an app password, for Microsoft 365 when the tenant allows SMTP AUTH) or through opendesk. With receiving over IMAP on, other providers, and Gmail and Google Workspace with an app password, can also connect over IMAP and SMTP with the settings the wizard detects.
+With a provider's mailbox sign-in off, or its client not configured, the mailbox wizard offers the other ways: any provider forwards its mail into opendesk, and replies go out through the mailbox's SMTP server (for Gmail and Google Workspace with an app password, for Microsoft 365 when the tenant allows SMTP AUTH) or a sending service, or, with `MAILBOX_SYSTEM_SEND` on, through opendesk. With receiving over IMAP on, other providers, and Gmail and Google Workspace with an app password, can also connect over IMAP and SMTP with the settings the wizard detects.
 
 A value that is not `true` or `false` (or `1` and `0`) turns the switch off. The API answers a new connection with `403 mailbox_oauth_disabled`, and the web app reads the same list from its runtime config (`mailboxOAuth`).
 
@@ -198,6 +198,16 @@ Every mailbox can receive by forwarding. A self-hosted instance can also let mai
 | `MAILBOX_IMAP` | `true` | `false` turns receiving over IMAP off. The wizard then offers forwarding to receive, and Google and Microsoft sign-in to send only; SMTP sending stays available. Mailboxes that read over IMAP are kept with their tickets, but no longer polled: their page shows that receiving is off until they switch to forwarding. |
 
 With it off, the API refuses an IMAP, Google or Microsoft `inbound_kind` and a Google or Microsoft connection that syncs, with `422 imap_off`, and the web app reads the same setting from its runtime config (`mailboxImap`). Syncing Gmail needs the restricted `https://mail.google.com/` scope, and Microsoft the `IMAP.AccessAsUser.All` permission, on your OAuth apps; see [Google and Microsoft OAuth](/self-hosting/oauth-apps/).
+
+### Sending through opendesk
+
+Every mailbox can send through Google or Microsoft, or over SMTP through its mail server or a sending service such as Resend or Postmark. A self-hosted instance can also let mailboxes send **through opendesk**: replies go out through the [platform email](#platform-email) (`MAIL_DRIVER`), from `MAIL_FROM` with the mailbox's name, and customers' answers come back to the mailbox's address. opendesk Cloud runs with it off, so every mailbox sends from its own address.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MAILBOX_SYSTEM_SEND` | `true` | `false` turns sending through opendesk off. The wizard and the mailbox's settings then offer Google, Microsoft and SMTP only. Mailboxes that send through opendesk are kept with their tickets and settings, but send nothing: the Mailboxes page marks them **Not sending**, the reply box in their tickets says the address can't send yet, and their page asks for SMTP or a Google or Microsoft connection. Automations skip their email replies, Ollie's email answers wait as suggested replies, and auto-replies and satisfaction surveys are not sent. |
+
+With it off, the API refuses `outbound_kind` `system` on a new or changed mailbox with `422 system_send_off`, and an email reply from a mailbox that still has it with `422 mailbox_cannot_send`; a reply queued before the change fails with that reason. Mailboxes report `sending: "system_off"`, and the web app reads the setting from `GET /v1/mailboxes/connect-options` (`system_send`). See [Mailboxes](/api/resources/mailboxes/#sending-through-opendesk).
 
 ## Profile pictures
 

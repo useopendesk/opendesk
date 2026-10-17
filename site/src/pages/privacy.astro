@@ -31,7 +31,7 @@ const toc = [
   { id: 'contact', label: 'Contact' },
 ];
 ---
-<Legal title="Privacy policy" description="How opendesk collects, uses, shares, keeps and deletes personal data, including data from Google and Microsoft accounts you connect, and the rights you have." updated="October 14, 2026" toc={toc} email={EMAIL}>
+<Legal title="Privacy policy" description="How opendesk collects, uses, shares, keeps and deletes personal data, including data from Google and Microsoft accounts you connect, and the rights you have." updated="October 17, 2026" toc={toc} email={EMAIL}>
   <p>This policy explains what personal data opendesk collects, why, who we share it with, how long we keep it and how to have it deleted. We have tried to write it plainly. If anything is unclear, write to <a href={`mailto:${EMAIL}`}>{EMAIL}</a>.</p>
 
   <h2 id="who-we-are">Who we are</h2>
@@ -53,7 +53,7 @@ const toc = [
   <h3>Workspace content</h3>
   <p>What you and your team create or receive in the Service: tickets, email messages and their attachments, chat conversations, internal notes, contacts and companies, tags, saved replies, views, automations, SLA policies, knowledge base articles, webhooks and settings.</p>
   <h3>Connected mailboxes</h3>
-  <p>When a workspace connects a mailbox, we receive the email the workspace forwards from that mailbox to an opendesk address, so it can be shown as tickets, and we send the replies agents write from the mailbox's address. Depending on how the mailbox is connected, replies are sent through its SMTP server, through the Gmail API or Microsoft Graph, or by us with the mailbox's name. A Google or Microsoft connection lets us send email from that address and tells us the account's email address; it does not let us read the mailbox's contents. We store the credentials needed to keep the connection working (an SMTP password, or OAuth access and refresh tokens), encrypted. The sections on <a href="#google">Google</a> and <a href="#microsoft">Microsoft</a> data say more.</p>
+  <p>When a workspace connects a mailbox, we receive the email the workspace forwards from that mailbox to an opendesk address, so it can be shown as tickets, and we send the replies agents write from the mailbox's address. Depending on how the mailbox is connected, replies are sent through the Gmail API or Microsoft Graph, or through the SMTP server the workspace chose: its own mail server or a sending service. A Google or Microsoft connection lets us send email from that address and tells us the account's email address; it does not let us read the mailbox's contents. We store the credentials needed to keep the connection working (an SMTP password, or OAuth access and refresh tokens), encrypted. The sections on <a href="#google">Google</a> and <a href="#microsoft">Microsoft</a> data say more.</p>
   <h3>Chat widget visitors</h3>
   <p>When someone uses a workspace's chat widget, we process what they type and send, any name or email address they give, an identifier the website may pass to verify who they are, a visitor token stored in their browser so the conversation continues, and their browser's user agent.</p>
   <h3>Usage and device data</h3>
