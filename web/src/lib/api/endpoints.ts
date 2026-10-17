@@ -315,6 +315,24 @@ export const api = {
       http.patch<T.Integration>(`/v1/integrations/${id}`, b),
     remove: (id: string) => http.del(`/v1/integrations/${id}`),
   },
+  imports: {
+    list: () => http.get<{ data: T.Import[] }>("/v1/imports"),
+    get: (id: string) => http.get<T.Import>(`/v1/imports/${id}`),
+    /** Signs in to the source and answers what it has; nothing is stored. */
+    check: (b: T.ImportCheckBody) => http.post<T.ImportCheck>("/v1/imports/check", b),
+    uploadCsv: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return http.create<T.CsvUpload>("/v1/imports/csv", fd);
+    },
+    create: (b: T.ImportCreateBody) => http.create<T.Import>("/v1/imports", b),
+    pause: (id: string) => http.post<T.Import>(`/v1/imports/${id}/pause`),
+    resume: (id: string, credentials?: Record<string, string>) => http.post<T.Import>(`/v1/imports/${id}/resume`, credentials ? { credentials } : {}),
+    cancel: (id: string) => http.post<T.Import>(`/v1/imports/${id}/cancel`),
+    sync: (id: string) => http.post<T.Import>(`/v1/imports/${id}/sync`),
+    undo: (id: string) => http.post<T.Import>(`/v1/imports/${id}/undo`),
+    removeCredentials: (id: string) => http.del<T.Import>(`/v1/imports/${id}/credentials`),
+  },
   auditLogs: (q?: ListQuery & { action?: string; entity_type?: string }) => http.get<T.Page<T.AuditLog>>("/v1/audit-logs", { query: q }),
   events: (since: number, limit = 500) => http.get<T.EventsPage>("/v1/events", { query: { since, limit } }),
   realtimeToken: () => http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token"),

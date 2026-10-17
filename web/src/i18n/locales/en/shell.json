@@ -91,7 +91,17 @@
       "someone": "Someone",
       "teamJoined": "{{who}} joined {{team}}",
       "teamJoinedPrivate": "{{who}} joined the private team {{team}} and can now see its tickets",
-      "teamJoinedAnon": "{{who}} joined a team you lead"
+      "teamJoinedAnon": "{{who}} joined a team you lead",
+      "importDone": "Your {{source}} import is done",
+      "importDoneCounts": "Your {{source}} import is done: {{counts}}",
+      "importCredentials": "Your {{source}} import needs new credentials",
+      "importFailed": "Your {{source}} import stopped",
+      "importTickets_one": "{{count}} ticket",
+      "importTickets_other": "{{count}} tickets",
+      "importArticles_one": "{{count}} article",
+      "importArticles_other": "{{count}} articles",
+      "importAnd": "{{a}} and {{b}}",
+      "importSource": "history"
     },
     "hold": {
       "paused": "Paused until {{when}}: nothing reaches your email, phone or desktop",

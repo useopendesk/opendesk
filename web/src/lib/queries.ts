@@ -46,6 +46,7 @@ export const qk = {
   webhookDeliveries: (id: string) => ["webhooks", "deliveries", id] as const,
   integrations: ["integrations"] as const,
   integrationCatalog: ["integrations", "catalog"] as const,
+  imports: ["imports"] as const,
   ticketLinks: (id: string) => ["tickets", "links", id] as const,
   auditLogs: ["audit-logs"] as const,
   notifications: ["notifications"] as const,
@@ -143,6 +144,7 @@ export const q = {
   webhookDeliveries: (id: string) => list(qk.webhookDeliveries(id), () => api.webhooks.deliveries(id, { limit: 50 })),
   integrations: () => list(qk.integrations, () => api.integrations.list()),
   integrationCatalog: () => list(qk.integrationCatalog, () => api.integrations.catalog(), { staleTime: 60 * 60_000 }),
+  imports: () => list(qk.imports, () => api.imports.list()),
   ticketLinks: (id: string) => list(qk.ticketLinks(id), () => api.tickets.links(id)),
   auditLogs: () =>
     infiniteQueryOptions({

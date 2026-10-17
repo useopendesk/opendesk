@@ -283,3 +283,27 @@ func (HelpDomainReleaseArgs) Kind() string { return "help_domain.release" }
 type HelpDomainReconcileArgs struct{}
 
 func (HelpDomainReconcileArgs) Kind() string { return "help_domain.reconcile" }
+
+// ImportRunArgs runs an import (contracts/imports.md) for a while, then snoozes to go on.
+// Generation is the run it belongs to: pausing, resuming and syncing start a new one, and
+// a job of an older generation stops. Owner: helpdesk.
+type ImportRunArgs struct {
+	ImportID   uuid.UUID `json:"import_id"`
+	Generation int       `json:"generation"`
+}
+
+func (ImportRunArgs) Kind() string { return "import.run" }
+
+// ImportUndoArgs removes what an import created, in batches. Owner: helpdesk.
+type ImportUndoArgs struct {
+	ImportID   uuid.UUID `json:"import_id"`
+	Generation int       `json:"generation"`
+}
+
+func (ImportUndoArgs) Kind() string { return "import.undo" }
+
+// ImportSweepArgs removes import credentials and files that are no longer needed
+// (contracts/imports.md "Security"). Owner: helpdesk.
+type ImportSweepArgs struct{}
+
+func (ImportSweepArgs) Kind() string { return "import.sweep" }

@@ -65,6 +65,7 @@ Every state change that someone else should see is written as an event, in the s
 | `notification.created` | agents | `user:<uid>` | `{ notification }` |
 | `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*`, `webhook.*` | agents | | `{ <resource> }` on create and update, `{ <resource>_id }` on delete |
 | `billing.updated` | agents | | `Billing`, see [Billing API](/api/resources/billing/). Cloud only. |
+| `import.created`, `import.updated` | agents | | `{ import }`, a [history import](/guides/importing/) as it starts, moves and ends, at most once a second while it writes. The tickets, contacts and articles it brings in have no events of their own; refetch lists on `import.updated` |
 | `webhook.test` | | | sent only to the webhook being tested |
 
 ### message.created visibility

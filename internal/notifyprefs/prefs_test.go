@@ -37,8 +37,8 @@ func TestDefaultsAndCatalogue(t *testing.T) {
 			t.Fatalf("duplicate %s", ty.Type)
 		}
 		seen[ty.Type] = true
-		if (ty.Group == GroupAIBilling) != ty.Admins {
-			t.Errorf("%s: billing types are for admins", ty.Type)
+		if (ty.Group == GroupAIBilling || ty.Group == GroupWorkspace) != ty.Admins {
+			t.Errorf("%s: billing and workspace types are for admins", ty.Type)
 		}
 	}
 	if d := Defaults("assigned"); !d.Email || !d.Push || !d.Desktop {

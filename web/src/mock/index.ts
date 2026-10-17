@@ -17,6 +17,7 @@ import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
 import { registerKnowledge } from "./handlers/knowledge";
+import { registerImports } from "./handlers/imports";
 import { registerIntegrations } from "./handlers/integrations";
 import { registerLabels } from "./handlers/labels";
 import { applyMockImap, syncReceiving } from "./handlers/mailhost";
@@ -74,6 +75,7 @@ export function installMock(): void {
   registerMcp();
   registerKnowledge();
   registerIntegrations();
+  registerImports();
   registerAiClients();
   registerBots();
   registerNotificationPrefs();

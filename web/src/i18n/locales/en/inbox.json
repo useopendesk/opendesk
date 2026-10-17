@@ -331,7 +331,8 @@
     "noAddress": "No address",
     "receivedAt": "Received at",
     "aliasOf": "An alias of {{address}}",
-    "startedOn": "Started on"
+    "startedOn": "Started on",
+    "importedFrom": "Imported from"
   },
   "sla": {
     "title": "SLA",

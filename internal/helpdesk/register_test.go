@@ -72,6 +72,13 @@ func TestRegisterAll(t *testing.T) {
 		"/v1/business-hours":                                  {"get", "put"},
 		"/v1/brands/{id}/help-domain":                         {"put", "delete"},
 		"/v1/brands/{id}/help-domain/check":                   {"post"},
+		"/v1/imports":                                         {"get", "post"},
+		"/v1/imports/check":                                   {"post"},
+		"/v1/imports/csv":                                     {"post"},
+		"/v1/imports/{id}":                                    {"get"},
+		"/v1/imports/{id}/resume":                             {"post"},
+		"/v1/imports/{id}/undo":                               {"post"},
+		"/v1/imports/{id}/credentials":                        {"delete"},
 	}
 	for path, methods := range want {
 		for _, m := range methods {
@@ -86,8 +93,8 @@ func TestRegisterAll(t *testing.T) {
 
 	w := river.NewWorkers()
 	helpdesk.RegisterWorkers(e.D, w)
-	// The help domain sweep runs everywhere; the Cloudflare reconcile only with Cloudflare for SaaS.
-	if n := len(helpdesk.Periodic(e.D)); n != 6 {
+	// The help domain and import sweeps run everywhere; the Cloudflare reconcile only with Cloudflare for SaaS.
+	if n := len(helpdesk.Periodic(e.D)); n != 7 {
 		t.Fatalf("periodic jobs %d", n)
 	}
 }

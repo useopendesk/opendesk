@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AtSign, Bell, BellOff, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
+import { AtSign, Bell, BellOff, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -31,7 +31,15 @@ const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> 
   auto_recharge_failed: { icon: <CreditCard />, tone: "red" },
   ai_key_failed: { icon: <KeyRound />, tone: "red" },
   team_joined: { icon: <UsersRound />, tone: "cyan" },
+  import_finished: { icon: <Import />, tone: "green" },
 };
+
+/** A notification's icon and hue; an import that stopped or waits for credentials is not green. */
+function kindOf(n: Notification): { icon: React.ReactNode; tone: Tone } {
+  const k = kind[n.type] ?? { icon: <Bell />, tone: "gray" as Tone };
+  if (n.type === "import_finished" && n.data.status !== "completed") return { ...k, tone: n.data.status === "needs_credentials" ? "amber" : "red" };
+  return k;
+}
 
 /** Where a notification leads: its ticket, or the settings page it is about. */
 export function notificationPath(n: Notification): string | null {
@@ -41,6 +49,10 @@ export function notificationPath(n: Notification): string | null {
   if (n.type === "team_joined") {
     const id = joinedTeam(n).id;
     return id ? `/settings/teams/${encodeURIComponent(id)}` : "/settings/teams";
+  }
+  if (n.type === "import_finished") {
+    const id = typeof n.data.import_id === "string" && n.data.import_id ? n.data.import_id : null;
+    return id ? `/settings/import?id=${encodeURIComponent(id)}` : "/settings/import";
   }
   if (n.ticket) return `/inbox/mine/${encodeURIComponent(n.ticket.id)}`;
   return null;
@@ -91,6 +103,20 @@ export function describe(n: Notification, t: TFunction<"shell">): string {
       if (!j.name) return t("notifications.type.teamJoinedAnon", { who });
       return j.private ? t("notifications.type.teamJoinedPrivate", { who, team: j.name }) : t("notifications.type.teamJoined", { who, team: j.name });
     }
+    case "import_finished": {
+      const source = typeof n.data.source_name === "string" && n.data.source_name ? n.data.source_name : t("notifications.type.importSource");
+      if (n.data.status === "needs_credentials") return t("notifications.type.importCredentials", { source });
+      if (n.data.status !== "completed") return t("notifications.type.importFailed", { source });
+      const tickets = typeof n.data.tickets === "number" ? n.data.tickets : 0;
+      const articles = typeof n.data.articles === "number" ? n.data.articles : 0;
+      const parts = [
+        ...(tickets > 0 ? [t("notifications.type.importTickets", { count: tickets })] : []),
+        ...(articles > 0 ? [t("notifications.type.importArticles", { count: articles })] : []),
+      ];
+      if (!parts.length) return t("notifications.type.importDone", { source });
+      const counts = parts.length === 2 ? t("notifications.type.importAnd", { a: parts[0], b: parts[1] }) : parts[0];
+      return t("notifications.type.importDoneCounts", { source, counts });
+    }
     default:
       return t("notifications.type.other");
   }
@@ -126,7 +152,8 @@ export function NotificationsButton() {
       const id = joinedTeam(n).id;
       if (id) void navigate({ to: "/settings/teams/$teamId", params: { teamId: id } });
       else void navigate({ to: "/settings/teams" });
-    } else if (n.ticket)
+    } else if (n.type === "import_finished") void navigate({ to: "/settings/import" });
+    else if (n.ticket)
       void navigate({
         to: "/inbox/$folder/{-$ticketId}",
         params: { folder: n.type === "assigned" || n.type === "mentioned" ? "mine" : "open", ticketId: n.ticket.id },
@@ -222,7 +249,7 @@ export function NotificationsButton() {
           <ul>
             <AnimatePresence initial={false}>
               {shown.map((n) => {
-                const k = kind[n.type] ?? { icon: <Bell />, tone: "gray" as Tone };
+                const k = kindOf(n);
                 return (
                   <motion.li
                     key={n.id}

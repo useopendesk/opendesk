@@ -1,0 +1,290 @@
+---
+title: Import your history
+description: Bring your tickets, customers and help center articles over from Zendesk, Help Scout, Freshdesk, Intercom or a CSV file, then keep them in step while your team switches.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+import Fold from '../../../components/Fold.astro';
+
+Moving to opendesk does not mean starting from an empty inbox. An import brings your history over from **Zendesk**, **Help Scout**, **Freshdesk** or **Intercom**, read through their own APIs, or from a **CSV file** exported from anything else. Every ticket arrives with its whole conversation, so your team can look up what a customer said last year on their first day here.
+
+Imports run in the background. You can close the page, and an import that is interrupted goes on where it stopped. Running one again never makes duplicates. Imports work the same on opendesk Cloud and on a self-host, on every plan, and imported tickets count toward no limit.
+
+## What comes over
+
+- **Tickets** with their whole conversation: every customer message, every reply and every internal note, with its author, time and formatting.
+- **Attachments**, copied into opendesk, with images in messages pointing at the copies. Files over 25 MB and programs are left out, as for any attachment, and so is anything past 20 files on one message.
+- **Requesters**, as contacts with their name, email and phone. A customer who is already a contact here is matched by email instead of added twice.
+- **Companies**, from Zendesk organizations, Freshdesk companies and Intercom companies, matched to existing companies by domain or name.
+- **Labels**, from the source's tags, plus one label on every imported ticket (`zendesk-import`, for example) so you can find them all.
+- **Agents**, mapped to your members: each agent is matched to the member with the same email, and you can change any match. A message by an unmatched agent keeps their name and address.
+- **Groups**, mapped to your teams by name (in Help Scout, its mailboxes).
+- **Status, priority and dates**: each ticket keeps when it was created, last answered and solved. It gets a new opendesk number, and its page says where it came from ("Imported from Zendesk #1234") with a link back.
+- **Satisfaction ratings**, as [CSAT](/guides/csat/) scores, from Zendesk, Help Scout and Intercom.
+- **Help center articles and collections**, from Zendesk Guide, Help Scout Docs, Freshdesk solutions and Intercom articles. Published articles are published here too, unless you choose to import them as drafts to review first.
+
+## What stays behind
+
+- **Automations, triggers and workflows**, **macros and saved replies**, **SLA policies**, **views**, **business hours** and the source's other settings. Set these up in opendesk: see [Automations](/guides/automations/), [SLA policies](/guides/sla-policies/) and [Saved replies and views](/guides/saved-replies-and-views/).
+- **Custom fields** and their values on tickets, contacts and companies.
+- **People and teams** themselves: agents are not invited and teams are not created. [Invite your team](/guides/teams-and-roles/) and create teams before you import, so the import can match them.
+- Help Scout companies, Freshdesk satisfaction ratings, and Zendesk side conversations.
+- **Images inside articles** stay where the source hosts them. Before you close the old account, upload them again in the article editor.
+- Deleted and spam tickets, Help Scout drafts, and tickets created before the day you choose, if you choose one.
+
+<Callout title="History is quiet">
+
+Imported tickets are history, not new work. No email is sent to anyone, and no automation, webhook, SLA timer, auto-reply, AI triage or notification runs for them. They do not flood the inbox or anyone's phone, and they keep their original dates.
+
+</Callout>
+
+## Before you start
+
+- **Who can import**: owners and admins, signed in as themselves. API keys cannot start an import, because it means pasting another product's credentials.
+- **One at a time**: a workspace runs one import at a time. Finish, cancel or undo the current one before starting the next.
+- **Invite your team and create your teams first**, so agents and groups can be matched.
+- **Connect your mailbox first** if you want email tickets to reply from it. See [Connect a mailbox](/guides/mailboxes/).
+
+## Start an import
+
+Open **Settings**, then **Import**.
+
+<Steps>
+<Step title="Choose where your history is">
+
+Pick Zendesk, Help Scout, Freshdesk, Intercom or a CSV file. For a CSV file, see [Import a CSV file](#import-a-csv-file).
+
+</Step>
+<Step title="Paste the credentials">
+
+Each product needs its own. See [Where to find the credentials](#where-to-find-the-credentials) below. They are only read to sign in until you start.
+
+</Step>
+<Step title="Check what is there">
+
+opendesk signs in and shows the account, how many tickets and articles it has, and up to three sample tickets as they will look here, messages and all. Nothing is imported yet.
+
+Under the samples, each of the source's agents is matched to a member with the same email, and each group to a team with the same name. Change any match, or leave an agent unmatched to keep only their name on their messages.
+
+</Step>
+<Step title="Choose what to bring">
+
+- **Tickets**, **articles** or both, and whether to copy **attachments**.
+- **Only tickets created since** a day, to leave old history behind.
+- **Reply from**: the mailbox replies to imported email tickets go out from.
+- **Label**: added to every imported ticket. Clear it for none.
+- **Statuses**: keep each ticket's status, or import everything closed so nothing lands in the open queue.
+- **Articles as drafts**, to review them before they show on your help center.
+
+</Step>
+<Step title="Start it">
+
+The import starts at once. Articles come first, then tickets. You get a notification when it is done.
+
+</Step>
+</Steps>
+
+### Where to find the credentials
+
+<Tabs syncKey="import-source">
+<TabItem label="Zendesk">
+
+Zendesk needs your **subdomain**, your **email address** and an **API token**. You must be a Zendesk **admin**: only admins can read the full ticket history.
+
+1. **Subdomain**: the part before `.zendesk.com` in your Zendesk address. Pasting `acme`, `acme.zendesk.com` or the whole address all work.
+2. **Email**: the address you sign in to Zendesk with.
+3. **API token**: in Zendesk, open **Admin Center**, then **Apps and integrations**, **APIs**, **Zendesk API**. Turn on **Token access**, click **Add API token**, give it a name such as opendesk, and copy the token. Zendesk shows it once.
+
+Delete the token in Zendesk when you no longer need it.
+
+</TabItem>
+<TabItem label="Help Scout">
+
+Help Scout needs an **App ID** and **App Secret**, and a **Docs API key** if you also want your Docs articles.
+
+1. In Help Scout, open **Your profile**, then **My apps**, and click **Create my app**.
+2. Give it a name such as opendesk. Any **redirect URL** works, for example `https://example.com`: opendesk does not use it.
+3. Copy the **App ID** and **App Secret**.
+4. For articles: open **Your profile**, then **Authentication**, **API keys**, and create a key for **Docs**. Without it, only conversations come over.
+
+Help Scout's mailboxes are matched to your teams, and its email, chat and phone conversations all come over. Help Scout has no priorities, so every ticket is normal priority.
+
+</TabItem>
+<TabItem label="Freshdesk">
+
+Freshdesk needs your **domain** and an **API key**.
+
+1. **Domain**: the part before `.freshdesk.com` in your Freshdesk address, or the whole address.
+2. **API key**: in Freshdesk, click your **profile picture**, then **Profile settings**. Click **View API key** and copy it.
+
+The key reads what its agent can see, so use an admin's key: it reads every ticket and the account's name. Solution articles come over when the agent may see them.
+
+Freshdesk lists at most 30,000 tickets at a time. The import moves through them by when they last changed, so larger accounts come over whole.
+
+</TabItem>
+<TabItem label="Intercom">
+
+Intercom needs an **access token** and your workspace's **region**.
+
+1. In Intercom, open the **Developer Hub** and open your app. If you have none, create one for your workspace.
+2. Open **Configure**, then **Authentication**, and copy the **access token**.
+3. **Region**: where your Intercom workspace is hosted. If your Intercom address starts with `app.eu.intercom.com`, choose Europe; `app.au.intercom.com`, Australia; otherwise the United States.
+
+Intercom conversations come over with their contacts (users and leads), each contact's company, and team assignments. Replies by Fin and workflows come over as the team's, named Fin. Intercom's API gives at most 500 parts of one conversation, so the longest conversations may be cut short; the import lists them.
+
+</TabItem>
+</Tabs>
+
+## Import a CSV file
+
+Anything that can export a spreadsheet can be imported. Each row is a message, or a whole ticket:
+
+- **One row per message**: give every message of a ticket the same ticket id. Rows with the same id become one ticket, its messages in date order.
+- **One row per ticket**: with no ticket id column, every row is a ticket with one message.
+
+```csv title="history.csv"
+Ticket ID,Subject,Created at,From email,From name,Author type,Body,Status,Tags
+1001,Cannot sign in,2024-03-01 09:12,dana@example.com,Dana Lee,customer,"The reset link expired before I opened it.",solved,login
+1001,,2024-03-01 09:40,maya@yourcompany.com,Maya Chen,agent,"I sent a fresh link, it lasts an hour.",,
+1001,,2024-03-01 09:41,maya@yourcompany.com,Maya Chen,note,"Second report this week, flagged to engineering.",,
+```
+
+<Steps>
+<Step title="Upload the file">
+
+Choose CSV file and upload it. opendesk reads it at once and shows each column with a few of its values.
+
+</Step>
+<Step title="Match the columns">
+
+Columns are matched to fields from their headers, so most files need no changes. Pick a column for any field it missed, or none. Only the **message** column, or at least the **subject**, is required. A preview shows the first tickets as they will look.
+
+</Step>
+<Step title="Match agents and teams, choose, start">
+
+The people on agent rows and in the assignee column are matched to members by email, and the team column's values to teams by name. Then choose your options and start, as for any import. Start within 24 hours of the upload: unused uploads are deleted after that.
+
+</Step>
+</Steps>
+
+### The columns it understands
+
+Headers are matched without regard to case, spaces, underscores, hyphens or dots, so `ticket_id`, `Ticket ID` and `ticket-id` are the same.
+
+| Field | Headers it recognizes | What it holds |
+| --- | --- | --- |
+| Ticket id | ticket id, ticket, ticket number, conversation id, thread id, case id, case number, id, number, # | Groups rows into tickets |
+| Subject | subject, title, summary, topic | The ticket's subject. Without one, the start of its first message |
+| Message | body, message, description, content, text, comment, html, reply | The message, as text or HTML |
+| From email | from email, email, from, sender, requester email, customer email, contact email, author email | Who wrote it |
+| From name | from name, name, sender name, requester name, customer name, contact name, author, requester, customer | Their name |
+| Author | author type, sender type, direction, role, type, message type, is agent, visibility | Whether a customer, an agent or a note |
+| Status | status, state, ticket status | The ticket's status |
+| Priority | priority, urgency, importance | The ticket's priority |
+| Labels | tags, labels, tag, label, categories | Separated by commas, semicolons or `\|` |
+| Date | created at, created, date, timestamp, time, sent at, sent, received at | When the message was written |
+| Assignee | assignee email, assignee, agent email, agent, assigned to, owner, responder | The assignee's email |
+| Team | team, group, department, queue, inbox, mailbox | The team's name |
+| Company | company, organization, organisation, org, account | The requester's company |
+
+- **Author**: `agent`, `staff`, `admin`, `support`, `outbound`, `reply`, `yes` or `1` mean an agent's reply; `note`, `internal` or `private` an internal note; anything else, or no author column, the customer. An agent row whose email is a member's is that member's reply.
+- **Status**: `open` (also new, active, in progress, reopened), `pending` (also waiting on customer, awaiting reply), `on hold` (also waiting, snoozed, blocked), `solved` (also resolved, done, fixed). Anything else, or no status at all, imports as closed.
+- **Priority**: `low`, `normal`, `high` and `urgent`, or `p1` to `p4`, `critical` and `minor`. Anything else is normal.
+- **Dates**: `2024-03-01T14:05:00Z`, `2024-03-01 14:05`, `2024-03-01`, `2024/03/01`, `03/01/2024` (month first), `01.03.2024` (day first), `Mar 1, 2024 2:05 PM`, `1 Mar 2024`, email dates, and unix seconds or milliseconds. A time without a zone is read as UTC. A date that cannot be read is left out, and the message is dated when it was imported.
+
+<Callout type="note" title="Day-first dates">
+
+Dates with slashes are read month first, the US way, so `03/01/2024` is March 1. If your dates are day first, write them as `2024-01-03` or `03.01.2024` before you upload.
+
+</Callout>
+
+### The file
+
+- A `.csv` file (or `.tsv`) of at most **50 MB** and **500,000 rows**, with a header row.
+- Separated by commas, semicolons or tabs: opendesk works out which from the header.
+- Saved as **UTF-8**, with or without a byte order mark, or UTF-16 with one. From Excel, choose **CSV UTF-8**; from Google Sheets, **File**, **Download**, **Comma-separated values**.
+- Blank rows are skipped. A row with no message and no subject is left out and listed under problems with its line number.
+
+A CSV import runs once: to add more history later, import another file.
+
+## Watch it
+
+The import's page updates live: how many tickets, messages, contacts, companies, articles and attachments have come over, how many were skipped, and a list of **problems**, the latest 50, such as a ticket that could not be read or an attachment that was too large. A problem never stops the import: that item is left out and the rest goes on.
+
+When the import is done, stops, or needs new credentials, whoever started it is notified in the app, by email, on their phone and on the desktop. Turn this off under **Imports** in your [notification settings](/guides/notifications/#choose-what-reaches-you).
+
+### Rate limits
+
+Every product limits how fast its API may be read. When the source asks opendesk to slow down, the import says it is waiting, and until when, then goes on by itself. Large accounts can take hours; you do not need to keep the page open.
+
+### Pause and resume
+
+The import's card on the Import page follows it live: how far it is, about how long is left, and anything it could not bring. You can leave the page; it runs on the server.
+
+**Pause** finishes the ticket in hand, then stops. **Resume** goes on where it stopped. **Cancel import** stops for good: what is already imported stays, and [undo](#undo-an-import) removes it.
+
+### When the credentials stop working
+
+If the source refuses the credentials partway, because a token was deleted or a password changed, the import pauses itself and asks for new ones, and you get a notification. Paste a fresh token or key on its card and click **Resume with these**: it goes on where it stopped. Fields you leave empty, like the address or email, keep what you entered before. The credentials must be for the same account.
+
+### When it fails
+
+If the source asks to slow down, the import waits as long as it says and goes on by itself; its card counts down. If the source stops answering, the import tries again with a growing wait. After five failures in a row, or an error the source will not get past, it stops and says why. Click **Try again** when the source is back; nothing already imported is brought in twice.
+
+## Bring over what changed
+
+Teams rarely switch in a day. While you move over, **Bring over changes** brings over what changed in the source since the last run: new messages on tickets that moved, their new status and labels, and new tickets and articles. Tickets that did not change are skipped, and a ticket you deleted here stays deleted. Run it as often as you like, then once more on the day you switch.
+
+<Callout type="note">
+
+Bringing over changes sets each changed ticket's status to the source's. Answer in one place at a time: keep working in the old tool until you switch, bring over the changes, then answer here.
+
+</Callout>
+
+It needs the import's credentials, so it is there for 30 days after the last run, or until you remove them. CSV imports cannot bring over changes.
+
+## Undo an import
+
+**Undo import** (in the import's menu) removes what the import created:
+
+- the tickets it imported, with all their messages and attachments, except tickets your team has replied to or noted on since,
+- the contacts it added, unless they have other tickets,
+- the companies it added, once no contact belongs to them,
+- the labels it added, unless something else uses them,
+- its articles, and its collections unless they hold other articles.
+
+Anything it matched but did not create stays: a contact who was already here, a label you already had, an existing collection. Pause or cancel a running import before undoing it.
+
+<Callout type="note" title="Work done since stays">
+
+A ticket your team has written on since the import stays, with everything on it, and so do its contact and labels. Undo forgets that it was imported, so importing the same account again brings a second copy of it.
+
+</Callout>
+
+## Your credentials
+
+- Credentials are stored encrypted and are never shown again, in the app, the API, events, logs or the audit log.
+- They are removed 30 days after the import last ran, when you cancel or undo it, or whenever you click **Remove credentials**. After that, the import can no longer bring over changes.
+- opendesk sends them only to the product's own API address, over https. Attachments are downloaded under the same outbound rules as everything else opendesk fetches: https and public addresses only.
+- An uploaded CSV file is kept only while its import may need it, and deleted when the import completes, is canceled or undone, or 30 days after it last ran.
+- Starting, syncing, canceling and undoing an import, and removing its credentials, are recorded in the audit log.
+
+<Fold>
+
+## Self-hosting
+
+Imports work the same on a self-host, with nothing to configure. Your server reads the source over https, so it needs outbound access to the product's API: `<subdomain>.zendesk.com`, `api.helpscout.net` and `docsapi.helpscout.net`, `<domain>.freshdesk.com`, or `api.intercom.io` (`api.eu.intercom.io`, `api.au.intercom.io`), and to the hosts their attachments are stored on. Imported attachments go to your [storage](/self-hosting/storage/) like any other.
+
+The API for imports is in [the contract](https://github.com/useopendesk/opendesk/blob/main/contracts/imports.md), and its progress arrives as [`import.updated` events](/api/events/).
+
+</Fold>
+
+## Related
+
+- [Inbox and tickets](/guides/inbox-and-tickets/)
+- [Knowledge base and help center](/guides/knowledge-base/)
+- [Teams and roles](/guides/teams-and-roles/)
+- [Labels and custom fields](/guides/labels-and-custom-fields/)

@@ -873,6 +873,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     case aiBalanceOut = "ai_balance_out"
     case autoRechargeFailed = "auto_recharge_failed"
     case teamJoined = "team_joined"
+    case importFinished = "import_finished"
 
     var id: String { rawValue }
 
@@ -890,6 +891,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiBalanceOut: "AI balance used up"
         case .autoRechargeFailed: "Auto-recharge failed"
         case .teamJoined: "Team joins"
+        case .importFinished: "Imports"
         }
     }
 
@@ -906,6 +908,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiBalanceOut: "Owners and admins"
         case .autoRechargeFailed: "Owners and admins"
         case .teamJoined: "An admin joins a team you lead"
+        case .importFinished: "An import you started ends or needs new credentials"
         }
     }
 
@@ -919,13 +922,14 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiCapReached, .aiKeyFailed: "sparkles"
         case .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed: "creditcard"
         case .teamJoined: "person.2"
+        case .importFinished: "square.and.arrow.down"
         }
     }
 
     /// Ticket-bound kinds; the rest are workspace alerts for owners and admins.
     var isAdminAlert: Bool {
         switch self {
-        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed: true
+        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished: true
         default: false
         }
     }
@@ -986,6 +990,13 @@ struct AppNotification: Codable, Hashable, Sendable, Identifiable {
             return data["team"]?["private"]?.bool == true
                 ? "\(joiner) joined the private team \(team) and can now see its tickets"
                 : "\(joiner) joined \(team)"
+        case .importFinished:
+            let source = data["source_name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "history"
+            switch data["status"]?.string {
+            case "completed": return "Your \(source) import is done"
+            case "needs_credentials": return "Your \(source) import needs new credentials"
+            default: return "Your \(source) import stopped"
+            }
         case nil: return "Notification"
         }
     }

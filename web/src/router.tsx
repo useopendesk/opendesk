@@ -690,6 +690,21 @@ const sIntegrations = createRoute({
   staticData: { title: "Integrations" },
 });
 
+const sImport = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/import",
+  validateSearch: (s: Record<string, unknown>): { id?: string } => ({ id: str(s.id) }),
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    void qc.prefetchQuery(q.members());
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.mailboxes());
+    return qc.ensureQueryData(q.imports());
+  },
+  component: page(() => import("./pages/settings/Import")),
+  staticData: { title: "Import" },
+});
+
 const routeTree = rootRoute.addChildren([
   helpRoute,
   csatRoute,
@@ -761,6 +776,7 @@ const routeTree = rootRoute.addChildren([
       sAgentPlayground,
       sAgentTests,
       sIntegrations,
+      sImport,
     ]),
   ]),
 ]);

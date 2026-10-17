@@ -322,6 +322,7 @@ export function CommandPalette() {
                     ["/settings/api-keys", "API keys"],
                     ["/settings/webhooks", "Webhooks"],
                     ["/settings/audit-log", "Audit log"],
+                    ["/settings/import", "Import history from Zendesk, Help Scout, Freshdesk, Intercom or CSV"],
                   ] as const
                 ).map(([to, label]) => (
                   <Item key={to} value={`settings ${label}`} icon={<Settings />} hint="Settings" onSelect={() => go(() => void navigate({ to }))}>

@@ -3,7 +3,7 @@
 // schedule and the pause are the account's.
 
 import type { EmailCadence, NotificationPreferences, NotificationType, NotificationTypePrefs } from "@/lib/api/types";
-import { DEFAULT_PACING, MAX_PAUSE_MS, NOTIFICATION_DEFAULTS, NOTIFICATION_ORDER, URGENT_TYPES } from "@/lib/notificationPrefs";
+import { ADMIN_GROUPS, DEFAULT_PACING, MAX_PAUSE_MS, NOTIFICATION_DEFAULTS, NOTIFICATION_ORDER, URGENT_TYPES } from "@/lib/notificationPrefs";
 import { db, me, type NotificationSettingsRow, type WsData } from "../db";
 import { HttpError, get, invalid, patch, post, respond } from "../router";
 import { isRecord } from "../util";
@@ -15,11 +15,11 @@ function settingsOf(uid: string): NotificationSettingsRow {
   return (db.notificationSettings[uid] ??= { email_cadence: "instant", digest_hour: 9, timezone: "UTC", paused_until: null });
 }
 
-/** The types a member can receive here: owners and admins also get the AI and billing notices. */
+/** The types a member can receive here: owners and admins also get the AI, billing and workspace notices. */
 function typesFor(ws: WsData, uid: string): NotificationType[] {
   const role = ws.members.find((m) => m.user_id === uid)?.role ?? "viewer";
   const admin = role === "owner" || role === "admin";
-  return NOTIFICATION_ORDER.filter((t) => admin || NOTIFICATION_DEFAULTS[t].group !== "ai_billing");
+  return NOTIFICATION_ORDER.filter((t) => admin || !ADMIN_GROUPS.has(NOTIFICATION_DEFAULTS[t].group));
 }
 
 export function preferencesOut(ws: WsData, uid: string): NotificationPreferences {

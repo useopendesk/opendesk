@@ -56,6 +56,7 @@ function notificationText(n: Notification) {
     case "ai_key_failed":
       return n.data.reason === "no_funds" ? "Your AI provider account is out of funds" : "Your AI provider rejected the workspace's key";
     case "team_joined":
+    case "import_finished":
       return describe(n, i18n.getFixedT(null, "shell"));
     default:
       return `Notification ${subject}`;
@@ -76,6 +77,12 @@ const notificationSound: Partial<Record<Notification["type"], AlertSound>> = {
   mentioned: "assigned",
   sla_breached: "assigned",
 };
+
+/** What a stopped import says went wrong, for its toast. */
+function importProblem(n: Notification): string | undefined {
+  if (n.type !== "import_finished" || n.data.status === "completed") return undefined;
+  return typeof n.data.error === "string" && n.data.error ? n.data.error : undefined;
+}
 
 /** Whether this person is looking at the ticket right now, so a sound would only interrupt. */
 function lookingAt(ticketId: string | undefined) {
@@ -113,7 +120,8 @@ function useRealtimeConnection() {
         if (n.type === "customer_replied") return;
         if (n.type === "ai_key_failed") void qc.invalidateQueries({ queryKey: qk.aiProvider });
         toast.info(notificationText(n), {
-          description: n.type === "ai_cap_reached" ? "Chats go to your team until the cap resets or you raise it." : (billingNoticeBody[n.type] ?? n.ticket?.subject),
+          description:
+            n.type === "ai_cap_reached" ? "Chats go to your team until the cap resets or you raise it." : (billingNoticeBody[n.type] ?? importProblem(n) ?? n.ticket?.subject),
           action: n.ticket
             ? {
                 label: "Open",
@@ -129,6 +137,8 @@ function useRealtimeConnection() {
                     else void navigate({ to: "/settings/teams" });
                   },
                 }
+              : n.type === "import_finished"
+                ? { label: "View import", onClick: () => void navigate({ to: "/settings/import" }) }
               : n.type === "ai_cap_reached" || n.type === "ai_key_failed"
               ? { label: "Settings", onClick: () => void navigate({ to: n.type === "ai_key_failed" ? "/settings/ai" : "/settings/ai/behaviour" }) }
               : billingNoticeBody[n.type]

@@ -34,6 +34,7 @@ const (
 	GroupTickets   = "tickets"
 	GroupTeam      = "team"
 	GroupAIBilling = "ai_billing"
+	GroupWorkspace = "workspace"
 )
 
 // Channels is where a notification goes besides the app.
@@ -71,6 +72,8 @@ var Types = []Type{
 	{Type: "ai_balance_low", Group: GroupAIBilling, Defaults: notPhone, Admins: true},
 	{Type: "ai_balance_out", Group: GroupAIBilling, Defaults: notPhone, Admins: true},
 	{Type: "auto_recharge_failed", Group: GroupAIBilling, Defaults: notPhone, Admins: true},
+	// To the admin who started a history import (contracts/imports.md).
+	{Type: "import_finished", Group: GroupWorkspace, Defaults: everywhere, Admins: true},
 }
 
 // Lookup finds a type of the catalogue.

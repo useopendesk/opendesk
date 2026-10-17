@@ -27,6 +27,7 @@ export const NOTIFICATION_DEFAULTS: Record<NotificationType, { group: Notificati
   ai_balance_low: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   ai_balance_out: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   auto_recharge_failed: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
+  import_finished: { group: "workspace", defaults: on },
 };
 
 /** The order rows are listed in, within and across groups. */
@@ -42,6 +43,7 @@ export const NOTIFICATION_ORDER: NotificationType[] = [
   "ai_balance_low",
   "ai_balance_out",
   "auto_recharge_failed",
+  "import_finished",
 ];
 
 /** Types that may be emailed sooner than the cooldown. */
@@ -103,7 +105,10 @@ export function pacingCopy(p: NotificationPacing | undefined, delayFallback?: nu
   };
 }
 
-export const NOTIFICATION_GROUPS: NotificationGroup[] = ["tickets", "team", "ai_billing"];
+export const NOTIFICATION_GROUPS: NotificationGroup[] = ["tickets", "team", "ai_billing", "workspace"];
+
+/** Groups only owners and admins receive. */
+export const ADMIN_GROUPS: ReadonlySet<NotificationGroup> = new Set<NotificationGroup>(["ai_billing", "workspace"]);
 
 /** The longest pause the API takes. */
 export const MAX_PAUSE_MS = 30 * 86_400_000;

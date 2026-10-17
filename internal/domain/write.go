@@ -26,6 +26,22 @@ type Jobs = *river.Client[pgx.Tx]
 // UpsertContactByEmail finds or creates the contact for an email address. A name is
 // filled in only when the contact has none; untrusted names are cleaned, not refused.
 func UpsertContactByEmail(ctx context.Context, tx pgx.Tx, wid uuid.UUID, email, name string) (uuid.UUID, bool, error) {
+	return upsertContactByEmail(ctx, tx, wid, email, name, true)
+}
+
+// ImportContactByEmail is UpsertContactByEmail for imported history: a new contact is
+// not announced (contracts/imports.md), and a phone is filled in when it has none.
+func ImportContactByEmail(ctx context.Context, tx pgx.Tx, wid uuid.UUID, email, name, phone string) (uuid.UUID, bool, error) {
+	id, created, err := upsertContactByEmail(ctx, tx, wid, email, name, false)
+	if err != nil || strings.TrimSpace(phone) == "" {
+		return id, created, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE contacts SET phone = $3 WHERE workspace_id = $1 AND id = $2 AND phone = ''`,
+		wid, id, truncateRunes(strings.TrimSpace(phone), 40))
+	return id, created, err
+}
+
+func upsertContactByEmail(ctx context.Context, tx pgx.Tx, wid uuid.UUID, email, name string, announce bool) (uuid.UUID, bool, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if name = displayname.Clean(name, displayname.Person); name == "" {
 		name = displayname.FromEmail(email)
@@ -39,7 +55,7 @@ func UpsertContactByEmail(ctx context.Context, tx pgx.Tx, wid uuid.UUID, email, 
 	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("upsert contact: %w", err)
 	}
-	if created {
+	if created && announce {
 		c, err := LoadContact(ctx, tx, wid, id)
 		if err != nil {
 			return uuid.Nil, false, err
@@ -73,6 +89,10 @@ type NewTicket struct {
 	PageURL         string
 	// Routed says why the ticket has its team; nil when it has none.
 	Routed *TicketRouted
+	// Imported writes history (contracts/imports.md): the ticket is dated CreatedAt and
+	// published to no one; the importer announces its progress instead.
+	Imported  bool
+	CreatedAt time.Time
 }
 
 // ResolveBrand returns the brand a new ticket belongs to (see NewTicket.BrandID).
@@ -117,19 +137,28 @@ func CreateTicket(ctx context.Context, tx pgx.Tx, nt NewTicket) (Ticket, error) 
 	if nt.TeamID == nil {
 		nt.Routed = nil
 	}
+	var created *time.Time // now, unless imported history has its own time
+	if nt.Imported && !nt.CreatedAt.IsZero() && nt.CreatedAt.Before(time.Now()) {
+		at := nt.CreatedAt.UTC()
+		created = &at
+	}
 	id := ids.New()
 	_, err = tx.Exec(ctx, `INSERT INTO tickets (id, workspace_id, number, subject, status, priority, channel,
 		mailbox_id, contact_id, assignee_id, team_id, custom, fields, severity,
-		brand_id, widget_id, origin_mailbox_id, received_at, page_url, routed)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+		brand_id, widget_id, origin_mailbox_id, received_at, page_url, routed, created_at, updated_at, last_message_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+			COALESCE($21, now()), COALESCE($21, now()), COALESCE($21, now()))`,
 		id, nt.WorkspaceID, number, subject, nt.Status, nt.Priority, nt.Channel, nt.MailboxID, nt.ContactID, nt.AssigneeID, nt.TeamID, nt.Custom, nt.Fields, nt.Severity,
-		brandID, nt.WidgetID, nt.OriginMailboxID, strings.ToLower(strings.TrimSpace(nt.ReceivedAt)), truncateRunes(nt.PageURL, 500), nt.Routed)
+		brandID, nt.WidgetID, nt.OriginMailboxID, strings.ToLower(strings.TrimSpace(nt.ReceivedAt)), truncateRunes(nt.PageURL, 500), nt.Routed, created)
 	if err != nil {
 		return Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
 	t, err := LoadTicket(ctx, tx, nt.WorkspaceID, id)
 	if err != nil {
 		return Ticket{}, err
+	}
+	if nt.Imported {
+		return t, nil
 	}
 	topics := []string{}
 	if t.Assignee != nil {
@@ -189,6 +218,9 @@ type NewMessage struct {
 	// NoReopen keeps the ticket's status when an inbound reply would reopen it, and
 	// records that it was kept (status_changed with reason "sender_unverified").
 	NoReopen bool
+	// Imported writes history (contracts/imports.md): dated CreatedAt, nothing sent, no
+	// status change, no events, automations or follow-ups. The importer sets the status.
+	Imported bool
 }
 
 // ErrCannotSend answers an email reply from a mailbox that sends through the platform
@@ -228,6 +260,9 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, nm.WorkspaceID, nm.TicketID).
 		Scan(&channel, &status, &firstResponded, &contactID, &brandID, &ticketMailbox); err != nil {
 		return Message{}, fmt.Errorf("lock ticket: %w", err)
+	}
+	if nm.Imported {
+		nm.DeliveryStatus, nm.Trigger = "none", "none"
 	}
 	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
 		from := nm.MailboxID
@@ -280,7 +315,7 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		customer := nm.Direction == "inbound"
 		newStatus := status
 		kept := false
-		if customer && (status == StatusPending || status == StatusSolved || status == StatusOnHold) {
+		if customer && !nm.Imported && (status == StatusPending || status == StatusSolved || status == StatusOnHold) {
 			if nm.NoReopen {
 				kept = true
 			} else {
@@ -288,15 +323,15 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 			}
 		}
 		setFirst := !customer && nm.AuthorType == "user" && firstResponded == nil
-		_, err := tx.Exec(ctx, `UPDATE tickets SET last_message_at = $3, last_message_preview = $4,
-			message_count = message_count + 1, updated_at = now(),
+		_, err := tx.Exec(ctx, `UPDATE tickets SET last_message_at = CASE WHEN $8 THEN GREATEST(last_message_at, $3) ELSE $3 END, last_message_preview = $4,
+			message_count = message_count + 1, updated_at = CASE WHEN $8 THEN GREATEST(updated_at, $3) ELSE now() END,
 			last_customer_message_at = CASE WHEN $5 THEN $3 ELSE last_customer_message_at END,
 			waiting_since = CASE WHEN $5 THEN COALESCE(waiting_since, $3) ELSE NULL END,
 			unanswered_count = CASE WHEN $5 THEN unanswered_count + 1 ELSE 0 END,
 			status = $6, solved_at = CASE WHEN $6 = 'open' THEN NULL ELSE solved_at END,
 			snoozed_until = CASE WHEN $6 = 'on_hold' THEN snoozed_until ELSE NULL END,
 			first_responded_at = CASE WHEN $7 THEN $3 ELSE first_responded_at END
-			WHERE workspace_id = $1 AND id = $2`, nm.WorkspaceID, nm.TicketID, nm.CreatedAt, preview, customer, newStatus, setFirst)
+			WHERE workspace_id = $1 AND id = $2`, nm.WorkspaceID, nm.TicketID, nm.CreatedAt, preview, customer, newStatus, setFirst, nm.Imported)
 		if err != nil {
 			return Message{}, fmt.Errorf("update ticket: %w", err)
 		}
@@ -317,7 +352,7 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		if setFirst {
 			changes = append(changes, "first_responded_at")
 		}
-	} else {
+	} else if !nm.Imported {
 		if _, err := tx.Exec(ctx, `UPDATE tickets SET updated_at = now() WHERE workspace_id = $1 AND id = $2`, nm.WorkspaceID, nm.TicketID); err != nil {
 			return Message{}, err
 		}
@@ -326,6 +361,9 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	msg, err := LoadMessage(ctx, tx, nm.WorkspaceID, id)
 	if err != nil {
 		return Message{}, err
+	}
+	if nm.Imported {
+		return msg, nil
 	}
 	ev := events.Event{WorkspaceID: nm.WorkspaceID, Type: "message.created", TicketID: &nm.TicketID,
 		Data: map[string]any{"ticket_id": nm.TicketID, "message": msg}}

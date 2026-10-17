@@ -853,11 +853,13 @@ export type AuditLog = {
   ip: string;
   created_at: string;
 };
-export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined";
+export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished";
 /** `ai_cap_reached`: data `{cap_usd}`, ticket null; the widget agent reached `widget_monthly_cap_usd` (once a month, owners and admins).
  * `ai_balance_low` / `ai_balance_out`: data `{remaining_usd}` (US dollars); `auto_recharge_failed`: data `{reason: AutoRechargeFailure}` (billing, owners and admins, ticket null).
  * `ai_key_failed`: data `{provider: AIKeyKind, reason: "rejected" | "no_funds"}`; the workspace's own AI key failed (at most hourly, owners and admins, ticket null).
- * `team_joined`: data `{team_id, team: {id, name, private}, user: {id, name}, by}`; an admin joined a team you lead (ticket null). */
+ * `team_joined`: data `{team_id, team: {id, name, private}, user: {id, name}, by}`; an admin joined a team you lead (ticket null).
+ * `import_finished`: data `{import_id, source, source_name, account, status: "completed" | "failed" | "needs_credentials", tickets, updated, articles, failed, error}`;
+ * a history import you started ended or paused for new credentials (contracts/imports.md, ticket null). */
 export type Notification = {
   id: string;
   type: NotificationType;
@@ -870,7 +872,7 @@ export type Notification = {
 /** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app. */
 export type NotificationChannels = { email: boolean; push: boolean; desktop: boolean };
 export type NotificationChannel = keyof NotificationChannels;
-export type NotificationGroup = "tickets" | "team" | "ai_billing";
+export type NotificationGroup = "tickets" | "team" | "ai_billing" | "workspace";
 /** `urgent`: may be emailed sooner than the cooldown (contracts/api.md "Notification preferences and emails"). */
 export type NotificationTypePrefs = NotificationChannels & { type: NotificationType; group: NotificationGroup; defaults: NotificationChannels; urgent: boolean };
 /** How the server paces notification emails for this person. */
@@ -1620,3 +1622,106 @@ export type BotRef = { id: string; name: string; avatar_url: string; look: BotLo
 export type WidgetBot = { id: string | null; name: string; role: string; avatar_url: string; look: BotLook; greeting: string };
 export type BotBody = { name: string; role?: string; language?: string; look?: BotLook; personality?: Partial<BotPersonality> };
 export type BotDraft = { name?: string; role?: string; language?: string; personality?: Partial<BotPersonality> };
+
+// History imports (contracts/imports.md).
+export type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "csv";
+export type ImportStatus = "running" | "paused" | "completed" | "failed" | "canceled" | "undoing" | "undone";
+export type ImportCounts = {
+  tickets: number;
+  updated: number;
+  messages: number;
+  contacts: number;
+  companies: number;
+  articles: number;
+  attachments: number;
+  skipped: number;
+  failed: number;
+};
+export type ImportTotals = { tickets: number | null; articles: number | null };
+export type ImportProblem = { at: string; item: string; message: string };
+export type ImportOptions = {
+  tickets: boolean;
+  articles: boolean;
+  attachments: boolean;
+  /** Only tickets created on or after this day (YYYY-MM-DD). */
+  since: string | null;
+  mailbox_id: string | null;
+  /** Label on every imported ticket; "" for none. */
+  tag: string;
+  statuses: "keep" | "closed";
+  articles_as_drafts: boolean;
+};
+export type CsvField =
+  | "ticket_id"
+  | "subject"
+  | "body"
+  | "from_email"
+  | "from_name"
+  | "author"
+  | "status"
+  | "priority"
+  | "tags"
+  | "created_at"
+  | "assignee_email"
+  | "team"
+  | "company";
+/** Each field's column name; a missing field is not imported. */
+export type CsvMapping = Partial<Record<CsvField, string>>;
+export type ImportMapping = { agents: Record<string, string | null>; groups: Record<string, string | null>; csv?: CsvMapping };
+export type Import = {
+  id: string;
+  source: ImportSource;
+  account: { name: string; url: string };
+  status: ImportStatus;
+  phase: "articles" | "tickets" | "done";
+  run: number;
+  options: ImportOptions;
+  mapping: ImportMapping;
+  totals: ImportTotals;
+  counts: ImportCounts;
+  problems: ImportProblem[];
+  last_error: string;
+  needs_credentials: boolean;
+  waiting_until: string | null;
+  can_sync: boolean;
+  started_by: UserRef | null;
+  started_at: string;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+export type ImportSampleMessage = { author: string; agent: boolean; note: boolean; text: string; created_at: string; attachments: number };
+export type ImportSample = {
+  ref: string;
+  subject: string;
+  status: TicketStatus;
+  created_at: string;
+  requester: { name: string; email: string } | null;
+  messages: ImportSampleMessage[];
+  message_count: number;
+  tags: string[];
+};
+export type ImportCheck = {
+  account: { name: string; url: string };
+  totals: ImportTotals;
+  agents: { id: string; name: string; email: string; user_id: string | null }[];
+  groups: { id: string; name: string; team_id: string | null }[];
+  samples: ImportSample[];
+  has_articles: boolean;
+};
+export type CsvUpload = {
+  upload_id: string;
+  filename: string;
+  rows: number;
+  columns: { name: string; samples: string[] }[];
+  suggested: CsvMapping;
+  preview: ImportSample[];
+};
+export type ImportCheckBody = { source: ImportSource; credentials?: Record<string, string>; upload_id?: string; mapping?: CsvMapping };
+export type ImportCreateBody = {
+  source: ImportSource;
+  credentials?: Record<string, string>;
+  upload_id?: string;
+  options?: ImportOptions;
+  mapping?: ImportMapping;
+};

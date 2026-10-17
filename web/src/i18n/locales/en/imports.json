@@ -1,0 +1,323 @@
+{
+  "title": "Import",
+  "description": "Bring your team's history over from another helpdesk or a CSV file: every ticket with its whole conversation, the people who wrote in, and your help center.",
+  "pick": {
+    "title": "Where is your history now?",
+    "again": "Import from somewhere else",
+    "hint": "Connect the account you use today. Nothing changes there, and you can keep working in it until you switch.",
+    "oneAtATime": "One import runs at a time. Start another when this one is done.",
+    "adminsOnly": "Admins can import history.",
+    "guide": "How importing works"
+  },
+  "promise": {
+    "quiet": {
+      "title": "Quiet.",
+      "body": "No customer gets an email, and automations, SLA timers, webhooks and notifications stay still for imported tickets."
+    },
+    "people": {
+      "title": "Your people, mapped.",
+      "body": "Agents become members and groups become teams, matched by email and name. You check every match before it starts."
+    },
+    "undo": {
+      "title": "Undo any time.",
+      "body": "One click takes out what an import brought, and leaves alone what your team wrote since."
+    }
+  },
+  "sources": {
+    "zendesk": {
+      "with": "API token",
+      "blurb": "Tickets with replies and notes, users, organizations and Guide articles."
+    },
+    "helpscout": {
+      "with": "App ID and secret",
+      "blurb": "Conversations from every mailbox, customers, and your Docs articles."
+    },
+    "freshdesk": {
+      "with": "API key",
+      "blurb": "Tickets with replies and notes, contacts, companies and solution articles."
+    },
+    "intercom": {
+      "with": "Access token",
+      "blurb": "Conversations with notes and files, contacts, companies and articles."
+    },
+    "csv": {
+      "with": "Any helpdesk",
+      "blurb": "An export from any other helpdesk, one row per ticket or per message."
+    }
+  },
+  "steps": {
+    "connect": "Connect",
+    "upload": "Upload",
+    "columns": "Columns",
+    "review": "Review",
+    "options": "Choose and start"
+  },
+  "wizard": {
+    "title": "Import from {{name}}",
+    "description": "Connect your {{name}} account. We read from it and never change anything there.",
+    "csvDescription": "Upload an export from your current helpdesk, then tell us which column holds what.",
+    "whatComes": "What comes over",
+    "facts": {
+      "conversations": "Every ticket with all its replies, notes and attachments, at their original dates.",
+      "people": "Customers and companies, agents as members and groups as teams.",
+      "articles": "Help center collections and articles.",
+      "quiet": "Nobody is emailed and no automation runs."
+    },
+    "guide": "Read the import guide",
+    "connect": "Connect",
+    "checking": "Checking {{name}}",
+    "preview": "Preview",
+    "continue": "Continue",
+    "start": "Start import",
+    "back": "Back",
+    "cancel": "Cancel",
+    "startedToast": "Import started. You can leave this page, we'll let you know when it's done.",
+    "leaveTitle": "Leave this import?",
+    "leaveBody": "Nothing has been imported yet. Your choices here will be lost.",
+    "leave": "Leave"
+  },
+  "connect": {
+    "whereToFind": "Where to find it",
+    "show": "Show",
+    "hide": "Hide",
+    "safety": "Read only. Your credentials are encrypted and used only to read {{name}}. They are removed 30 days after the last run, or whenever you choose.",
+    "same": "Same as before"
+  },
+  "review": {
+    "connected": "Connected",
+    "tickets_one": "{{n}} ticket",
+    "tickets_other": "{{n}} tickets",
+    "ticketsUnknown": "Tickets counted as they come",
+    "articles_one": "{{n}} article",
+    "articles_other": "{{n}} articles",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "sampleTitle": "How your tickets will look",
+    "noSamples": "No tickets to preview yet. The import will still bring what it finds.",
+    "noSubject": "(no subject)",
+    "previous": "Previous ticket",
+    "next": "Next ticket",
+    "messages_one": "{{count}} message",
+    "messages_other": "{{count}} messages",
+    "more_one": "and {{count}} more message",
+    "more_other": "and {{count}} more messages",
+    "note": "Internal note",
+    "unknown": "Unknown",
+    "empty": "No text",
+    "agentsTitle": "Agents",
+    "agentsHint": "Their replies, notes and tickets go to the member you choose. Anyone left out keeps their name on what they wrote.",
+    "matched": "{{n}} of {{total}} matched",
+    "sameEmail": "Same email",
+    "keepName": "Keep as a name",
+    "agentFor": "Member for {{name}}",
+    "groupsTitle": "Groups",
+    "groupsHint": "Tickets of each group go to the team you choose.",
+    "noTeam": "No team",
+    "teamFor": "Team for {{name}}",
+    "ready": "Ready"
+  },
+  "csv": {
+    "drop": "Drop your CSV file here, or click to choose one",
+    "dropNow": "Drop it to upload",
+    "dropHint": "One row per ticket, or one row per message with a ticket id so we can group them. A header row names the columns.",
+    "reading": "Reading {{name}}",
+    "formats": "UTF-8 or UTF-16, separated by commas, semicolons or tabs. Up to 50 MB and 500,000 rows.",
+    "template": "Download a template",
+    "tooLarge": "That file is over 50 MB. Split it into smaller files and import them one after another.",
+    "wrongType": "Choose a .csv file. Spreadsheets can save one with File, then Download or Export, as CSV.",
+    "summary": "{{rows}} rows, {{columns}} columns",
+    "replace": "Choose another file",
+    "notInFile": "Not in the file",
+    "emptyColumn": "This column is empty in the first rows",
+    "needBody": "Choose the column with the message, or at least the subject.",
+    "grouping": "Rows with the same ticket id become one ticket, with each row as a message in time order. Without a ticket id column, every row is its own ticket.",
+    "fields": {
+      "ticket_id": {
+        "label": "Ticket id",
+        "hint": "Groups rows into tickets"
+      },
+      "subject": {
+        "label": "Subject",
+        "hint": "The ticket's title"
+      },
+      "body": {
+        "label": "Message",
+        "hint": "The text, plain or HTML"
+      },
+      "created_at": {
+        "label": "Date",
+        "hint": "When it was written"
+      },
+      "from_email": {
+        "label": "From email",
+        "hint": "Who wrote it"
+      },
+      "from_name": {
+        "label": "From name",
+        "hint": "Their name"
+      },
+      "author": {
+        "label": "Author type",
+        "hint": "customer, agent or note"
+      },
+      "status": {
+        "label": "Status",
+        "hint": "open, pending, solved, closed"
+      },
+      "priority": {
+        "label": "Priority",
+        "hint": "low, normal, high, urgent"
+      },
+      "tags": {
+        "label": "Labels",
+        "hint": "Separated by commas"
+      },
+      "assignee_email": {
+        "label": "Assignee email",
+        "hint": "Matched to a member"
+      },
+      "team": {
+        "label": "Team",
+        "hint": "Matched to a team by name"
+      },
+      "company": {
+        "label": "Company",
+        "hint": "The customer's company"
+      }
+    }
+  },
+  "options": {
+    "what": "What to bring",
+    "tickets": "Tickets",
+    "ticketsHint_one": "{{n}} ticket with its conversation.",
+    "ticketsHint_other": "{{n}} tickets with their conversations.",
+    "ticketsHintUnknown": "Every ticket with its conversation.",
+    "articles": "Help center articles",
+    "articlesHint_one": "{{n}} article with its collection. Images come too.",
+    "articlesHint_other": "{{n}} articles with their collections. Images come too.",
+    "articlesHintUnknown": "Every article with its collection.",
+    "articlesNone": "This account has no help center to bring.",
+    "articlesNoDocs": "Add a Docs API key in the first step to bring your Docs articles.",
+    "drafts": "Bring articles in as drafts",
+    "draftsHint": "Look them over before they go live on your help center.",
+    "attachments": "Attachments",
+    "attachmentsHint": "Files up to 25 MB each. Leave off for a faster import.",
+    "how": "How",
+    "since": "From when",
+    "sinceHint": "Older tickets stay behind. Articles always come whole.",
+    "allHistory": "All history",
+    "fromDate": "From a date",
+    "statuses": "Statuses",
+    "keep": "Keep them",
+    "closeAll": "Close them all",
+    "keepHint": "Open tickets arrive open and land in your queues.",
+    "closedHint": "Everything arrives closed, so your queues stay as they are.",
+    "label": "Label",
+    "labelHint": "Added to every imported ticket, so you can find them.",
+    "noLabel": "No label",
+    "mailbox": "Reply from",
+    "mailboxHint": "Replies to imported email tickets go out from this mailbox.",
+    "noMailbox": "Choose when replying"
+  },
+  "summary": {
+    "lead": "This brings over {{what}}.",
+    "and": " and ",
+    "tickets_one": "{{n}} ticket",
+    "tickets_other": "{{n}} tickets",
+    "ticketsUnknown": "every ticket",
+    "articles_one": "{{n}} article",
+    "articles_other": "{{n}} articles",
+    "articlesUnknown": "every article",
+    "quiet": "Nobody is emailed, and automations, SLA timers and webhooks stay still.",
+    "after": "Large accounts take a while. It runs on our side, so you can close this page. We'll let you know when it's done, and you can bring over what changed since at any time."
+  },
+  "current": {
+    "running": "In progress",
+    "runningHint": "Updates live. You can leave this page and come back.",
+    "latest": "Latest import"
+  },
+  "state": {
+    "running": "Importing",
+    "paused": "Paused",
+    "completed": "Done",
+    "failed": "Stopped",
+    "canceled": "Canceled",
+    "undoing": "Undoing",
+    "undone": "Undone",
+    "waiting": "Waiting",
+    "needsCredentials": "Needs credentials"
+  },
+  "status": {
+    "open": "Open",
+    "pending": "Pending",
+    "on_hold": "On hold",
+    "solved": "Solved",
+    "closed": "Closed"
+  },
+  "progress": {
+    "run": "Update {{n}}",
+    "startedBy": "Started by {{name}} {{when}}",
+    "started": "Started {{when}}",
+    "finished": "finished {{when}}",
+    "articles": "Bringing over help center articles",
+    "tickets": "Bringing over tickets",
+    "changes": "Bringing over what changed",
+    "undoing": "Taking out what the import brought",
+    "paused": "Paused. It goes on from here when you resume.",
+    "waiting": "{{name}} asked us to slow down. Going on in {{seconds}}s.",
+    "left": "about {{time}} left",
+    "lessThanMinute": "a minute",
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes",
+    "hours_one": "{{count}} hour",
+    "hours_other": "{{count}} hours",
+    "pause": "Pause",
+    "resume": "Resume",
+    "retry": "Try again",
+    "sync": "Bring over changes",
+    "actions": "Import actions",
+    "openSource": "Open {{name}}",
+    "cancel": "Cancel import",
+    "cancelTitle": "Cancel this import?",
+    "cancelBody": "What already came over stays. Its credentials are removed, and you can undo it later.",
+    "canceledToast": "Import canceled",
+    "undo": "Undo import",
+    "undoPauseFirst": "Pause to undo",
+    "undoTitle": "Undo the {{name}} import?",
+    "undoBody_one": "This takes out the {{tickets}} ticket and {{articles}} articles it brought, with the contacts, companies and labels nothing else uses. Tickets your team has written on since stay.",
+    "undoBody_other": "This takes out the {{tickets}} tickets and {{articles}} articles it brought, with the contacts, companies and labels nothing else uses. Tickets your team has written on since stay.",
+    "undoneHint": "Undone. What this import brought has been taken out.",
+    "forget": "Remove credentials",
+    "forgetTitle": "Remove the credentials?",
+    "forgetBody": "The import can no longer bring over changes from {{name}}. What came over stays.",
+    "credentialsRemoved": "Credentials removed",
+    "needsCredentials": "{{name}} stopped accepting the credentials.",
+    "resumeWith": "Resume with these",
+    "failedHint": "What came over stays. Try again to go on from where it stopped.",
+    "done": "Everything from {{name}} is here.",
+    "syncDone_one": "{{count}} ticket brought up to date.",
+    "syncDone_other": "{{count}} tickets brought up to date.",
+    "seeTickets": "See imported tickets",
+    "problems_one": "{{count}} item could not come over",
+    "problems_other": "{{count}} items could not come over",
+    "moreProblems_one": "and {{count}} more",
+    "moreProblems_other": "and {{count}} more",
+    "kept": "Credentials are kept so you can bring over changes until you switch. They are removed 30 days after the last run."
+  },
+  "figures": {
+    "tickets": "Tickets",
+    "messages": "Messages",
+    "contacts": "Contacts",
+    "articles": "Articles",
+    "attachments": "Files",
+    "updated": "Updated"
+  },
+  "history": {
+    "title": "Earlier imports",
+    "hint": "Open one to bring over changes, undo it or see what it could not bring.",
+    "brought_one": "{{tickets}} ticket, {{articles}} articles",
+    "brought_other": "{{tickets}} tickets, {{articles}} articles",
+    "undone": "Taken out",
+    "none": "No imports yet."
+  }
+}

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Clock, CornerDownRight, Hash, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Clock, CornerDownRight, Hash, Import as ImportIcon, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Priority, Severity, Ticket, TicketStatus } from "@/lib/api/types";
@@ -21,6 +21,7 @@ import { LabelPicker } from "./LabelPicker";
 import { SetByOllie, useAISet, useOllieNote } from "../ollie";
 import { FieldsSection } from "./FieldsSection";
 import { TicketLinks } from "./TicketLinks";
+import { importedFrom } from "@/components/imports/sources";
 import { useDisplay, type FieldPatch, type TicketWithFields } from "../fields";
 import { useUpdateTicket } from "../useTicketActions";
 import { addressLabel, BrandChip, replyAddresses, sendingAddress, TeamDot, TeamMove, useRoutedText, useTeamsCtx } from "../teams";
@@ -170,6 +171,7 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
       })),
   ];
   const tagNames = t.tags.map((x) => x.name);
+  const imported = importedFrom(t.custom);
   const openFor = (k: Exclude<PropPicker, null>) => ({ open: picker === k, onOpenChange: (o: boolean) => onPicker(o ? k : null) });
 
   return (
@@ -423,6 +425,20 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
             <span className="text-fg-2">{relLong(t.created_at)}</span>
           </Tooltip>
         </div>
+        {imported && (
+          <div className="flex items-center gap-2 text-fg-3">
+            <ImportIcon className="size-3.5 shrink-0" />
+            <span className="flex-1">{tr("props.importedFrom")}</span>
+            {imported.url ? (
+              <a href={imported.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-w-0 items-center gap-0.5 truncate text-fg-2 hover:text-fg hover:underline">
+                {imported.label}
+                <ArrowUpRight className="size-3 shrink-0" aria-hidden />
+              </a>
+            ) : (
+              <span className="min-w-0 truncate text-fg-2">{imported.label}</span>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );

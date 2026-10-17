@@ -355,7 +355,9 @@ func fileKeys(ctx context.Context, q db.Querier, wid uuid.UUID) ([]string, error
 		UNION ALL SELECT raw_storage_key FROM inbound_emails WHERE workspace_id = $1
 		UNION ALL SELECT storage_key || '/256.png' FROM images WHERE workspace_id = $1
 		UNION ALL SELECT storage_key || '/64.png' FROM images WHERE workspace_id = $1
-		UNION ALL SELECT storage_key FROM ai_knowledge_sources WHERE workspace_id = $1 AND storage_key IS NOT NULL`, wid)
+		UNION ALL SELECT storage_key FROM ai_knowledge_sources WHERE workspace_id = $1 AND storage_key IS NOT NULL
+		UNION ALL SELECT storage_key FROM imports WHERE workspace_id = $1 AND storage_key IS NOT NULL
+		UNION ALL SELECT storage_key FROM import_uploads WHERE workspace_id = $1`, wid)
 	if err != nil {
 		return nil, err
 	}

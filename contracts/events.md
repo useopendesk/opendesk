@@ -80,6 +80,7 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `bot.created` / `bot.updated` / `bot.deleted` | agents | — | `{ "bot": Bot }` / `{ "bot_id" }` (contracts/bots.md); a new default, a reorder or a new picture is `bot.updated` of each bot it changed |
 | `integration.created` / `integration.updated` / `integration.deleted` | agents | — | `{ "integration": Integration }` / `{ "integration_id" }` (`contracts/integrations.md`; never credentials) |
 | `ticket_link.created` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |
+| `import.created` / `import.updated` | agents | — | `{ "import": Import }` (`contracts/imports.md`; never credentials). `updated` on every state change and as it writes, at most once a second and after every page. Imported tickets, messages, contacts and articles publish no events of their own: refetch lists |
 | `chat.typing` (not stored; gateway only) | public | `contact:<wid>:<cid>` | `{ "ticket_id": "...", "user": {"id","name"} }` |
 
 Webhooks receive the envelope unchanged (minus `topics`); an event of a private team's ticket (`events.team_id`)

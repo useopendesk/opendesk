@@ -7,6 +7,7 @@ import type {
   Activity,
   Contact,
   Envelope,
+  Import,
   KnowledgeSource,
   McpServer,
   Member,
@@ -65,6 +66,19 @@ const simpleLists: Record<string, { key: readonly unknown[]; field: string }> = 
   webhook: { key: qk.webhooks, field: "webhook" },
   integration: { key: qk.integrations, field: "integration" },
 };
+
+/** What an import has written so far, to tell whether lists have news. */
+const landed = (x: Import) => x.counts.tickets + x.counts.updated + x.counts.articles + x.counts.contacts;
+
+let importTimer: ReturnType<typeof setTimeout> | null = null;
+/** Refetch what imports and undos write: tickets, people, labels and the knowledge base. */
+function refreshImported(qc: QueryClient) {
+  if (importTimer) return;
+  importTimer = setTimeout(() => {
+    importTimer = null;
+    for (const key of [["tickets"], ["contacts"], ["companies"], qk.tags, ["kb"]]) void qc.invalidateQueries({ queryKey: key });
+  }, 6000);
+}
 
 let countsTimer: ReturnType<typeof setTimeout> | null = null;
 /** Coalesce bursts (bulk edits) into one counts refetch. */
@@ -352,6 +366,17 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
       void qc.invalidateQueries({ queryKey: qk.widgets });
     }
     refreshCounts(qc);
+    return;
+  }
+
+  if (resource === "import") {
+    const x = d.import as Import | undefined;
+    if (!x) return;
+    const before = qc.getQueryData<Import[]>(qk.imports)?.find((i) => i.id === x.id);
+    upsertInList(qc, qk.imports, x, { prepend: true });
+    // Imported history is quiet, one event per import rather than per ticket: lists catch
+    // up when what it wrote moves, at most every few seconds (the last refetch comes after the last event).
+    if (!before || landed(before) !== landed(x) || before.status !== x.status) refreshImported(qc);
     return;
   }
 

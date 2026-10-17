@@ -88,6 +88,12 @@ func Previews(s Site, now time.Time) []Preview {
 		{Name: "notify-ai-balance-low", Title: "Notification: AI balance low", Mail: Notifications(s, batch("instant", []Note{plain("ai_balance_low", map[string]any{"remaining_usd": 1.84})}, 0))},
 		{Name: "notify-ai-balance-out", Title: "Notification: AI balance used up", Mail: Notifications(s, batch("instant", []Note{plain("ai_balance_out", map[string]any{"remaining_usd": 0.0})}, 0))},
 		{Name: "notify-auto-recharge-failed", Title: "Notification: auto-recharge failed", Mail: Notifications(s, batch("instant", []Note{plain("auto_recharge_failed", map[string]any{"reason": "card_declined"})}, 0))},
+		{Name: "notify-import-finished", Title: "Notification: import finished", Mail: Notifications(s, batch("instant", []Note{plain("import_finished", map[string]any{
+			"import_id": "0192f0c4-0000-7000-8000-00000000c0de", "source": "zendesk", "source_name": "Zendesk", "account": "Acme", "status": "completed",
+			"tickets": 142, "updated": 0, "articles": 30, "failed": 2, "error": ""})}, 0))},
+		{Name: "notify-import-needs-credentials", Title: "Notification: import needs new credentials", Mail: Notifications(s, batch("instant", []Note{plain("import_finished", map[string]any{
+			"import_id": "0192f0c4-0000-7000-8000-00000000c0de", "source": "helpscout", "source_name": "Help Scout", "account": "Acme", "status": "needs_credentials",
+			"tickets": 61, "updated": 0, "articles": 0, "failed": 0, "error": "Help Scout refused the credentials. Enter new ones to go on where it stopped."})}, 0))},
 		{Name: "notify-batch", Title: "Several notifications at once", Mail: Notifications(s, batch("instant", []Note{replied, assigned, mentioned, sla}, 0))},
 		{Name: "notify-after-cooldown", Title: "Five that waited out a cooldown", Mail: Notifications(s, batch("instant", cooldown, 0))},
 		{Name: "notify-bulk-assigned", Title: "Several tickets assigned at once", Mail: Notifications(s, batch("instant", bulk, 0))},

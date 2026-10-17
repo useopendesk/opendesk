@@ -17,6 +17,7 @@ import {
   Cable,
   CreditCard,
   Gauge,
+  Import as ImportIcon,
   Inbox,
   KeyRound,
   Layers,
@@ -74,7 +75,8 @@ type NavPath =
   | "/settings/ai/tools"
   | "/settings/ai/playground"
   | "/settings/ai/tests"
-  | "/settings/integrations";
+  | "/settings/integrations"
+  | "/settings/import";
 
 const AGENT_GROUP = "AI agent";
 
@@ -96,6 +98,7 @@ const groups: { title: string; items: { to: NavPath; label: string; icon: ReactN
       { to: "/settings/billing", label: "Plan and billing", icon: <CreditCard /> },
       { to: "/settings/ai", label: "AI", icon: <Bot /> },
       { to: "/settings/integrations", label: "Integrations", icon: <Plug /> },
+      { to: "/settings/import", label: "Import", icon: <ImportIcon /> },
     ],
   },
   {

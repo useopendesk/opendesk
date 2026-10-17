@@ -245,10 +245,10 @@ func groupTitle(g group) string {
 func groupTone(g group, urgent func(string) bool) string {
 	for _, n := range g.notes {
 		if urgent != nil && urgent(n.Type) {
-			return toneOf(n.Type)
+			return toneOf(n)
 		}
 	}
-	return toneOf(g.latest().Type)
+	return toneOf(g.latest())
 }
 
 // summaryLabels name notification counts in the summary line.
@@ -259,6 +259,7 @@ var summaryLabels = map[string][2]string{
 	"sla_breached":     {"missed target", "missed targets"},
 	"ai_handoff":       {"handoff", "handoffs"},
 	"team_joined":      {"team change", "team changes"},
+	"import_finished":  {"import", "imports"},
 	"ai_billing":       {"AI or billing notice", "AI or billing notices"},
 }
 
@@ -283,7 +284,7 @@ func summary(notes []Note, now time.Time, loc *time.Location) string {
 		count[k]++
 	}
 	var parts []string
-	for _, k := range []string{"assigned", "mentioned", "customer_replied", "sla_breached", "ai_handoff", "team_joined", "ai_billing", "other"} {
+	for _, k := range []string{"assigned", "mentioned", "customer_replied", "sla_breached", "ai_handoff", "team_joined", "import_finished", "ai_billing", "other"} {
 		n := count[k]
 		if n == 0 {
 			continue
@@ -520,6 +521,8 @@ func describe(n Note) copyOf {
 			intro: []string{rechargeReason(str(n.Data, "reason")) + " Auto-recharge is now off, so nothing else will be charged.",
 				"Update the payment method or add AI usage, then turn auto-recharge back on."},
 			cta: "Open billing", subjectTail: true}
+	case "import_finished":
+		return importCopy(n.Data)
 	}
 	return copyOf{title: "New notification", heading: "You have a new notification", cta: "Open opendesk", subjectTail: true}
 }
@@ -537,6 +540,7 @@ var TypeLabels = map[string]string{
 	"ai_balance_low":       "a low AI balance",
 	"ai_balance_out":       "a used-up AI balance",
 	"auto_recharge_failed": "auto-recharge problems",
+	"import_finished":      "finished imports",
 }
 
 func typeLabel(t string) string {
@@ -561,6 +565,12 @@ func noteURL(s Site, wid uuid.UUID, n Note) string {
 			return s.App("/settings/teams/"+url.PathEscape(id), "ws", ws)
 		}
 		return s.App("/settings/teams", "ws", ws)
+	case "import_finished":
+		id := ""
+		if u, err := uuid.Parse(str(n.Data, "import_id")); err == nil {
+			id = u.String()
+		}
+		return s.App("/settings/import", "ws", ws, "id", id)
 	}
 	if n.TicketID != nil {
 		return s.App("/inbox/mine/"+n.TicketID.String(), "ws", ws)
@@ -568,8 +578,8 @@ func noteURL(s Site, wid uuid.UUID, n Note) string {
 	return s.App("/", "ws", ws)
 }
 
-func toneOf(t string) string {
-	switch t {
+func toneOf(n Note) string {
+	switch n.Type {
 	case "assigned":
 		return "#3B82F6"
 	case "mentioned":
@@ -584,8 +594,77 @@ func toneOf(t string) string {
 		return "#F59E0B"
 	case "team_joined":
 		return "#06B6D4"
+	case "import_finished":
+		switch str(n.Data, "status") {
+		case "completed":
+			return "#22C55E"
+		case "needs_credentials":
+			return "#F59E0B"
+		}
+		return "#EF4444"
 	}
 	return "#8A8A8A"
+}
+
+// importCopy says how a history import ended (contracts/imports.md): done, waiting for new
+// credentials, or stopped.
+func importCopy(d map[string]any) copyOf {
+	src := or(clip(str(d, "source_name"), 40), "history")
+	from := or(clip(str(d, "account"), 60), or(clip(str(d, "source_name"), 40), "the old helpdesk"))
+	count := func(k string) int {
+		v, _ := num(d, k)
+		return int(v)
+	}
+	tickets, updated, articles, failed := count("tickets"), count("updated"), count("articles"), count("failed")
+	var facts []mailer.Fact
+	add := func(label string, v int) {
+		if v > 0 {
+			facts = append(facts, mailer.Fact{Label: label, Value: fmt.Sprint(v)})
+		}
+	}
+	add("Tickets", tickets)
+	add("Updated", updated)
+	add("Articles", articles)
+	add("Could not import", failed)
+	reason := clip(str(d, "error"), 300)
+	switch str(d, "status") {
+	case "completed":
+		var came []string
+		if tickets > 0 {
+			came = append(came, plural(tickets, "ticket", "tickets"))
+		}
+		if articles > 0 {
+			came = append(came, plural(articles, "article", "articles"))
+		}
+		intro := []string{"Nothing new came over from " + from + "."}
+		if len(came) > 0 {
+			intro = []string{strings.Join(came, " and ") + " came over from " + from + "."}
+		}
+		if updated > 0 {
+			intro = append(intro, plural(updated, "ticket that was already here was", "tickets that were already here were")+" brought up to date.")
+		}
+		if failed > 0 {
+			intro = append(intro, plural(failed, "item", "items")+" could not be imported. The import page lists them.")
+		}
+		return copyOf{title: "Your " + src + " import is done", heading: "Your " + src + " import is done", intro: intro, facts: facts, cta: "Open import", subjectTail: true}
+	case "needs_credentials":
+		return copyOf{title: "Your " + src + " import needs new credentials", heading: "Your " + src + " import needs new credentials",
+			intro: []string{or(reason, src+" refused the credentials. Enter new ones to go on where it stopped."),
+				"Everything that came over so far stays in opendesk."},
+			facts: facts, cta: "Enter new credentials", subjectTail: true}
+	}
+	return copyOf{title: "Your " + src + " import stopped", heading: "Your " + src + " import stopped",
+		intro: []string{or(reason, "Something went wrong. Resume the import to try again."),
+			"Everything that came over so far stays in opendesk, and resuming goes on where it stopped."},
+		facts: facts, cta: "Open import", subjectTail: true}
+}
+
+// plural is "1 ticket" or "3 tickets".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 func rechargeReason(code string) string {

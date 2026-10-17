@@ -480,7 +480,8 @@
     "groups": {
       "tickets": "Tickets",
       "team": "Team",
-      "ai_billing": "AI and billing"
+      "ai_billing": "AI and billing",
+      "workspace": "Workspace"
     },
     "types": {
       "title": "What reaches you where",
@@ -539,6 +540,10 @@
       "auto_recharge_failed": {
         "label": "Auto-recharge failed",
         "hint": "An auto-recharge payment failed"
+      },
+      "import_finished": {
+        "label": "Imports",
+        "hint": "An import you started is done, stopped or needs new credentials"
       }
     },
     "gap": {
