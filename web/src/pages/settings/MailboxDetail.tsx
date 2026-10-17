@@ -484,7 +484,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
               onChange={chooseSending}
               options={[
                 ...(sendingOnly && provider ? [{ value: provider, label: t("detail.send.with", { provider: providerName(provider) }) }] : []),
-                ...(systemOffered ? [{ value: "system" as const, label: t("connect.sendSystem") }] : []),
+                ...(systemOffered ? [{ value: "system" as const, label: noSender ? t("sendingOff.none") : t("connect.sendSystem") }] : []),
                 { value: "smtp" as const, label: t("connect.sendSmtp") },
               ]}
             />

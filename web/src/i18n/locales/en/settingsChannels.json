@@ -107,7 +107,8 @@
     "pillHint": "This mailbox has no way to send replies. Connect Google or Microsoft, or add SMTP.",
     "title": "This mailbox can't send replies",
     "body": "Replies from {{email}} go out through your own email provider. Connect Google or Microsoft, or add SMTP from your mail server or a sending service such as Resend or Postmark. Until then, replies can't be sent.",
-    "choose": "Pick SMTP, or connect your provider below."
+    "choose": "Pick SMTP, or connect your provider below.",
+    "none": "Not set up"
   },
   "smtpPresets": {
     "label": "Using a sending service?",
