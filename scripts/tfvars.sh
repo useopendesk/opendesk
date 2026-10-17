@@ -10,7 +10,9 @@
 #   scripts/tfvars.sh push        upload the local file, after showing the diff
 #                                 and asking
 #
-# After a push, run Deploy with target "infrastructure" to apply it. The bucket is
+# After a push, run Deploy with target "backend" to apply it and roll the services
+# onto the task definitions it registers ("infrastructure" alone leaves the
+# services on their current revisions). The bucket is
 # TF_STATE_BUCKET, or opendesk-terraform-state-<account id> of the current AWS
 # credentials (AWS_PROFILE or an SSO session).
 set -euo pipefail
@@ -111,6 +113,6 @@ case "$cmd" in
       *) echo "not pushed"; exit 1 ;;
     esac
     aws s3 cp "$file" "$uri" --sse AES256 --content-type text/plain --only-show-errors
-    echo "pushed $uri; run Deploy with target infrastructure to apply it"
+    echo "pushed $uri; run Deploy with target backend to apply it and roll the services"
     ;;
 esac

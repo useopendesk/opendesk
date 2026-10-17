@@ -403,7 +403,8 @@ limit), then:
 scripts/put-secret.sh OPENROUTER_API_KEY
 ```
 
-Add `OPENROUTER_API_KEY` to `optional_secrets` and apply. It switches AI on
+Add `OPENROUTER_API_KEY` to `optional_secrets` and run Deploy with target
+`backend`. It switches AI on
 (`AI_PROVIDER=openrouter`) only when it is listed, so a task never starts with a
 provider and no key. To call Anthropic directly instead, store and list
 `ANTHROPIC_API_KEY` without `OPENROUTER_API_KEY`; embeddings then need
@@ -544,7 +545,9 @@ setup):
   `infrastructure-approval`).
 - Settings (`terraform.tfvars`) live in the state bucket, not in git:
   `scripts/tfvars.sh pull`, edit, `scripts/tfvars.sh push`, then run Deploy with
-  target `infrastructure`.
+  target `backend`: it applies them and rolls the services onto the task
+  definitions Terraform registers. Target `infrastructure` applies them but
+  leaves the services on their current revisions.
 - Secret values go straight to Secrets Manager with `scripts/put-secret.sh NAME`,
   never through GitHub; a new optional secret also goes in `optional_secrets`.
 

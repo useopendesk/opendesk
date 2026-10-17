@@ -35,8 +35,7 @@ if ! aws secretsmanager describe-secret --secret-id "$id" >/dev/null 2>&1; then
   cat >&2 <<EOF
 $id does not exist (or these AWS credentials cannot read it).
 Terraform creates it: merge the change that adds $name to
-deploy/terraform/modules/secrets, let Deploy apply it (or run Deploy with target
-infrastructure), then run this again. Check credentials with
+deploy/terraform/modules/secrets, let Deploy apply it, then run this again. Check credentials with
 aws sts get-caller-identity.
 EOF
   exit 1
@@ -47,6 +46,10 @@ trap 'unset value' EXIT
 if [ -t 0 ]; then
   read -rs -p "$name (input hidden): " value
   echo >&2
+  # A terminal with bracketed paste wraps a pasted value in ESC[200~ ... ESC[201~,
+  # and read keeps the markers.
+  value=${value//$'\e[200~'/}
+  value=${value//$'\e[201~'/}
   [ -n "$value" ] || { echo "empty value, nothing stored" >&2; exit 1; }
   printf '%s' "$value" | aws secretsmanager put-secret-value --secret-id "$id" --secret-string file:///dev/stdin >/dev/null
   unset value
@@ -57,6 +60,7 @@ fi
 echo "stored $name"
 cat >&2 <<EOF
 If $name is new, list it in optional_secrets (scripts/tfvars.sh pull, edit,
-scripts/tfvars.sh push) and run Deploy with target infrastructure; the tasks
-read secrets when they start, so an existing one takes effect on the next deploy.
+scripts/tfvars.sh push) and run Deploy with target backend, which applies it and
+rolls the services; the tasks read secrets when they start, so an existing one
+takes effect on the next deploy.
 EOF

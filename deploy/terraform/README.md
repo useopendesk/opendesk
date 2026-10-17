@@ -150,7 +150,9 @@ Production is applied by the Deploy workflow, from `main`, never by hand:
 - **Settings** (`terraform.tfvars`) are not in git. They live in the state
   bucket, at `opendesk/production.tfvars`: `scripts/tfvars.sh pull`, edit,
   `scripts/tfvars.sh push` (it shows the diff and asks), then run Deploy with
-  target `infrastructure`. `scripts/tfvars.sh diff` compares the two copies.
+  target `backend`, which applies them and rolls the services onto the task
+  definitions Terraform registers (target `infrastructure` leaves the services
+  on their current revisions). `scripts/tfvars.sh diff` compares the two copies.
 - **Secret values** never pass through GitHub: `scripts/put-secret.sh NAME`
   stores one in Secrets Manager. A new optional secret also goes in
   `optional_secrets` in the settings.
