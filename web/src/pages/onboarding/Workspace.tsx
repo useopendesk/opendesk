@@ -5,11 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AuthHeading } from "@/app/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/input";
-import { AuthField, Notice, slugify } from "@/components/auth/parts";
+import { AuthField, Notice } from "@/components/auth/parts";
 import { OnboardingSteps } from "@/components/auth/OnboardingSteps";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import { appOrigin, config } from "@/lib/config";
 import { reloadSession, selectWorkspace, useSession, useWorkspace } from "@/lib/session";
 import { DeleteAccountDialog } from "@/components/account/DeleteAccountDialog";
 import { track } from "@/lib/analytics";
@@ -50,9 +49,6 @@ export default function Workspace() {
     }
   };
 
-  // The help center is served where the app is: app.opendesk.sh, or this instance's own address.
-  const host = appOrigin().replace(/^https?:\/\//, "");
-
   return (
     <div>
       {hasWorkspaces && current && (
@@ -62,26 +58,12 @@ export default function Workspace() {
         </Link>
       )}
       <OnboardingSteps current={1} />
-      <AuthHeading title="Create your workspace" subtitle="A workspace holds your team's inboxes, contacts and help center. You can rename it later." />
+      <AuthHeading title="Create your workspace" subtitle="A workspace holds your team's inboxes, contacts and help center. You can rename it and set up your help center address later." />
       {error && <Notice className="mb-4">{error}</Notice>}
       <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
         <AuthField label="Workspace name">
           {(id) => <TextInput id={id} className="h-9" autoFocus value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Acme support" />}
         </AuthField>
-        <div className="rounded-md border border-line bg-sunken px-3 py-2.5">
-          <div className="text-[11.5px] text-fg-3">Your help center</div>
-          <div className="mono mt-0.5 truncate text-[12.5px] text-fg-2">
-            {config.helpDomain ? (
-              <>
-                <span className="text-fg">{slugify(name)}</span>.{config.helpDomain}
-              </>
-            ) : (
-              <>
-                {host}/help/<span className="text-fg">{slugify(name)}</span>
-              </>
-            )}
-          </div>
-        </div>
         <Button type="submit" variant="primary" size="lg" className="mt-1 w-full" loading={busy}>
           Continue
         </Button>

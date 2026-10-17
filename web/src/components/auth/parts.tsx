@@ -389,15 +389,3 @@ export function AuthField({ label, children, aside }: { label: string; children:
     </div>
   );
 }
-
-export function slugify(name: string) {
-  return (
-    name
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "your-team"
-  );
-}

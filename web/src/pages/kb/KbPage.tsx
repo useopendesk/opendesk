@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { BookOpen, ExternalLink, Folder, FolderPlus, Library, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { BookOpen, ExternalLink, Folder, FolderPlus, Library, MoreHorizontal, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader, Stat, StatStrip } from "@/components/layout";
 import { Avatar } from "@/components/ui/avatar";
@@ -51,6 +51,7 @@ export default function KbPage() {
   const ws = useWorkspace();
   const role = useRole();
   const canEdit = atLeast(role, "agent");
+  const canConfigure = atLeast(role, "admin");
   const [term, setTerm] = useState(search.q ?? "");
   const debounced = useDebounced(term, 250);
   const [editing, setEditing] = useState<KbCollection | "new" | null>(null);
@@ -111,6 +112,15 @@ export default function KbPage() {
                   <ExternalLink className="size-3.5" />
                   {t("viewHelpCenter")}
                 </a>
+              </Button>
+            )}
+            {canConfigure && helpBrand && (
+              // The help center's address, custom domain and look live on its brand.
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/settings/brands/$brandId" params={{ brandId: helpBrand.id }} search={{ tab: "help" }}>
+                  <Settings2 className="size-3.5" />
+                  {t("helpCenterSettings")}
+                </Link>
               </Button>
             )}
             {canEdit && <DraftFromTicketsLink collection={search.collection} />}

@@ -275,10 +275,13 @@ func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal,
 		if !taken {
 			break
 		}
-		if i > 8 {
-			return CoreWorkspace{}, httpx.Conflict("Could not pick a unique address for this workspace. Try another name.")
+		// The address is picked for the workspace, never asked of it: a longer suffix after a
+		// few tries, so a name is never refused over it. Admins change it in brand settings.
+		suffix := crypto.RandomString(4)
+		if i >= 4 {
+			suffix = crypto.RandomString(10)
 		}
-		slug = base + "-" + crypto.RandomString(4)
+		slug = strings.Trim(base[:min(len(base), 39-len(suffix))], "-") + "-" + suffix
 	}
 	settings := map[string]any{"timezone": "UTC", "help_center_enabled": true, "help_center_title": name + " help center",
 		"csat_enabled": false, "auto_assign": "none"}

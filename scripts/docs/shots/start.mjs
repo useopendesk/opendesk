@@ -40,14 +40,12 @@ export const shots = [
     run: async (page) => {
       await page.getByLabel('Workspace name').fill('Margin');
       await page.getByLabel('Workspace name').blur();
-      await cloudHost(page);
     },
     clip: (p) => [steps(p), button(p, 'Continue')],
     pad: 28,
     highlight: [
       { target: (p) => p.getByLabel('Workspace name'), label: 1, badge: 'l' },
-      { target: (p) => p.getByText('Your help center', { exact: true }).locator('xpath=..'), label: 2, badge: 'l' },
-      { target: (p) => button(p, 'Continue'), label: 3, badge: 'l' },
+      { target: (p) => button(p, 'Continue'), label: 2, badge: 'l' },
     ],
   },
   {
