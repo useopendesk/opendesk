@@ -30,6 +30,18 @@ id="opendesk/production/$name"
 
 export AWS_PAGER=""
 
+# Terraform creates the entry (empty); check it exists before asking for the value.
+if ! aws secretsmanager describe-secret --secret-id "$id" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+$id does not exist (or these AWS credentials cannot read it).
+Terraform creates it: merge the change that adds $name to
+deploy/terraform/modules/secrets, let Deploy apply it (or run Deploy with target
+infrastructure), then run this again. Check credentials with
+aws sts get-caller-identity.
+EOF
+  exit 1
+fi
+
 value=""
 trap 'unset value' EXIT
 if [ -t 0 ]; then

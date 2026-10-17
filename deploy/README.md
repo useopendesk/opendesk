@@ -394,21 +394,21 @@ against a staging copy, or with the dashboard's "Send test webhook".
 
 ### 9. AI providers
 
-The Cloud runs Anthropic for generation and Voyage for embeddings
-(`contracts/ai.md`; models in `ai_model`, `ai_fast_model`, `embeddings_model`).
-Create an Anthropic API key (console.anthropic.com, an organization with a
-spending limit) and a Voyage key (dash.voyageai.com), then:
+The Cloud runs on OpenRouter: one key for generation, Jev decisions and
+embeddings (`contracts/ai.md`; models in `ai_model`, `ai_fast_model`, empty for
+the app's defaults). Create an OpenRouter API key (openrouter.ai, with a credit
+limit), then:
 
 ```sh
-scripts/put-secret.sh ANTHROPIC_API_KEY
-scripts/put-secret.sh VOYAGE_API_KEY
+scripts/put-secret.sh OPENROUTER_API_KEY
 ```
 
-Add `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` to `optional_secrets` and apply.
-Each one switches its part on (`AI_PROVIDER=anthropic`,
-`EMBEDDINGS_DRIVER=voyage`) only when it is listed, so a task never starts with
-a provider and no key. Without Voyage, search falls back to Postgres full-text
-search. PlanetScale Postgres supports the `vector` extension that semantic
+Add `OPENROUTER_API_KEY` to `optional_secrets` and apply. It switches AI on
+(`AI_PROVIDER=openrouter`) only when it is listed, so a task never starts with a
+provider and no key. To call Anthropic directly instead, store and list
+`ANTHROPIC_API_KEY` without `OPENROUTER_API_KEY`; embeddings then need
+`VOYAGE_API_KEY` (`EMBEDDINGS_DRIVER=voyage`), and without it search falls back
+to Postgres full-text search. PlanetScale Postgres supports the `vector` extension that semantic
 search uses; the first migration creates it.
 
 ### 10. Native apps

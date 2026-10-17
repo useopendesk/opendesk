@@ -400,7 +400,12 @@ locals {
     # Custom domains become Cloudflare for SaaS custom hostnames; the zone id
     # needs the token beside it.
     CLOUDFLARE_SAAS_ZONE_ID = local.help_zone_id
-    } : {}, contains(var.optional_secrets, "ANTHROPIC_API_KEY") ? {
+    } : {}, contains(var.optional_secrets, "OPENROUTER_API_KEY") ? {
+    # One key for chat, Jev decisions and (without Voyage) embeddings.
+    AI_PROVIDER   = "openrouter"
+    AI_MODEL      = var.ai_model
+    AI_FAST_MODEL = var.ai_fast_model
+    } : contains(var.optional_secrets, "ANTHROPIC_API_KEY") ? {
     AI_PROVIDER   = "anthropic"
     AI_MODEL      = var.ai_model
     AI_FAST_MODEL = var.ai_fast_model

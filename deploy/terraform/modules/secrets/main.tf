@@ -6,7 +6,7 @@
 # credential unreadable, and a new AUTH_SECRET signs everyone out.
 #
 # Operator-supplied secrets (OAuth client secrets, Turnstile, PostHog, Stripe
-# keys and price ids, the Anthropic and Voyage API keys, the APNs key, the
+# keys and price ids, the OpenRouter, Anthropic and Voyage API keys, the APNs key, the
 # Cloudflare for SaaS token) are
 # created empty. Set them with
 #   scripts/put-secret.sh <KEY>
@@ -50,6 +50,7 @@ locals {
     "STRIPE_PRICE_PRO",
     "STRIPE_PRICE_PRO_YEARLY",
     "STRIPE_PRICE_CREDITS",
+    "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
     "VOYAGE_API_KEY",
     "APNS_KEY",

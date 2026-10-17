@@ -289,7 +289,7 @@ variable "optional_secrets" {
     (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, MICROSOFT_MAILBOX_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
-    ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN). See modules/secrets.
+    OPENROUTER_API_KEY, ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN). See modules/secrets.
   EOT
   type        = set(string)
   default     = []
@@ -298,24 +298,27 @@ variable "optional_secrets" {
     condition = alltrue([for s in var.optional_secrets : contains([
       "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_MAILBOX_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
-      "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY", "CLOUDFLARE_SAAS_TOKEN",
+      "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY", "CLOUDFLARE_SAAS_TOKEN",
     ], s)])
     error_message = "optional_secrets may only list the operator-supplied secrets."
   }
 }
 
 # AI (contracts/ai.md). The provider is switched on only once its key is in
-# optional_secrets, so a task never starts with a provider and no key.
+# optional_secrets, so a task never starts with a provider and no key:
+# OPENROUTER_API_KEY sets openrouter, else ANTHROPIC_API_KEY sets anthropic.
+# Model ids are the provider's own (openrouter "anthropic/claude-sonnet-5.5",
+# anthropic "claude-sonnet-5-5"); empty uses the app's default for the provider.
 variable "ai_model" {
-  description = "AI_MODEL for the anthropic provider."
+  description = "AI_MODEL for the AI provider; empty uses the app's default."
   type        = string
-  default     = "claude-sonnet-5-5"
+  default     = ""
 }
 
 variable "ai_fast_model" {
-  description = "AI_FAST_MODEL for the anthropic provider."
+  description = "AI_FAST_MODEL for the AI provider; empty uses the app's default."
   type        = string
-  default     = "claude-haiku-4-5-20251001"
+  default     = ""
 }
 
 variable "embeddings_model" {

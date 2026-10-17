@@ -48,16 +48,18 @@ microsoft_mailbox_oauth = true
 #   "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
 #   # Billing (opendesk Cloud only): turns plans and limits on.
 #   "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
-#   # AI: ANTHROPIC_API_KEY sets AI_PROVIDER=anthropic, VOYAGE_API_KEY sets EMBEDDINGS_DRIVER=voyage.
-#   "ANTHROPIC_API_KEY", "VOYAGE_API_KEY",
+#   # AI: OPENROUTER_API_KEY sets AI_PROVIDER=openrouter (chat, Jev and embeddings),
+#   # else ANTHROPIC_API_KEY sets AI_PROVIDER=anthropic; VOYAGE_API_KEY sets EMBEDDINGS_DRIVER=voyage.
+#   "OPENROUTER_API_KEY",
 #   # iPhone push: the APNs auth key (.p8). Needs apns_key_id and apns_team_id.
 #   "APNS_KEY",
 #   # Help center custom domains: a token with SSL and Certificates edit on the
 #   # help zone only. Sets CLOUDFLARE_SAAS_ZONE_ID to that zone.
 #   "CLOUDFLARE_SAAS_TOKEN",
 # ]
-# ai_model      = "claude-sonnet-5-5"
-# ai_fast_model = "claude-haiku-4-5-20251001"
+# Empty uses the app's default for the provider; ids are the provider's own.
+# ai_model      = "anthropic/claude-sonnet-5.5"
+# ai_fast_model = "anthropic/claude-haiku-5.5"
 
 # Native apps (contracts/native.md).
 # apns_key_id        = "ABC123DEFG"
