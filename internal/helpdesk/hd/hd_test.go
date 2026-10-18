@@ -32,6 +32,50 @@ func TestSanitizeRich(t *testing.T) {
 	}
 }
 
+func TestSanitizeEmailHTML(t *testing.T) {
+	in := `<html><head><style><!--
+body{margin:0} .x td{color:#333 !important;behavior:url(x.htc)} a{background:url(javascript:alert(1))}
+@import url(https://evil.example/x.css);
+@media only screen and (max-width:600px){.wrap{width:100% !important}}
+@font-face{font-family:x;src:url(https://f.example/x.woff)}
+--></style><script>alert(1)</script></head><body bgcolor="#f6f9fc">` +
+		`<table width="600" cellpadding="0" border="0" align="center" bgcolor="#ffffff" style="border-radius:8px;position:fixed;width:expression(alert(1));background-image:url('https://img.example/a.png');font-family:'Helvetica Neue', Arial">` +
+		`<tr><td valign="top" class="wrap" style="padding:16px 24px;background:url(data:image/svg+xml;base64,AAAA);color:rgb(10,20,30);-webkit-text-size-adjust:100%" onclick="x()">` +
+		`<font color="red" size="2">Hi</font><img src="https://img.example/b.png" width="48" height="48" style="display:block;border:0"></td></tr></table></body></html>`
+	got := hd.SanitizeEmailHTML(in)
+	for _, want := range []string{
+		`<style>body{margin:0}.x td{color:#333 !important}@media only screen and (max-width:600px){.wrap{width:100% !important}}</style>`,
+		`width="600"`, `cellpadding="0"`, `align="center"`, `bgcolor="#ffffff"`, `valign="top"`, `class="wrap"`, `<font color="red" size="2">`,
+		`border-radius: 8px`, `background-image: url(&#39;https://img.example/a.png&#39;)`, `color: rgb(10,20,30)`, `-webkit-text-size-adjust: 100%`, `display: block`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+	for _, bad := range []string{"script", "alert", "behavior", "javascript", "@import", "@font-face", "position", "expression", "svg", "onclick", "<body"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("kept %q in %s", bad, got)
+		}
+	}
+	// CSS escapes: checked decoded, refused when they do not decode.
+	for _, style := range []string{`background:\75 rl(http://evil.example/x) \12345678`, `background:url(https://img.example/a.png) \12345678`,
+		`width:\65 xpression(alert(1))`, `background:\75 rl(javascript:alert(1))`, `color:\3c/style\3e`,
+		`background:\75 rl(https://tracker.example/open.gif)`, `background-image:u\72 l(https://tracker.example/open.gif)`} {
+		if got := hd.SanitizeEmailHTML(`<p style="` + style + `">x</p>`); strings.Contains(got, "style") {
+			t.Errorf("escaped style %q kept: %s", style, got)
+		}
+	}
+	if got := hd.SanitizeEmailHTML(`<p style="color:red" title="Hi there">x &lt; y<br/>z</p>`); got != `<p style="color: red" title="Hi there">x &lt; y<br/>z</p>` {
+		t.Errorf("plain markup changed: %s", got)
+	}
+	if got := hd.SanitizeEmailHTML(`<p style="color:red;background:\75 rl(https://t.example/x)" title="a\b">x\y</p>`); got != `<p style="color: red" title="a\b">x\y</p>` {
+		t.Errorf("escaped style: %s", got)
+	}
+	if got := hd.SanitizeEmailHTML(`<style>p{color:red}</style><p>Hi</p>`); hd.SanitizeEmailHTML(got) != got {
+		t.Errorf("not stable: %s", got)
+	}
+}
+
 func TestHTMLToText(t *testing.T) {
 	got := hd.HTMLToText(`<p>Hello &amp; welcome</p><p>Line<br>two</p><style>p{}</style>`)
 	if got != "Hello & welcome\nLine\ntwo" {

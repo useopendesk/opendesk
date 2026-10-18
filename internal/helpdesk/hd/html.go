@@ -48,22 +48,42 @@ func newRichPolicy() *bluemonday.Policy {
 }
 
 // emailPolicy is the policy of every stored email body, and of signatures and auto-replies,
-// which are sent as part of email bodies: no scripts, styles, event handlers, forms or
-// frames; links get rel="nofollow noopener" and open in a new tab; images are allowed
-// (http, https and data: images).
+// which are sent as part of email bodies: no scripts, event handlers, forms or frames;
+// layout attributes and email CSS (css.go) stay; links get rel="nofollow noopener" and
+// open in a new tab; images are allowed (http, https and data: images).
 var emailPolicy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	p.AllowRelativeURLs(false)
 	p.RequireNoFollowOnLinks(true)
 	p.AddTargetBlankToFullyQualifiedLinks(true)
 	p.AllowDataURIImages()
-	p.AllowAttrs("align").Matching(regexp.MustCompile(`(?i)^(left|right|center|justify)$`)).OnElements("p", "div", "td", "th", "table", "img")
+	p.AllowElements("center", "font")
+	p.AllowAttrs("align").Matching(regexp.MustCompile(`(?i)^(left|right|center|justify)$`)).OnElements("p", "div", "td", "th", "tr", "table", "img", "h1", "h2", "h3", "h4", "h5", "h6")
+	p.AllowAttrs("valign").Matching(bluemonday.CellVerticalAlign).OnElements("table", "tr", "td", "th", "img")
+	p.AllowAttrs("width", "height").Matching(bluemonday.NumberOrPercent).OnElements("table", "td", "th", "img", "tr")
+	p.AllowAttrs("cellpadding", "cellspacing", "border").Matching(bluemonday.Integer).OnElements("table")
+	p.AllowAttrs("bgcolor").Matching(cssColor).OnElements("table", "tr", "td", "th")
+	p.AllowAttrs("color").Matching(cssColor).OnElements("font")
+	p.AllowAttrs("size").Matching(regexp.MustCompile(`^[+-]?[1-7]$`)).OnElements("font")
+	p.AllowAttrs("face").Matching(regexp.MustCompile(`^[\p{L}\p{N} ,'"_-]{1,200}$`)).OnElements("font")
+	p.AllowAttrs("dir").Matching(bluemonday.Direction).Globally()
+	p.AllowAttrs("class").Matching(regexp.MustCompile(`^[\p{L}\p{N}_ -]{1,500}$`)).Globally()
+	for prop := range emailCSSProps {
+		p.AllowStyles(prop).MatchingHandler(emailCSSValue).Globally()
+	}
 	return p
 }()
 
-// SanitizeEmailHTML is the only way email HTML reaches the database.
+var cssColor = regexp.MustCompile(`(?i)^(#[0-9a-f]{3,8}|[a-z]{3,20})$`)
+
+// SanitizeEmailHTML is the only way email HTML reaches the database. The email's style
+// sheets, cleaned, lead the body.
 func SanitizeEmailHTML(raw string) string {
-	return strings.TrimSpace(emailPolicy.Sanitize(raw))
+	body := dropEscapedStyles(strings.TrimSpace(emailPolicy.Sanitize(raw)))
+	if sheets := emailStyleSheets(raw); sheets != "" && body != "" {
+		return "<style>" + sheets + "</style>" + body
+	}
+	return body
 }
 
 // SanitizeSignature cleans a signature or auto-reply written by an admin or team lead.

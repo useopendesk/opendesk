@@ -72,6 +72,31 @@ export type Story = {
 
 const mention = (key: string, name: string) => `<span class="mention" data-id="@@${key}">@${name}</span>`;
 
+// A designed email as the server stores it: its cleaned style sheet first, then the body.
+const receiptRow = (label: string, value: string, strong = false) =>
+  `<tr><td style="padding:10px 0;font-size:14px;color:#414552;${strong ? "font-weight:600;border-top:1px solid #ebeef1" : ""}">${label}</td><td align="right" style="padding:10px 0;font-size:14px;color:#414552;${strong ? "font-weight:600;border-top:1px solid #ebeef1" : ""}">${value}</td></tr>`;
+const RECEIPT =
+  `<style>.od-wrap{width:100% !important}@media only screen and (max-width:620px){.od-card{width:100% !important}.od-pad{padding:24px 20px !important}}</style>` +
+  `<p>Forwarding the receipt for the second charge.</p>` +
+  `<div style="background-color:#f6f9fc;padding:32px 0;font-family:-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">` +
+  `<table class="od-card" width="600" align="center" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="border-radius:12px;border:1px solid #ebeef1">` +
+  `<tr><td align="center" style="background-color:#1f2937;border-radius:12px 12px 0 0;padding:28px 0"><span style="display:inline-block;width:44px;height:44px;line-height:44px;border-radius:22px;background-color:#ffffff;color:#1f2937;font-weight:700;font-size:20px">M</span></td></tr>` +
+  `<tr><td class="od-pad" style="padding:32px 48px">` +
+  `<p style="margin:0;font-size:13px;color:#687385">Receipt from Margin Labs GmbH</p>` +
+  `<p style="margin:4px 0 24px;font-size:28px;font-weight:600;color:#1a1f36">€4,320.00</p>` +
+  `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>` +
+  `<td valign="top" style="font-size:12px;color:#687385;text-transform:uppercase;letter-spacing:0.04em">Amount paid<br><span style="font-size:14px;color:#414552;text-transform:none;letter-spacing:0">€4,320.00</span></td>` +
+  `<td valign="top" style="font-size:12px;color:#687385;text-transform:uppercase;letter-spacing:0.04em">Date paid<br><span style="font-size:14px;color:#414552;text-transform:none;letter-spacing:0">Oct 9, 2026, 08:14</span></td>` +
+  `<td valign="top" style="font-size:12px;color:#687385;text-transform:uppercase;letter-spacing:0.04em">Payment method<br><span style="font-size:14px;color:#414552;text-transform:none;letter-spacing:0">Visa · 4417</span></td>` +
+  `</tr></table>` +
+  `<p style="margin:32px 0 8px;font-size:12px;color:#687385;text-transform:uppercase;letter-spacing:0.04em">Summary</p>` +
+  `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f8fa;border-radius:8px;padding:4px 16px">` +
+  receiptRow("Margin Business, annual (12 seats)", "€4,320.00") +
+  receiptRow("Amount paid", "€4,320.00", true) +
+  `</table>` +
+  `<p style="margin:32px 0 0;font-size:13px;line-height:20px;color:#687385">Questions? Reply to this email or visit <a href="https://margin.app/help" style="color:#635bff;text-decoration:none">margin.app/help</a>.</p>` +
+  `</td></tr></table><img src="https://mail.margin.app/o/7f3a.gif" width="1" height="1" alt=""></div>`;
+
 export const STORIES: Story[] = [
   {
     number: 1072,
@@ -198,6 +223,11 @@ export const STORIES: Story[] = [
         from: "c",
         min: 60 * 5,
         html: `<p>Hello,</p><p>We were charged twice for our annual renewal on October 9th (2 × €4,320). Can you refund the duplicate? Card ending 4417.</p><p>Tomás García, Brightline Logistics</p>`,
+      },
+      {
+        from: "c",
+        min: 60 * 5 - 2,
+        html: RECEIPT,
       },
       {
         from: "maya",

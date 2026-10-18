@@ -110,10 +110,13 @@ func TestThreadingOutlookAndApple(t *testing.T) {
 	if msg.TicketID != tk.ID {
 		t.Fatal("outlook reply not threaded")
 	}
-	for _, bad := range []string{"invoice was sent", "From:", "<script", "onclick", "<style", "alert"} {
+	for _, bad := range []string{"invoice was sent", "From:", "<script", "onclick", "alert"} {
 		if strings.Contains(msg.BodyHTML, bad) {
 			t.Fatalf("outlook body contains %q: %s", bad, msg.BodyHTML)
 		}
+	}
+	if !strings.HasPrefix(msg.BodyHTML, "<style>p{margin:0}</style>") || !strings.Contains(msg.BodyHTML, "font-family: Aptos") {
+		t.Fatalf("outlook styles not kept: %s", msg.BodyHTML)
 	}
 	if !strings.Contains(msg.BodyHTML, "That makes sense") || !strings.Contains(msg.BodyText, "Olaf") || strings.Contains(msg.BodyText, "Monday") {
 		t.Fatalf("outlook body: %s / %q", msg.BodyHTML, msg.BodyText)

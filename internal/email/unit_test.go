@@ -107,6 +107,20 @@ func TestStripQuotesText(t *testing.T) {
 	}
 }
 
+func TestRenderBodyKeepsDesign(t *testing.T) {
+	pm := &parsedMail{Subject: "Your receipt", HTML: `<html><head><style>.card{border-radius:8px}</style></head>` +
+		`<body bgcolor="#f6f9fc" style="font-family:Arial"><table class="card" width="600" align="center"><tr><td style="padding:24px">Receipt #1221</td></tr></table></body></html>`}
+	body := renderBody(pm, nil)
+	for _, want := range []string{`<style>.card{border-radius:8px}</style>`, `<div style="background-color: #f6f9fc; font-family: Arial">`, `width="600"`, `padding: 24px`} {
+		if !strings.Contains(body.html, want) {
+			t.Errorf("missing %q in %s", want, body.html)
+		}
+	}
+	if body.text != "Receipt #1221" {
+		t.Errorf("text %q", body.text)
+	}
+}
+
 func TestBuildMIMEHeaderInjection(t *testing.T) {
 	m := &outMessage{
 		From:      mail.Address{Name: "Eve\r\nBcc: victim@x.test", Address: "help@acme.test"},

@@ -129,6 +129,8 @@ Input and output
   contacts typed by agents). Untrusted names (email headers, IdP claims) use `Clean`.
 - Email HTML and agent HTML are sanitized with bluemonday before storage. Never render
   stored HTML without that.
+- Inbound email renders in a sandboxed frame without scripts, and its images from other
+  sites (including CSS `url()`) load only when the reader asks (`web/src/lib/sanitize.ts`).
 - Webhook and other outbound URLs are HTTPS and refuse private, loopback and link-local
   targets (SSRF), except on a development instance.
 

@@ -93,10 +93,16 @@ enum HTMLText {
         html.range(of: #"(?i)<(table|img|blockquote|pre|h[1-6]|ul|ol|hr|font|center)\b|style\s*="#, options: .regularExpression) != nil
     }
 
+    /// A designed email (tables, painted backgrounds): it keeps the sender's look on a light pane, as on the web.
+    static func isDesignedEmail(_ html: String) -> Bool {
+        html.range(of: #"(?i)<table[\s>]|\sbgcolor=|background(-color|-image)?\s*:"#, options: .regularExpression) != nil
+    }
+
     /// A self-contained document for a message, for a web view with JavaScript off.
     /// Images load over https only (and data: URIs), with no referrer, as on the web.
     static func document(body: String, dark: Bool, textColor: String, linkColor: String, quoteColor: String, fontSize: Int = 15) -> String {
-        """
+        if isDesignedEmail(body) { return designedDocument(body: body, inset: dark, fontSize: fontSize) }
+        return """
         <!doctype html><html><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <meta name="referrer" content="no-referrer">
@@ -113,6 +119,25 @@ enum HTMLText {
         blockquote { margin: 0.5em 0; padding-left: 0.8em; border-left: 2px solid \(quoteColor); color: \(quoteColor); }
         p { margin: 0 0 0.75em; } p:last-child { margin-bottom: 0; }
         \(dark ? "body * { background-color: transparent !important; color: inherit !important; border-color: \(quoteColor) !important; } a { color: \(linkColor) !important; }" : "")
+        </style></head><body>\(body)</body></html>
+        """
+    }
+
+    /// A designed email in its own light document; on a dark screen the pane gets a margin.
+    private static func designedDocument(body: String, inset: Bool, fontSize: Int) -> String {
+        """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <meta name="referrer" content="no-referrer">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; font-src https: data:">
+        <meta name="color-scheme" content="light">
+        <style>
+        :root { color-scheme: light; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { padding: \(inset ? 12 : 0)px; border-radius: 8px; color: #1f2328; font: -apple-system-body; font-size: \(fontSize)px; line-height: 1.5; overflow-wrap: break-word; -webkit-text-size-adjust: 100%; }
+        img { max-width: 100% !important; }
+        img[width][height] { height: auto !important; }
+        table { max-width: 100% !important; }
         </style></head><body>\(body)</body></html>
         """
     }

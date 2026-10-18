@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Check, Download, FileText, Globe, Lock, MoreHorizontal, Reply, RotateCw, ShieldAlert } from "lucide-react";
-import { memo, useState } from "react";
+import { AlertCircle, Check, Download, FileText, Globe, ImageOff, Lock, MoreHorizontal, Reply, RotateCw, ShieldAlert } from "lucide-react";
+import { memo, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
 import type { Attachment, Message } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { q } from "@/lib/queries";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { isDesignedEmail, type Sanitized, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
 import { bytes, clock, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,6 +19,7 @@ import { AiActionCard, AiRating } from "./AgentReply";
 import { ImproveAnswerButton } from "@/components/agent/quality";
 import { AiAuthorLabel, TranslateButton, TranslatedNote, useMessageTranslation } from "@/components/ai/ticket/MessageAi";
 import { BotRefFace } from "@/components/bots/BotFace";
+import { EmailFrame } from "./EmailFrame";
 
 function authorName(m: Message): string {
   if (m.author.user) return m.author.user.name;
@@ -28,13 +29,44 @@ function authorName(m: Message): string {
   return m.from_name || m.from_email || "Unknown";
 }
 
-function Body({ html, className }: { html: string; className?: string }) {
-  return <div className={cn("prose-od ph-no-capture", className)} data-ph-mask dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />;
+type SanitizedBody = Sanitized & { designed: boolean };
+
+/**
+ * A message body, sanitized once. An inbound email holds back images from other sites
+ * until the reader loads them; a designed one renders in its own frame.
+ */
+function useBody(html: string, inbound: boolean, designable: boolean, remote: boolean): SanitizedBody {
+  return useMemo(() => {
+    const opts = { blockRemoteImages: inbound && !remote };
+    if (designable && isDesignedEmail(html)) return { designed: true, ...sanitizeEmailHtml(html, opts) };
+    return { designed: false, ...sanitizeProse(html, opts) };
+  }, [html, inbound, designable, remote]);
 }
 
-function Original({ id }: { id: string }) {
+function Body({ body, className }: { body: SanitizedBody; className?: string }) {
+  const { t } = useTranslation("inbox");
+  if (body.designed) return <EmailFrame html={body.html} title={t("message.emailContent")} className={className} />;
+  return <div className={cn("prose-od ph-no-capture", className)} data-ph-mask dangerouslySetInnerHTML={{ __html: body.html }} />;
+}
+
+/** Shown while an email's images from other sites are held back, so opening it tells the sender nothing. */
+function HeldImages({ onLoad }: { onLoad: () => void }) {
+  const { t } = useTranslation("inbox");
+  return (
+    <div className="mb-2.5 flex items-center gap-2 rounded-md bg-sunken py-1 pl-2.5 pr-1 text-[11.5px] text-fg-3">
+      <ImageOff className="size-3.5 shrink-0 text-fg-4" />
+      <span className="min-w-0 flex-1">{t("message.imagesHeld")}</span>
+      <Button size="xs" variant="secondary" className="shrink-0" onClick={onLoad}>
+        {t("message.loadImages")}
+      </Button>
+    </div>
+  );
+}
+
+function Original({ id, inbound, remote, onLoadImages }: { id: string; inbound: boolean; remote: boolean; onLoadImages: () => void }) {
   const { t } = useTranslation("inbox");
   const { data, isPending, isError } = useQuery({ queryKey: ["message-original", id], queryFn: () => api.messages.original(id), staleTime: Infinity });
+  const body = useBody(data?.full_html ?? "", inbound, inbound, remote);
   if (isPending)
     return (
       <div className="mt-3 flex items-center gap-2 text-xs text-fg-3">
@@ -42,7 +74,12 @@ function Original({ id }: { id: string }) {
       </div>
     );
   if (isError) return <p className="mt-3 text-xs text-fg-3">{t("message.originalMissing")}</p>;
-  return <Body html={data.full_html} className="mt-3 border-l-2 border-line pl-3 text-[13px] text-fg-2" />;
+  return (
+    <div className="mt-3">
+      {body.held > 0 && <HeldImages onLoad={onLoadImages} />}
+      <Body body={body} className={body.designed ? undefined : "border-l-2 border-line pl-3 text-[13px] text-fg-2"} />
+    </div>
+  );
 }
 
 function isImage(a: Attachment) {
@@ -199,6 +236,9 @@ export const MessageItem = memo(function MessageItem({
   const { t } = useTranslation("inbox");
   const address = useMessageAddress(m, receivedAt);
   const inbound = m.direction === "inbound" && !note;
+  const [remote, setRemote] = useState(false);
+  const translated = !!(tr.showing && tr.html);
+  const body = useBody(translated ? tr.html! : m.body_html || `<p>${m.body_text}</p>`, inbound, inbound && !translated, remote);
   const replyTo = inbound && m.reply_to && m.reply_to.toLowerCase() !== m.from_email.toLowerCase() ? m.reply_to : null;
 
   return (
@@ -279,7 +319,8 @@ export const MessageItem = memo(function MessageItem({
           </div>
         )}
         <TranslatedNote tr={tr} />
-        <Body html={tr.showing && tr.html ? tr.html : m.body_html || `<p>${m.body_text}</p>`} />
+        {body.held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
+        <Body body={body} />
         {m.has_quoted && (
           <div>
             <Tooltip content={showOriginal ? t("message.hideQuoted") : t("message.showOriginal")}>
@@ -293,7 +334,7 @@ export const MessageItem = memo(function MessageItem({
                 <MoreHorizontal className="size-3.5" />
               </button>
             </Tooltip>
-            {showOriginal && <Original id={m.id} />}
+            {showOriginal && <Original id={m.id} inbound={inbound} remote={remote} onLoadImages={() => setRemote(true)} />}
           </div>
         )}
         <Attachments items={m.attachments} />

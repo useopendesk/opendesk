@@ -149,8 +149,27 @@ func render(n *xhtml.Node) string {
 		_ = xhtml.Render(&buf, n)
 		return buf.String()
 	}
+	// Style sheets in the head style the body; they lead it.
+	if head := findFirst(n, func(x *xhtml.Node) bool { return x.Type == xhtml.ElementNode && x.DataAtom == atom.Head }); head != nil {
+		for c := head.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == xhtml.ElementNode && c.DataAtom == atom.Style {
+				_ = xhtml.Render(&buf, c)
+			}
+		}
+	}
+	// The body's own background and type carry over on a wrapper.
+	style := strings.TrimSpace(attr(body, "style"))
+	if bg := strings.TrimSpace(attr(body, "bgcolor")); bg != "" {
+		style = "background-color:" + bg + ";" + style
+	}
+	if style != "" {
+		buf.WriteString(`<div style="` + html.EscapeString(style) + `">`)
+	}
 	for c := body.FirstChild; c != nil; c = c.NextSibling {
 		_ = xhtml.Render(&buf, c)
+	}
+	if style != "" {
+		buf.WriteString("</div>")
 	}
 	return buf.String()
 }
