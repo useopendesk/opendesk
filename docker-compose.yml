@@ -261,7 +261,7 @@ services:
   # no S3 client image is needed.
   s3-init:
     profiles: [minio, s3]
-    image: curlimages/curl:8.22.0
+    image: curlimages/curl:8.23.0
     restart: "no"
     logging: *logging
     environment:
