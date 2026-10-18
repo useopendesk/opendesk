@@ -50,6 +50,7 @@ Each flag also has an environment variable.
 | `--wizard` | `OPENDESK_WIZARD=1` | | Also ask about email, storage, inbound mail and sign-ups |
 | `-y`, `--yes` | `OPENDESK_YES=1` | | Ask nothing and take defaults (and install Docker if missing) |
 | `--registry PREFIX` | `OPENDESK_REGISTRY` | `ghcr.io/useopendesk` | Image namespace |
+| `--no-auto-update` | `OPENDESK_AUTO_UPDATE=false` | automatic updates on | Do not install new releases each night. See [automatic updates](/self-hosting/backups-and-upgrades/#automatic-updates). |
 | `--ai-key KEY` | `OPENDESK_AI_KEY` | | Anthropic API key, or the key for `--ai-url`. Prefer the variable, so the key stays out of your shell history. |
 | `--ai-url URL` | `OPENDESK_AI_URL` | | An OpenAI-compatible endpoint instead of Anthropic (OpenAI, vLLM, your own Ollama). |
 | `--ai-model NAME` | `OPENDESK_AI_MODEL` | provider default | Model name. With `--ollama`, the model to pull (default `llama3.1:8b`). |
@@ -78,6 +79,7 @@ Each flag also has an environment variable.
 - **Inbound email:** the inbound domain (default `in.<your domain>`) and whether to receive mail on port 25.
 - **AI:** none, an Anthropic key, an OpenAI-compatible endpoint, or local models with Ollama.
 - **Sign-ups:** whether anyone may sign up. Close sign-ups after you create your account.
+- **Updates:** whether to install new releases automatically each night.
 
 ### AI
 

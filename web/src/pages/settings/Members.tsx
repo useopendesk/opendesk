@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Clock, IdCard, LogOut, MoreHorizontal, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { Clock, IdCard, Link2, LogOut, MoreHorizontal, Send, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
@@ -14,6 +14,7 @@ import { SearchInput } from "@/components/ui/input";
 import { tone as tones } from "@/lib/tones";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { copyText } from "@/components/ui/copy-button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Dialog, Drawer } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/input";
@@ -398,6 +399,25 @@ function Invitations() {
       throw e;
     }
   };
+  const copyLink = async (inv: Invitation) => {
+    try {
+      const { url } = await api.invitations.link(inv.id);
+      if (await copyText(url)) toast.success(t("members.invites.linkCopied"), { description: t("members.invites.linkCopiedHint", { email: inv.email }) });
+      else toast.info(url);
+      void qc.invalidateQueries({ queryKey: qk.invitations });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  const resend = async (inv: Invitation) => {
+    try {
+      await api.invitations.resend(inv.id);
+      toast.success(t("members.invites.resent", { email: inv.email }));
+      void qc.invalidateQueries({ queryKey: qk.invitations });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
 
   if (isLoading || !data?.length) return null;
 
@@ -426,18 +446,33 @@ function Invitations() {
                 <span className="w-[72px]">
                   <RolePill role={inv.role} />
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    confirm.show(t("members.invites.revokeBody", { email: inv.email }), () => revoke(inv), {
-                      title: t("members.invites.revokeTitle"),
-                      confirmLabel: t("members.invites.revoke"),
-                    })
-                  }
-                >
-                  {t("members.invites.revoke")}
+                <Button size="sm" variant="ghost" icon={<Link2 />} onClick={() => void copyLink(inv)}>
+                  {t("members.invites.copyLink")}
                 </Button>
+                <Menu>
+                  <MenuTrigger asChild>
+                    <Button size="sm" variant="ghost" square aria-label={t("members.invites.actions", { email: inv.email })}>
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </MenuTrigger>
+                  <MenuContent>
+                    <MenuItem icon={<Send />} onSelect={() => void resend(inv)}>
+                      {t("members.invites.resend")}
+                    </MenuItem>
+                    <MenuItem
+                      danger
+                      icon={<X />}
+                      onSelect={() =>
+                        confirm.show(t("members.invites.revokeBody", { email: inv.email }), () => revoke(inv), {
+                          title: t("members.invites.revokeTitle"),
+                          confirmLabel: t("members.invites.revoke"),
+                        })
+                      }
+                    >
+                      {t("members.invites.revoke")}
+                    </MenuItem>
+                  </MenuContent>
+                </Menu>
               </ListRow>
             </MotionRow>
           );

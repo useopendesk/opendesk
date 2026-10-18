@@ -268,6 +268,8 @@ type NotificationPreferences = {
 | GET | `/v1/onboarding` | members → `Onboarding`, computed from the workspace's real state (below) |
 | POST | `/v1/onboarding/dismiss` | → 204. Hides the checklist for this member; `GET` still answers, with `dismissed: true` |
 | GET/POST | `/v1/invitations` · DELETE `/v1/invitations/{id}` | `{email, role}` |
+| POST | `/v1/invitations/{id}/link` | → `{url, expires_at}`: the invitation's link, to send another way (admin) |
+| POST | `/v1/invitations/{id}/resend` | → `Invitation`: emails the same link again (admin; 3 / hour per invitation) |
 | POST | `/v1/invitations/accept` | `{token}` → `Membership` (no workspace header) |
 | GET | `/v1/invitations/lookup?token=` | → `{workspace_name, email, role}` public |
 | CRUD | `/v1/teams`, `/v1/teams/{id}` | `{name, member_ids}`; the full team API, brands, widgets and routing rules are in contracts/teams.md |
@@ -328,6 +330,10 @@ Core notes:
 - Member rules: owners change and remove anyone but themselves; admins manage agents and viewers; only the owner grants
   `admin`; `owner` moves only by transfer. `DELETE /v1/members/{own id}` leaves (owner: `409 owner_cannot_leave`).
 - `POST /v1/invitations/accept` needs the signed-in user's email to equal the invited one (`403 invitation_email_mismatch`).
+- An invitation's token is stored hashed and sealed (`d.Box`), so `link` and `resend` give the same link the email
+  carried; both extend the invitation to 7 days from now. Signing up with an invitation link opens sign-up when it is
+  closed, and marks the address confirmed only when the link was never copied: after `link`, the new account confirms
+  its address by email like any other.
 - Role and list endpoints for API keys: workspace/members/teams read `settings:read`; writes `settings:write`.
 - MCP OAuth (outside `/v1`, `contracts/agent.md` "OAuth"): `/.well-known/oauth-protected-resource[/mcp]`,
   `/.well-known/oauth-authorization-server`, `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token`,

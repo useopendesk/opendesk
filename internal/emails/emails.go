@@ -179,3 +179,43 @@ func capitalize(s string) string {
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
 }
+
+// UpdateAvailable tells an instance's super admins a newer opendesk release is out. major
+// marks a new major version, which automatic updates leave to the operator.
+func UpdateAvailable(s Site, adminLink, current, latest, releaseURL string, major bool) mailer.Mail {
+	how := "Upgrade on the server with: opendesk-ctl upgrade " + latest + ". It backs up the instance first."
+	if major {
+		how = "It is a new major version, so automatic updates leave it to you. Read the release notes, then upgrade on the server with: opendesk-ctl upgrade " + latest + "."
+	}
+	return s.build(mailer.Email{
+		Subject:   "opendesk " + latest + " is available",
+		Preheader: "This instance runs " + current + ". " + how,
+		Heading:   "opendesk " + latest + " is available",
+		Intro:     []string{"A new opendesk release is out. This instance runs " + current + ".", how},
+		Facts:     []mailer.Fact{{Label: "Running", Value: current}, {Label: "Newest release", Value: latest}},
+		Button:    &mailer.Button{Label: "Read the release notes", URL: releaseURL},
+		Outro:     []string{"The admin panel shows the version and update status under Health: " + adminLink},
+		Footer: mailer.Footer{
+			Reason:  "You get this email because you are a super admin of this opendesk instance. Set UPDATE_CHECK=false to stop looking for releases.",
+			Contact: s.Contact,
+		},
+	})
+}
+
+// AutoUpdateFailed tells an instance's super admins an automatic update did not finish and
+// the instance still runs the version it ran before. detail is opendesk-ctl's line about it.
+func AutoUpdateFailed(s Site, adminLink, detail string) mailer.Mail {
+	return s.build(mailer.Email{
+		Subject:   "An automatic opendesk update failed",
+		Preheader: "The instance runs the version it ran before.",
+		Heading:   "An automatic update failed",
+		Intro: []string{"opendesk-ctl tried to install a new release on this instance and it did not finish, so the instance runs the version it ran before.",
+			detail,
+			"To see why, run opendesk-ctl auto-update status and opendesk-ctl logs opendesk on the server."},
+		Button: &mailer.Button{Label: "Open the admin panel", URL: adminLink},
+		Footer: mailer.Footer{
+			Reason:  "You get this email because you are a super admin of this opendesk instance.",
+			Contact: s.Contact,
+		},
+	})
+}

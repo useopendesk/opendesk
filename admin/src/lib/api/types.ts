@@ -177,7 +177,23 @@ export type AdminHealth = {
     push: string;
     help_domain: string;
   };
+  updates: AdminUpdates;
   checks: { name: string; status: HealthStatus; detail: string }[];
+};
+
+export type AdminRelease = { version: string; url: string; published_at: string | null };
+export type AutoUpdateResult = "none" | "current" | "updated" | "skipped" | "failed";
+export type AdminUpdates = {
+  check: boolean;
+  current: string;
+  latest: AdminRelease | null;
+  available: boolean;
+  major: boolean;
+  checked_at: string | null;
+  error: string;
+  previous_version: string;
+  running_since: string | null;
+  auto: { reported: boolean; enabled: boolean; last_run_at: string | null; last_result: AutoUpdateResult; last_detail: string };
 };
 
 export const JOB_STATES = ["retryable", "discarded", "available", "running", "scheduled", "pending", "cancelled", "completed"] as const;

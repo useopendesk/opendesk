@@ -40,6 +40,8 @@ The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
 | `SERVE_WEB` | `false` | Serve the embedded web app, `/config.js` and `/config.json` (for the desktop and iPhone apps) from this binary. `true` in the self-host bundle. |
 | `SIGNUP_ENABLED` | `true` | Allow anyone to register. When `false`, only invited people can create an account. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy for the client IP. Enable only behind a proxy you control. |
+| `UPDATE_CHECK` | `true` | Look for new releases on GitHub every few hours and tell the instance admins (admin panel and email). Builds that are not a release never look. See [Backups and upgrades](/self-hosting/backups-and-upgrades/#update-notices). |
+| `AUTO_UPDATE` | `true` (installer) | Read by `opendesk-ctl`, not the server: install new releases each night. See [automatic updates](/self-hosting/backups-and-upgrades/#automatic-updates). |
 | `EVENT_RETENTION` | `168h` | How long events are kept for replay (a Go duration). |
 
 ## URLs

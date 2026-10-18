@@ -363,15 +363,21 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 	if err := auth.CheckPassword(in.Password); err != nil {
 		return nil, httpx.Wrap(err)
 	}
-	invited := false
+	// An invitation opens sign-up when it is closed. Its link proves the address only when
+	// it went by the invitation email: a link an admin copied and sent another way does
+	// not, so that account confirms its address like any other.
+	invited, proven := false, false
 	if in.InviteToken != "" {
 		var invEmail string
-		err := s.d.DB.Pool.QueryRow(ctx, `SELECT email FROM invitations WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now()`,
-			crypto.HashToken(in.InviteToken)).Scan(&invEmail)
+		var copied bool
+		err := s.d.DB.Pool.QueryRow(ctx, `SELECT email, link_copied_at IS NOT NULL FROM invitations
+			WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now()`,
+			crypto.HashToken(in.InviteToken)).Scan(&invEmail, &copied)
 		if err != nil && !db.IsNotFound(err) {
 			return nil, httpx.Wrap(err)
 		}
 		invited = err == nil && invEmail == email
+		proven = invited && !copied
 	}
 	if !s.d.Cfg.SignupEnabled && !invited {
 		return nil, httpx.E(403, "signup_disabled", "Sign up is by invitation only on this instance.")
@@ -384,7 +390,7 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 	uid := ids.New()
 	err = s.tx(ctx, func(tx pgx.Tx) error {
 		var verified *time.Time
-		if invited {
+		if proven {
 			verified = ptr(time.Now())
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO users (id, email, name, password_hash, email_verified_at) VALUES ($1, $2, $3, $4, $5)`,
@@ -395,7 +401,7 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 		if err != nil {
 			return err
 		}
-		if !invited {
+		if !proven {
 			if err := s.sendVerifyEmail(ctx, tx, uid, email); err != nil {
 				return err
 			}

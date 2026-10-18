@@ -137,8 +137,9 @@ Do these once, in order. Values in `<angle brackets>` are yours.
   [Sizing and cost](#sizing-and-cost)). Note the organization and database
   names for `terraform.tfvars`. Then create a service token (Settings >
   Service tokens) with access to that database's roles for Terraform.
-- A GitHub repository `opendesk/opendesk` with an environment named
-  `production` (Settings > Environments). Restrict it to the `main` branch and,
+- A GitHub repository `useopendesk/opendesk` with an environment named
+  `production` (Settings > Environments). Restrict it to the `main` branch and
+  tags `v*` and,
   if you like, add required reviewers: every deploy runs in it.
 
 ### 2. Cloudflare API token
@@ -387,7 +388,7 @@ done
 ```
 
 then add the five names to `optional_secrets` in `terraform.tfvars`, `terraform
-apply`, and run the Deploy workflow (target `backend`) so the api and worker
+apply`, and run the Deploy workflow from the current release tag (target `backend`) so the api and worker
 pick up the new task definitions. Test end to end in test mode with
 `stripe listen --forward-to https://api.opendesk.sh/v1/billing/stripe/webhook`
 against a staging copy, or with the dashboard's "Send test webhook".
@@ -403,8 +404,8 @@ limit), then:
 scripts/put-secret.sh OPENROUTER_API_KEY
 ```
 
-Add `OPENROUTER_API_KEY` to `optional_secrets` and run Deploy with target
-`backend`. It switches AI on
+Add `OPENROUTER_API_KEY` to `optional_secrets` and run Deploy from the current
+release tag with target `backend`. It switches AI on
 (`AI_PROVIDER=openrouter`) only when it is listed, so a task never starts with a
 provider and no key. To call Anthropic directly instead, store and list
 `ANTHROPIC_API_KEY` without `OPENROUTER_API_KEY`; embeddings then need
@@ -474,12 +475,15 @@ Terraform runs in three more environments, `infrastructure-plan`,
 bucket and provider tokens: `terraform/README.md`, "Applying changes".
 
 Branch protection on `main`: require the **CI status** check and "require
-branches to be up to date" (the migration duplicate check depends on it).
+branches to be up to date" (the migration duplicate check depends on it). A tag
+ruleset on `v*` (Settings > Rules) restricts creating, moving and deleting
+release tags to maintainers, since a release tag deploys production.
 
 ### 12. First deploy
 
-Run the Deploy workflow (Actions > Deploy > Run workflow, target `all`), or
-push to `main`. It builds arm64 images into ECR tagged with the commit SHA, runs
+Run the Deploy workflow from a release tag (Actions > Deploy > Run workflow,
+pick the tag, target `all`), or push a release tag (`git tag v0.1.0 && git push
+origin v0.1.0`). It builds arm64 images into ECR tagged with the release, runs
 `opendesk migrate` as a one-off task with the migrate role, rolls the api,
 worker and gateway services, and deploys the four Pages projects (app, admin
 panel, site, docs) and the email worker and the help worker. Check:
@@ -537,7 +541,9 @@ command with `admin revoke <email>` removes one, and `admin list` lists them.
   validate and the plan summary tests (no cloud credentials), and the email and help workers' tests and bundles. Migrations are applied to a fresh
   stock Postgres twice (the second run must be a no-op); production runs
   the same Postgres.
-- **deploy.yml** (main): Terraform (plan, then apply; a plan that deletes or
+- **deploy.yml** (release tags `v*` without a pre-release suffix, on a commit
+  on `main`; a push to `main` deploys only the site and the docs): Terraform
+  (plan, then apply; a plan that deletes or
   replaces anything but a task definition waits for approval), images, migrate,
   services, Pages (with the runtime
   config and, when `APPLE_APP_IDS` is set, the apple-app-site-association),
@@ -549,7 +555,7 @@ command with `admin revoke <email>` removes one, and `admin list` lists them.
 - **security.yml** (weekly): govulncheck, pnpm audit, mix deps.audit and
   sobelow, Trivy on the published images.
 
-Rollback: re-run the Deploy workflow of an earlier commit (Actions > Deploy >
+Rollback: re-run the Deploy workflow of an earlier release (Actions > Deploy >
 that run > Re-run). Its images are still in ECR (the last 30 are kept), so the
 build step is skipped. A migration is not rolled back automatically. Re-running
 the whole run also plans that commit's Terraform, which undoes later
@@ -563,15 +569,15 @@ Production infrastructure is applied by Deploy, never by hand
 (`terraform/README.md`, "Applying changes", has the details and the one-time
 setup):
 
-- Terraform code changes by pull request; merging plans it on `main` (the Deploy
+- Terraform code changes by pull request; the next release plans it (the Deploy
   run's summary lists addresses and actions) and applies it before the
   migrations and the service roll. Only code on `main` gets credentials.
   A plan that deletes, replaces or forgets anything other than a task
   definition waits for a reviewer in Actions (environment
   `infrastructure-approval`).
 - Settings (`terraform.tfvars`) live in the state bucket, not in git:
-  `scripts/tfvars.sh pull`, edit, `scripts/tfvars.sh push`, then run Deploy with
-  target `backend`: it applies them and rolls the services onto the task
+  `scripts/tfvars.sh pull`, edit, `scripts/tfvars.sh push`, then run Deploy from
+  the current release tag with target `backend`: it applies them and rolls the services onto the task
   definitions Terraform registers. Target `infrastructure` applies them but
   leaves the services on their current revisions.
 - Secret values go straight to Secrets Manager with `scripts/put-secret.sh NAME`,
@@ -650,7 +656,17 @@ cd /opt/opendesk
 ./opendesk-ctl restore backups/20261011T090000Z
 ./opendesk-ctl upgrade                 # back up, then move to the newest release
 ./opendesk-ctl upgrade v1.4.2          # or a specific one
+./opendesk-ctl auto-update status      # nightly updates: on or off, schedule, last runs
+./opendesk-ctl auto-update off         # or on
 ```
+
+**Automatic updates** are on after the installer (`--no-auto-update` skips them):
+a systemd timer, or a cron entry, runs `opendesk-ctl auto-update run` each night
+around 04:00. It upgrades to the newest release of the same major version the
+way `upgrade` does, keeps its backups in `backups/auto/` (the newest three), and
+never retries a release that failed here. The admin panel's Health page shows
+the newest release and each run, and super admins get an email for a new major
+version or a failed run (`UPDATE_CHECK=false` stops the server looking).
 
 The same, by hand:
 
@@ -683,9 +699,12 @@ docker compose up -d
 ```
 
 **Upgrade.** Migrations run when opendesk boots, so an upgrade is a new pin,
-a pull and a restart. `opendesk-ctl upgrade` takes a backup first, then runs the
-target release's installer (checked against its published checksum), which
-also brings that release's `docker-compose.yml` and `Caddyfile`. By hand:
+a pull and a restart. `opendesk-ctl upgrade` pulls the new images, stops the app
+and takes a backup, then runs the target release's installer (checked against
+its published checksum), which also brings that release's `docker-compose.yml`
+and `Caddyfile`. When the new version does not answer its health check within
+five minutes, it puts the previous release back, with the backup if migrations
+ran. By hand:
 
 ```sh
 cd /opt/opendesk

@@ -1,19 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { ErrorState } from "@/components/ErrorState";
-import { KV, PageBody, PageColumn, PageHeader, Section } from "@/components/layout";
+import { Banner, KV, PageBody, PageColumn, PageHeader, Section } from "@/components/layout";
 import { CheckPill } from "@/components/pills";
 import { Table, TD, TH, THead, TR } from "@/components/table";
 import { Time } from "@/components/Time";
 import { Badge, Dot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { idleMs } from "@/lib/api/client";
-import type { AdminHealth } from "@/lib/api/types";
+import { api } from "@/lib/api/endpoints";
+import type { AdminHealth, AdminUpdates, AutoUpdateResult } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { duration, number } from "@/lib/format";
-import { q } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
 
 /** Refresh every 15 s while the page is visible and the operator is around (an idle panel lets its session lapse). */
 const EVERY = 15_000;
@@ -73,6 +76,7 @@ function HealthView({ h, stale }: { h: AdminHealth; stale: boolean }) {
   return (
     <PageColumn>
       {stale && <p className="text-[12px] text-danger-fg">The last refresh failed; these figures may be out of date.</p>}
+      {h.updates.available && h.updates.latest && <UpdateBanner u={h.updates} />}
       <Section
         title="Checks"
         count={checks.length}
@@ -109,6 +113,7 @@ function HealthView({ h, stale }: { h: AdminHealth; stale: boolean }) {
             ]}
           />
         </Section>
+        <UpdatesSection u={h.updates} />
         <Section title="Database">
           <KV
             items={[
@@ -213,5 +218,139 @@ function HealthView({ h, stale }: { h: AdminHealth; stale: boolean }) {
         />
       </Section>
     </PageColumn>
+  );
+}
+
+const command = (version: string) => `opendesk-ctl upgrade ${version}`;
+
+function UpdateBanner({ u }: { u: AdminUpdates }) {
+  const latest = u.latest!;
+  const auto = u.auto.enabled && !u.major;
+  return (
+    <Banner
+      tone={auto ? "blue" : "amber"}
+      title={`opendesk ${latest.version} is available`}
+      action={
+        <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] font-medium text-fg hover:underline">
+          Release notes <ArrowUpRight className="size-3.5" />
+        </a>
+      }
+    >
+      {auto ? (
+        <>This instance runs {u.current}. It installs at the next automatic update, after a backup.</>
+      ) : (
+        <>
+          {u.major ? "A new major version, so automatic updates leave it to you: read the release notes first. " : `This instance runs ${u.current}. `}
+          Upgrade on the server, which backs up first:
+          <span className="mt-1.5 flex w-fit items-center gap-1.5 rounded-md bg-surface px-2 py-1 shadow-[inset_0_0_0_1px_var(--line)]">
+            <code className="mono text-[12px] text-fg">{command(latest.version)}</code>
+            <CopyButton value={command(latest.version)} label="Copy the command" />
+          </span>
+        </>
+      )}
+    </Banner>
+  );
+}
+
+const RESULT: Record<AutoUpdateResult, string> = {
+  none: "No run yet",
+  current: "Already on the newest release",
+  updated: "Updated",
+  skipped: "Skipped",
+  failed: "Failed, went back",
+};
+
+function UpdatesSection({ u }: { u: AdminUpdates }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const checkNow = async () => {
+    setBusy(true);
+    try {
+      const r = await api.checkUpdates();
+      toast.success(r.available && r.latest ? `${r.latest.version} is available` : r.error ? "Could not reach GitHub" : "This is the newest release");
+      void qc.invalidateQueries({ queryKey: qk.health });
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const auto = u.auto;
+  return (
+    <Section
+      title="Updates"
+      actions={
+        u.check ? (
+          <Button size="xs" variant="ghost" icon={<RefreshCw className={cn(busy && "animate-spin motion-reduce:animate-none")} />} disabled={busy} onClick={() => void checkNow()}>
+            Check now
+          </Button>
+        ) : undefined
+      }
+    >
+      <KV
+        items={[
+          [
+            "Running",
+            <span className="flex flex-wrap items-center gap-x-2">
+              {text(u.current)}
+              {u.previous_version && u.running_since && (
+                <span className="text-[11.5px] text-fg-3">
+                  from {u.previous_version}, <Time iso={u.running_since} />
+                </span>
+              )}
+            </span>,
+          ],
+          [
+            "Newest release",
+            !u.check ? (
+              <span className="text-fg-4">Not checked</span>
+            ) : u.latest ? (
+              <span className="flex flex-wrap items-center gap-x-2">
+                <a href={u.latest.url} target="_blank" rel="noreferrer" className="mono text-[12px] hover:underline">
+                  {u.latest.version}
+                </a>
+                {u.available ? <Badge tone={u.major ? "warn" : "blue"}>{u.major ? "New major" : "Available"}</Badge> : <Badge tone="ok">Current</Badge>}
+                {u.latest.published_at && (
+                  <span className="text-[11.5px] text-fg-3">
+                    <Time iso={u.latest.published_at} />
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-fg-4">None found yet</span>
+            ),
+          ],
+          [
+            "Last checked",
+            !u.check ? (
+              <span className="text-fg-3">{u.current && /^v\d/.test(u.current) ? "Off (UPDATE_CHECK=false)" : "Not a release build"}</span>
+            ) : (
+              <span className="flex flex-col">
+                {u.checked_at ? <Time iso={u.checked_at} /> : <span className="text-fg-4">Not yet</span>}
+                {u.error && <span className="text-[11.5px] text-danger-fg">{u.error}</span>}
+              </span>
+            ),
+          ],
+          [
+            "Automatic",
+            !auto.reported ? (
+              <span className="text-fg-3">Not set up on this host</span>
+            ) : (
+              <span className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-2">
+                  {on(auto.enabled)}
+                  {auto.last_run_at && (
+                    <span className={cn("text-[11.5px]", auto.last_result === "failed" ? "text-danger-fg" : "text-fg-3")}>
+                      {RESULT[auto.last_result]}, <Time iso={auto.last_run_at} />
+                    </span>
+                  )}
+                </span>
+                {auto.last_detail && <span className="text-[11.5px] leading-4 text-fg-3">{auto.last_detail}</span>}
+              </span>
+            ),
+          ],
+        ]}
+      />
+    </Section>
   );
 }

@@ -11,6 +11,8 @@
     <a href="https://docs.opendesk.sh"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
     <a href="https://github.com/useopendesk/opendesk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/useopendesk/opendesk/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/useopendesk/opendesk?style=flat-square" alt="License" /></a>
+    <a href="https://dc.opendesk.sh"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Join us on Discord" /></a>
+    <a href="https://x.opendesk.sh"><img src="https://img.shields.io/badge/@OpendeskHQ-000000?style=flat-square&logo=x&logoColor=white" alt="Follow @OpendeskHQ on X" /></a>
   </p>
 
   <p>
@@ -156,6 +158,8 @@ The full docs live at **[docs.opendesk.sh](https://docs.opendesk.sh)**.
 
 Have a question, found a bug, or want to shape where opendesk goes next?
 
+- **[Discord](https://dc.opendesk.sh)** - ask questions, share what you built and talk to the team
+- **[X (@OpendeskHQ)](https://x.opendesk.sh)** - news, releases and what we are working on
 - **[GitHub Issues](https://github.com/useopendesk/opendesk/issues)** - report bugs and request features
 - **[Releases](https://github.com/useopendesk/opendesk/releases)** - follow along for new versions
 - **Email** - reach us at `team@opendesk.sh`
@@ -163,13 +167,14 @@ Have a question, found a bug, or want to shape where opendesk goes next?
 ## Support
 
 > [!NOTE]
-> <i>**Need a hand? We are happy to help.** Open a [GitHub issue](https://github.com/useopendesk/opendesk/issues) or email `team@opendesk.sh`, and someone on the team will get back to you.</i>
+> <i>**Need a hand? We are happy to help.** Ask in [Discord](https://dc.opendesk.sh), open a [GitHub issue](https://github.com/useopendesk/opendesk/issues) or email `team@opendesk.sh`, and someone on the team will get back to you.</i>
 >
 > <i>**Would you rather not run it yourself?** [opendesk Cloud](https://opendesk.sh) is the same code, hosted and operated by us. For larger teams we also help with migrating from another helpdesk, self-hosted deployments and support agreements. Tell us what you need at `team@opendesk.sh`.</i>
 
 <p>
   <a href="https://opendesk.sh"><img src="https://img.shields.io/badge/Try%20opendesk%20Cloud-000000?style=flat-square" alt="Try opendesk Cloud" /></a>
   <a href="mailto:team@opendesk.sh"><img src="https://img.shields.io/badge/Email%20the%20team-1f6feb?style=flat-square" alt="Email the team" /></a>
+  <a href="https://dc.opendesk.sh"><img src="https://img.shields.io/badge/Ask%20on%20Discord-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Ask on Discord" /></a>
 </p>
 
 ## Contributing

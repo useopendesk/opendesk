@@ -132,15 +132,16 @@ below).
 
 ## Applying changes
 
-Production is applied by the Deploy workflow, from `main`, never by hand:
+Production is applied by the Deploy workflow, from a release tag of a commit on
+`main`, never by hand:
 
 - **Terraform code** changes by pull request. Pull requests run fmt, validate
   and the plan summary tests, with no cloud credentials: planning reads the
-  state, which holds generated secrets, so only code on `main` plans. Merging
-  runs Deploy, which plans (its job summary lists each resource address with its
-  action and the counts, never a value) and applies before the migrations and
-  the service roll, so new env vars and secrets exist before the code that
-  reads them.
+  state, which holds generated secrets, so only code on `main` plans. The next
+  release (a `v*` tag) runs Deploy, which plans (its job summary lists each
+  resource address with its action and the counts, never a value) and applies
+  before the migrations and the service roll, so new env vars and secrets exist
+  before the code that reads them.
 - **Approval.** A plan that deletes, replaces or forgets anything other than an
   `aws_ecs_task_definition` (a new revision on every env change is routine)
   waits in Actions for a reviewer of the `infrastructure-approval` environment;
@@ -149,10 +150,11 @@ Production is applied by the Deploy workflow, from `main`, never by hand:
   one summarized, and of the class its gate is for.
 - **Settings** (`terraform.tfvars`) are not in git. They live in the state
   bucket, at `opendesk/production.tfvars`: `scripts/tfvars.sh pull`, edit,
-  `scripts/tfvars.sh push` (it shows the diff and asks), then run Deploy with
-  target `backend`, which applies them and rolls the services onto the task
-  definitions Terraform registers (target `infrastructure` leaves the services
-  on their current revisions). `scripts/tfvars.sh diff` compares the two copies.
+  `scripts/tfvars.sh push` (it shows the diff and asks), then run Deploy from
+  the current release tag with target `backend`, which applies them and rolls
+  the services onto the task definitions Terraform registers (target
+  `infrastructure`, also from a release tag, leaves the services on their
+  current revisions). `scripts/tfvars.sh diff` compares the two copies.
 - **Secret values** never pass through GitHub: `scripts/put-secret.sh NAME`
   stores one in Secrets Manager. A new optional secret also goes in
   `optional_secrets` in the settings.
@@ -169,15 +171,16 @@ The roles (module `github-oidc`):
   writes nothing, so its plans run with `-lock=false`, and it reads no object
   outside the state bucket and no log line.
 - `opendesk-github-terraform-apply`, for `infrastructure` and
-  `infrastructure-approval`, which deploy only from `main`: administrator, for
-  one hour.
+  `infrastructure-approval`, which deploy only from `main` and release tags:
+  administrator, for one hour.
 
 Every credential that can read a secret (these roles, the deploy role, and the
 environments' Cloudflare and PlanetScale tokens) is given only to a job running
-from `main`: each environment allows only `main`, and each Terraform role
-trusts only its environments' OIDC subjects. Code reaches `main` only
-through the merge queue. Pull requests, including those from forks, get no
-secret and no cloud credential.
+from `main` or a `v*` release tag: each environment allows only those, each
+Terraform role trusts only its environments' OIDC subjects, and Deploy refuses a
+tag whose commit is not on `main`. Code reaches `main` only through the merge
+queue, and a tag ruleset lets only maintainers create `v*` tags. Pull requests,
+including those from forks, get no secret and no cloud credential.
 
 ### One-time setup
 
@@ -189,11 +192,11 @@ An operator does this once, from a machine with admin AWS credentials:
 2. Upload the settings: `scripts/tfvars.sh push`.
 3. Create three environments (Settings > Environments):
 
-   | environment | deployment branches | reviewers | `AWS_TERRAFORM_ROLE_ARN` |
+   | environment | deployment branches and tags | reviewers | `AWS_TERRAFORM_ROLE_ARN` |
    | --- | --- | --- | --- |
-   | `infrastructure-plan` | `main` only | none | `github_terraform_plan_role_arn` |
-   | `infrastructure` | `main` only | none | `github_terraform_apply_role_arn` |
-   | `infrastructure-approval` | `main` only | required reviewer | `github_terraform_apply_role_arn` |
+   | `infrastructure-plan` | `main`, tags `v*` | none | `github_terraform_plan_role_arn` |
+   | `infrastructure` | `main`, tags `v*` | none | `github_terraform_apply_role_arn` |
+   | `infrastructure-approval` | `main`, tags `v*` | required reviewer | `github_terraform_apply_role_arn` |
 
    In each, the variables `AWS_REGION` (`us-east-1`), `TF_STATE_BUCKET`
    (`opendesk-terraform-state-<account id>`) and `AWS_TERRAFORM_ROLE_ARN`, and

@@ -22,6 +22,9 @@
 #   * downloads docker-compose.yml, Caddyfile, env.template and opendesk-ctl
 #     from that release and refuses any file whose SHA256SUMS entry differs
 #   * runs `docker compose pull` and `docker compose up -d`
+#   * turns on automatic updates (AUTO_UPDATE in .env; --no-auto-update to
+#     skip): a systemd timer, or a cron entry, runs `opendesk-ctl auto-update
+#     run` each night. It needs root for the timer, so it asks for sudo
 #
 # It asks for sudo only for the steps that need it and says which. It is never
 # meant to be piped into sudo. Running it again reconfigures in place: secrets
@@ -41,7 +44,7 @@
 
 set -eu
 
-REPO="opendesk/opendesk"
+REPO="useopendesk/opendesk"
 DOCS="https://docs.opendesk.sh"
 DEFAULT_DIR="/opt/opendesk"
 DEFAULT_REGISTRY="ghcr.io/useopendesk"
@@ -75,6 +78,11 @@ MAIL_FROM_A=""
 STORAGE_A=""
 SMTP_INBOUND_A=""
 INBOUND_DOMAIN_A=""
+AUTO_UPDATE_A=""
+case "${OPENDESK_AUTO_UPDATE:-}" in
+    1|true|yes) AUTO_UPDATE_A=true ;;
+    0|false|no) AUTO_UPDATE_A=false ;;
+esac
 # AI: none | anthropic | openai | ollama. Keys are best passed as variables,
 # not flags, so they stay out of shell history and the process list.
 AI_MODE="${OPENDESK_AI:-}"
@@ -424,6 +432,15 @@ wizard() {
     else
         SIGNUP=false
     fi
+
+    step "Updates"
+    note "Each night opendesk-ctl can install a new release of the same major version:"
+    note "it backs up first and goes back to the version before if the new one fails."
+    if confirm "Install new releases automatically?" yes; then
+        AUTO_UPDATE_A=true
+    else
+        AUTO_UPDATE_A=false
+    fi
     return 0
 }
 
@@ -498,6 +515,7 @@ POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EOF
     [ "$REGISTRY" = "$DEFAULT_REGISTRY" ] || printf 'OPENDESK_IMAGE=%s/opendesk\nREALTIME_IMAGE=%s/realtime\n' "$REGISTRY" "$REGISTRY"
     [ -n "$SIGNUP" ] && printf 'SIGNUP_ENABLED=%s\n' "$SIGNUP"
+    [ -n "$AUTO_UPDATE_A" ] && printf 'AUTO_UPDATE=%s\n' "$AUTO_UPDATE_A"
     if [ -n "$MAIL_DRIVER_A" ]; then
         printf 'MAIL_DRIVER=%s\n' "$MAIL_DRIVER_A"
         if [ "$MAIL_DRIVER_A" = smtp ]; then
@@ -637,12 +655,23 @@ write_file() {
     # write_file path mode < content
     (umask 077; cat >"$1.tmp")
     chmod "$2" "$1.tmp"
+    keep_owner "$1.tmp"
     mv -f "$1.tmp" "$1"
+}
+
+# keep_owner: when root runs this (the nightly update does) in a directory
+# another user owns, the files it writes stay that user's.
+keep_owner() {
+    [ "$(id -u)" = 0 ] || return 0
+    # shellcheck disable=SC2012
+    _owner=$(ls -nd "$DIR" | awk '{ print $3 ":" $4 }')
+    [ "$_owner" = "0:0" ] || chown "$_owner" "$@" 2>/dev/null || true
 }
 
 backup_file() {
     [ -f "$1" ] || return 0
     cp -p "$1" "$1.bak"
+    keep_owner "$1.bak"
 }
 
 write_all() {
@@ -710,6 +739,15 @@ wait_healthy() {
     return 1
 }
 
+# sync_updates installs or removes the nightly update schedule to match
+# AUTO_UPDATE in .env (opendesk-ctl auto-update sync).
+sync_updates() {
+    AUTO_ON=0
+    [ "$(env_get "$DIR/.env" AUTO_UPDATE)" = true ] && AUTO_ON=1
+    if [ "$AUTO_ON" = 1 ]; then info "Scheduling automatic updates (the systemd timer uses sudo)"; fi
+    "$DIR/opendesk-ctl" auto-update sync || warn "Automatic updates are not scheduled; see: $DIR/opendesk-ctl auto-update status"
+}
+
 finale() {
     say ""
     say "  ${GREEN}${B}opendesk $VERSION is installed.${R}"
@@ -735,7 +773,11 @@ finale() {
     say "  Status:        $DIR/opendesk-ctl status"
     say "  Logs:          $DIR/opendesk-ctl logs [opendesk|realtime|postgres|caddy]"
     say "  Back up:       $DIR/opendesk-ctl backup"
-    say "  Upgrade:       $DIR/opendesk-ctl upgrade"
+    if [ "${AUTO_ON:-0}" = 1 ]; then
+        say "  Updates:       installed each night ($DIR/opendesk-ctl auto-update status, or off)"
+    else
+        say "  Upgrade:       $DIR/opendesk-ctl upgrade"
+    fi
     say ""
     if [ "$EXISTING" = 0 ]; then
         warn "Copy $DIR/.env somewhere safe. CREDENTIALS_KEY in it cannot be recovered,"
@@ -767,6 +809,11 @@ Options                                     environment variable
   -y, --yes         Ask nothing; take defaults (and install Docker if missing)
                                             OPENDESK_YES=1
   --registry PREFIX Image namespace         OPENDESK_REGISTRY  [$DEFAULT_REGISTRY]
+  --no-auto-update  Do not install new releases each night (opendesk-ctl
+                    auto-update on turns it on later)
+                                            OPENDESK_AUTO_UPDATE=false
+  --auto-update     Install new releases each night [default]
+                                            OPENDESK_AUTO_UPDATE=true
 
 AI (optional; asked by --wizard)
   --ai-key KEY      Anthropic API key       OPENDESK_AI_KEY (prefer the variable)
@@ -815,6 +862,8 @@ parse_args() {
             --ollama) AI_MODE=ollama ;;
             --no-ai) AI_MODE=none ;;
             --no-start) NO_START=1 ;;
+            --no-auto-update) AUTO_UPDATE_A=false ;;
+            --auto-update) AUTO_UPDATE_A=true ;;
             --wizard) WIZARD=1 ;;
             -y|--yes) ASSUME_YES=1 ;;
             --dry-run) DRY_RUN=1 ;;
@@ -897,6 +946,7 @@ main() {
     if [ "$NO_START" = 0 ]; then
         pull_and_start
         wait_healthy || true
+        sync_updates
     fi
     finale
 }

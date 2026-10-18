@@ -123,9 +123,13 @@ func (s *svc) registerInvitations(api huma.API) {
 					return err
 				}
 				token := crypto.RandomToken(emailLinkSize)
+				sealed, err := s.d.Box.Seal([]byte(token))
+				if err != nil {
+					return err
+				}
 				id := ids.New()
-				if _, err := tx.Exec(ctx, `INSERT INTO invitations (id, workspace_id, email, role, token_hash, invited_by, expires_at)
-					VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, p.WorkspaceID, email, role, crypto.HashToken(token), p.ActorUserID(),
+				if _, err := tx.Exec(ctx, `INSERT INTO invitations (id, workspace_id, email, role, token_hash, token_enc, invited_by, expires_at)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, id, p.WorkspaceID, email, role, crypto.HashToken(token), sealed, p.ActorUserID(),
 					time.Now().Add(inviteTTL)); err != nil {
 					return err
 				}
@@ -186,6 +190,99 @@ func (s *svc) registerInvitations(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			return nil, nil
+		})
+
+	register(s, api, huma.Operation{OperationID: "copy-invitation-link", Method: http.MethodPost, Path: "/v1/invitations/{id}/link",
+		Summary: "Get an invitation's link, to send it another way", Tags: tags},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*struct {
+			Body struct {
+				URL       string    `json:"url"`
+				ExpiresAt time.Time `json:"expires_at"`
+			}
+		}, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID, "Invitation")
+			if err != nil {
+				return nil, err
+			}
+			if err := s.limit("invite:link:"+p.WorkspaceID.String(), 60, time.Hour); err != nil {
+				return nil, err
+			}
+			out := &struct {
+				Body struct {
+					URL       string    `json:"url"`
+					ExpiresAt time.Time `json:"expires_at"`
+				}
+			}{}
+			err = s.tx(ctx, func(tx pgx.Tx) error {
+				inv, err := s.openInvitation(ctx, tx, p.WorkspaceID, id)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `UPDATE invitations SET link_copied_at = now() WHERE id = $1`, id); err != nil {
+					return err
+				}
+				out.Body.URL, out.Body.ExpiresAt = s.appLink("/invite", "token", inv.token), inv.expiresAt
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "invitation.link_copied", "invitation", &id, nil)
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return out, nil
+		})
+
+	register(s, api, huma.Operation{OperationID: "resend-invitation", Method: http.MethodPost, Path: "/v1/invitations/{id}/resend",
+		Summary: "Send an invitation email again", Tags: tags},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*struct{ Body CoreInvitation }, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID, "Invitation")
+			if err != nil {
+				return nil, err
+			}
+			if err := s.limit("invite:"+p.WorkspaceID.String(), 50, time.Hour); err != nil {
+				return nil, err
+			}
+			if err := s.limit("invite:resend:"+id.String(), 3, time.Hour); err != nil {
+				return nil, err
+			}
+			var out CoreInvitation
+			err = s.tx(ctx, func(tx pgx.Tx) error {
+				inv, err := s.openInvitation(ctx, tx, p.WorkspaceID, id)
+				if err != nil {
+					return err
+				}
+				var wsName, inviter string
+				if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id = $1`, p.WorkspaceID).Scan(&wsName); err != nil {
+					return err
+				}
+				if p.Kind == auth.KindUser {
+					if err := tx.QueryRow(ctx, `SELECT name FROM users WHERE id = $1`, p.UserID).Scan(&inviter); err != nil {
+						return err
+					}
+				}
+				if err := s.sendInviteEmail(ctx, tx, inv.email, inv.token, wsName, inviter, inv.role); err != nil {
+					return err
+				}
+				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "invitation.resent", "invitation", &id, nil); err != nil {
+					return err
+				}
+				out, err = scanInvitation(tx.QueryRow(ctx, invitationSelect+` WHERE i.id = $1`, id))
+				return err
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body CoreInvitation }{out}, nil
 		})
 
 	register(s, api, huma.Operation{OperationID: "lookup-invitation", Method: http.MethodGet, Path: "/v1/invitations/lookup",
@@ -302,4 +399,40 @@ func (s *svc) registerInvitations(api huma.API) {
 			}
 			return &struct{ Body CoreMembership }{m}, nil
 		})
+}
+
+// openedInvitation is a pending invitation with its token readable again.
+type openedInvitation struct {
+	email, role, token string
+	expiresAt          time.Time
+}
+
+// openInvitation locks a pending invitation of the workspace, gives it seven more days and
+// returns its token. An invitation from before tokens were kept sealed gets a new token, so
+// the link it was first sent with stops working.
+func (s *svc) openInvitation(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) (openedInvitation, error) {
+	var inv openedInvitation
+	var sealed []byte
+	err := tx.QueryRow(ctx, `SELECT email, role, token_enc FROM invitations
+		WHERE id = $1 AND workspace_id = $2 AND accepted_at IS NULL FOR UPDATE`, id, wid).Scan(&inv.email, &inv.role, &sealed)
+	if db.IsNotFound(err) {
+		return inv, httpx.NotFound("Invitation")
+	}
+	if err != nil {
+		return inv, err
+	}
+	if sealed != nil {
+		if plain, err := s.d.Box.Open(sealed); err == nil {
+			inv.token = string(plain)
+		}
+	}
+	if inv.token == "" {
+		inv.token = crypto.RandomToken(emailLinkSize)
+		if sealed, err = s.d.Box.Seal([]byte(inv.token)); err != nil {
+			return inv, err
+		}
+	}
+	err = tx.QueryRow(ctx, `UPDATE invitations SET token_hash = $2, token_enc = $3, expires_at = $4 WHERE id = $1 RETURNING expires_at`,
+		id, crypto.HashToken(inv.token), sealed, time.Now().Add(inviteTTL)).Scan(&inv.expiresAt)
+	return inv, err
 }

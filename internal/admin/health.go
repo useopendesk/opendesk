@@ -97,6 +97,7 @@ type AdminHealth struct {
 	Mail      AdminHealthMail     `json:"mail"`
 	Webhooks  AdminHealthWebhooks `json:"webhooks"`
 	Config    AdminHealthConfig   `json:"config"`
+	Updates   AdminUpdates        `json:"updates"`
 	Checks    []AdminHealthCheck  `json:"checks"`
 }
 
@@ -185,6 +186,10 @@ func (s *svc) health(ctx context.Context) (AdminHealth, error) {
 		return h, err
 	}
 
+	if h.Updates, err = s.updates(ctx); err != nil {
+		return h, err
+	}
+
 	h.Checks = checks(h)
 	return h, nil
 }
@@ -255,6 +260,9 @@ func checks(h AdminHealth) []AdminHealthCheck {
 	} else {
 		add("Webhooks", "ok", "No failed deliveries in the last 24 hours.")
 	}
+
+	status, detail := updateCheck(h.Updates)
+	add("Updates", status, detail)
 	return out
 }
 

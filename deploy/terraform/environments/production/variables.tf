@@ -88,7 +88,7 @@ variable "dmarc_rua" {
 
 variable "github_repo" {
   type    = string
-  default = "opendesk/opendesk"
+  default = "useopendesk/opendesk"
 }
 
 variable "github_repo_immutable" {

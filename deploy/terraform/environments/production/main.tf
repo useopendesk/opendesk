@@ -361,6 +361,7 @@ locals {
     ADMIN_URL           = "https://${local.host.admin}" # the admin panel: the only origin /v1/admin/* accepts
     TRUST_PROXY         = "true"
     AUTO_MIGRATE        = "false" # deploy.yml runs opendesk-migrate first
+    UPDATE_CHECK        = "false" # deploy.yml ships each release here; nothing to announce
     NATS_URL            = module.nats.url
     STORAGE_DRIVER      = "s3"
     S3_BUCKET           = module.s3.bucket

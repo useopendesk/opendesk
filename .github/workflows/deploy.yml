@@ -1,6 +1,6 @@
 name: Deploy
 
-# main -> production:
+# A release tag (v1.2.3, not a pre-release like v1.2.3-rc.1) -> production:
 #   1. plan Terraform (deploy/terraform/environments/production) and apply it, so
 #      new settings, env vars and secrets exist before the code that needs them.
 #      A plan that deletes, replaces or forgets anything but a task definition
@@ -12,6 +12,11 @@ name: Deploy
 #   4. roll api, worker and gateway onto the new images
 #   5. build and deploy the four Cloudflare Pages projects (app, admin panel, site,
 #      docs), the email worker and the help center worker
+#
+# A push to main deploys only the marketing site and the docs (target content):
+# Terraform, the API, the app and the admin panel move together, on a release.
+# Started by hand, every target but site and content needs a release tag. The
+# images carry the tag as their version.
 #
 # AWS access is OIDC only (deploy/terraform, module github-oidc): the deploy role
 # trusts this repository's production environment and can do nothing else; the
@@ -26,21 +31,24 @@ name: Deploy
 #            MAILBOX_OAUTH (mailbox sign-in the wizard offers: "google",
 #            "microsoft", "google,microsoft" or "none"; unset means "microsoft")
 #   secrets: CLOUDFLARE_API_TOKEN
+#   deployment branches and tags: main, and tags v*
 # and in each of infrastructure-plan, infrastructure and infrastructure-approval:
 #   vars:    AWS_REGION, TF_STATE_BUCKET, AWS_TERRAFORM_ROLE_ARN
 #   secrets: CLOUDFLARE_API_TOKEN, PLANETSCALE_SERVICE_TOKEN_ID, PLANETSCALE_SERVICE_TOKEN
+#   deployment branches and tags: main, and tags v*
 #
 # Deploys run only when the repository variable DEPLOY_ENABLED is "true", so
 # forks and a fresh clone of the repository never try to deploy.
 on:
   push:
     branches: [main]
+    tags: ["v*", "!v*-*"]
   workflow_dispatch:
     inputs:
       target:
-        description: What to deploy
+        description: What to deploy (run it from a release tag to ship that release)
         type: choice
-        options: [all, backend, infrastructure, pages, site]
+        options: [all, backend, infrastructure, pages, site, content]
         default: all
 
 permissions:
@@ -57,15 +65,59 @@ env:
   PNPM_VERSION: "12.10.1"
   # Keep in step with ci.yml.
   TERRAFORM_VERSION: "1.16.5"
-  TARGET: ${{ inputs.target || 'all' }}
 
 jobs:
+  # What this run deploys: the input when started by hand, everything for a
+  # release tag, the site and the docs for a push to main.
+  scope:
+    name: Scope
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.t.outputs.target }}
+      version: ${{ steps.t.outputs.version }}
+    steps:
+      # A release ships only code that reached main (through the merge queue).
+      - if: github.ref_type == 'tag'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - if: github.ref_type == 'tag'
+        env:
+          SHA: ${{ github.sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor "$SHA" origin/main ||
+            { echo "::error::$TAG is not on main; only commits on main deploy"; exit 1; }
+      - id: t
+        env:
+          INPUT: ${{ inputs.target }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT" ]; then target=$INPUT
+          elif [ "$REF_TYPE" = tag ]; then target=all
+          else target=content
+          fi
+          # The API, the app, the admin panel and the infrastructure ship only as a release.
+          case "$target" in
+            all | backend | infrastructure | pages)
+              [ "$REF_TYPE" = tag ] || { echo "::error::target $target ships a release: run it from a v* tag"; exit 1; } ;;
+          esac
+          if [ "$REF_TYPE" = tag ]; then version=$REF_NAME; else version=$SHA; fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Deploying $target at $version" >> "$GITHUB_STEP_SUMMARY"
+
   # Terraform runs for all, backend and infrastructure. The plan role reads only,
   # so this plan takes no lock; the apply jobs plan again, with the lock, and
   # apply only that plan when it matches this one.
   infrastructure-plan:
     name: Plan infrastructure
-    if: vars.DEPLOY_ENABLED == 'true' && contains(fromJSON('["all", "backend", "infrastructure"]'), inputs.target || 'all')
+    needs: scope
+    if: contains(fromJSON('["all", "backend", "infrastructure"]'), needs.scope.outputs.target)
     runs-on: ubuntu-latest
     environment: infrastructure-plan
     permissions:
@@ -151,7 +203,8 @@ jobs:
 
   images:
     name: Build and push images
-    if: vars.DEPLOY_ENABLED == 'true' && ((inputs.target || 'all') == 'all' || inputs.target == 'backend')
+    needs: scope
+    if: contains(fromJSON('["all", "backend"]'), needs.scope.outputs.target)
     # Fargate runs ARM64 (Graviton); a native runner builds Erlang without QEMU.
     runs-on: ubuntu-24.04-arm
     environment: production
@@ -174,13 +227,13 @@ jobs:
       - id: refs
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
-          SHA: ${{ github.sha }}
+          VERSION: ${{ needs.scope.outputs.version }}
         run: |
-          echo "opendesk=$REGISTRY/opendesk/opendesk:$SHA" >> "$GITHUB_OUTPUT"
-          echo "realtime=$REGISTRY/opendesk/realtime:$SHA" >> "$GITHUB_OUTPUT"
-          # Tags are immutable; a re-run of the same commit reuses its images.
+          echo "opendesk=$REGISTRY/opendesk/opendesk:$VERSION" >> "$GITHUB_OUTPUT"
+          echo "realtime=$REGISTRY/opendesk/realtime:$VERSION" >> "$GITHUB_OUTPUT"
+          # Tags are immutable; a re-run of the same release (or commit) reuses its images.
           for repo in opendesk realtime; do
-            if aws ecr describe-images --repository-name "opendesk/$repo" --image-ids imageTag="$SHA" >/dev/null 2>&1; then
+            if aws ecr describe-images --repository-name "opendesk/$repo" --image-ids imageTag="$VERSION" >/dev/null 2>&1; then
               echo "have_$repo=true" >> "$GITHUB_OUTPUT"
             fi
           done
@@ -195,7 +248,7 @@ jobs:
           push: true
           tags: ${{ steps.refs.outputs.opendesk }}
           build-args: |
-            VERSION=${{ github.sha }}
+            VERSION=${{ needs.scope.outputs.version }}
             COMMIT=${{ github.sha }}
           provenance: false
           cache-from: type=gha,scope=deploy-opendesk
@@ -210,7 +263,7 @@ jobs:
           push: true
           tags: ${{ steps.refs.outputs.realtime }}
           build-args: |
-            VERSION=${{ github.sha }}
+            VERSION=${{ needs.scope.outputs.version }}
             COMMIT=${{ github.sha }}
           provenance: false
           cache-from: type=gha,scope=deploy-realtime
@@ -313,7 +366,8 @@ jobs:
 
   pages:
     name: Pages ${{ matrix.project }}
-    if: vars.DEPLOY_ENABLED == 'true' && contains(fromJSON('["all", "pages", "site"]'), inputs.target || 'all')
+    needs: scope
+    if: contains(fromJSON('["all", "pages", "site", "content"]'), needs.scope.outputs.target)
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -326,12 +380,17 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # site: the site alone; content: the site and the docs; all and pages: all four.
       - name: Skip what was not asked for
         id: want
         env:
           PROJECT: ${{ matrix.project }}
+          TARGET: ${{ needs.scope.outputs.target }}
         run: |
-          if [ "$TARGET" = site ] && [ "$PROJECT" != site ]; then echo "run=false"; else echo "run=true"; fi >> "$GITHUB_OUTPUT"
+          case "$TARGET:$PROJECT" in
+            site:site | content:site | content:docs | all:* | pages:*) echo "run=true" ;;
+            *) echo "run=false" ;;
+          esac >> "$GITHUB_OUTPUT"
       - if: steps.want.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -441,7 +500,8 @@ jobs:
 
   email-worker:
     name: Email worker
-    if: vars.DEPLOY_ENABLED == 'true' && (inputs.target || 'all') == 'all'
+    needs: scope
+    if: needs.scope.outputs.target == 'all'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -470,7 +530,8 @@ jobs:
 
   help-worker:
     name: Help worker
-    if: vars.DEPLOY_ENABLED == 'true' && vars.HELP_DOMAIN != '' && (inputs.target || 'all') == 'all'
+    needs: scope
+    if: vars.HELP_DOMAIN != '' && needs.scope.outputs.target == 'all'
     runs-on: ubuntu-latest
     environment: production
     permissions:

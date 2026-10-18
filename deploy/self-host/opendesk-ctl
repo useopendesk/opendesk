@@ -6,7 +6,12 @@
 #   ./opendesk-ctl logs [service]       follow logs (opendesk, realtime, postgres, caddy)
 #   ./opendesk-ctl backup [dir]         database dump + data volume + .env, into backups/<time>
 #   ./opendesk-ctl restore <backup>     put a backup back (stops the app while it runs)
-#   ./opendesk-ctl upgrade [version]    back up, then move to a release (default: newest)
+#   ./opendesk-ctl upgrade [version]    back up, then move to a release (default: newest);
+#                                       goes back to the version before if it does not come up
+#   ./opendesk-ctl auto-update on|off   install new releases each night, or stop
+#   ./opendesk-ctl auto-update status   whether it is on, when it runs, and how it went
+#   ./opendesk-ctl auto-update run      what the nightly timer runs: upgrade when a newer
+#                                       release of the same major version is out
 #   ./opendesk-ctl restart|stop|start
 #
 # The installer puts this next to docker-compose.yml (default /opt/opendesk),
@@ -15,12 +20,18 @@
 # a restart.
 set -eu
 
-REPO="opendesk/opendesk"
+REPO="useopendesk/opendesk"
 RELEASES="https://github.com/$REPO/releases"
+# How long a new version may take to answer its health check (first boot runs migrations).
+UP_TRIES=100
+UP_EVERY=3
+# Automatic updates keep this many of their own backups (backups/auto).
+AUTO_BACKUPS=3
 
 say() { printf '%s\n' "$*"; }
 info() { printf '  · %s\n' "$*"; }
 ok() { printf '  ✓ %s\n' "$*"; }
+warn() { printf '  ! %s\n' "$*"; }
 die() { printf '  ✗ %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -47,12 +58,65 @@ dockerc() {
     if docker info >/dev/null 2>&1; then docker "$@"; else sudo docker "$@"; fi
 }
 
+# as_root runs a command as root: directly, or with sudo.
+as_root() {
+    if [ "$(id -u)" = 0 ]; then "$@"; elif have sudo; then sudo "$@"; else return 1; fi
+}
+
 env_get() {
     sed -n "s/^${1}=//p" "$DIR/.env" | tail -1
 }
 
+# env_set replaces KEY's line in .env, or appends one, keeping the file 0600.
+env_set() {
+    _tmp="$DIR/.env.tmp.$$"
+    (umask 077; awk -v k="$1" -v v="$2" '
+        index($0, k "=") == 1 { if (!done) print k "=" v; done = 1; next }
+        { print }
+        END { if (!done) print k "=" v }
+    ' "$DIR/.env" >"$_tmp")
+    keep_owner "$_tmp"
+    mv -f "$_tmp" "$DIR/.env"
+}
+
+# keep_owner gives files that root wrote (the nightly timer runs as root) back to
+# whoever owns the install directory, so its owner can still read them.
+keep_owner() {
+    [ "$(id -u)" = 0 ] || return 0
+    # The numeric owner of one directory; stat's flags differ between GNU and BSD.
+    # shellcheck disable=SC2012
+    _owner=$(ls -nd "$DIR" | awk '{ print $3 ":" $4 }')
+    [ "$_owner" = "0:0" ] || chown -R "$_owner" "$@" 2>/dev/null || true
+}
+
 sha256() {
     if have sha256sum; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+stamp() { date -u '+%Y%m%dT%H%M%SZ'; }
+
+cleanup() {
+    if [ -n "${TMPD:-}" ]; then rm -rf "$TMPD"; fi
+    if [ "${LOCKED:-0}" = 1 ]; then rm -rf "$DIR/.opendesk-ctl.lock"; fi
+}
+
+tmpdir() {
+    [ -n "${TMPD:-}" ] || TMPD=$(mktemp -d)
+}
+
+# lock keeps a manual upgrade and the nightly run from overlapping.
+lock() {
+    _l="$DIR/.opendesk-ctl.lock"
+    if ! mkdir "$_l" 2>/dev/null; then
+        _pid=$(cat "$_l/pid" 2>/dev/null || true)
+        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+            die "another upgrade is running (opendesk-ctl, pid $_pid)"
+        fi
+        rm -rf "$_l"
+        mkdir "$_l" || die "cannot create $_l"
+    fi
+    echo $$ >"$_l/pid"
+    LOCKED=1
 }
 
 cmd_status() {
@@ -61,7 +125,10 @@ cmd_status() {
     if compose exec -T opendesk /opendesk healthcheck >/dev/null 2>&1; then
         ok "opendesk answers /healthz"
     else
-        say "  ! opendesk does not answer /healthz yet (first boot runs migrations)"
+        warn "opendesk does not answer /healthz yet (first boot runs migrations)"
+    fi
+    if [ "$(env_get AUTO_UPDATE)" = true ]; then
+        say "  Automatic updates are on: ./opendesk-ctl auto-update status"
     fi
 }
 
@@ -79,21 +146,25 @@ cmd_logs() {
 #   env           the .env, which holds CREDENTIALS_KEY. Without it every
 #                 stored mailbox credential in db.dump is unreadable.
 cmd_backup() {
-    stamp=$(date -u '+%Y%m%dT%H%M%SZ')
-    dest=${1:-$DIR/backups}/$stamp
+    backup_to "${1:-$DIR/backups}/$(stamp)"
+    say "    It contains the instance's secrets (env). Copy it off this machine and keep it private."
+}
+
+backup_to() {
+    dest=$1
     mkdir -p "$dest"
     chmod 700 "$dest"
     info "Dumping the database"
     compose exec -T postgres pg_dump -U opendesk -d opendesk -Fc >"$dest/db.dump"
     [ -s "$dest/db.dump" ] || die "pg_dump wrote nothing"
     info "Copying the data volume"
-    cid=$(compose ps -q opendesk)
+    cid=$(compose ps -aq opendesk)
     [ -n "$cid" ] || die "the opendesk container does not exist; start it first"
     dockerc cp "$cid":/data - | gzip >"$dest/data.tar.gz"
     (umask 077; cp "$DIR/.env" "$dest/env")
     env_get OPENDESK_VERSION >"$dest/VERSION"
+    keep_owner "$(dirname "$dest")"
     ok "Backup written to $dest"
-    say "    It contains the instance's secrets (env). Copy it off this machine and keep it private."
 }
 
 cmd_restore() {
@@ -109,7 +180,7 @@ cmd_restore() {
     fi
     if [ -f "$src/env" ]; then
         if [ "$(sed -n 's/^CREDENTIALS_KEY=//p' "$src/env" | tail -1)" != "$(env_get CREDENTIALS_KEY)" ]; then
-            say "  ! The backup was taken with a different CREDENTIALS_KEY than this .env has."
+            warn "The backup was taken with a different CREDENTIALS_KEY than this .env has."
             say "    Mailbox credentials will not decrypt unless you restore its env too:"
             say "    cp $src/env $DIR/.env"
         fi
@@ -131,35 +202,363 @@ cmd_restore() {
     ok "Restored from $src"
 }
 
+# ── Releases ───────────────────────────────────────────────────────────────
+
 resolve_latest() {
-    curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest" |
+    curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
         sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1
 }
 
-# upgrade runs the installer of the target release, verified against the
-# checksum that release published, so the compose file and Caddyfile move
-# with the images. The installer keeps every secret and setting in .env.
+# is_release: v1.2.3, and not a pre-release (automatic updates never pick one).
+is_release() {
+    printf '%s' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+}
+
+# newer A B: release A is newer than release B.
+newer() {
+    awk -v a="${1#v}" -v b="${2#v}" 'BEGIN {
+        split(a, x, "."); split(b, y, ".")
+        for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 }
+        exit 1
+    }'
+}
+
+major_of() {
+    _m=${1#v}
+    printf '%s' "${_m%%.*}"
+}
+
+schema_version() {
+    compose exec -T postgres psql -U opendesk -d opendesk -tAc 'SELECT version FROM schema_migrations' 2>/dev/null | tr -d '[:space:]' || true
+}
+
+# run_installer VERSION [flags]: that release's installer, checked against the
+# checksum it published, so the compose file and Caddyfile move with the images.
+# The installer keeps every secret and setting in .env.
+run_installer() {
+    _v=$1
+    shift
+    tmpdir
+    _d="$TMPD/installer-$_v"
+    mkdir -p "$_d"
+    curl -fsSL "$RELEASES/download/$_v/install.sh" -o "$_d/install.sh" || { warn "no installer published for $_v"; return 1; }
+    curl -fsSL "$RELEASES/download/$_v/install.sh.sha256" -o "$_d/install.sh.sha256" || { warn "no checksum published for $_v"; return 1; }
+    _want=$(cut -d' ' -f1 "$_d/install.sh.sha256")
+    [ "$(sha256 "$_d/install.sh")" = "$_want" ] || { warn "the $_v installer does not match its published checksum"; return 1; }
+    sh "$_d/install.sh" --dir "$DIR" --version "$_v" --yes "$@"
+}
+
+# wait_up VERSION: opendesk answers its health check, running VERSION.
+wait_up() {
+    _i=0
+    while [ "$_i" -lt "$UP_TRIES" ]; do
+        if compose exec -T opendesk /opendesk healthcheck >/dev/null 2>&1; then
+            [ "$(compose exec -T opendesk /opendesk version 2>/dev/null | cut -d' ' -f1)" = "$1" ] && return 0
+        fi
+        _i=$((_i + 1))
+        sleep "$UP_EVERY"
+    done
+    return 1
+}
+
+# upgrade_to TARGET [backup parent] moves the install to TARGET:
+#   1. pulls TARGET's images while the current version keeps serving
+#   2. stops the app and backs up, so the backup holds every write
+#   3. runs TARGET's installer and waits for TARGET to answer its health check
+#   4. if it does not, puts the previous release's files back, and the backup
+#      too when TARGET's migrations ran, and starts the previous version
+# DETAIL is one line about what happened. Returns 0 when TARGET runs, 1 when
+# nothing changed, 2 when it went back.
+upgrade_to() {
+    target=$1
+    parent=${2:-$DIR/backups}
+    current=$(env_get OPENDESK_VERSION)
+    say "Upgrading $DIR from $current to $target"
+    info "Downloading the $target images"
+    _app=$(env_get OPENDESK_IMAGE)
+    _gw=$(env_get REALTIME_IMAGE)
+    if ! dockerc pull -q "${_app:-ghcr.io/useopendesk/opendesk}:$target" >/dev/null ||
+        ! dockerc pull -q "${_gw:-ghcr.io/useopendesk/realtime}:$target" >/dev/null; then
+        DETAIL="Could not download the $target images, so nothing changed."
+        warn "$DETAIL"
+        return 1
+    fi
+    backup=""
+    info "Stopping the app for a consistent backup"
+    compose stop opendesk realtime
+    if [ "${OPENDESK_SKIP_BACKUP:-0}" != 1 ]; then
+        backup="$parent/$(stamp)"
+        if ! (backup_to "$backup"); then
+            compose up -d
+            DETAIL="The backup before the upgrade failed, so nothing changed."
+            warn "$DETAIL"
+            return 1
+        fi
+    fi
+    schema=$(schema_version)
+    if run_installer "$target" && wait_up "$target"; then
+        DETAIL="Updated from $current to $target."
+        ok "$DETAIL"
+        return 0
+    fi
+    DETAIL="$target did not come up healthy, so the instance went back to $current."
+    warn "$DETAIL"
+    compose logs --no-color --tail=40 opendesk 2>/dev/null | sed 's/^/    /' || true
+    go_back "$current" "$backup" "$schema"
+    return 2
+}
+
+go_back() {
+    prev=$1
+    backup=$2
+    schema=$3
+    info "Putting back the $prev files"
+    if ! run_installer "$prev" --no-start; then
+        # Without its installer (GitHub unreachable), the pin alone still starts
+        # the previous images, which are on this machine.
+        env_set OPENDESK_VERSION "$prev"
+        DETAIL="$DETAIL The $prev installer could not run; run opendesk-ctl upgrade $prev once GitHub answers."
+        warn "$DETAIL"
+    fi
+    if [ "$(schema_version)" != "$schema" ]; then
+        if [ -n "$backup" ]; then
+            info "The database changed; restoring the backup taken before the upgrade"
+            OPENDESK_YES=1
+            cmd_restore "$backup"
+        else
+            DETAIL="$DETAIL Its migrations ran and there is no backup (OPENDESK_SKIP_BACKUP); restore one by hand."
+            warn "$DETAIL"
+            return 0
+        fi
+    else
+        compose up -d --remove-orphans
+    fi
+    if wait_up "$prev"; then
+        ok "Back on $prev"
+    else
+        DETAIL="$DETAIL $prev does not answer either; see opendesk-ctl logs opendesk."
+        warn "$DETAIL"
+    fi
+}
+
 cmd_upgrade() {
     target=${1:-}
     have curl || die "curl is required"
     [ -n "$target" ] || target=$(resolve_latest)
     [ -n "$target" ] || die "could not resolve the newest release; pass one: opendesk-ctl upgrade v1.2.3"
-    current=$(env_get OPENDESK_VERSION)
-    say "Upgrading $DIR from $current to $target"
-    if [ "${OPENDESK_SKIP_BACKUP:-0}" != 1 ]; then
-        cmd_backup
+    lock
+    _rc=0
+    upgrade_to "$target" || _rc=$?
+    if [ "$_rc" = 0 ]; then rm -f "$DIR/.auto-update-failed"; fi
+    return "$_rc"
+}
+
+# ── Automatic updates ──────────────────────────────────────────────────────
+#
+# A systemd timer (or a cron entry where there is no systemd) runs
+# `opendesk-ctl auto-update run` each night around 04:00, server time. A run
+# upgrades only within the same major version, never to a pre-release, and
+# never again to a release that failed here (.auto-update-failed); each run is
+# reported to the instance, which shows it in the admin panel and emails the
+# super admins when one fails.
+
+auto_on() { [ "$(env_get AUTO_UPDATE)" = true ]; }
+
+unit_name() {
+    if [ "$DIR" = /opt/opendesk ]; then
+        printf 'opendesk-update'
+    else
+        printf 'opendesk-update-%s' "$(printf '%s' "$DIR" | cksum | cut -d' ' -f1)"
     fi
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' EXIT
-    curl -fsSL "$RELEASES/download/$target/install.sh" -o "$tmp/install.sh" || die "no installer published for $target"
-    curl -fsSL "$RELEASES/download/$target/install.sh.sha256" -o "$tmp/install.sh.sha256" || die "no checksum published for $target"
-    want=$(cut -d' ' -f1 "$tmp/install.sh.sha256")
-    [ "$(sha256 "$tmp/install.sh")" = "$want" ] || die "the $target installer does not match its published checksum"
-    sh "$tmp/install.sh" --dir "$DIR" --version "$target" --yes
+}
+
+has_systemd() { [ -d /run/systemd/system ] && have systemctl; }
+
+cron_marker() { printf '# opendesk-auto-update %s' "$DIR"; }
+
+schedule_install() {
+    unit=$(unit_name)
+    if has_systemd; then
+        tmpdir
+        cat >"$TMPD/$unit.service" <<EOF
+[Unit]
+Description=opendesk automatic update ($DIR)
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+Environment=OPENDESK_DIR=$DIR
+ExecStart="$DIR/opendesk-ctl" auto-update run
+EOF
+        cat >"$TMPD/$unit.timer" <<EOF
+[Unit]
+Description=Install new opendesk releases each night ($DIR)
+
+[Timer]
+OnCalendar=*-*-* 04:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+        if as_root install -m 0644 "$TMPD/$unit.service" "$TMPD/$unit.timer" /etc/systemd/system/ 2>/dev/null &&
+            as_root systemctl daemon-reload && as_root systemctl enable --now "$unit.timer" >/dev/null 2>&1; then
+            ok "Automatic updates scheduled: systemd timer $unit.timer, each night around 04:00"
+            return 0
+        fi
+        warn "Could not install the systemd timer (needs root); trying cron"
+    fi
+    if ! have crontab; then
+        warn "There is neither systemd nor cron here. Run \"$DIR/opendesk-ctl auto-update run\" each night from your own scheduler."
+        return 1
+    fi
+    _min=$(awk 'BEGIN { srand(); print int(rand() * 60) }')
+    _line="$_min 4 * * * PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/homebrew/bin \"$DIR/opendesk-ctl\" auto-update run >>\"$DIR/auto-update.log\" 2>&1 $(cron_marker)"
+    { crontab -l 2>/dev/null | grep -vF "$(cron_marker)" || true; printf '%s\n' "$_line"; } | crontab - ||
+        { warn "Could not add the cron entry"; return 1; }
+    ok "Automatic updates scheduled: cron, each night at 04:$(printf '%02d' "$_min")"
+}
+
+schedule_remove() {
+    unit=$(unit_name)
+    if [ -f "/etc/systemd/system/$unit.timer" ]; then
+        as_root systemctl disable --now "$unit.timer" >/dev/null 2>&1 || true
+        as_root rm -f "/etc/systemd/system/$unit.timer" "/etc/systemd/system/$unit.service" || true
+        as_root systemctl daemon-reload || true
+    fi
+    if have crontab && crontab -l 2>/dev/null | grep -qF "$(cron_marker)"; then
+        { crontab -l 2>/dev/null | grep -vF "$(cron_marker)" || true; } | crontab - || true
+    fi
+}
+
+# report tells the instance how a run went (`opendesk updates report`); the admin
+# panel shows it. It never stops a run.
+report() {
+    _enabled=false
+    if auto_on; then _enabled=true; fi
+    compose exec -T opendesk /opendesk updates report --enabled="$_enabled" --result="${1:-}" --detail="${2:-}" >/dev/null 2>&1 || true
+}
+
+prune_auto_backups() {
+    [ -d "$DIR/backups/auto" ] || return 0
+    # Backup directories are UTC timestamps, so the newest sort last.
+    # shellcheck disable=SC2012
+    ls -1 "$DIR/backups/auto" | sort -r | awk -v keep="$AUTO_BACKUPS" 'NR > keep' | while read -r _old; do
+        rm -rf "${DIR:?}/backups/auto/$_old"
+    done
+}
+
+auto_run() {
+    say "$(date -u '+%Y-%m-%d %H:%M:%SZ') automatic update check"
+    if ! auto_on; then
+        info "Automatic updates are off (AUTO_UPDATE in $DIR/.env)"
+        return 0
+    fi
+    have curl || die "curl is required"
+    current=$(env_get OPENDESK_VERSION)
+    latest=$(resolve_latest)
+    if [ -z "$latest" ]; then
+        warn "Could not read the newest release from GitHub; the next run tries again"
+        return 0
+    fi
+    if ! is_release "$current"; then
+        info "OPENDESK_VERSION is $current, not a release; leaving it alone"
+        report skipped "OPENDESK_VERSION is $current, not a release, so automatic updates leave it alone."
+        return 0
+    fi
+    if ! is_release "$latest" || ! newer "$latest" "$current"; then
+        ok "$current is the newest release"
+        report current ""
+        return 0
+    fi
+    if [ "$(major_of "$latest")" != "$(major_of "$current")" ]; then
+        info "$latest is a new major version; upgrade by hand after reading its release notes"
+        report skipped "$latest is a new major version. Read its release notes, then run opendesk-ctl upgrade $latest."
+        return 0
+    fi
+    if [ "$(cat "$DIR/.auto-update-failed" 2>/dev/null || true)" = "$latest" ]; then
+        info "$latest failed here before; waiting for the next release (or: opendesk-ctl upgrade $latest)"
+        report skipped "$latest failed here before, so automatic updates wait for the next release. To try it again: opendesk-ctl upgrade $latest."
+        return 0
+    fi
+    lock
+    _rc=0
+    upgrade_to "$latest" "$DIR/backups/auto" || _rc=$?
+    case "$_rc" in
+        0)
+            rm -f "$DIR/.auto-update-failed"
+            prune_auto_backups
+            report updated "$DETAIL"
+            ;;
+        2)
+            printf '%s\n' "$latest" >"$DIR/.auto-update-failed"
+            keep_owner "$DIR/.auto-update-failed"
+            report failed "$DETAIL Automatic updates will not try $latest again; to retry: opendesk-ctl upgrade $latest."
+            ;;
+        *)
+            report failed "$DETAIL The next run tries again."
+            ;;
+    esac
+    return "$_rc"
+}
+
+auto_status() {
+    if auto_on; then
+        say "Automatic updates are on (AUTO_UPDATE=true in $DIR/.env)."
+    else
+        say "Automatic updates are off. Turn them on: ./opendesk-ctl auto-update on"
+    fi
+    current=$(env_get OPENDESK_VERSION)
+    latest=$(resolve_latest)
+    say "  Running ${current:-unknown}; newest release ${latest:-unknown (GitHub did not answer)}"
+    if [ -f "$DIR/.auto-update-failed" ]; then
+        warn "$(cat "$DIR/.auto-update-failed") failed here and is skipped until a newer release is out"
+    fi
+    unit=$(unit_name)
+    if [ -f "/etc/systemd/system/$unit.timer" ]; then
+        say "  Schedule: systemd timer $unit.timer"
+        systemctl list-timers "$unit.timer" --no-pager 2>/dev/null | sed 's/^/    /' || true
+        say "  Last runs (journalctl -u $unit):"
+        journalctl -u "$unit" -n 15 --no-pager -o cat 2>/dev/null | sed 's/^/    /' || as_root journalctl -u "$unit" -n 15 --no-pager -o cat 2>/dev/null | sed 's/^/    /' || true
+    elif have crontab && crontab -l 2>/dev/null | grep -qF "$(cron_marker)"; then
+        say "  Schedule: cron ($(crontab -l | grep -F "$(cron_marker)" | cut -d' ' -f1-5))"
+        if [ -f "$DIR/auto-update.log" ]; then
+            say "  Last runs ($DIR/auto-update.log):"
+            tail -n 15 "$DIR/auto-update.log" | sed 's/^/    /'
+        fi
+    elif auto_on; then
+        warn "No schedule is installed. Install it: ./opendesk-ctl auto-update on"
+    fi
+}
+
+cmd_auto_update() {
+    case "${1:-status}" in
+        on)
+            env_set AUTO_UPDATE true
+            schedule_install || true
+            report
+            ;;
+        off)
+            env_set AUTO_UPDATE false
+            schedule_remove
+            report
+            ok "Automatic updates are off. Upgrade by hand: ./opendesk-ctl upgrade"
+            ;;
+        sync)
+            # The installer's step: the schedule follows AUTO_UPDATE in .env.
+            if auto_on; then schedule_install || true; else schedule_remove; fi
+            report
+            ;;
+        run) auto_run ;;
+        status) auto_status ;;
+        *) die "usage: opendesk-ctl auto-update on|off|status|run" ;;
+    esac
 }
 
 usage() {
-    sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 main() {
@@ -170,12 +569,15 @@ main() {
     esac
     have docker || die "docker is not installed"
     find_dir
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM
     case "$cmd" in
         status) cmd_status ;;
         logs) cmd_logs "$@" ;;
         backup) cmd_backup "$@" ;;
         restore) cmd_restore "$@" ;;
         upgrade) cmd_upgrade "$@" ;;
+        auto-update) cmd_auto_update "$@" ;;
         restart) compose restart ;;
         stop) compose stop ;;
         start) compose up -d ;;

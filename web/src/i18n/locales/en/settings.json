@@ -161,17 +161,23 @@
     },
     "invites": {
       "title": "Pending invitations",
-      "description": "Invitations expire after 7 days.",
+      "description": "Invitations expire after 7 days. If an email does not arrive, copy the link and send it yourself.",
       "by": "Invited by {{name}} {{when}}",
       "at": "Invited {{when}}",
       "expired": "Expired",
       "expires": "Expires {{date}}",
       "revoke": "Revoke",
       "revokeTitle": "Revoke invitation?",
-      "revokeBody": "The link sent to {{email}} stops working."
+      "revokeBody": "The invitation link for {{email}} stops working.",
+      "copyLink": "Copy link",
+      "linkCopied": "Invitation link copied",
+      "linkCopiedHint": "Send it to {{email}} however you like. They join by signing up with that address.",
+      "resend": "Resend email",
+      "resent": "Invitation sent to {{email}} again",
+      "actions": "Actions for the invitation to {{email}}"
     },
     "inviteDialog": {
-      "description": "They get an email with a link to join. Links expire after 7 days.",
+      "description": "They get an email with a link to join. You can also copy the link from the pending invitations. Links expire after 7 days.",
       "send": "Send invitations",
       "emails": "Email addresses",
       "emailsHint": "Separate addresses with commas or spaces."

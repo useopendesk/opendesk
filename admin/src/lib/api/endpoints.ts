@@ -11,6 +11,7 @@ import type {
   AdminMe,
   AdminRole,
   AdminSummary,
+  AdminUpdates,
   AdminUser,
   AdminUserRow,
   AdminWorkspace,
@@ -44,6 +45,7 @@ export const api = {
   me: () => http.get<AdminMe>("/v1/admin/me"),
   summary: () => http.get<AdminSummary>("/v1/admin/summary"),
   health: () => http.get<AdminHealth>("/v1/admin/health"),
+  checkUpdates: () => http.post<AdminUpdates>("/v1/admin/updates/check"),
 
   users: {
     list: (p: ListParams) => http.get<Page<AdminUserRow>>("/v1/admin/users", p),

@@ -50,6 +50,10 @@ Both show up in the workspace's own audit log, so its admins know the instance's
 
 On an instance without billing every workspace already has unlimited use, so limits only matter on an instance that runs billing. There, you can give a workspace more mailboxes, more members or a larger monthly AI allowance than its plan, or grant it AI usage that never expires.
 
+## Updates
+
+The **Health** page shows the version the instance runs, the newest release, and whether automatic updates are on and how their last run went. When a newer release is out it gives the command to run, and super admins get an email about it. See [Backups and upgrades](/self-hosting/backups-and-upgrades/#update-notices).
+
 ## Its own address
 
 On one domain the panel shares the app's origin. To give it a host of its own, point a second hostname at the same opendesk, have your proxy send it to `/admin/`, and set the panel's address:

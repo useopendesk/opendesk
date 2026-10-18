@@ -238,6 +238,8 @@ export const api = {
     list: () => http.get<T.Page<T.Invitation>>("/v1/invitations"),
     create: (b: { email: string; role: T.Role }) => http.create<T.Invitation>("/v1/invitations", b),
     revoke: (id: string) => http.del(`/v1/invitations/${id}`),
+    link: (id: string) => http.post<{ url: string; expires_at: string }>(`/v1/invitations/${id}/link`),
+    resend: (id: string) => http.post<T.Invitation>(`/v1/invitations/${id}/resend`),
     accept: (token: string) => http.post<T.Membership>("/v1/invitations/accept", { token }, { workspace: false }),
     lookup: (token: string) =>
       http.get<{ workspace_name: string; email: string; role: T.Role }>("/v1/invitations/lookup", { ...pub, query: { token } }),

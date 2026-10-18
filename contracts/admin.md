@@ -162,7 +162,20 @@ type AdminHealth = {
   webhooks: { failing_24h: number };
   config: { billing: boolean; ai_provider: string; decisions_provider: string; embeddings: string; storage: string;
     signup_enabled: boolean; mailbox_imap: boolean; mailbox_system_send: boolean; push: string; help_domain: string };
-  checks: { name: string; status: "ok" | "warn" | "fail"; detail: string }[];
+  updates: AdminUpdates;
+  checks: { name: string; status: "ok" | "warn" | "fail"; detail: string }[];   // includes "Updates"
+};
+
+type AdminUpdates = {
+  check: boolean;                 // UPDATE_CHECK and a release build (vX.Y.Z)
+  current: string;                // the running version
+  latest: { version: string; url: string /* its GitHub release page */; published_at: string | null } | null;
+  available: boolean;             // latest is newer than current
+  major: boolean;                 // ... and a new major version, which automatic updates leave alone
+  checked_at: string | null; error: string;                 // the last look at GitHub
+  previous_version: string; running_since: string | null;   // the version before this one, and since when this one runs
+  auto: { reported: boolean /* opendesk-ctl has reported */; enabled: boolean; last_run_at: string | null;
+    last_result: "none" | "current" | "updated" | "skipped" | "failed"; last_detail: string };
 };
 
 type AdminJob = { id: number; kind: string; queue: string; state: "available" | "running" | "retryable" | "scheduled" | "completed" | "cancelled" | "discarded" | "pending";
@@ -190,6 +203,7 @@ are left out of the public OpenAPI spec. Lists take `?limit=&cursor=` and answer
 | --- | --- | --- | --- |
 | GET | `/v1/admin/summary` | read | `AdminSummary` |
 | GET | `/v1/admin/health` | read | `AdminHealth`; never includes a secret, DSN or key |
+| POST | `/v1/admin/updates/check` | read | looks for a new release now (6 / min per admin) → `AdminUpdates`; `409 update_check_off` when the instance does not look |
 | GET | `/v1/admin/users` | read | `?q=` email, name or id; `?filter=suspended\|admins\|unverified`; newest first → `Page<AdminUserRow>` |
 | GET | `/v1/admin/users/{id}` | read | `AdminUser` |
 | POST | `/v1/admin/users/{id}/sessions/revoke` | users.sessions | `{session_id?}`: one session, or every session → 204 |
@@ -248,6 +262,34 @@ email jobs carry whole emails with their sign-in links. `last_error` is cut to 2
 - Each action is written to the admin audit log. Actions on a workspace, and on a user's account,
   are also written to the workspace's own audit log (each of the user's workspaces), with no actor
   user and `data.actor = "instance_admin"`, so the workspace's admins see that the operator acted.
+
+## Updates
+
+A release build (`version` is `vX.Y.Z`) with `UPDATE_CHECK` on (the default) keeps one row,
+`instance_updates`, current. The `admin.updates` job runs hourly on the workers:
+
+- it records the running version, and the one before it when it changes;
+- every 6 hours it reads `https://api.github.com/repos/useopendesk/opendesk/releases/latest`
+  (no credentials, a fixed User-Agent, nothing about the instance). No release yet is not an
+  error; a failed look is stored as `error` and tried again. The release link is built from the
+  validated tag, never taken from the answer;
+- it emails the `super` admins (`mail.system`) once per newer release, unless automatic updates
+  are on and the release is the same major version (they will install it), and once per failed
+  automatic update.
+
+Installing is the host's job. `opendesk-ctl auto-update run` (a nightly systemd timer or cron entry,
+`AUTO_UPDATE` in the install's `.env`) upgrades within the same major version, backs up first, and
+goes back to the previous version (and the backup, when migrations ran) if the new one does not
+answer its health check as the new version. It reports each run through the binary:
+
+```sh
+opendesk updates report --enabled=true --result=current|updated|skipped|failed --detail "<one line>"
+opendesk updates report --enabled=false          # auto-update on/off: only whether it is on
+```
+
+The detail is kept to one plain line of 500 characters. The panel shows a failed run until the
+next run, or until a later version starts. Hosted instances set `UPDATE_CHECK=false`: Deploy ships
+each release there.
 
 ## Admin audit log
 

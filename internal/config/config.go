@@ -46,6 +46,9 @@ type Config struct {
 	CORSOrigins    []string
 	SignupEnabled  bool
 	TrustProxy     bool
+	// UpdateCheck looks for new opendesk releases on GitHub (UPDATE_CHECK, default on) and
+	// tells the instance admins. Builds that are not a release never look.
+	UpdateCheck bool
 
 	NATSURL      string // empty = run NATS embedded in this process
 	NATSToken    string
@@ -405,6 +408,7 @@ func Load() (*Config, error) {
 		CookieDomain:       env("COOKIE_DOMAIN", ""),
 		SignupEnabled:      envBool("SIGNUP_ENABLED", true),
 		TrustProxy:         envBool("TRUST_PROXY", false),
+		UpdateCheck:        envBool("UPDATE_CHECK", true),
 		NATSURL:            env("NATS_URL", ""),
 		NATSToken:          env("NATS_TOKEN", ""),
 		NATSListen:         env("NATS_LISTEN", "127.0.0.1:4222"),

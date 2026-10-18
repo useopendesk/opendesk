@@ -7,6 +7,7 @@ package admin
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -85,11 +86,16 @@ type svc struct {
 	ops *core.Ops
 	// started is when this process began, for the health page.
 	started time.Time
+	// releaseAPI and http are where and how the update worker looks for releases.
+	releaseAPI string
+	http       *http.Client
 }
 
 var processStart = time.Now()
 
-func newSvc(d *deps.Deps) *svc { return &svc{d: d, ops: core.NewOps(d), started: processStart} }
+func newSvc(d *deps.Deps) *svc {
+	return &svc{d: d, ops: core.NewOps(d), started: processStart, releaseAPI: latestReleaseAPI, http: &http.Client{Timeout: 20 * time.Second}}
+}
 
 // Register adds the /v1/admin/* routes. They are left out of the public OpenAPI spec.
 func Register(d *deps.Deps, api huma.API, _ chi.Router) {
@@ -97,6 +103,7 @@ func Register(d *deps.Deps, api huma.API, _ chi.Router) {
 	s.registerAuth(api)
 	s.registerSummary(api)
 	s.registerHealth(api)
+	s.registerUpdates(api)
 	s.registerUsers(api)
 	s.registerWorkspaces(api)
 	s.registerJobs(api)
@@ -107,13 +114,17 @@ func Register(d *deps.Deps, api huma.API, _ chi.Router) {
 // RegisterWorkers adds the admin area's workers.
 func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &cleanupWorker{d: d})
+	river.AddWorker(w, &updatesWorker{s: newSvc(d)})
 }
 
-// Periodic prunes ended admin sessions and old admin audit rows.
+// Periodic prunes ended admin sessions and old admin audit rows, and keeps the update
+// status current (updates.go).
 func Periodic(_ *deps.Deps) []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) { return cleanupArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) { return updatesArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
 }
 
