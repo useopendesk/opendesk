@@ -184,6 +184,7 @@ func Router(d *deps.Deps) http.Handler {
 		"bearer": {Type: "http", Scheme: "bearer", Description: "Access token (JWT) or API key (od_live_...)"},
 	}
 	hc.Security = []map[string][]string{{"bearer": {}}}
+	keepUploadsInMemory()
 	api := humachi.New(r, hc)
 
 	for _, a := range areas {
@@ -199,6 +200,15 @@ func Router(d *deps.Deps) http.Handler {
 	}
 	return r
 }
+
+// uploadMemory covers the largest upload body (an import CSV: 50 MB and its
+// multipart envelope). Every route caps its body below this.
+const uploadMemory = 64 << 20
+
+// keepUploadsInMemory has the multipart parser keep uploaded files in memory
+// instead of temp files: every upload handler reads the whole file anyway, and
+// the API runs on a read-only root filesystem.
+func keepUploadsInMemory() { humachi.MultipartMaxMemory = uploadMemory }
 
 func webCSP(cfg *config.Config) string {
 	connect := []string{"'self'"}
