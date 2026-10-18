@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/audit"
@@ -660,7 +661,16 @@ func (s *service) enqueueSync(ctx context.Context, tx pgx.Tx, m *mailboxRow) err
 }
 
 func syncInsertOpts() *river.InsertOpts {
-	return &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	// Completed syncs must not block the next poll. ByQueue also versions the
+	// uniqueness key so completed jobs created with the old defaults stop blocking
+	// syncs immediately after an upgrade.
+	return &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1, UniqueOpts: river.UniqueOpts{
+		ByArgs: true, ByQueue: true,
+		ByState: []rivertype.JobState{
+			rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+			rivertype.JobStateRunning, rivertype.JobStateScheduled,
+		},
+	}}
 }
 
 // applyPatch merges a PATCH into m and creds and returns the changed field names and

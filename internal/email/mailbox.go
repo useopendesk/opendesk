@@ -368,23 +368,17 @@ func (s *service) setSyncError(ctx context.Context, m *mailboxRow, msg string) e
 	})
 }
 
-// setSyncOK records a successful sync; it publishes mailbox.updated only when the
-// mailbox leaves the error state.
+// setSyncOK records a successful sync and publishes the updated last-synced time.
 func (s *service) setSyncOK(ctx context.Context, m *mailboxRow, validity, lastUID int64) error {
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var prevStatus string
-		err := tx.QueryRow(ctx, `UPDATE mailboxes m SET status = CASE WHEN m.status = 'error' THEN 'active' ELSE m.status END,
+		_, err := tx.Exec(ctx, `UPDATE mailboxes SET status = CASE WHEN status = 'error' THEN 'active' ELSE status END,
 			last_error = '', sync_failures = 0, next_sync_at = NULL, last_synced_at = now(),
 			imap_uid_validity = $3, imap_last_uid = $4, updated_at = now()
-			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR UPDATE) old
-			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status`, m.WorkspaceID, m.ID, validity, lastUID).Scan(&prevStatus)
+			WHERE workspace_id = $1 AND id = $2`, m.WorkspaceID, m.ID, validity, lastUID)
 		if err != nil {
 			return err
 		}
-		if prevStatus == "error" {
-			return s.publishMailbox(ctx, tx, m.WorkspaceID, m.ID, "mailbox.updated")
-		}
-		return nil
+		return s.publishMailbox(ctx, tx, m.WorkspaceID, m.ID, "mailbox.updated")
 	})
 }
 
