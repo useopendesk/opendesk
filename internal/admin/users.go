@@ -461,7 +461,7 @@ func (s *svc) registerUsers(api huma.API) {
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body struct {
-				codeBody
+				Code         string `json:"code,omitempty" maxLength:"64" doc:"A current authenticator code (or a recovery code) of the acting admin"`
 				ConfirmEmail string `json:"confirm_email" maxLength:"320"`
 			}
 		}) (*struct{}, error) {

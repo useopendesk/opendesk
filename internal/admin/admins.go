@@ -167,7 +167,7 @@ func (s *svc) registerAdmins(api huma.API) {
 	op(s, api, huma.Operation{OperationID: "admin-grant-admin", Method: http.MethodPost, Path: "/v1/admin/admins", Summary: "Make someone an instance admin"},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				codeBody
+				Code  string `json:"code,omitempty" maxLength:"64" doc:"A current authenticator code (or a recovery code) of the acting admin"`
 				Email string `json:"email" maxLength:"320"`
 				Role  Role   `json:"role" enum:"viewer,support,super"`
 			}
@@ -209,8 +209,8 @@ func (s *svc) registerAdmins(api huma.API) {
 		func(ctx context.Context, in *struct {
 			UserID string `path:"user_id"`
 			Body   struct {
-				codeBody
-				Role Role `json:"role" enum:"viewer,support,super"`
+				Code string `json:"code,omitempty" maxLength:"64" doc:"A current authenticator code (or a recovery code) of the acting admin"`
+				Role Role   `json:"role" enum:"viewer,support,super"`
 			}
 		}) (*struct{ Body InstanceAdmin }, error) {
 			a, err := require(ctx, PermAdminsManage)

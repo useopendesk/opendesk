@@ -508,7 +508,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body struct {
-				codeBody
+				Code        string `json:"code,omitempty" maxLength:"64" doc:"A current authenticator code (or a recovery code) of the acting admin"`
 				ConfirmName string `json:"confirm_name" maxLength:"200"`
 			}
 		}) (*struct{}, error) {
