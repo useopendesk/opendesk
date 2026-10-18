@@ -28,6 +28,11 @@ const (
 	// PurposeNotificationUnsubscribe turns off notification emails from one workspace (wid)
 	// for one user (sub); it rides in every notification email.
 	PurposeNotificationUnsubscribe = "notification_unsubscribe"
+	// PurposeAdmin is an instance admin panel access token: sub the user, sid the admin
+	// session (contracts/admin.md). Only /v1/admin/* accepts it.
+	PurposeAdmin = "admin"
+	// PurposeAdminMFA carries a panel sign-in from the password step to the code step.
+	PurposeAdminMFA = "admin_mfa"
 )
 
 const (
@@ -40,6 +45,8 @@ const (
 	MCPAccessTTL  = time.Hour
 	// UnsubscribeTTL keeps an email's unsubscribe link working for a while after it arrives.
 	UnsubscribeTTL = 90 * 24 * time.Hour
+	// AdminTTL is an admin panel access token's lifetime.
+	AdminTTL = 10 * time.Minute
 )
 
 // Claims is the union of fields used across purposes.

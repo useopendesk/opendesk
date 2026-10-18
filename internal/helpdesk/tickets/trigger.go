@@ -38,6 +38,10 @@ func (w *TriggerWorker) Work(ctx context.Context, job *river.Job[jobs.TicketTrig
 // RunTrigger applies SLA policies, automations, auto-assignment and reply
 // notifications for one ticket change, in one transaction.
 func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) error {
+	// A suspended workspace runs no automations (contracts/admin.md).
+	if suspended, err := domain.WorkspaceSuspended(ctx, d.DB.Pool, a.WorkspaceID); err != nil || suspended {
+		return err
+	}
 	// Auto-triage runs first, outside the trigger transaction (it calls a model), so the
 	// ticket_created automations see its tags, priority and sentiment.
 	if h := hd.GetAIHooks(); a.Trigger == jobs.TriggerTicketCreated && h != nil && h.AutoTriage != nil {

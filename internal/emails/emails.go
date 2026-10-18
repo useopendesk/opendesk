@@ -124,6 +124,23 @@ func Invitation(s Site, in Invite) mailer.Mail {
 	})
 }
 
+// TwoFactorDisabled tells a person an instance administrator turned off their two-factor
+// authentication (contracts/admin.md), so they notice if they did not ask for it.
+func TwoFactorDisabled(s Site) mailer.Mail {
+	return s.build(mailer.Email{
+		Subject:   "Two-factor authentication was turned off",
+		Preheader: "An administrator turned it off for your opendesk account. Turn it back on in your security settings.",
+		Heading:   "Two-factor authentication is off",
+		Intro: []string{"An administrator of this opendesk instance turned off two-factor authentication for your account and signed you out everywhere.",
+			"This usually happens after you lost your authenticator and asked for help. Sign in and turn it back on to keep your account protected."},
+		Button: &mailer.Button{Label: "Open security settings", URL: s.App("/settings/security")},
+		Footer: mailer.Footer{
+			Reason:  "You get this email because the security settings of your opendesk account changed. If you did not ask for this, change your password and contact support.",
+			Contact: s.Contact,
+		},
+	})
+}
+
 // PaymentFailed tells owners and admins a subscription payment failed.
 func PaymentFailed(s Site, workspace string, workspaceID string) mailer.Mail {
 	return s.build(mailer.Email{

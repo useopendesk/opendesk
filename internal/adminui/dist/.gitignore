@@ -1,0 +1,4 @@
+# Filled by `make admin-embed` and the Docker build. Only this file is tracked, so
+# go:embed always has something to embed.
+*
+!.gitignore

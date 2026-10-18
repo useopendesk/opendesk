@@ -1,0 +1,87 @@
+// Cloudflare Turnstile, loaded on demand. Renders nothing when the instance has
+// no site key, in which case no token is sent.
+
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { config } from "@/lib/config";
+import { useTheme } from "@/lib/theme";
+
+type TurnstileApi = {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+  reset: (id?: string) => void;
+  remove: (id?: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
+const SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+let loading: Promise<TurnstileApi> | null = null;
+
+function loadTurnstile(): Promise<TurnstileApi> {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (loading) return loading;
+  loading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = SRC;
+    s.async = true;
+    s.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error("Turnstile failed to load")));
+    s.onerror = () => {
+      loading = null;
+      reject(new Error("Turnstile failed to load"));
+    };
+    document.head.appendChild(s);
+  });
+  return loading;
+}
+
+export const turnstileEnabled = () => !!config.turnstileSiteKey;
+
+export type TurnstileHandle = { reset: () => void };
+
+export const Turnstile = forwardRef<TurnstileHandle, { onToken: (t: string | null) => void; action?: string }>(function Turnstile({ onToken, action }, ref) {
+  const siteKey = config.turnstileSiteKey;
+  const { dark } = useTheme();
+  const el = useRef<HTMLDivElement>(null);
+  const widget = useRef<string | null>(null);
+  const cb = useRef(onToken);
+  useEffect(() => {
+    cb.current = onToken;
+  });
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      cb.current(null);
+      if (widget.current) window.turnstile?.reset(widget.current);
+    },
+  }));
+
+  useEffect(() => {
+    if (!siteKey || !el.current) return;
+    let cancelled = false;
+    loadTurnstile()
+      .then((t) => {
+        if (cancelled || !el.current) return;
+        widget.current = t.render(el.current, {
+          sitekey: siteKey,
+          theme: dark ? "dark" : "light",
+          size: "flexible",
+          action,
+          callback: (token: string) => cb.current(token),
+          "expired-callback": () => cb.current(null),
+          "error-callback": () => cb.current(null),
+        });
+      })
+      .catch(() => cb.current(null));
+    return () => {
+      cancelled = true;
+      if (widget.current) window.turnstile?.remove(widget.current);
+      widget.current = null;
+    };
+  }, [siteKey, dark, action]);
+
+  if (!siteKey) return null;
+  return <div ref={el} className="min-h-[65px] w-full overflow-hidden rounded-md" />;
+});

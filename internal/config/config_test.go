@@ -188,3 +188,30 @@ func TestMailboxIMAPDefault(t *testing.T) {
 		t.Fatal("MAILBOX_IMAP=false")
 	}
 }
+
+// TestAdminURL: the panel defaults to <APP_URL>/admin, or its dev server on a development
+// API that does not serve the web app; its origin is what the admin routes accept.
+func TestAdminURL(t *testing.T) {
+	productionEnv(t)
+	t.Setenv("APP_URL", "https://desk.example.com")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminURL != "https://desk.example.com/admin" || c.AdminOrigin() != "https://desk.example.com" {
+		t.Fatalf("default: %q %q", c.AdminURL, c.AdminOrigin())
+	}
+	t.Setenv("ADMIN_URL", "https://admin.example.com/")
+	if c, err = Load(); err != nil || c.AdminOrigin() != "https://admin.example.com" {
+		t.Fatalf("set: %v %q", err, c.AdminOrigin())
+	}
+	t.Setenv("ADMIN_URL", "admin.example.com")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ADMIN_URL") {
+		t.Fatalf("no scheme: want refusal, got %v", err)
+	}
+	t.Setenv("ADMIN_URL", "")
+	t.Setenv("OPENDESK_ENV", "development")
+	if c, err = Load(); err != nil || c.AdminURL != "http://localhost:5174" {
+		t.Fatalf("development: %v %q", err, c.AdminURL)
+	}
+}

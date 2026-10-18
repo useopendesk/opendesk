@@ -19,6 +19,8 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/useopendesk/opendesk/internal/admin"
+	"github.com/useopendesk/opendesk/internal/adminui"
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/ai/assistant"
 	"github.com/useopendesk/opendesk/internal/ai/bots"
@@ -72,6 +74,7 @@ var areas = []area{
 	{bots.Register, bots.RegisterWorkers, bots.Periodic, bots.Background},
 	{mcp.Register, mcp.RegisterWorkers, mcp.Periodic, mcp.Background},
 	{mcpserver.Register, mcpserver.RegisterWorkers, mcpserver.Periodic, mcpserver.Background},
+	{admin.Register, admin.RegisterWorkers, admin.Periodic, admin.Background},
 }
 
 // NewLogger returns a JSON logger in production and a text logger in development.
@@ -157,7 +160,7 @@ func Router(d *deps.Deps) http.Handler {
 	httpx.Install(d.Log)
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID, httpx.Logger(d.Log), httpx.SecurityHeaders(strings.HasPrefix(cfg.APIURL, "https://")),
-		httpx.CORS(cfg.CORSOrigins))
+		httpx.CORS(cfg.CORSOrigins, cfg.AdminOrigin()))
 	// Help centers answer on their own hosts and at /help/<slug>, before the API's
 	// sessions are read (contracts/teams.md "Help center addresses").
 	r.Use(helpsite.Middleware(d))
@@ -192,6 +195,11 @@ func Router(d *deps.Deps) http.Handler {
 	}
 
 	if cfg.ServeWeb {
+		// The instance admin panel (contracts/admin.md), before the web app's catch-all.
+		panel := adminui.Handler(adminui.RuntimeConfig{APIURL: cfg.APIURL, AppURL: cfg.AppURL, TurnstileSiteKey: cfg.TurnstileSiteKey,
+			EnvLabel: os.Getenv("ADMIN_ENV_LABEL")}, adminCSP(cfg))
+		r.Handle("/admin", panel)
+		r.Handle("/admin/*", panel)
 		csp := webCSP(cfg)
 		r.Handle("/*", webui.Handler(webui.RuntimeConfig{APIURL: cfg.APIURL, GatewayURL: cfg.GatewayURL,
 			PosthogKey: os.Getenv("WEB_POSTHOG_KEY"), PosthogHost: os.Getenv("WEB_POSTHOG_HOST"),
@@ -229,6 +237,28 @@ func webCSP(cfg *config.Config) string {
 		"frame-ancestors 'none'",
 		"base-uri 'self'",
 		"form-action 'self'",
+	}, "; ")
+}
+
+// adminCSP is the admin panel's policy: the API and Turnstile, nothing else.
+func adminCSP(cfg *config.Config) string {
+	connect := []string{"'self'"}
+	if o := cspOrigin(cfg.APIURL); o != "" {
+		connect = append(connect, o)
+	}
+	connect = append(connect, "https://challenges.cloudflare.com")
+	return strings.Join([]string{
+		"default-src 'self'",
+		"script-src 'self' https://challenges.cloudflare.com",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob: https:",
+		"font-src 'self' data:",
+		"connect-src " + strings.Join(connect, " "),
+		"frame-src https://challenges.cloudflare.com",
+		"frame-ancestors 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
+		"object-src 'none'",
 	}, "; ")
 }
 

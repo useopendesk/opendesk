@@ -71,13 +71,14 @@ func scanWidgetRow(row pgx.Row) (widgetRow, error) {
 	return g, nil
 }
 
-// loadByKey finds the widget of a key, refusing unknown keys and disabled widgets alike.
+// loadByKey finds the widget of a key, refusing unknown keys, disabled widgets and the
+// widgets of a suspended workspace alike.
 func loadByKey(ctx context.Context, q db.Querier, key string) (widgetRow, error) {
 	key = strings.TrimSpace(key)
 	if key == "" || len(key) > 200 {
 		return widgetRow{}, httpx.NotFound("Widget")
 	}
-	g, err := scanWidgetRow(q.QueryRow(ctx, widgetRowSelect+` WHERE g.key = $1`, key))
+	g, err := scanWidgetRow(q.QueryRow(ctx, widgetRowSelect+` WHERE g.key = $1 AND w.suspended_at IS NULL`, key))
 	if db.IsNotFound(err) {
 		return g, httpx.NotFound("Widget")
 	}

@@ -61,9 +61,11 @@ type Principal struct {
 	WidgetID    uuid.UUID // visitors: the widget the session started in
 	WorkspaceID uuid.UUID // zero until resolved from OD-Workspace or the credential
 	Role        Role      // users, once the workspace is resolved
-	Verified    bool      // visitors: identity signed by the customer's backend
-	IP          string
-	UserAgent   string
+	// WorkspaceSuspended: the resolved workspace is suspended; Require* refuse it.
+	WorkspaceSuspended bool
+	Verified           bool // visitors: identity signed by the customer's backend
+	IP                 string
+	UserAgent          string
 	// Assistant marks a request the assistant makes for this user after they approved
 	// it: it runs with the user's own role and checks, and is attributed to ai on
 	// behalf of the user.

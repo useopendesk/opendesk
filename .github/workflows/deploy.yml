@@ -10,8 +10,8 @@ name: Deploy
 #   2. build linux/arm64 images, push to ECR tagged with the commit SHA
 #   3. run the migrations as a one-off ECS task (opendesk-migrate, direct URL)
 #   4. roll api, worker and gateway onto the new images
-#   5. build and deploy the three Cloudflare Pages projects, the email worker and the
-#      help center worker
+#   5. build and deploy the four Cloudflare Pages projects (app, admin panel, site,
+#      docs), the email worker and the help center worker
 #
 # AWS access is OIDC only (deploy/terraform, module github-oidc): the deploy role
 # trusts this repository's production environment and can do nothing else; the
@@ -321,7 +321,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [app, site, docs]
+        project: [app, admin, site, docs]
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -383,6 +383,21 @@ jobs:
           fi
           node ../deploy/cloudflare/pages/app/write-config.mjs dist
           echo "DIST=web/dist" >> "$GITHUB_ENV"
+
+      # The instance admin panel (contracts/admin.md) on its own origin.
+      - name: Build admin
+        if: steps.want.outputs.run == 'true' && matrix.project == 'admin'
+        working-directory: admin
+        env:
+          ADMIN_API_URL: https://api.opendesk.sh
+          ADMIN_APP_URL: https://app.opendesk.sh
+          ADMIN_ENV_LABEL: Production
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:pages
+          test -s dist/index.html && test -s dist/config.js
+          echo "DIST=admin/dist" >> "$GITHUB_ENV"
 
       # opendesk.sh/install.sh is the installer of the newest release, so its
       # published checksum and the release's always agree. The site's prebuild

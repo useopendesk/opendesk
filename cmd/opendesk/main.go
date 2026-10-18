@@ -93,7 +93,7 @@ func main() {
 
 	ver := &cobra.Command{Use: "version", Run: func(*cobra.Command, []string) { fmt.Println(version.Version, version.Commit) }}
 
-	root.AddCommand(serve, migrateCmd, health, ver)
+	root.AddCommand(serve, migrateCmd, health, ver, adminCommand())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

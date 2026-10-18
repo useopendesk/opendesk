@@ -29,6 +29,10 @@ type Config struct {
 	GatewayURL string
 	SiteURL    string
 	ServeWeb   bool // serve the embedded web app and /config.js from this binary
+	// AdminURL is where the instance admin panel lives (ADMIN_URL, default <APP_URL>/admin,
+	// or the panel's dev server on a development API that does not serve the web app);
+	// its origin is the only one the admin routes accept (contracts/admin.md).
+	AdminURL string
 
 	// DatabaseURL is the pooled connection (PgBouncer in transaction mode) used by request handlers.
 	// DatabaseURLDirect is unpooled; migrations, River (LISTEN/NOTIFY) and the event relay use it.
@@ -273,6 +277,15 @@ func (c *Config) HelpPathBase() string {
 // CloudflareSaaS reports whether custom help center domains are Cloudflare custom hostnames.
 func (c *Config) CloudflareSaaS() bool {
 	return c.CloudflareSaaSZoneID != "" && c.CloudflareSaaSToken != ""
+}
+
+// AdminOrigin is the scheme and host of AdminURL: the origin the admin panel runs on.
+func (c *Config) AdminOrigin() string {
+	u, err := url.Parse(c.AdminURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // BillingEnabled reports whether plans, limits and the AI balance are enforced.
@@ -569,6 +582,16 @@ func Load() (*Config, error) {
 	c.MailboxSystemSend = envBool("MAILBOX_SYSTEM_SEND", true)
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
+	// The binary serves the panel at <APP_URL>/admin; a development API pairs with the
+	// panel's dev server.
+	adminURL := c.AppURL + "/admin"
+	if !c.IsProduction() && !c.ServeWeb {
+		adminURL = "http://localhost:5174"
+	}
+	c.AdminURL = strings.TrimRight(env("ADMIN_URL", adminURL), "/")
+	if u, err := url.Parse(c.AdminURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" {
+		return nil, errors.New("ADMIN_URL must be an http(s) URL, e.g. https://admin.example.com")
+	}
 	for _, o := range strings.Split(env("CORS_ORIGINS", c.AppURL), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.CORSOrigins = append(c.CORSOrigins, strings.TrimRight(o, "/"))

@@ -748,12 +748,15 @@ func (o *oauth) exchangeRefresh(w http.ResponseWriter, r *http.Request, client *
 }
 
 // activeGrant loads a grant that is not revoked, with the user's current role in its
-// workspace. pgx.ErrNoRows when the grant ended or the membership did.
+// workspace. pgx.ErrNoRows when the grant ended or the membership did, or while the
+// workspace or the user is suspended (contracts/admin.md).
 func activeGrant(ctx context.Context, q db.Querier, gid uuid.UUID) (grantRow, auth.Role, error) {
 	g := grantRow{ID: gid}
 	var role string
 	err := q.QueryRow(ctx, `SELECT g.workspace_id, g.user_id, g.scopes, g.resource, m.role FROM oauth_grants g
 		JOIN members m ON m.workspace_id = g.workspace_id AND m.user_id = g.user_id
+		JOIN workspaces w ON w.id = g.workspace_id AND w.suspended_at IS NULL
+		JOIN users u ON u.id = g.user_id AND u.suspended_at IS NULL
 		WHERE g.id = $1 AND g.revoked_at IS NULL`, gid).Scan(&g.WorkspaceID, &g.UserID, &g.Scopes, &g.Resource, &role)
 	return g, auth.Role(role), err
 }

@@ -58,7 +58,7 @@ export type Workspace = {
 /** The AI agent's picture is its bot's (contracts/bots.md). */
 export type WorkspaceImageSlot = "help_center_logo" | "help_center_favicon" | "widget_avatar" | "widget_launcher";
 export type WorkspaceImages = Record<WorkspaceImageSlot, string | null>;
-export type Membership = { workspace: Workspace; role: Role };
+export type Membership = { workspace: Workspace; role: Role; /** An instance admin suspended the workspace: its routes answer 403 workspace_suspended (contracts/admin.md). */ suspended?: boolean };
 export type Availability = "online" | "away" | "offline";
 export type Member = {
   user: UserRef & { avatar_source: AvatarSource | null };

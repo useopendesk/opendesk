@@ -1,0 +1,262 @@
+# Instance admin
+
+The instance admin panel is the operator surface of an opendesk instance: the people who run
+opendesk Cloud, or the team that runs a self-hosted instance. It is a separate app (`admin/`)
+on the same API (`/v1/admin/*`), with its own sign-in, sessions and token purpose. A workspace
+role never grants anything here, and an admin session never acts inside a workspace.
+
+| where | panel | API |
+| --- | --- | --- |
+| opendesk Cloud | `https://admin.opendesk.sh` (Cloudflare Pages, `opendesk-admin`) | `https://api.opendesk.sh/v1/admin/*` |
+| self-hosted (`SERVE_WEB=true`) | `<APP_URL>/admin/`, served by the binary | same host |
+
+`ADMIN_URL` is where the panel lives (default `<APP_URL>/admin`; on a development API that does
+not serve the web app, the panel's dev server `http://localhost:5174`). Its origin is the only origin
+the admin routes accept (CORS and the `Origin` check below). On a single-domain install the panel
+shares the app's origin; giving it its own host (`ADMIN_URL=https://admin.desk.example.com`, served
+by the proxy in front) keeps a page of the app from ever running on the panel's origin.
+
+## Admins and roles
+
+An instance admin is a user with a row in `instance_admins` (`user_id`, `role`, `granted_by`,
+`created_at`). Nobody is an admin until the first one is granted from the command line, on the
+machine or task that runs the instance:
+
+```sh
+opendesk admin grant you@example.com --role super   # roles: viewer, support, super
+opendesk admin list
+opendesk admin revoke you@example.com
+```
+
+The CLI reads the same configuration as `serve` (`DATABASE_URL`); on opendesk Cloud it runs as a
+one-off ECS task. Every CLI change is in the admin audit log with actor `cli`. After that a
+`super` admin grants the rest from the panel.
+
+| permission | `viewer` | `support` | `super` |
+| --- | --- | --- | --- |
+| `read`: every page | yes | yes | yes |
+| `users.sessions`: revoke a user's sessions, resend the verification email | | yes | yes |
+| `users.suspend`, `workspaces.suspend`: suspend and restore | | yes | yes |
+| `workspaces.limits`: limit overrides, AI usage grants | | yes | yes |
+| `jobs.manage`: retry and cancel background jobs | | yes | yes |
+| `users.mfa`: turn off a user's two-factor authentication | | | yes |
+| `users.delete`, `workspaces.delete` | | | yes |
+| `admins.manage`: grant, change and revoke admins | | | yes |
+
+The role is read from the database on every request, so a revoked or downgraded admin loses
+access at once. A `super` admin cannot revoke or downgrade themselves, and the last `super`
+admin cannot be removed from the panel (the CLI can).
+
+## Sign-in and sessions
+
+Admin sign-in is **email, password and a TOTP code**, every time: an account without a password
+(federated sign-in only) sets one with "Forgot password" first, and an account without two-factor
+authentication turns it on in the app first. Passkeys and federated sign-in do not open the panel.
+
+```
+POST /v1/admin/auth/login   {email, password, turnstile_token?}
+  → 200 {mfa_token}                          purpose admin_mfa, 5 min
+  → 401 invalid_credentials                  unknown email or wrong password, same answer and time
+  → 403 not_admin                            the password was right, the account is not an admin
+  → 403 admin_mfa_setup_required             an admin without two-factor authentication
+  → 403 account_suspended
+POST /v1/admin/auth/mfa     {mfa_token, code}         code: 6 digits or a recovery code
+  → 200 AdminAuthResult, Set-Cookie od_admin=<refresh>
+POST /v1/admin/auth/refresh                            the cookie
+  → 200 AdminAuthResult, the cookie rotated; 401 unauthenticated clears it;
+    409 refresh_in_progress when another tab rotated it in the last 30 s (try again)
+POST /v1/admin/auth/logout  → 204, the session revoked and the cookie cleared
+GET  /v1/admin/me           → AdminMe
+```
+
+- Login is behind Turnstile when the instance has it, rate limited per IP (30 / 15 min) and per
+  account (10 / 15 min), and answers an unknown email exactly like a wrong password
+  (`auth.DummyVerify`). The TOTP step is limited per user (10 / 15 min) and its replay refused.
+- Every `/v1/admin/auth/*` POST must carry `Origin` equal to the origin of `ADMIN_URL`, or it is
+  `403 origin_refused`. CORS on `/v1/admin/*` allows only that origin, with credentials; the app's
+  `CORS_ORIGINS` are not allowed there.
+- Sessions live in `admin_sessions`, apart from the app's `sessions`: signing in to the panel never
+  touches the app's cookies or sessions. The refresh token is 32 random bytes, stored hashed,
+  rotated on every refresh (a rotated token presented again outside a 30 s grace window revokes
+  the session). A session ends **1 hour after its last refresh and 12 hours after sign-in**, whichever
+  is first.
+- Refresh cookie `od_admin`: HttpOnly, Secure (https), **SameSite=Strict**, `Path=/v1/admin/auth`,
+  host-only (no `Domain`). A response body never carries the refresh token.
+- Access token: purpose `admin` (contracts/tokens.md), `sub` the user, `sid` the admin session,
+  10 minutes, kept in memory by the panel. Every admin route checks that the session is live, the
+  user is not suspended and is still an admin, then the route's permission.
+- Signing in, an admin's failed sign-in and signing out are in the admin audit log; a failed
+  sign-in to an account that is not an admin is a log line without the address.
+
+### Step-up
+
+Turning off a user's two-factor authentication, deleting a user or a workspace, and granting,
+changing or revoking an admin carry `code` in the body: a current TOTP code (or a recovery code)
+of the acting admin, checked like sign-in. A wrong code is `401 invalid_code`, a missing one
+`403 mfa_required`.
+
+## Shapes
+
+```ts
+type AdminRole = "viewer" | "support" | "super";
+type AdminPermission = "read" | "users.sessions" | "users.suspend" | "users.mfa" | "users.delete"
+  | "workspaces.suspend" | "workspaces.limits" | "workspaces.delete" | "jobs.manage" | "admins.manage";
+
+type AdminAuthResult = { access_token: string; expires_in: number; admin: AdminMe };
+type AdminMe = { id: string; email: string; name: string; role: AdminRole; permissions: AdminPermission[];
+  instance: AdminInstance };
+type AdminInstance = { version: string; commit: string; billing_enabled: boolean; ai_enabled: boolean;
+  app_url: string; api_url: string; self_hosted: boolean };
+
+type AdminUserRow = { id: string; email: string; name: string; avatar_url: string | null; email_verified: boolean;
+  totp_enabled: boolean; has_password: boolean; workspace_count: number; admin_role: AdminRole | null;
+  suspended_at: string | null; last_seen_at: string | null; created_at: string };
+type AdminUser = AdminUserRow & {
+  suspended_reason: string;
+  identities: { provider: string; email: string; created_at: string }[];
+  passkeys: number;
+  memberships: { workspace: AdminWorkspaceRef; role: Role; created_at: string }[];
+  sessions: { id: string; client: "web" | "desktop" | "ios"; ip: string; user_agent: string; mfa_verified: boolean;
+    created_at: string; last_used_at: string }[];   // live sessions, newest first, at most 50
+};
+
+type AdminWorkspaceRef = { id: string; name: string; slug: string };
+type AdminWorkspaceRow = AdminWorkspaceRef & { avatar_url: string | null; members: number; plan: "free" | "pro" | "self_hosted";
+  status: string /* subscription status */; suspended_at: string | null; last_activity_at: string | null; created_at: string };
+type AdminWorkspace = AdminWorkspaceRow & {
+  suspended_reason: string;
+  members_list: { user: { id: string; email: string; name: string }; role: Role; created_at: string }[];
+  pending_invitations: number;
+  counts: { tickets: number; open_tickets: number; contacts: number; kb_articles: number; api_keys: number; webhooks: number; brands: number };
+  mailboxes: { id: string; name: string; email: string; inbound_kind: string; outbound_kind: string; status: "active" | "error" | "disabled";
+    last_error: string; last_synced_at: string | null; created_at: string }[];
+  entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean }; // 0 = unlimited, after overrides
+  limits: AdminLimits;                       // the overrides themselves
+  subscription: { plan: "free" | "pro"; status: string; interval: "month" | "year"; seats: number; billed_seats: number;
+    current_period_end: string | null; cancel_at_period_end: boolean; stripe_customer_id: string | null; stripe_subscription_id: string | null } | null; // null without billing
+  ai: { remaining_usd: number; monthly_usd: number; included_used_usd: number; purchased_usd: number; unlimited: boolean;
+    period_start: string; period_end: string;
+    month: { charged_usd: number; provider_cost_usd: number; calls: number;
+      by_feature: { feature: string; charged_usd: number; provider_cost_usd: number; calls: number }[] } };
+  recent_audit: AuditLog[];                  // the workspace's own audit log, last 20 (contracts/api.md)
+};
+type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null }; // null = the plan's
+
+type AdminSummary = {
+  users: { total: number; new_7d: number; new_30d: number; active_7d: number /* seen in the app */ };
+  workspaces: { total: number; new_7d: number; new_30d: number; active_7d: number /* with any event */; suspended: number };
+  billing: { enabled: boolean; paid_workspaces: number; billed_seats: number; past_due: number } ;
+  ai: { month_charged_usd: number; month_provider_cost_usd: number; month_calls: number };
+  daily: { date: string /* YYYY-MM-DD, UTC */; signups: number; workspaces: number; ai_charged_usd: number }[]; // last 30 days, oldest first
+};
+
+type AdminHealth = {
+  version: string; commit: string; role: string; started_at: string;
+  database: { ok: boolean; latency_ms: number; schema_version: number; dirty: boolean;
+    pool: { total: number; idle: number; in_use: number; max: number } };
+  nats: { ok: boolean; embedded: boolean };
+  relay: { unpublished: number; oldest_unpublished_s: number | null };
+  jobs: { available: number; running: number; retryable: number; scheduled: number; discarded_24h: number;
+    oldest_available_s: number | null; by_queue: { queue: string; available: number; running: number; retryable: number }[] };
+  mail: { driver: string; inbound_failed_24h: number; inbound_pending: number; mailboxes_in_error: number };
+  webhooks: { failing_24h: number };
+  config: { billing: boolean; ai_provider: string; decisions_provider: string; embeddings: string; storage: string;
+    signup_enabled: boolean; mailbox_imap: boolean; mailbox_system_send: boolean; push: string; help_domain: string };
+  checks: { name: string; status: "ok" | "warn" | "fail"; detail: string }[];
+};
+
+type AdminJob = { id: number; kind: string; queue: string; state: "available" | "running" | "retryable" | "scheduled" | "completed" | "cancelled" | "discarded" | "pending";
+  attempt: number; max_attempts: number; args: Record<string, unknown>; last_error: string | null; errors: number;
+  created_at: string; scheduled_at: string; attempted_at: string | null; finalized_at: string | null };
+type AdminJobStats = { states: Record<string, number>; kinds: { kind: string; available: number; running: number; retryable: number; discarded_24h: number }[] };
+
+type InstanceAdmin = { user: { id: string; email: string; name: string }; role: AdminRole;
+  granted_by: { id: string; email: string } | null; totp_enabled: boolean; created_at: string };
+type AdminAuditLog = { id: string; actor: { type: "admin" | "cli"; id: string | null; email: string };
+  action: string; target_type: "user" | "workspace" | "admin" | "job" | "instance"; target_id: string | null;
+  data: Record<string, unknown>; ip: string; created_at: string };
+```
+
+`provider_cost_usd` is the instance's own cost of AI calls. Customers never see it
+(contracts/billing.md); the admin API is the operator, and shows it beside what was charged.
+
+## Endpoints
+
+Every route needs `Authorization: Bearer <admin access token>` and the permission listed. They
+are left out of the public OpenAPI spec. Lists take `?limit=&cursor=` and answer
+`{data, next_cursor}` like the rest of the API.
+
+| method | path | permission | notes |
+| --- | --- | --- | --- |
+| GET | `/v1/admin/summary` | read | `AdminSummary` |
+| GET | `/v1/admin/health` | read | `AdminHealth`; never includes a secret, DSN or key |
+| GET | `/v1/admin/users` | read | `?q=` email, name or id; `?filter=suspended\|admins\|unverified`; newest first → `Page<AdminUserRow>` |
+| GET | `/v1/admin/users/{id}` | read | `AdminUser` |
+| POST | `/v1/admin/users/{id}/sessions/revoke` | users.sessions | `{session_id?}`: one session, or every session → 204 |
+| POST | `/v1/admin/users/{id}/verification-email` | users.sessions | resends the verification email; `409 already_verified` → 204 |
+| POST | `/v1/admin/users/{id}/suspend` | users.suspend | `{reason: 1..500}` → `AdminUser`; `409` for yourself or an admin |
+| POST | `/v1/admin/users/{id}/unsuspend` | users.suspend | → `AdminUser` |
+| POST | `/v1/admin/users/{id}/mfa/disable` | users.mfa | `{code}` step-up → `AdminUser`; emails the user; `409 mfa_not_enabled` |
+| DELETE | `/v1/admin/users/{id}` | users.delete | `{code, confirm_email}` → 204; `422 confirm_email_mismatch`; `409 sole_owner` while they own a workspace with other members; `409` for yourself or an admin |
+| GET | `/v1/admin/workspaces` | read | `?q=` name, slug, id or a member's email; `?filter=suspended\|paid\|free`; newest first → `Page<AdminWorkspaceRow>` |
+| GET | `/v1/admin/workspaces/{id}` | read | `AdminWorkspace` |
+| POST | `/v1/admin/workspaces/{id}/suspend` | workspaces.suspend | `{reason: 1..500}` → `AdminWorkspace` |
+| POST | `/v1/admin/workspaces/{id}/unsuspend` | workspaces.suspend | → `AdminWorkspace` |
+| PUT | `/v1/admin/workspaces/{id}/limits` | workspaces.limits | `AdminLimits` (every member; `null` clears one) → `AdminWorkspace` |
+| POST | `/v1/admin/workspaces/{id}/ai-grants` | workspaces.limits | `{amount_usd: 0.01..10000, note: 1..200}` → `AdminWorkspace` |
+| DELETE | `/v1/admin/workspaces/{id}` | workspaces.delete | `{code, confirm_name}` → 204; `422 confirm_name_mismatch` |
+| GET | `/v1/admin/jobs` | read | `?state=` (default `retryable`), `?kind=`, `?queue=`; newest first → `Page<AdminJob>` |
+| GET | `/v1/admin/jobs/stats` | read | `AdminJobStats` |
+| POST | `/v1/admin/jobs/{id}/retry` | jobs.manage | runs a retryable, discarded or cancelled job now → `AdminJob` |
+| POST | `/v1/admin/jobs/{id}/cancel` | jobs.manage | → `AdminJob` |
+| GET | `/v1/admin/admins` | read | `InstanceAdmin[]` |
+| POST | `/v1/admin/admins` | admins.manage | `{email, role, code}` → `InstanceAdmin`; `404 user_not_found`, `409 already_admin`, `409 account_suspended`, `409 admin_mfa_setup_required` (the person has no two-factor authentication yet) |
+| PATCH | `/v1/admin/admins/{user_id}` | admins.manage | `{role, code}` → `InstanceAdmin`; not your own; `409 last_super` |
+| DELETE | `/v1/admin/admins/{user_id}` | admins.manage | `{code}` → 204; ends their admin sessions; not yourself; `409 last_super` |
+| GET | `/v1/admin/audit` | read | `?action=`, `?target_id=`, `?actor_id=`; newest first → `Page<AdminAuditLog>` |
+
+Job args are shown with anything that could be a message, a link or a credential replaced by
+`"[redacted]"` (keys naming html, text, body, subject, headers, tokens, secrets, passwords, codes,
+keys, credentials, content or previews) and strings over 200 characters by their length: system
+email jobs carry whole emails with their sign-in links. `last_error` is cut to 2,000 characters.
+
+## What the actions do
+
+- **Suspend a user**: `users.suspended_at` and the reason are set, every session ends (app and panel)
+  with `od.control.disconnect`, and no new session starts: sign-in, refresh, passkeys and federated
+  sign-in answer `403 account_suspended`. Their workspaces keep working for everyone else.
+  Admins are not suspended (revoke the admin first).
+- **Suspend a workspace**: `workspaces.suspended_at` and the reason are set, and its members'
+  sockets are closed. Every workspace route answers `403 workspace_suspended` to members, API keys
+  and AI clients connected over MCP; the widget and the help center answer `404` and visitor
+  sessions stop working. Inbound mail is stored and marked `ignored` (`workspace_suspended`); queued
+  replies and ticket emails are canceled, not sent; no webhook, automation, SLA run or AI call runs
+  for it. Members still sign in and see the workspace in their list with `suspended: true`
+  (contracts/api.md `Membership`), where the app shows why and offers their other workspaces.
+  Nothing is deleted, and an account can still be deleted. Restoring lets everything run again;
+  mail ignored and replies canceled meanwhile are not replayed.
+- **Limit overrides** (billing on only): `max_mailboxes` and `max_members` replace the plan's
+  (`0` = unlimited), `monthly_ai_usd` replaces the monthly AI allowance. They apply on every plan and
+  survive plan changes; `null` returns to the plan's. Without billing every limit is already
+  unlimited and the overrides are kept but have no effect.
+- **AI grant**: adds purchased AI usage (`ai_balance_grants`, source `admin`), spent after the
+  monthly allowance like a top-up; it never expires.
+- **Turn off two-factor authentication**: TOTP and recovery codes are removed (passkeys stay), every
+  session of the user ends, and the user is emailed that an administrator did it.
+- **Delete a user / a workspace**: the same removal as the user's own "Delete account" and the
+  owner's "Delete workspace" (data removed, not hidden; Stripe subscriptions canceled).
+- Each action is written to the admin audit log. Actions on a workspace, and on a user's account,
+  are also written to the workspace's own audit log (each of the user's workspaces), with no actor
+  user and `data.actor = "instance_admin"`, so the workspace's admins see that the operator acted.
+
+## Admin audit log
+
+`admin_audit_logs`: `actor_user_id` (null for the CLI), `actor_email` (kept after the admin's account
+is gone), `action`, `target_type`, `target_id`, `data`, `ip`, `created_at`. It never holds a
+password, code, token or message content, and holds no target's name or email: the panel shows the
+target while it exists. It is kept for 2 years.
+
+Actions: `login`, `login.failed`, `logout`, `user.sessions_revoked`, `user.verification_sent`,
+`user.suspended`, `user.unsuspended`, `user.mfa_disabled`, `user.deleted`, `workspace.suspended`,
+`workspace.unsuspended`, `workspace.limits_changed`, `workspace.ai_granted`, `workspace.deleted`,
+`job.retried`, `job.cancelled`, `admin.granted`, `admin.role_changed`, `admin.revoked`.

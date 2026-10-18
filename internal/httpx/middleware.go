@@ -85,17 +85,23 @@ func SecurityHeaders(hsts bool) func(http.Handler) http.Handler {
 
 // CORS allows the configured app origins with credentials. Widget and public routes,
 // and the MCP server's OAuth metadata, registration, token and revocation endpoints
-// (browser-based MCP clients call them), allow any origin without credentials.
-func CORS(origins []string) func(http.Handler) http.Handler {
+// (browser-based MCP clients call them), allow any origin without credentials. The
+// instance admin routes (/v1/admin/*) allow only adminOrigins, and the app origins
+// are not allowed there (contracts/admin.md).
+func CORS(origins []string, adminOrigins ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			h := w.Header()
+			allowed := origins
+			if strings.HasPrefix(r.URL.Path, "/v1/admin/") {
+				allowed = adminOrigins
+			}
 			public := strings.HasPrefix(r.URL.Path, "/v1/widget/") || strings.HasPrefix(r.URL.Path, "/v1/public/") || oauthPublic(r.URL.Path)
 			if origin != "" {
 				h.Add("Vary", "Origin")
 				switch {
-				case slices.Contains(origins, origin):
+				case slices.Contains(allowed, origin):
 					h.Set("Access-Control-Allow-Origin", origin)
 					h.Set("Access-Control-Allow-Credentials", "true")
 				case public:

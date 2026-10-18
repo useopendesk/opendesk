@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -60,6 +61,43 @@ type coreRealtimeToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// AuditLogs reads a workspace's audit log, newest first, before (t, id).
+func AuditLogs(ctx context.Context, q db.Querier, wid uuid.UUID, t time.Time, id uuid.UUID, action, entityType string, limit int) ([]CoreAuditLog, error) {
+	rows, err := q.Query(ctx, `SELECT a.id, a.actor_user_id, a.actor_api_key_id, a.action, a.entity_type, a.entity_id,
+		a.data, a.ip, a.created_at, u.name, u.email, u.avatar_url
+		FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id
+		WHERE a.workspace_id = $1 AND (a.created_at, a.id) < ($2, $3)
+		AND ($4 = '' OR a.action = $4) AND ($5 = '' OR a.entity_type = $5)
+		ORDER BY a.created_at DESC, a.id DESC LIMIT $6`, wid, t, id, action, entityType, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (CoreAuditLog, error) {
+		var a CoreAuditLog
+		var uid *uuid.UUID
+		var name, email, avatar *string
+		var raw []byte
+		if err := r.Scan(&a.ID, &uid, &a.Actor.APIKeyID, &a.Action, &a.EntityType, &a.EntityID, &raw, &a.IP, &a.CreatedAt,
+			&name, &email, &avatar); err != nil {
+			return a, err
+		}
+		_ = json.Unmarshal(raw, &a.Data)
+		if a.Data == nil {
+			a.Data = map[string]any{}
+		}
+		switch {
+		case uid != nil && name != nil:
+			a.Actor.Type = "user"
+			a.Actor.User = &domain.UserRef{ID: *uid, Name: *name, Email: *email, AvatarURL: domain.Avatar(*avatar)}
+		case a.Actor.APIKeyID != nil:
+			a.Actor.Type = "api_key"
+		default:
+			a.Actor.Type = "system"
+		}
+		return a, nil
+	})
+}
+
 func (s *svc) registerPlatform(api huma.API) {
 	register(s, api, huma.Operation{OperationID: "list-audit-logs", Method: http.MethodGet, Path: "/v1/audit-logs",
 		Summary: "List the workspace audit log", Tags: []string{"Audit log"}},
@@ -82,39 +120,7 @@ func (s *svc) registerPlatform(api huma.API) {
 			if cur.T.IsZero() {
 				cur.T = time.Now().Add(time.Hour)
 			}
-			rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.actor_user_id, a.actor_api_key_id, a.action, a.entity_type, a.entity_id,
-				a.data, a.ip, a.created_at, u.name, u.email, u.avatar_url
-				FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id
-				WHERE a.workspace_id = $1 AND (a.created_at, a.id) < ($2, $3)
-				AND ($4 = '' OR a.action = $4) AND ($5 = '' OR a.entity_type = $5)
-				ORDER BY a.created_at DESC, a.id DESC LIMIT $6`, p.WorkspaceID, cur.T, cur.ID, in.Action, in.EntityType, in.Limit+1)
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (CoreAuditLog, error) {
-				var a CoreAuditLog
-				var uid *uuid.UUID
-				var name, email, avatar *string
-				var raw []byte
-				if err := r.Scan(&a.ID, &uid, &a.Actor.APIKeyID, &a.Action, &a.EntityType, &a.EntityID, &raw, &a.IP, &a.CreatedAt,
-					&name, &email, &avatar); err != nil {
-					return a, err
-				}
-				_ = json.Unmarshal(raw, &a.Data)
-				if a.Data == nil {
-					a.Data = map[string]any{}
-				}
-				switch {
-				case uid != nil && name != nil:
-					a.Actor.Type = "user"
-					a.Actor.User = &domain.UserRef{ID: *uid, Name: *name, Email: *email, AvatarURL: domain.Avatar(*avatar)}
-				case a.Actor.APIKeyID != nil:
-					a.Actor.Type = "api_key"
-				default:
-					a.Actor.Type = "system"
-				}
-				return a, nil
-			})
+			list, err := AuditLogs(ctx, s.d.DB.Pool, p.WorkspaceID, cur.T, cur.ID, in.Action, in.EntityType, in.Limit+1)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

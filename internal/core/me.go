@@ -223,47 +223,8 @@ func (s *svc) registerMe(api huma.API) {
 						return err
 					}
 				}
-				rows, err := tx.Query(ctx, `SELECT m.workspace_id, m.role,
-					(SELECT count(*) FROM members o WHERE o.workspace_id = m.workspace_id AND o.user_id <> m.user_id)
-					FROM members m WHERE m.user_id = $1 FOR UPDATE OF m`, p.UserID)
-				if err != nil {
-					return err
-				}
-				type mem struct {
-					wid    uuid.UUID
-					role   string
-					others int
-				}
-				mems, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (mem, error) {
-					var m mem
-					err := r.Scan(&m.wid, &m.role, &m.others)
-					return m, err
-				})
-				if err != nil {
-					return err
-				}
-				for _, m := range mems {
-					if m.role == string(auth.RoleOwner) && m.others > 0 {
-						return httpx.E(409, "sole_owner", "Transfer ownership of your workspaces that have other members before deleting your account.")
-					}
-				}
-				for _, m := range mems {
-					if m.role == string(auth.RoleOwner) {
-						_, k, err := s.deleteWorkspace(ctx, tx, m.wid)
-						if err != nil {
-							return err
-						}
-						keys = append(keys, k...)
-						continue
-					}
-					lapsed, err := s.removeMember(ctx, tx, p, m.wid, p.UserID, m.role, "member.account_deleted")
-					if err != nil {
-						return err
-					}
-					disconnect = append(disconnect, lapsed...)
-				}
-				disconnect = append(disconnect, p.UserID)
-				_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, p.UserID)
+				var err error
+				disconnect, keys, err = s.deleteAccount(ctx, tx, p, p.UserID)
 				return err
 			})
 			if err != nil {
@@ -280,4 +241,54 @@ func (s *svc) registerMe(api huma.API) {
 		})
 
 	s.registerSessions(api)
+}
+
+// deleteAccount removes a user: the workspaces they own alone go with them, they leave
+// the others. It refuses (409 sole_owner) while they own a workspace with other members.
+// It returns the users to disconnect and the stored files to purge.
+func (s *svc) deleteAccount(ctx context.Context, tx pgx.Tx, p *auth.Principal, uid uuid.UUID) ([]uuid.UUID, []string, error) {
+	var keys []string
+	var disconnect []uuid.UUID
+	rows, err := tx.Query(ctx, `SELECT m.workspace_id, m.role,
+		(SELECT count(*) FROM members o WHERE o.workspace_id = m.workspace_id AND o.user_id <> m.user_id)
+		FROM members m WHERE m.user_id = $1 FOR UPDATE OF m`, uid)
+	if err != nil {
+		return nil, nil, err
+	}
+	type mem struct {
+		wid    uuid.UUID
+		role   string
+		others int
+	}
+	mems, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (mem, error) {
+		var m mem
+		err := r.Scan(&m.wid, &m.role, &m.others)
+		return m, err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, m := range mems {
+		if m.role == string(auth.RoleOwner) && m.others > 0 {
+			return nil, nil, httpx.E(409, "sole_owner", "Transfer ownership of your workspaces that have other members before deleting your account.")
+		}
+	}
+	for _, m := range mems {
+		if m.role == string(auth.RoleOwner) {
+			_, k, err := s.deleteWorkspace(ctx, tx, m.wid)
+			if err != nil {
+				return nil, nil, err
+			}
+			keys = append(keys, k...)
+			continue
+		}
+		lapsed, err := s.removeMember(ctx, tx, p, m.wid, uid, m.role, "member.account_deleted")
+		if err != nil {
+			return nil, nil, err
+		}
+		disconnect = append(disconnect, lapsed...)
+	}
+	disconnect = append(disconnect, uid)
+	_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, uid)
+	return disconnect, keys, err
 }

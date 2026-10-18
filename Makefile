@@ -1,7 +1,7 @@
 SCRATCH ?= ./data
 export DATABASE_URL ?= postgres://opendesk:opendesk@localhost:55432/opendesk?sslmode=disable
 
-.PHONY: dev-db dev api realtime web site docs build test lint web-embed e2e
+.PHONY: dev-db dev api realtime web admin site docs build test lint web-embed admin-embed e2e
 
 dev-db: ## start local Postgres
 	docker compose -f docker-compose.dev.yml -p opendesk-dev up -d --wait
@@ -15,6 +15,9 @@ realtime: ## run the Elixir gateway
 web: ## run the web app
 	cd web && pnpm dev
 
+admin: ## run the instance admin panel (:5174); the API pairs with it in development
+	cd admin && pnpm dev
+
 site:
 	cd site && pnpm dev
 
@@ -27,6 +30,10 @@ build:
 web-embed: ## build the web app into the Go binary's embed dir
 	cd web && pnpm build
 	rm -rf internal/webui/dist/assets && cp -R web/dist/. internal/webui/dist/
+
+admin-embed: ## build the admin panel (base /admin/) into the Go binary's embed dir
+	cd admin && pnpm build:embed
+	rm -rf internal/adminui/dist/assets && cp -R admin/dist/. internal/adminui/dist/
 
 test:
 	go test ./...

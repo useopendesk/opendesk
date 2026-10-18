@@ -481,8 +481,8 @@ branches to be up to date" (the migration duplicate check depends on it).
 Run the Deploy workflow (Actions > Deploy > Run workflow, target `all`), or
 push to `main`. It builds arm64 images into ECR tagged with the commit SHA, runs
 `opendesk migrate` as a one-off task with the migrate role, rolls the api,
-worker and gateway services, and deploys the three Pages projects and the email
-worker and the help worker. Check:
+worker and gateway services, and deploys the four Pages projects (app, admin
+panel, site, docs) and the email worker and the help worker. Check:
 
 ```sh
 curl -fsS https://api.opendesk.sh/healthz
@@ -498,6 +498,32 @@ Tag `v0.1.0` and push the tag. Release builds multi-arch images to
 package settings after the first run), creates the GitHub release with the
 installer and the self-host files, and redeploys opendesk.sh so
 `/install.sh` is that release's installer.
+
+### 14. The first instance admin
+
+The admin panel (`contracts/admin.md`) is at `https://admin.opendesk.sh`, its own
+Pages project (`opendesk-admin`), and the API accepts `/v1/admin/*` only from that
+origin (`ADMIN_URL`). Two things before anyone signs in:
+
+1. **Turnstile.** Add `admin.opendesk.sh` to the hostnames of the Turnstile widget
+   (Cloudflare dashboard > Turnstile > the widget > Hostname management). The panel
+   uses the same `TURNSTILE_SITE_KEY` as the app.
+2. **The first admin.** Nobody is an admin until one is granted on the instance
+   itself. Sign up in the app, turn on two-factor authentication, then run the
+   command as a one-off task of the migrate task definition (it reaches Postgres
+   over PrivateLink like the deploy's migration):
+
+```sh
+cd deploy/terraform/environments/production
+aws ecs run-task --cluster opendesk-production --launch-type FARGATE \
+  --task-definition "$(terraform output -raw migrate_task_family)" \
+  --network-configuration "$(terraform output -raw migrate_network_configuration)" \
+  --overrides '{"containerOverrides":[{"name":"migrate","command":["admin","grant","you@example.com","--role","super"]}]}'
+# the answer is in the task's log group: terraform output -raw migrate_log_group
+```
+
+After that a super admin adds the others from **Admins** in the panel. The same
+command with `admin revoke <email>` removes one, and `admin list` lists them.
 
 ## How CI and deploys work
 

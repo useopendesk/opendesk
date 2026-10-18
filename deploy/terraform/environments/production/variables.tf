@@ -31,6 +31,7 @@ variable "subdomains" {
   description = "Hostname labels under the apex."
   type = object({
     app     = optional(string, "app")
+    admin   = optional(string, "admin")
     docs    = optional(string, "docs")
     api     = optional(string, "api")
     gateway = optional(string, "gateway")

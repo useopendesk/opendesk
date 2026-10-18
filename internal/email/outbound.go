@@ -26,7 +26,24 @@ type sendMessageWorker struct {
 }
 
 func (w *sendMessageWorker) Work(ctx context.Context, job *river.Job[jobs.SendMessageArgs]) error {
+	if err := w.s.notSuspended(ctx, job.Args.WorkspaceID); err != nil {
+		return err
+	}
 	return w.s.sendMessage(ctx, job.Args.WorkspaceID, job.Args.MessageID, job.Attempt >= job.MaxAttempts)
+}
+
+// notSuspended cancels a send for a suspended workspace: nothing goes out while it is,
+// and nothing queued meanwhile goes out after it is restored (contracts/admin.md).
+func (s *service) notSuspended(ctx context.Context, wid uuid.UUID) error {
+	suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid)
+	if err != nil {
+		return err
+	}
+	if suspended {
+		s.log.Info("send canceled: workspace suspended", "workspace_id", wid)
+		return river.JobCancel(errors.New("workspace suspended"))
+	}
+	return nil
 }
 
 type sendTicketEmailWorker struct {
@@ -35,6 +52,9 @@ type sendTicketEmailWorker struct {
 }
 
 func (w *sendTicketEmailWorker) Work(ctx context.Context, job *river.Job[jobs.SendTicketEmailArgs]) error {
+	if err := w.s.notSuspended(ctx, job.Args.WorkspaceID); err != nil {
+		return err
+	}
 	err := w.s.sendTicketEmail(ctx, job.Args)
 	var se *sendError
 	if errors.As(err, &se) && se.permanent {

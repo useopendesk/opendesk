@@ -180,18 +180,64 @@ func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID)
 	}
 	var planName, status string
 	var seats int
-	if err := q.QueryRow(ctx, `SELECT plan, status, seats FROM subscriptions WHERE workspace_id = $1`, wid).
-		Scan(&planName, &status, &seats); err != nil {
+	var o Overrides
+	if err := q.QueryRow(ctx, `SELECT plan, status, seats, max_mailboxes_override, max_members_override, monthly_micro_usd_override
+		FROM subscriptions WHERE workspace_id = $1`, wid).
+		Scan(&planName, &status, &seats, &o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD); err != nil {
 		return Entitlements{}, err
 	}
 	e := Entitlements{Plan: Free, BillingEnabled: true, Status: status}
 	if planName == Pro && Paid(status) {
 		e.Plan = Pro
 		e.MonthlyUSD = ProUSDPerSeat * Micro(max(seats, 1))
-		return e, nil
+	} else {
+		e.MaxMailboxes, e.MaxMembers, e.MonthlyUSD = FreeMaxMailboxes, FreeMaxMembers, FreeMonthlyUSD
 	}
-	e.MaxMailboxes, e.MaxMembers, e.MonthlyUSD = FreeMaxMailboxes, FreeMaxMembers, FreeMonthlyUSD
+	o.apply(&e)
 	return e, nil
+}
+
+// Overrides are an instance admin's limits for one workspace (contracts/admin.md); nil
+// keeps the plan's. They apply on every plan and only while billing is on.
+type Overrides struct {
+	// MaxMailboxes and MaxMembers replace the plan's limits; 0 is unlimited.
+	MaxMailboxes *int
+	MaxMembers   *int
+	// MonthlyUSD replaces the monthly AI usage allowance.
+	MonthlyUSD *Micro
+}
+
+func (o Overrides) apply(e *Entitlements) {
+	if o.MaxMailboxes != nil {
+		e.MaxMailboxes = *o.MaxMailboxes
+	}
+	if o.MaxMembers != nil {
+		e.MaxMembers = *o.MaxMembers
+	}
+	if o.MonthlyUSD != nil {
+		e.MonthlyUSD = *o.MonthlyUSD
+	}
+}
+
+// LoadOverrides reads a workspace's limit overrides.
+func LoadOverrides(ctx context.Context, q db.Querier, wid uuid.UUID) (Overrides, error) {
+	if err := Ensure(ctx, q, wid); err != nil {
+		return Overrides{}, err
+	}
+	var o Overrides
+	err := q.QueryRow(ctx, `SELECT max_mailboxes_override, max_members_override, monthly_micro_usd_override
+		FROM subscriptions WHERE workspace_id = $1`, wid).Scan(&o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD)
+	return o, err
+}
+
+// SetOverrides replaces a workspace's limit overrides.
+func SetOverrides(ctx context.Context, q db.Querier, wid uuid.UUID, o Overrides) error {
+	if err := Ensure(ctx, q, wid); err != nil {
+		return err
+	}
+	_, err := q.Exec(ctx, `UPDATE subscriptions SET max_mailboxes_override = $2, max_members_override = $3,
+		monthly_micro_usd_override = $4, updated_at = now() WHERE workspace_id = $1`, wid, o.MaxMailboxes, o.MaxMembers, o.MonthlyUSD)
+	return err
 }
 
 // CheckMailbox refuses a new mailbox past the plan limit.

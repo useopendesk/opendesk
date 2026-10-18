@@ -12,6 +12,7 @@ service (opendesk.sh) and as a self-host, and **the two are the same code**.
 | `realtime/` | Elixir/Phoenix realtime gateway; no database | `gateway.opendesk.sh` (AWS ECS) |
 | `web/` | React app (Vite, TanStack Router/Query, Tailwind v4), plus the help center and widget | `app.opendesk.sh` (Cloudflare Pages) |
 | `web/widget/` | embeddable chat widget bundle | `app.opendesk.sh/widget/v1.js` |
+| `admin/` | instance admin panel (React, same stack as `web/`); the operator surface, never a customer's; `contracts/admin.md` | `admin.opendesk.sh` (Cloudflare Pages); self-host: `/admin/` from the binary |
 | `desktop/` | Electron shell that loads the instance's web app (notifications, badge, deep links, translucent chrome); `contracts/native.md` | GitHub Releases |
 | `ios/` | native SwiftUI iPhone app (`sh.opendesk.app`); `contracts/native.md` | App Store / TestFlight |
 | `site/` | Astro marketing site | `opendesk.sh` (Cloudflare Pages) |
@@ -43,7 +44,8 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, widget,
   SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
   `internal/ai` (AI features, providers, embeddings) and `internal/integrations`
-  (connected products over MCP, ticket links; `contracts/integrations.md`). Plan limits and AI usage go
+  (connected products over MCP, ticket links; `contracts/integrations.md`), and `internal/admin`
+  (the instance admin API `/v1/admin/*`, its own sessions and audit log; `contracts/admin.md`). Plan limits and AI usage go
   through `d.Plan` (`internal/plan`, `contracts/billing.md`); AI through `internal/ai`
   (`contracts/ai.md`). Each exposes `Register`, `RegisterWorkers`, `Periodic`,
   `Background` (see `internal/app`). Shared ticket writes live in `internal/domain`:
@@ -103,6 +105,10 @@ Authentication
   to a new identity only after its password is presented.
 - Owner-level operations (delete workspace, transfer ownership, rotate the widget secret,
   disable 2FA) require `auth.RequireMFA` and a recent login.
+- The instance admin panel signs in with password and TOTP every time, has its own sessions
+  (`admin_sessions`, purpose `admin`, 12 h cap) and accepts only `ADMIN_URL`'s origin. A
+  workspace role never grants an admin permission, and admin routes never accept an app token.
+  Operator actions go through `core.Ops`, so they remove and end exactly what the app's own do.
 
 Sessions and tokens
 - Every JWT has a `purpose`, verified against the one purpose its consumer accepts

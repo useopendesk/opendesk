@@ -125,6 +125,8 @@ func Wrap(err error) error {
 		return E(403, "forbidden", err.Error())
 	case errors.Is(err, auth.ErrNoWorkspace):
 		return E(400, "workspace_required", err.Error())
+	case errors.Is(err, auth.ErrWorkspaceSuspended):
+		return E(403, "workspace_suspended", "This workspace is suspended. Contact support to restore it.")
 	case errors.Is(err, auth.ErrMFARequired):
 		return E(403, "mfa_required", err.Error())
 	case errors.Is(err, captcha.ErrCaptcha):

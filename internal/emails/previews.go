@@ -75,6 +75,7 @@ func Previews(s Site, now time.Time) []Preview {
 		{Name: "account-verify-email", Title: "Confirm your email", Mail: VerifyEmail(s, s.App("/verify", "token", "sample"))},
 		{Name: "account-reset-password", Title: "Reset your password", Mail: ResetPassword(s, s.App("/reset", "token", "sample"))},
 		{Name: "account-invitation", Title: "Invitation to a workspace", Mail: Invitation(s, Invite{Inviter: "Maya Chen", Workspace: ws, Role: "agent", Link: s.App("/invite", "token", "sample")})},
+		{Name: "account-2fa-disabled", Title: "Two-factor authentication turned off", Mail: TwoFactorDisabled(s)},
 		{Name: "billing-payment-failed", Title: "Payment failed", Mail: PaymentFailed(s, ws, wid.String())},
 		{Name: "notify-assigned", Title: "Notification: assigned", Mail: Notifications(s, batch("instant", []Note{assigned}, 0))},
 		{Name: "notify-mentioned", Title: "Notification: mentioned", Mail: Notifications(s, batch("instant", []Note{mentioned}, 0))},

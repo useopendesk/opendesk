@@ -89,6 +89,13 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	if err != nil {
 		return err
 	}
+	// A suspended workspace keeps its mail but acts on none of it (contracts/admin.md).
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {
+		if err != nil {
+			return err
+		}
+		return s.markInbound(ctx, wid, inboundID, "ignored", "workspace_suspended")
+	}
 	raw, err := s.readObject(ctx, key, maxRawBytes)
 	if errors.Is(err, storage.ErrNotFound) {
 		return s.markInbound(ctx, wid, inboundID, "failed", "raw_missing")

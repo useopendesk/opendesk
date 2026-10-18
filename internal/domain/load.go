@@ -284,3 +284,14 @@ func ResignAttachmentLinks(html string) string {
 		return fresh
 	})
 }
+
+// WorkspaceSuspended reports whether an instance admin suspended the workspace
+// (contracts/admin.md). Background work for it stops while it is.
+func WorkspaceSuspended(ctx context.Context, q db.Querier, wid uuid.UUID) (bool, error) {
+	var suspended bool
+	err := q.QueryRow(ctx, `SELECT suspended_at IS NOT NULL FROM workspaces WHERE id = $1`, wid).Scan(&suspended)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	return suspended, err
+}

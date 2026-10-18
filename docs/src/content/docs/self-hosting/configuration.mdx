@@ -51,6 +51,8 @@ The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
 | `GATEWAY_URL` | `ws://localhost:4000/socket` | Public WebSocket URL of the realtime gateway, given to clients. |
 | `SITE_URL` | `https://opendesk.sh` | Marketing site URL used in links. |
 | `CORS_ORIGINS` | `APP_URL` | Comma-separated origins allowed to call the API from a browser. |
+| `ADMIN_URL` | `APP_URL` + `/admin` | Where the [admin panel](/self-hosting/admin-panel/) is. Its origin is the only one the admin API (`/v1/admin/*`) accepts. |
+| `ADMIN_ENV_LABEL` | empty | A label in the admin panel's top bar, such as `Production`. |
 | `COOKIE_DOMAIN` | empty (host only) | Domain for the refresh cookie. Set it when the API and app are on different subdomains of one domain. |
 | `COOKIE_SECURE` | `true` when `API_URL` is `https` | Mark cookies `Secure`. |
 

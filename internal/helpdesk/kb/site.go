@@ -27,7 +27,8 @@ type HelpCenter struct {
 	ActiveHost  string // the active custom domain, or ""
 }
 
-var helpCenterSelect = `SELECT b.id, b.workspace_id, b.slug, b.name, b.help_center_title, b.help_center_enabled, b.locale, b.color, b.images,
+// A suspended workspace's help centers read as off (contracts/admin.md).
+var helpCenterSelect = `SELECT b.id, b.workspace_id, b.slug, b.name, b.help_center_title, b.help_center_enabled AND w.suspended_at IS NULL, b.locale, b.color, b.images,
 	COALESCE(w.settings ->> 'locale', ''), COALESCE(w.settings ->> 'brand_color', ''), w.avatar_url, COALESCE(` + brands.ActiveHostSQL("b.id") + `, '')
 	FROM brands b JOIN workspaces w ON w.id = b.workspace_id`
 

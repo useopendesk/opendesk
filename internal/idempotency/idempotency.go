@@ -57,6 +57,7 @@ var skipPrefixes = []string{
 	"/v1/billing/stripe/",
 	"/v1/widget/",
 	"/v1/public/",
+	"/v1/admin/",
 }
 
 // Store holds idempotency keys in Postgres.

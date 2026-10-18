@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 #
 # The opendesk image: one static Go binary (API + workers + embedded NATS) with
-# the web app embedded, so a self-hoster runs one container for everything that
-# is not the realtime gateway. The hosted service runs the same image with
+# the web app and the instance admin panel (/admin/) embedded, so a self-hoster
+# runs one container for everything that is not the realtime gateway. The hosted service runs the same image with
 # OPENDESK_ROLE=api or worker and SERVE_WEB unset.
 #
 #   docker build -f deploy/docker/opendesk.Dockerfile -t opendesk .
@@ -37,6 +37,25 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY web/ web/
 RUN cd web && pnpm build && test -f dist/index.html
 
+# ── admin: the instance admin panel, built to be served at /admin/ ──────────
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS admin
+ARG PNPM_VERSION=12.10.1
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
+WORKDIR /src
+COPY brand/ brand/
+COPY contracts/ contracts/
+COPY admin/package.json admin/pnpm-lock.yaml* admin/pnpm-workspace.yaml* admin/.npmrc* admin/
+RUN set -eu; \
+    if grep -q '"packageManager"' admin/package.json; then \
+      npm install -g --silent corepack@latest && corepack enable; \
+    else \
+      npm install -g --silent "pnpm@${PNPM_VERSION}"; \
+    fi
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    cd admin && pnpm config set store-dir /pnpm/store && pnpm install --frozen-lockfile
+COPY admin/ admin/
+RUN cd admin && pnpm build:embed && test -f dist/index.html
+
 # ── go: a static binary with the web build embedded ─────────────────────────
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS go
 ARG TARGETOS TARGETARCH
@@ -48,6 +67,8 @@ COPY . .
 # internal/webui embeds dist/; replace whatever the checkout has with the build.
 RUN rm -rf internal/webui/dist && mkdir -p internal/webui/dist
 COPY --from=web /src/web/dist/ internal/webui/dist/
+RUN rm -rf internal/adminui/dist && mkdir -p internal/adminui/dist
+COPY --from=admin /src/admin/dist/ internal/adminui/dist/
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \

@@ -73,6 +73,13 @@ func (s *svc) clearCookieHeader(names ...string) http.Header {
 // in the account's refresh cookie, or in the body for a native request. A browser keeps
 // its other accounts; the session it held for this account, if any, is replaced.
 func (s *svc) issueSession(ctx context.Context, q db.Querier, uid uuid.UUID, mfa bool, ri reqInfo) (*authOut, error) {
+	var suspended bool
+	if err := q.QueryRow(ctx, `SELECT suspended_at IS NOT NULL FROM users WHERE id = $1`, uid).Scan(&suspended); err != nil {
+		return nil, err
+	}
+	if suspended {
+		return nil, ErrAccountSuspended()
+	}
 	var tidy []string
 	if !ri.Native {
 		var err error
@@ -121,6 +128,11 @@ func (s *svc) tokenResponse(ctx context.Context, q db.Querier, uid, sid uuid.UUI
 	return out, nil
 }
 
+// ErrAccountSuspended answers a session request of a suspended account (contracts/admin.md).
+func ErrAccountSuspended() *httpx.Error {
+	return httpx.E(403, "account_suspended", "This account is suspended. Contact support to restore it.")
+}
+
 func errRefreshInvalid() *httpx.Error {
 	return httpx.E(401, "unauthenticated", "Your session has ended. Sign in again.")
 }
@@ -138,10 +150,11 @@ func (s *svc) rotateRefresh(ctx context.Context, token string, expect uuid.UUID,
 	var reusedUser, reusedSession uuid.UUID
 	err = s.tx(ctx, func(tx pgx.Tx) error {
 		var sid, uid uuid.UUID
-		var mfa bool
+		var mfa, suspended bool
 		var created, expires time.Time
-		err := tx.QueryRow(ctx, `SELECT id, user_id, mfa_verified, created_at, expires_at FROM sessions
-			WHERE refresh_hash = $1 AND revoked_at IS NULL FOR UPDATE`, h).Scan(&sid, &uid, &mfa, &created, &expires)
+		err := tx.QueryRow(ctx, `SELECT s.id, s.user_id, s.mfa_verified, s.created_at, s.expires_at, u.suspended_at IS NOT NULL
+			FROM sessions s JOIN users u ON u.id = s.user_id
+			WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL FOR UPDATE OF s`, h).Scan(&sid, &uid, &mfa, &created, &expires, &suspended)
 		if db.IsNotFound(err) {
 			var rotated *time.Time
 			err = tx.QueryRow(ctx, `SELECT id, user_id, rotated_at FROM sessions
@@ -177,7 +190,7 @@ func (s *svc) rotateRefresh(ctx context.Context, token string, expect uuid.UUID,
 			return errRefreshInvalid()
 		}
 		now := time.Now()
-		if now.After(expires) || now.Sub(created) > SessionMaxAge {
+		if suspended || now.After(expires) || now.Sub(created) > SessionMaxAge {
 			_, _ = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1`, sid)
 			return errRefreshInvalid()
 		}
@@ -235,9 +248,13 @@ func endSession(ctx context.Context, q db.Querier, uid, sid uuid.UUID) (bool, er
 }
 
 // revokeOtherSessions ends every session of uid except keep (uuid.Nil ends all) and
-// deletes their push devices.
+// deletes their push devices. The user's admin panel sessions (contracts/admin.md) end
+// with them: a password change or "sign out everywhere" leaves none behind.
 func revokeOtherSessions(ctx context.Context, q db.Querier, uid, keep uuid.UUID) error {
 	if _, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL`, uid, keep); err != nil {
+		return err
+	}
+	if _, err := q.Exec(ctx, `UPDATE admin_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, uid); err != nil {
 		return err
 	}
 	_, err := q.Exec(ctx, `DELETE FROM push_devices WHERE user_id = $1 AND session_id <> $2`, uid, keep)

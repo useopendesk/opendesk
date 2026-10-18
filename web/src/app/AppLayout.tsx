@@ -10,7 +10,7 @@ import { useHeartbeat } from "@/lib/pictures";
 import { playAlertOnce, type AlertSound } from "@/lib/alertSound";
 import { startRealtime, stopRealtime } from "@/lib/realtime/manager";
 import { useRealtime } from "@/lib/realtime/store";
-import { reloadSession, useSession } from "@/lib/session";
+import { currentMembership, reloadSession, useSession } from "@/lib/session";
 import { useUpgrade } from "@/lib/upgrade";
 import { toast } from "@/components/ui/toast";
 import { AssistantDock, AssistantRoot } from "@/components/assistant/AssistantRoot";
@@ -19,6 +19,7 @@ import { qk } from "@/lib/queries";
 import { i18n } from "@/i18n";
 import { describe, joinedTeam } from "./Notifications";
 import { Sidebar } from "./Sidebar";
+import { SuspendedWorkspace } from "./SuspendedWorkspace";
 import { AppHeader } from "./AppHeader";
 import { cn } from "@/lib/cn";
 import { CommandPalette } from "./CommandPalette";
@@ -107,8 +108,9 @@ function useRealtimeConnection() {
   const navigate = useNavigate();
   const wid = useSession((s) => s.workspaceId);
   const uid = useSession((s) => s.user?.id);
+  const suspended = useSession((s) => !!currentMembership(s)?.suspended);
   useEffect(() => {
-    if (!wid || !uid) return;
+    if (!wid || !uid || suspended) return;
     identify(uid, wid);
     startRealtime({
       qc,
@@ -154,7 +156,7 @@ function useRealtimeConnection() {
       },
     });
     return () => stopRealtime();
-  }, [wid, uid, qc, navigate]);
+  }, [wid, uid, suspended, qc, navigate]);
 }
 
 export function AppLayout() {
@@ -173,7 +175,8 @@ export function AppLayout() {
   // before the router leaves the app; render nothing in between rather than
   // pages that read the signed-in user and the current workspace.
   const authed = useSession((s) => s.status === "authed" && !!s.user && !!s.workspaceId);
-  useWaitingAlerts(authed);
+  const suspended = useSession((s) => !!currentMembership(s)?.suspended);
+  useWaitingAlerts(authed && !suspended);
 
   useHotkeys({
     "mod+k": () => shell.palette(!useShell.getState().paletteOpen),
@@ -190,6 +193,7 @@ export function AppLayout() {
   });
 
   if (!authed) return null;
+  if (suspended) return <SuspendedWorkspace />;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-frame text-fg">

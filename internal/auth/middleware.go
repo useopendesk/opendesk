@@ -69,9 +69,11 @@ func (rv *Resolver) resolve(r *http.Request) *Principal {
 		p.Kind, p.UserID, p.SessionID, p.MFAVerified = KindUser, uid, sid, c.MFA
 		if wid, err := uuid.Parse(r.Header.Get(WorkspaceHeader)); err == nil {
 			var role string
-			err := rv.Pool.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2`, wid, uid).Scan(&role)
+			var suspended bool
+			err := rv.Pool.QueryRow(ctx, `SELECT m.role, w.suspended_at IS NOT NULL FROM members m JOIN workspaces w ON w.id = m.workspace_id
+				WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&role, &suspended)
 			if err == nil {
-				p.WorkspaceID, p.Role = wid, Role(role)
+				p.WorkspaceID, p.Role, p.WorkspaceSuspended = wid, Role(role), suspended
 			}
 		}
 		return &p
@@ -87,8 +89,9 @@ func (rv *Resolver) resolve(r *http.Request) *Principal {
 
 func (rv *Resolver) resolveAPIKey(ctx context.Context, key string, p *Principal) bool {
 	var expires *time.Time
-	err := rv.Pool.QueryRow(ctx, `SELECT id, workspace_id, scopes, expires_at FROM api_keys
-		WHERE key_hash = $1 AND revoked_at IS NULL`, crypto.HashToken(key)).Scan(&p.APIKeyID, &p.WorkspaceID, &p.Scopes, &expires)
+	err := rv.Pool.QueryRow(ctx, `SELECT k.id, k.workspace_id, k.scopes, k.expires_at, w.suspended_at IS NOT NULL FROM api_keys k
+		JOIN workspaces w ON w.id = k.workspace_id
+		WHERE k.key_hash = $1 AND k.revoked_at IS NULL`, crypto.HashToken(key)).Scan(&p.APIKeyID, &p.WorkspaceID, &p.Scopes, &expires, &p.WorkspaceSuspended)
 	if err != nil || (expires != nil && time.Now().After(*expires)) {
 		return false
 	}
@@ -103,6 +106,7 @@ func (rv *Resolver) resolveVisitor(ctx context.Context, token string, p *Princip
 	var widgetID *uuid.UUID
 	err := rv.Pool.QueryRow(ctx, `SELECT s.id, s.workspace_id, s.contact_id, s.verified, s.widget_id FROM widget_sessions s
 		JOIN contacts c ON c.id = s.contact_id AND NOT c.blocked
+		JOIN workspaces w ON w.id = s.workspace_id AND w.suspended_at IS NULL
 		WHERE s.token_hash = $1`, crypto.HashToken(token)).Scan(&p.VisitorID, &p.WorkspaceID, &p.ContactID, &p.Verified, &widgetID)
 	if err != nil {
 		return false
@@ -140,6 +144,8 @@ var (
 	ErrForbidden       = errors.New("you do not have permission to do that")
 	ErrNoWorkspace     = errors.New("select a workspace with the OD-Workspace header")
 	ErrMFARequired     = errors.New("this action requires two-factor authentication")
+	// ErrWorkspaceSuspended: an instance admin suspended the workspace (contracts/admin.md).
+	ErrWorkspaceSuspended = errors.New("this workspace is suspended")
 )
 
 // RequireUser demands a signed-in person (not an API key or visitor).
@@ -167,6 +173,9 @@ func RequireWorkspace(ctx context.Context, minRole Role, scope string) (*Princip
 		if p.WorkspaceID == uuid.Nil {
 			return nil, ErrNoWorkspace
 		}
+		if p.WorkspaceSuspended {
+			return nil, ErrWorkspaceSuspended
+		}
 		if !p.Role.AtLeast(minRole) {
 			return nil, ErrForbidden
 		}
@@ -174,9 +183,14 @@ func RequireWorkspace(ctx context.Context, minRole Role, scope string) (*Princip
 			return nil, ErrForbidden
 		}
 	case KindAPIKey:
+		if p.WorkspaceSuspended {
+			return nil, ErrWorkspaceSuspended
+		}
 		if scope == "" || !p.HasScope(scope) {
 			return nil, ErrForbidden
 		}
+	default:
+		return nil, ErrUnauthenticated
 	}
 	return p, nil
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -535,6 +536,10 @@ type dispatchWorker struct {
 
 func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDispatchArgs]) error {
 	a := job.Args
+	// A suspended workspace sends no webhooks (contracts/admin.md).
+	if suspended, err := domain.WorkspaceSuspended(ctx, w.s.d.DB.Pool, a.WorkspaceID); err != nil || suspended {
+		return err
+	}
 	return w.s.tx(ctx, func(tx pgx.Tx) error {
 		var pl webhookPayload
 		var team *uuid.UUID
@@ -616,6 +621,13 @@ func (w *deliverWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDel
 	}
 	if !enabled && eventType != webhookTestEvent {
 		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'webhook disabled' WHERE id = $1`, job.Args.DeliveryID)
+		return err
+	}
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {
+		if err != nil {
+			return err
+		}
+		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'workspace suspended' WHERE id = $1`, job.Args.DeliveryID)
 		return err
 	}
 	secret, err := s.d.Box.Open(sealed)

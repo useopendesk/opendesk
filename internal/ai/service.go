@@ -169,6 +169,13 @@ func (s *Service) workspaceOn(ctx context.Context, wid uuid.UUID) (hd.AISettings
 	if err != nil {
 		return hd.AISettings{}, err
 	}
+	// A suspended workspace runs no AI (contracts/admin.md): to every feature it is off.
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {
+		if err != nil {
+			return hd.AISettings{}, err
+		}
+		return hd.AISettings{}, errOff
+	}
 	a := st.AI()
 	if !a.Enabled {
 		return a, errOff
@@ -205,6 +212,12 @@ func (s *Service) newCall(wid uuid.UUID, userID, ticketID *uuid.UUID, feature st
 func (c *call) route(ctx context.Context) (*route, error) {
 	if c.rt != nil {
 		return c.rt, nil
+	}
+	if suspended, err := domain.WorkspaceSuspended(ctx, c.s.d.DB.Pool, c.wid); err != nil || suspended {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errOff
 	}
 	rt, err := c.s.routeFor(ctx, c.wid)
 	if err != nil {

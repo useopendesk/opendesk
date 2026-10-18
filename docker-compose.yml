@@ -59,6 +59,10 @@ services:
       APP_URL: ${OPENDESK_URL:-https://localhost}
       GATEWAY_URL: ${OPENDESK_GATEWAY_URL:-wss://localhost/socket}
       CORS_ORIGINS: ${OPENDESK_URL:-https://localhost}
+      # The admin panel is at OPENDESK_URL/admin/; set ADMIN_URL when it has a
+      # host of its own (docs: self-hosting/admin-panel).
+      ADMIN_URL: ${ADMIN_URL:-}
+      ADMIN_ENV_LABEL: ${ADMIN_ENV_LABEL:-}
       SITE_URL: ${OPENDESK_URL:-https://localhost}
       # Caddy is the only way in, and it replaces X-Forwarded-For with the peer.
       TRUST_PROXY: "true"

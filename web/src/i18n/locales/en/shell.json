@@ -37,6 +37,13 @@
     "noneYet": "No workspace yet",
     "addAccount": "Add an account"
   },
+  "suspended": {
+    "title": "This workspace is suspended",
+    "body": "An administrator of this opendesk instance suspended {{name}}. Its inbox, live chat and help center are paused, and nothing was deleted.",
+    "contact": "Contact support to have it restored.",
+    "open": "Open {{name}}",
+    "signOut": "Sign out"
+  },
   "theme": {
     "title": "Theme",
     "light": "Light",

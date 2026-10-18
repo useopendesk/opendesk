@@ -9,7 +9,9 @@ it exists, and this file is the contract the parts are built against.
 - JSON, `snake_case`, timestamps RFC 3339 UTC, ids are UUID strings.
 - Errors: RFC 9457 problem+json `{ "status", "title", "detail", "code"?, "errors"? }`.
   `code` is a stable machine string (`invalid_credentials`, `mfa_required`, `forbidden`,
-  `not_found`, `conflict`, `rate_limited`, `validation_failed`).
+  `not_found`, `conflict`, `rate_limited`, `validation_failed`). A suspended workspace answers
+  `403 workspace_suspended` on every workspace route, and a suspended account `403 account_suspended`
+  to every sign-in (contracts/admin.md).
 - Responses carry no `$schema` member, so a client can send an object it read back as a PATCH
   body; request bodies refuse unknown members (`422 validation_failed`).
 - Lists: `?limit=` (default 50, max 100) and `?cursor=`; response
@@ -46,7 +48,7 @@ type WorkspaceSettings = { brand_color?: string; timezone?: string; help_center_
   label_creation?: "anyone" | "admins" /* default "anyone": applying an unknown label name creates it; "admins": only admins (and keys with settings:write) may, others get 422 unknown_label */;
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>; priority_labels?: Partial<Record<Priority, DisplayOverride>> /* display only; the API values never change */ };
 type DisplayOverride = { label?: string /* 1..40, no < > */; color?: LabelColor };
-type Membership = { workspace: Workspace; role: Role };
+type Membership = { workspace: Workspace; role: Role; suspended: boolean /* an instance admin suspended it: its routes answer 403 workspace_suspended (contracts/admin.md) */ };
 type Role = "owner" | "admin" | "agent" | "viewer";
 type Member = { user: UserRef & { avatar_source: AvatarSource | null }; role: Role;
   availability: Availability /* what the member set */; presence: Availability /* availability, or "away" when auto-away applies */;

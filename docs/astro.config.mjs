@@ -202,6 +202,7 @@ export default defineConfig({
             { label: 'Push notifications', slug: 'self-hosting/push-notifications' },
             { label: 'Scaling', slug: 'self-hosting/scaling' },
             { label: 'Backups and upgrades', slug: 'self-hosting/backups-and-upgrades' },
+            { label: 'Admin panel', slug: 'self-hosting/admin-panel' },
             { label: 'Security hardening', slug: 'self-hosting/hardening' },
           ],
         },

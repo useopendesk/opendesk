@@ -16,6 +16,8 @@ and a consumer accepts exactly one purpose. `exp` is required.
 | `assistant_approval` | a Ollie run's `approval` event | 15 min | `POST /v1/assistant/actions/{id}/decision` |
 | `mcp_access` | `POST /oauth/token` (MCP OAuth, `contracts/agent.md`) | 1 h | the MCP server, `{API_URL}/mcp` (Bearer), when `aud` is the MCP resource |
 | `notification_unsubscribe` | notification emails (`contracts/api.md` "Notification preferences and emails") | 90 days | `POST /v1/notifications/unsubscribe` and `/unsubscribe/one-click` |
+| `admin_mfa` | `POST /v1/admin/auth/login` (contracts/admin.md) | 5 min | `POST /v1/admin/auth/mfa` |
+| `admin`      | `POST /v1/admin/auth/mfa` and `/refresh` | 10 min | `/v1/admin/*` only (Bearer); the admin session (`sid`) is checked on every request |
 
 ## Claims
 
@@ -32,6 +34,11 @@ and a consumer accepts exactly one purpose. `exp` is required.
 { "purpose": "passkey_login", "jti": "<uuid>", "iat": 0, "exp": 0 }
 { "purpose": "passkey_register", "sub": "<user_id>", "sid": "<session_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
 { "purpose": "assistant_approval", "sub": "<user_id>", "sid": "<session_id>", "wid": "<workspace_id>", "jti": "<action_id>", "iat": 0, "exp": 0 }
+
+// admin: an instance admin panel session (contracts/admin.md); never accepted by app routes,
+// and an access token is never accepted by /v1/admin/*.
+{ "purpose": "admin", "sub": "<user_id>", "sid": "<admin_session_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
+{ "purpose": "admin_mfa", "sub": "<user_id>", "jti": "<uuid>", "iat": 0, "exp": 0 }
 
 // notification_unsubscribe: turns off notification emails from one workspace for one user. Harmless to
 // replay (it only switches email off), so it is not single use.
@@ -62,6 +69,7 @@ in the claims.
 | credential      | format                          | where                                            |
 | --------------- | ------------------------------- | ------------------------------------------------ |
 | refresh token   | 32 random bytes, base64url      | one cookie per signed-in account, `od_rt_<user id as 32 hex chars>`: HttpOnly, Secure (https), SameSite=Lax, Path=`/v1/auth`, Domain=`COOKIE_DOMAIN` (see "Several accounts in one browser"). Native requests (below): `refresh_token` in the response body instead, sent back as `{refresh_token}` to `/v1/auth/refresh` and `/v1/auth/logout` |
+| admin refresh token | 32 random bytes, base64url | cookie `od_admin`: HttpOnly, Secure (https), SameSite=Strict, Path=`/v1/admin/auth`, host-only; rotates on use, a session ends 1 h after its last refresh and 12 h after sign-in (contracts/admin.md). Never in a body |
 | App Attest challenge | 32 random bytes, base64url, single use, 5 min | `POST /v1/auth/app-attest/challenge`; consumed by the first key registration or proof that names it, success or not |
 | push device token | APNs token (hex) or relay token | `POST /v1/me/devices`; stored SHA-256 hashed for lookup and sealed with `d.Box` for sending |
 | API key         | `od_live_` + 32 bytes base64url | `Authorization: Bearer od_live_...`              |

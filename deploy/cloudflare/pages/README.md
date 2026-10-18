@@ -1,6 +1,6 @@
 # Cloudflare Pages projects
 
-Three direct-upload Pages projects, created by Terraform
+Four direct-upload Pages projects, created by Terraform
 (`deploy/terraform/modules/cloudflare`) with their custom domains. They are **not**
 connected to git: `deploy.yml` builds each one in GitHub Actions and uploads the
 output with `wrangler pages deploy`. Cloudflare never builds anything, so the build
@@ -11,6 +11,7 @@ runs with the same Node, pnpm and lockfile as CI.
 | `opendesk-site` | `site/` (Astro) | `pnpm install --frozen-lockfile && pnpm build` | `site/dist` | `opendesk.sh` |
 | `opendesk-docs` | `docs/` (Starlight) | `pnpm install --frozen-lockfile && pnpm build` | `docs/dist` | `docs.opendesk.sh` |
 | `opendesk-app` | `web/` (Vite) | `pnpm install --frozen-lockfile && pnpm build` | `web/dist` | `app.opendesk.sh` |
+| `opendesk-admin` | `admin/` (Vite) | `pnpm install --frozen-lockfile && pnpm build:pages` | `admin/dist` | `admin.opendesk.sh` |
 
 The files in this directory are copied into the app and docs build outputs before
 upload, unless that build already ships its own.
@@ -85,6 +86,31 @@ Headers (`app/_headers`) match what the Go binary sends for the same files:
 
 SPA fallback needs no rule: an output with no top-level `404.html` makes Pages serve
 `index.html` for every path that is not a file.
+
+## opendesk-admin
+
+The instance admin panel (`contracts/admin.md`), on its own origin so no page of the app
+ever runs where an admin session lives. `pnpm build:pages` builds it with base `/`, copies
+`admin/_headers` (CSP: scripts from itself and Turnstile, API calls to the API only,
+`X-Robots-Tag: noindex`), `_routes.json` and `_worker.js` (missing assets answer an
+uncached 404, as for the app) and writes `config.js`
+(`window.__OPENDESK_ADMIN__ = {apiUrl, appUrl, turnstileSiteKey?, envLabel?}`) with
+`admin/write-config.mjs`:
+
+```sh
+(cd admin && pnpm install --frozen-lockfile && ADMIN_ENV_LABEL=Production pnpm build:pages)
+wrangler pages deploy admin/dist --project-name opendesk-admin --branch main
+```
+
+| Env | Default |
+| --- | --- |
+| `ADMIN_API_URL` | `https://api.opendesk.sh` |
+| `ADMIN_APP_URL` | `https://app.opendesk.sh` |
+| `TURNSTILE_SITE_KEY` | unset (no Turnstile widget). Add `admin.opendesk.sh` to the widget's hostnames |
+| `ADMIN_ENV_LABEL` | unset. Shown in the panel's top bar |
+
+Test it with `node --test deploy/cloudflare/pages/admin/write-config.test.mjs`. A
+self-hosted binary serves the same panel at `<APP_URL>/admin/` (`make admin-embed`).
 
 ## Previews
 

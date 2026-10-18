@@ -107,6 +107,9 @@ type WorkspaceImages struct {
 type CoreMembership struct {
 	Workspace CoreWorkspace `json:"workspace"`
 	Role      string        `json:"role" enum:"owner,admin,agent,viewer"`
+	// Suspended: an instance admin suspended the workspace; its routes answer
+	// 403 workspace_suspended until it is restored (contracts/admin.md).
+	Suspended bool `json:"suspended"`
 }
 
 // workspaceCols reads the widget key and the help center and widget pictures from the
@@ -143,14 +146,14 @@ func loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (CoreWorksp
 }
 
 func loadMemberships(ctx context.Context, q db.Querier, uid uuid.UUID) ([]CoreMembership, error) {
-	rows, err := q.Query(ctx, `SELECT `+workspaceCols+`, m.role FROM members m JOIN workspaces w ON w.id = m.workspace_id
+	rows, err := q.Query(ctx, `SELECT `+workspaceCols+`, m.role, w.suspended_at IS NOT NULL FROM members m JOIN workspaces w ON w.id = m.workspace_id
 		WHERE m.user_id = $1 ORDER BY m.created_at LIMIT 200`, uid)
 	if err != nil {
 		return nil, err
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (CoreMembership, error) {
 		var m CoreMembership
-		w, err := scanWorkspace(r, &m.Role)
+		w, err := scanWorkspace(r, &m.Role, &m.Suspended)
 		m.Workspace = w
 		return m, err
 	})

@@ -1,7 +1,7 @@
 # opendesk production: api.opendesk.sh and gateway.opendesk.sh on ECS Fargate
 # behind one ALB proxied by Cloudflare; PlanetScale Postgres over AWS
 # PrivateLink; NATS on ECS; S3 attachments; SES platform mail; Cloudflare Pages for the site,
-# docs and app; Cloudflare Email Routing for forwarding addresses; the help center zone
+# docs, app and admin panel; Cloudflare Email Routing for forwarding addresses; the help center zone
 # (<slug>.opendeskhelp.com and custom domains through Cloudflare for SaaS).
 #
 # See deploy/README.md for the architecture and the first-time runbook.
@@ -37,6 +37,7 @@ locals {
   host = {
     site    = var.domain
     app     = "${var.subdomains.app}.${var.domain}"
+    admin   = "${var.subdomains.admin}.${var.domain}"
     docs    = "${var.subdomains.docs}.${var.domain}"
     api     = "${var.subdomains.api}.${var.domain}"
     gateway = "${var.subdomains.gateway}.${var.domain}"
@@ -279,6 +280,8 @@ module "cloudflare" {
     site = { name = "${var.name}-site", domain = local.host.site }
     docs = { name = "${var.name}-docs", domain = local.host.docs }
     app  = { name = "${var.name}-app", domain = local.host.app }
+    # The instance admin panel (contracts/admin.md), on its own origin.
+    admin = { name = "${var.name}-admin", domain = local.host.admin }
   }
 }
 
@@ -355,6 +358,7 @@ locals {
     SITE_URL            = "https://${local.host.site}"
     GATEWAY_URL         = "wss://${local.host.gateway}/socket"
     CORS_ORIGINS        = "https://${local.host.app}"
+    ADMIN_URL           = "https://${local.host.admin}" # the admin panel: the only origin /v1/admin/* accepts
     TRUST_PROXY         = "true"
     AUTO_MIGRATE        = "false" # deploy.yml runs opendesk-migrate first
     NATS_URL            = module.nats.url

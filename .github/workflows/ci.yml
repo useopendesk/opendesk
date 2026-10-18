@@ -38,6 +38,7 @@ jobs:
       go: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.go }}
       migrations: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.migrations }}
       web: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.web }}
+      admin: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.admin }}
       site: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.site }}
       docs: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.docs }}
       realtime: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.realtime }}
@@ -71,6 +72,12 @@ jobs:
               - 'web/**'
               - 'brand/**'
               - 'contracts/**'
+            admin:
+              - *shared
+              - 'admin/**'
+              - 'brand/**'
+              - 'contracts/**'
+              - 'deploy/cloudflare/pages/admin/**'
             site:
               - *shared
               - 'site/**'
@@ -94,6 +101,7 @@ jobs:
               - '**/*.go'
               - 'migrations/**'
               - 'web/**'
+              - 'admin/**'
               - 'realtime/**'
             installer:
               - *shared
@@ -218,6 +226,38 @@ jobs:
       - run: pnpm build
       - name: Widget bundle is in the build
         run: test -s dist/widget/v1.js
+      - name: pnpm audit
+        run: pnpm audit --prod --audit-level high
+
+  admin:
+    name: Admin panel
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: admin/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      # The binary serves the same panel at /admin/.
+      - run: pnpm build:embed && grep -q '/admin/config.js' dist/index.html
+      - name: Pages config and worker
+        run: node --test ../deploy/cloudflare/pages/admin/write-config.test.mjs ../deploy/cloudflare/pages/admin/_worker.test.mjs
       - name: pnpm audit
         run: pnpm audit --prod --audit-level high
 
@@ -500,7 +540,7 @@ jobs:
   ci-status:
     name: CI status
     runs-on: ubuntu-latest
-    needs: [changes, secrets, go, migrations, web, site, docs, realtime, images, installer, terraform, cloudflare, help-worker]
+    needs: [changes, secrets, go, migrations, web, admin, site, docs, realtime, images, installer, terraform, cloudflare, help-worker]
     if: always()
     steps:
       # The one check to require in branch protection. Skipped jobs pass;
