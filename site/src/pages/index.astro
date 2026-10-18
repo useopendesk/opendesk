@@ -87,8 +87,11 @@ const install = [
       </div>
 
       <!-- Edges line up with the header: container-page, less the frame's own inset. -->
-      <div class="hero-app relative mx-auto mt-14 max-w-[1416px] px-3 md:mt-20 md:px-7">
-        <div class="-mb-[16%]"><HeroStage /></div>
+      <div class="hero-app relative mx-auto mt-14 max-w-[1416px] md:mt-20 md:px-7">
+        <!-- Phones keep the window big and swipe across it. -->
+        <div class="-mb-[150px] max-md:overflow-x-auto max-md:overflow-y-hidden max-md:overscroll-x-contain [scrollbar-width:none] md:-mb-[16%] [&::-webkit-scrollbar]:hidden">
+          <div class="max-md:w-max max-md:px-3"><div class="max-md:w-[960px]"><HeroStage /></div></div>
+        </div>
       </div>
     </div>
   </section>
