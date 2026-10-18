@@ -203,22 +203,22 @@ On opendesk Cloud, AI is paid from the workspace's AI balance, in US dollars: a 
 
 ## Typical costs with the default models
 
-With Claude Sonnet 5.5 as the main model and Claude Haiku 5.5 as the fast one:
+With Claude Haiku 5.5 as the main model and GLM-5.3 Flash as the fast one:
 
 | Feature | Model | Typical cost |
 | --- | --- | --- |
-| Rewrite | fast | $0.0004 |
-| Translate | fast | $0.0005 |
+| Rewrite | fast | $0.00018 |
+| Translate | fast | $0.00021 |
+| Summarize | main | $0.00068 |
 | Triage (every question in one call) | fast | $0.00075 |
-| Summarize | main | $0.0135 |
-| Ask about a ticket | main | $0.018 |
-| Draft a reply | main | $0.0195 |
-| Chat answer, each model turn | main | $0.021 |
-| Email answer, each model turn | main | $0.0225 |
-| Ollie, each model turn | main | $0.024 |
-| Draft an article | main | $0.0465 |
+| Ask about a ticket | main | $0.0009 |
+| Draft a reply | main | $0.00098 |
+| Chat answer, each model turn | main | $0.0011 |
+| Email answer, each model turn | main | $0.0011 |
+| Ollie, each model turn | main | $0.0012 |
+| Draft an article | main | $0.0023 |
 
-The agent's playground and test runs cost what their answers cost, about $0.021 a reply.
+The agent's playground and test runs cost what their answers cost, about $0.001 a reply.
 
 </Fold>
 
@@ -230,13 +230,14 @@ What the default models cost as a Cloud workspace pays for them, per 1 million t
 
 | Model | Per 1M tokens (in / out) | Typical draft reply |
 | --- | --- | --- |
-| Claude Haiku 5.5 (default fast model) | $0.15 / $0.75 | $0.001 |
-| DeepSeek V4.1 Flash | $0.225 / $0.90 | $0.0014 |
+| GLM-5.3 Flash (default fast model) | $0.072 / $0.30 | $0.00044 |
+| DeepSeek V4.1 Flash | $0.0975 / $0.216 | $0.0005 |
+| Claude Haiku 5.5 (default model) | $0.15 / $0.75 | $0.00098 |
 | GPT-5.6 Luna | $0.30 / $1.80 | $0.0021 |
-| Gemini 3.8 Flash | $1.125 / $5.625 | $0.0073 |
-| Claude Sonnet 5.5 (default model) | $3 / $15 | $0.0195 |
-| GPT-5.6 Sol | $3 / $15 | $0.0195 |
+| Gemini 3.8 Flash | $1.2375 / $6.1875 | $0.008 |
+| Claude Sonnet 5.5 | $3 / $15 | $0.0195 |
 | Claude Opus 5.5 | $6 / $30 | $0.039 |
+| GPT-5.6 Sol | $6 / $30 | $0.039 |
 
 </Fold>
 

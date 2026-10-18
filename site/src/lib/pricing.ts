@@ -76,15 +76,16 @@ type ModelPrice = { id: string; name: string; vendor: string; input: number; out
 
 // The default models a workspace can choose from, with the provider's list price in US
 // dollars per 1M input / output tokens. Source: OpenRouter (GET /api/v1/models), as of
-// 2026-10-12. Prices follow the provider's list price, so update them when it changes.
+// 2026-10-18. Prices follow the provider's list price, so update them when it changes.
 const RAW_MODELS: ModelPrice[] = [
-  { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', vendor: 'Anthropic', input: 2, output: 10, note: 'Default' },
-  { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', vendor: 'Anthropic', input: 0.1, output: 0.5, note: 'Fast' },
+  { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', vendor: 'Anthropic', input: 2, output: 10 },
+  { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', vendor: 'Anthropic', input: 0.1, output: 0.5, note: 'Default' },
   { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', vendor: 'Anthropic', input: 4, output: 20 },
-  { id: 'openai/gpt-5.6-sol', name: 'GPT-5.6 Sol', vendor: 'OpenAI', input: 2, output: 10 },
+  { id: 'openai/gpt-5.6-sol', name: 'GPT-5.6 Sol', vendor: 'OpenAI', input: 4, output: 20 },
   { id: 'openai/gpt-5.6-luna', name: 'GPT-5.6 Luna', vendor: 'OpenAI', input: 0.2, output: 1.2 },
-  { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', vendor: 'Google', input: 0.75, output: 3.75 },
-  { id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', vendor: 'DeepSeek', input: 0.15, output: 0.6 },
+  { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', vendor: 'Google', input: 0.825, output: 4.125 },
+  { id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', vendor: 'DeepSeek', input: 0.065, output: 0.144 },
+  { id: 'z-ai/glm-5.3-flash', name: 'GLM-5.3 Flash', vendor: 'Z.ai', input: 0.048, output: 0.2, note: 'Fast' },
 ];
 
 // Rounds a dollar amount to the micro-dollar, as amounts are kept.

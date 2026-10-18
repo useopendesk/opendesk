@@ -154,7 +154,7 @@ func (s *Service) Draft(ctx context.Context, p *auth.Principal, rawID string, in
 	if err != nil {
 		return nil, err
 	}
-	text := stripFence(resp.Text)
+	text := TidyReply(stripFence(resp.Text))
 	bodyHTML := markdownToHTML(text)
 	if hd.HTMLToText(bodyHTML) == "" {
 		return nil, ErrBadOutput
@@ -592,9 +592,9 @@ func (s *Service) KBDraft(ctx context.Context, p *auth.Principal, in KBDraftInpu
 	if err := parseJSON(resp.Text, &out); err != nil {
 		return nil, err
 	}
-	out.Title = cleanLine(out.Title, 200)
-	out.BodyHTML = hd.SanitizeRich(out.BodyHTML)
-	out.Excerpt = cleanLine(out.Excerpt, 300)
+	out.Title = tidyText(cleanLine(out.Title, 200))
+	out.BodyHTML = tidyHTML(hd.SanitizeRich(out.BodyHTML))
+	out.Excerpt = tidyText(cleanLine(out.Excerpt, 300))
 	if out.Title == "" || hd.HTMLToText(out.BodyHTML) == "" {
 		return nil, ErrBadOutput
 	}

@@ -37,7 +37,7 @@ describe("mock widget agent", () => {
     const m = await call("GET", "/v1/ai/models");
     expect(m.body.default).toBe("anthropic/claude-sonnet-5.5");
     expect(m.body.fast).toBe("anthropic/claude-haiku-5.5");
-    expect(m.body.data).toHaveLength(7);
+    expect(m.body.data).toHaveLength(8);
     expect(m.body.data.find((x: { id: string }) => x.id === "openai/gpt-5.6-sol")).toMatchObject({ vendor: "OpenAI", usd_per_mtok: { input: 3, output: 15 }, typical_reply_usd: 0.0195 });
     const c = (await call("GET", "/v1/ai/config")).body;
     expect(c).toMatchObject({ provider: "openrouter", metered: true, models: { default: "anthropic/claude-sonnet-5.5", fast: "anthropic/claude-haiku-5.5" } });

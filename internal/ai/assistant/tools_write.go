@@ -488,6 +488,9 @@ func proposeMessage(ctx context.Context, rc *runCtx, in json.RawMessage, kind st
 		return nil, Preview{}, err
 	}
 	body := strings.TrimSpace(a.Body)
+	if kind == "reply" {
+		body = ai.TidyReply(body)
+	}
 	if body == "" {
 		return nil, Preview{}, httpx.Validation("the body is empty")
 	}

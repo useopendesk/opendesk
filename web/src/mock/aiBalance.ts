@@ -82,6 +82,7 @@ export const MODELS: AIModel[] = [
   model("openai/gpt-5.6-luna", "GPT-5.6 Luna", "OpenAI", 400_000, 0.2, 1.2),
   model("google/gemini-3.8-flash", "Gemini 3.8 Flash", "Google", 1_048_576, 0.75, 3.75),
   model("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "DeepSeek", 128_000, 0.15, 0.6),
+  model("z-ai/glm-5.3-flash", "GLM-5.3 Flash", "Z.ai", 1_048_576, 0.048, 0.2),
 ];
 
 /** A model's price per 1M tokens as the workspace pays it, or null when unknown. */

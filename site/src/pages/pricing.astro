@@ -18,7 +18,7 @@ const included = [
   ['shield', 'Teams, roles, 2FA, audit log', 'The security controls, written down on /security.'],
 ] as const;
 
-const sonnet = model('anthropic/claude-sonnet-5.5');
+const haiku = model('anthropic/claude-haiku-5.5');
 const topUpRange = `${usd(AI_TOP_UP.minUsd)} to ${usd(AI_TOP_UP.maxUsd)}`;
 
 const faq = [
@@ -36,7 +36,7 @@ const faq = [
   },
   {
     q: 'How is AI usage priced?',
-    a: `By what each call really uses. A call costs the provider’s price for its tokens times ${AI_MARKUP}, so it depends on the model you choose and how long the thread is: a typical draft reply costs about ${usdCall(sonnet.typicalDraft)} on ${sonnet.name}, the default model. Free includes ${usd(AI_ALLOWANCE.free)} of AI usage a month, and Pro ${usd(AI_ALLOWANCE.perSeat)} per paid user, pooled across the workspace. When the allowance runs out you can add any amount of AI usage, from ${topUpRange}, which never expires, or turn on auto-recharge. A failed AI call costs nothing.`,
+    a: `By what each call really uses. A call costs the provider’s price for its tokens times ${AI_MARKUP}, so it depends on the model you choose and how long the thread is: a typical draft reply costs about ${usdCall(haiku.typicalDraft)} on ${haiku.name}, the default model. Free includes ${usd(AI_ALLOWANCE.free)} of AI usage a month, and Pro ${usd(AI_ALLOWANCE.perSeat)} per paid user, pooled across the workspace. When the allowance runs out you can add any amount of AI usage, from ${topUpRange}, which never expires, or turn on auto-recharge. A failed AI call costs nothing.`,
   },
   {
     q: 'Can I use my own AI key on Cloud?',

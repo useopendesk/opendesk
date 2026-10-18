@@ -35,6 +35,7 @@ export const OWN_MODELS: Record<AIKeyKind, AIModel[]> = {
     m("openai/gpt-5.6-luna", "GPT-5.6 Luna", "OpenAI", 400_000),
     m("google/gemini-3.8-flash", "Gemini 3.8 Flash", "Google", 1_048_576),
     m("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "DeepSeek", 128_000),
+    m("z-ai/glm-5.3-flash", "GLM-5.3 Flash", "Z.ai", 1_048_576),
     m("meta-llama/llama-4.1-maverick", "Llama 4.1 Maverick", "Meta", 1_000_000),
     m("mistralai/mistral-large-3", "Mistral Large 3", "Mistral", 256_000),
     m("qwen/qwen-3.5-max", "Qwen 3.5 Max", "Qwen", 256_000),

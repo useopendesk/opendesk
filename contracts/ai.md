@@ -150,7 +150,7 @@ means English unless `instructions` name another language. `widget_max_replies` 
 The instance offers a list of models a workspace may choose from: `AI_MODELS` (comma-separated
 model ids), else, on OpenRouter, a curated default list (`anthropic/claude-sonnet-5.5`,
 `anthropic/claude-haiku-5.5`, `anthropic/claude-opus-5.5`, `openai/gpt-5.6-sol`,
-`openai/gpt-5.6-luna`, `google/gemini-3.8-flash`, `deepseek/deepseek-v4.1-flash`), else just
+`openai/gpt-5.6-luna`, `google/gemini-3.8-flash`, `deepseek/deepseek-v4.1-flash`, `z-ai/glm-5.3-flash`), else just
 `AI_MODEL` and `AI_FAST_MODEL`. `AI_MODEL` and `AI_FAST_MODEL` are always in the list. On OpenRouter,
 names, context lengths and per-token prices are read from `GET /v1/models` (cached for an hour;
 an id OpenRouter does not list is dropped, except the two defaults). Other providers list ids only.
@@ -475,4 +475,21 @@ System prompts are fixed text and cached (Anthropic prompt caching); workspace g
 turn. Data blocks are XML-like tags whose content has `<` and `>` replaced by `‹` and `›`,
 so content cannot close or open a block. Requests time out (90 s, 4 min streaming) and are
 retried on 429, 5xx and 529 with backoff honouring `Retry-After`.
+
+## Voice
+
+Everything the AI writes for a customer reads like a capable person on the team typed it
+(`internal/ai/voice.go`). The prompts that write to a customer from scratch (drafts, the widget and
+email agents, Ollie's `draft_reply`) carry the writing rules: contractions, active voice, varied
+sentence length, specifics over vague claims, straight to the point. They and the prompts that edit
+or write customer-facing text (rewrite, KB drafts) carry the bans: em dashes, AI vocabulary ("delve",
+"leverage", "robust"...), stock openers and closers, hedging filler, negative parallelism, stacked
+apologies. The rules are written for English; other languages follow their spirit.
+
+The output is then tidied without a model, with transforms that never change meaning: a dash joining
+clauses (an em dash, or a spaced en dash or `--`) becomes a comma, except in code and in Cyrillic text,
+where a dash is grammar; an unspaced en dash is a range and stays. Whole stock sentences ("Thank you
+for reaching out!", "I hope this helps.") are removed from drafts and agent answers, never a longer
+sentence that starts the same way, and never the whole reply. Translation, summaries and Ollie's
+answers to teammates are left as written. Word swaps and forced contractions stay in the prompt only.
 

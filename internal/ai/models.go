@@ -44,6 +44,7 @@ var curatedModels = []string{
 	"openai/gpt-5.6-luna",
 	"google/gemini-3.8-flash",
 	"deepseek/deepseek-v4.1-flash",
+	"z-ai/glm-5.3-flash",
 }
 
 // ModelInfo describes one model a workspace may choose.

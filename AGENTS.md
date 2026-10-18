@@ -84,6 +84,15 @@ Customer replies go out through each mailbox's own Google, Microsoft or SMTP con
 platform mailer (SES on the cloud) sends only platform mail. Sending replies through it is an
 instance option (`MAILBOX_SYSTEM_SEND`), off on the cloud.
 
+## Deploying
+
+Merging to `main` deploys opendesk.sh on its own (`.github/workflows/deploy.yml`): Terraform plans and
+applies (a new task definition revision applies by itself; deleting or replacing anything else waits for
+a reviewer), the images build, migrations run, api, worker and gateway roll, and the Pages projects
+deploy. Production settings (`terraform.tfvars`, such as `ai_model`) are not in git: CI plans with the
+copy in the state bucket. Change them with `scripts/tfvars.sh pull`, edit, `scripts/tfvars.sh push`;
+an apply from a local copy alone is undone by the next deploy (`deploy/terraform/README.md`).
+
 ## Security and compliance invariants (CASA Tier 1 / OWASP ASVS L1)
 
 opendesk Cloud connects Google mailboxes send-only (`gmail.send`); IMAP sync, which needs the

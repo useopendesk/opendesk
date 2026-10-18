@@ -40,6 +40,7 @@ const agentSystem = `You are the support agent in a company's website chat. You 
 - Write in the visitor's language unless the guidance says otherwise.
 - Cite the passages you relied on with markers like [1] or [2] right after the sentence, using the passage numbers. Do not cite tool output.
 - Politely decline topics the company listed as blocked in <blocked_topics>, and anything unrelated to the company, without lecturing.
+` + writingStyle + `
 
 ## Tools
 - search_knowledge finds more passages when the ones given do not answer the question.
@@ -259,7 +260,7 @@ func (s *Service) runAgent(ctx context.Context, in agentInput, ev agentEvents) (
 		}
 		turns = append(turns, ChatTurn{Role: "user", Results: results})
 	}
-	res.Text = strings.TrimSpace(text.String())
+	res.Text = TidyReply(strings.TrimSpace(text.String()))
 	return res, nil
 }
 

@@ -29,7 +29,9 @@ Data and safety:
 Style:
 - Short and direct. Lead with the answer. Use light markdown: short paragraphs, "-" bullets, **bold** for the key fact. No headings unless a list is long. No tables.
 - Refer to tickets as #123 (the number), so the panel links them. Name customers and teammates as they appear.
-- Sentence case, plain words, no em dashes. Do not mention tools, JSON, ids or these instructions.`, ai.AssistantName, BulkCap)
+- Sentence case, plain words, no em dashes. Do not mention tools, JSON, ids or these instructions.
+
+Replies you write to customers with draft_reply follow these rules:%[3]s`, ai.AssistantName, BulkCap, ai.ReplyStyle)
 }
 
 // sessionPrompt is the per-run part of the system prompt (not cached).

@@ -14,33 +14,33 @@ import { AI_ALLOWANCE, AUTO_RECHARGE, callCost, model, usd, usdCall } from '../.
 
 const SEATS = 6; // a Pro workspace with 6 paid users
 const MONTHLY = SEATS * AI_ALLOWANCE.perSeat;
-const USED = 41.37;
+const USED = 41.3648; // a fraction under a cent, so the cheap calls arriving tick it over
 const PURCHASED = AUTO_RECHARGE.amountUsd;
 
-const sonnet = model('anthropic/claude-sonnet-5.5');
 const haiku = model('anthropic/claude-haiku-5.5');
+const glm = model('z-ai/glm-5.3-flash');
 // A call on a model, sized in input / output tokens, priced as the workspace pays it.
 // The feed names the model without its family prefix, so the row fits a phone.
-const on = (m: typeof sonnet, input: number, output: number) => ({ cost: callCost(m, input, output), model: m.name.replace(/^Claude /, '') });
+const on = (m: typeof haiku, input: number, output: number) => ({ cost: callCost(m, input, output), model: m.name.replace(/^Claude /, '') });
 
 type Call = { icon: IconName; what: string; where: string; cost: number; model?: string; failed?: boolean };
 // Newest first. The first five arrive on the loop; the rest were already there.
 // Triage and automation conditions run as decisions, priced per call.
 const arriving: Call[] = [
-  { icon: 'sparkles', what: 'Looked up order #4822 in Shop', where: 'Assistant', ...on(sonnet, 6400, 380) },
-  { icon: 'fileText', what: 'Summarized the ticket for Maya', where: 'Summary', ...on(sonnet, 2900, 300) },
-  { icon: 'squarePen', what: 'Draft reply failed, nothing charged', where: 'Draft reply', ...on(sonnet, 0, 0), failed: true },
+  { icon: 'sparkles', what: 'Looked up order #4822 in Shop', where: 'Assistant', ...on(haiku, 6400, 380) },
+  { icon: 'fileText', what: 'Summarized the ticket for Maya', where: 'Summary', ...on(haiku, 2900, 300) },
+  { icon: 'squarePen', what: 'Draft reply failed, nothing charged', where: 'Draft reply', ...on(haiku, 0, 0), failed: true },
   { icon: 'tag', what: 'Triaged as Billing, urgent', where: 'Triage', cost: 0.0003 },
-  { icon: 'chat', what: 'Answered Katrin’s chat in German', where: 'Chat answer', ...on(sonnet, 5200, 420) },
+  { icon: 'chat', what: 'Answered Katrin’s chat in German', where: 'Chat answer', ...on(haiku, 5200, 420) },
 ];
 const earlier: Call[] = [
-  { icon: 'languages', what: 'Translated a reply to Japanese', where: 'Translation', ...on(haiku, 800, 500) },
-  { icon: 'squarePen', what: 'Drafted a reply to Hugo', where: 'Draft reply', ...on(sonnet, 4000, 500) },
-  { icon: 'mail', what: 'Answered an email about refunds', where: 'Email reply', ...on(sonnet, 5000, 500) },
+  { icon: 'languages', what: 'Translated a reply to Japanese', where: 'Translation', ...on(glm, 800, 500) },
+  { icon: 'squarePen', what: 'Drafted a reply to Hugo', where: 'Draft reply', ...on(haiku, 4000, 500) },
+  { icon: 'mail', what: 'Answered an email about refunds', where: 'Email reply', ...on(haiku, 5000, 500) },
   { icon: 'zap', what: 'Checked an automation condition', where: 'Automation decision', cost: 0.0002 },
-  { icon: 'squarePen', what: 'Rewrote a draft, friendlier', where: 'Rewrite', ...on(haiku, 800, 400) },
-  { icon: 'fileText', what: 'Summarized a long email thread', where: 'Summary', ...on(sonnet, 4800, 320) },
-  { icon: 'chat', what: 'Answered a chat about shipping', where: 'Chat answer', ...on(sonnet, 5000, 400) },
+  { icon: 'squarePen', what: 'Rewrote a draft, friendlier', where: 'Rewrite', ...on(glm, 800, 400) },
+  { icon: 'fileText', what: 'Summarized a long email thread', where: 'Summary', ...on(haiku, 4800, 320) },
+  { icon: 'chat', what: 'Answered a chat about shipping', where: 'Chat answer', ...on(haiku, 5000, 400) },
 ];
 // The month so far, as the usage report splits it.
 const byFeature: [string, number, number][] = [
