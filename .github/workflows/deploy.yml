@@ -375,6 +375,8 @@ jobs:
           # The app's own _headers win if web/ ever ships one.
           [ -f dist/_headers ] || cp ../deploy/cloudflare/pages/app/_headers dist/
           [ -f dist/_redirects ] || cp ../deploy/cloudflare/pages/app/_redirects dist/
+          # Missing /assets/* files answer 404, uncached (the worker runs on /assets/* only).
+          cp ../deploy/cloudflare/pages/app/_worker.js ../deploy/cloudflare/pages/app/_routes.json dist/
           # Old /help/<slug>/... app links move to the help center's own host for good.
           if [ -n "$HELP_DOMAIN" ]; then
             printf '/help/:slug https://:slug.%s/ 301\n/help/:slug/* https://:slug.%s/:splat 301\n' "$HELP_DOMAIN" "$HELP_DOMAIN" >> dist/_redirects

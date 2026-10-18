@@ -77,6 +77,12 @@ func Handler(rc RuntimeConfig, csp string) http.Handler {
 				files.ServeHTTP(w, r)
 				return
 			}
+			// A missing bundle is a 404, never the app page under a script's name.
+			if strings.HasPrefix(p, "assets/") {
+				w.Header().Set("Cache-Control", "no-store")
+				http.NotFound(w, r)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")

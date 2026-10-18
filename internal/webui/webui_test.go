@@ -49,3 +49,21 @@ func TestMailboxOAuthKey(t *testing.T) {
 		t.Fatalf("mailboxImap = %#v, want false", raw["mailboxImap"])
 	}
 }
+
+// TestMissingAssetIs404: a bundle the build does not have is a 404 nothing caches,
+// while client routes still get the app page.
+func TestMissingAssetIs404(t *testing.T) {
+	h := Handler(RuntimeConfig{}, "default-src 'self'")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/assets/Page-gone1234.js", nil))
+	if w.Code != 404 || w.Header().Get("Cache-Control") != "no-store" || strings.Contains(w.Body.String(), "<") {
+		t.Fatalf("missing asset: %d %v %q", w.Code, w.Header(), w.Body.String())
+	}
+
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, httptest.NewRequest("GET", "/settings/billing", nil))
+	if page.Code != 200 || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("client route: %d %v", page.Code, page.Header())
+	}
+}

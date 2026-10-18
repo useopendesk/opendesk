@@ -467,9 +467,9 @@ jobs:
       - run: pnpm test
       - name: Bundles
         run: pnpm exec wrangler deploy --dry-run --outdir dist
-      - name: Pages runtime config
+      - name: Pages runtime config and assets worker
         working-directory: .
-        run: node --test deploy/cloudflare/pages/app/write-config.test.mjs
+        run: node --test deploy/cloudflare/pages/app/write-config.test.mjs deploy/cloudflare/pages/app/_worker.test.mjs
 
   help-worker:
     name: Cloudflare help worker
