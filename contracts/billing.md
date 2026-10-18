@@ -262,11 +262,10 @@ are left out. The Customer Portal has the full history.
 
 ## Tax
 
-opendesk Cloud is sold to businesses for business use. Every Checkout that takes money
-(the subscription and AI top-ups) requires the company's legal name and billing address,
-collects its tax ID, and shows that prices exclude taxes and that the buyer accounts for
-any tax due in its own country (for example under the reverse charge). They are saved on
-the Stripe customer, so they appear on every invoice. Tax is not computed at checkout:
+opendesk Cloud is sold to businesses for business use (the terms at opendesk.sh/terms say
+so, and that prices exclude taxes). Every Checkout that takes money (the subscription and
+AI top-ups) requires the company's legal name and billing address and collects its tax ID.
+They are saved on the Stripe customer, so they appear on every invoice. Tax is not computed at checkout:
 prices carry `tax_behavior: exclusive`, and Stripe Tax stays off.
 
 ## Auto-recharge

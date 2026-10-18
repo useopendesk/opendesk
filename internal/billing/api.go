@@ -408,13 +408,9 @@ func (s *svc) appURL(key, value string) string {
 	return s.d.Cfg.AppURL + "/settings/billing?" + key + "=" + value
 }
 
-// businessCheckoutNotice is shown above the pay button of every purchase.
-const businessCheckoutNotice = "opendesk is sold to businesses for business use only. Prices exclude taxes: where we do not charge tax, your business accounts for any tax due in its own country, for example under the reverse charge."
-
 // forBusiness sets up a Checkout Session as a business purchase: the company's legal
 // name and billing address are required and its tax ID is collected, so they go on the
-// invoice, and the buyer sees that opendesk is sold to businesses. Tax is not computed
-// at checkout (contracts/billing.md "Tax").
+// invoice. Tax is not computed at checkout (contracts/billing.md "Tax").
 func forBusiness(p *stripe.CheckoutSessionCreateParams) {
 	p.BillingAddressCollection = stripe.String(string(stripe.CheckoutSessionBillingAddressCollectionRequired))
 	p.NameCollection = &stripe.CheckoutSessionCreateNameCollectionParams{
@@ -422,8 +418,6 @@ func forBusiness(p *stripe.CheckoutSessionCreateParams) {
 	p.TaxIDCollection = &stripe.CheckoutSessionCreateTaxIDCollectionParams{Enabled: stripe.Bool(true)}
 	// Saves what the buyer enters on the workspace's existing customer, for later invoices.
 	p.CustomerUpdate = &stripe.CheckoutSessionCreateCustomerUpdateParams{Address: stripe.String("auto"), Name: stripe.String("auto")}
-	p.CustomText = &stripe.CheckoutSessionCreateCustomTextParams{
-		Submit: &stripe.CheckoutSessionCreateCustomTextSubmitParams{Message: stripe.String(businessCheckoutNotice)}}
 }
 
 // wrapStripe logs a Stripe failure (without request details) and answers 502.

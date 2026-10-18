@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,9 +67,6 @@ func TestCheckoutLiftsLimits(t *testing.T) {
 		if got := f.Get(k); got != want {
 			t.Errorf("checkout %s = %q, want %q", k, got, want)
 		}
-	}
-	if !strings.Contains(f.Get("custom_text[submit][message]"), "sold to businesses") {
-		t.Errorf("checkout notice = %q", f.Get("custom_text[submit][message]"))
 	}
 	cus := e.scalar(`SELECT stripe_customer_id FROM subscriptions WHERE workspace_id = $1`, wid).(string)
 	if f.Get("customer") != cus {
