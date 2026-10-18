@@ -3,7 +3,7 @@ module github.com/useopendesk/opendesk
 go 1.27.1
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/anthropics/anthropic-sdk-go v1.81.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
@@ -18,7 +18,7 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.25.0
 	github.com/fxamacker/cbor/v2 v2.9.6
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
@@ -30,7 +30,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nats-io/nats-server/v2 v2.15.1
 	github.com/nats-io/nats.go v1.54.0
-	github.com/posthog/posthog-go v1.34.0
+	github.com/posthog/posthog-go v1.35.0
 	github.com/pquerna/otp v1.5.0
 	github.com/riverqueue/river v0.49.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.49.0
@@ -39,7 +39,7 @@ require (
 	github.com/stripe/stripe-go/v87 v87.0.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.61.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.43.0
@@ -72,6 +72,8 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
@@ -117,6 +119,10 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/otel v1.44.0 // indirect
+	go.opentelemetry.io/otel/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
