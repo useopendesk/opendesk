@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 type ticketOut struct{ Body domain.Ticket }
@@ -692,6 +693,13 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 	}
 
 	if bodyText != "" || len(attIDs) > 0 {
+		if kind == "reply" && templates.HasTags(b.BodyHTML) {
+			ref := templates.Ref{WorkspaceID: wid, TicketID: &t.ID, AuthorUserID: actor.UserID, MailboxID: nt.MailboxID}
+			if bodyHTML, err = hd.FillReply(ctx, tx, d.Cfg, ref, b.BodyHTML); err != nil {
+				return domain.Ticket{}, err
+			}
+			bodyText = hd.HTMLToText(bodyHTML)
+		}
 		nm := domain.NewMessage{WorkspaceID: wid, TicketID: t.ID, Kind: kind, Direction: "outbound", AuthorType: actor.Type,
 			AuthorUserID: actor.UserID, BodyHTML: bodyHTML, BodyText: bodyText, Subject: t.Subject, AttachmentIDs: attIDs,
 			Trigger: jobs.TriggerTicketCreated}

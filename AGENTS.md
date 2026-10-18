@@ -65,6 +65,9 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   ```
 - Return `httpx.Wrap(err)` or an `httpx.E(status, code, detail)`; never a raw error string
   to the client. Unknown errors become a logged 500 with a fixed message and request id.
+- Customer-facing text (replies, signatures, auto-replies, layouts, CSAT) is written and
+  filled with `internal/templates` (`contracts/templates.md`): one variable list, one-pass
+  filling, the design allowlist. Never fill `{{ }}` with string replacement elsewhere.
 - Writes that others should see run in one transaction with `events.Publish`. Follow-up
   work is enqueued with `d.Jobs.InsertTx` in that same transaction. Job args live in
   `internal/jobs/args.go`.

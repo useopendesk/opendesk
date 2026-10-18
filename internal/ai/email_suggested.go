@@ -97,8 +97,9 @@ func (s *Service) registerSuggested(api huma.API) {
 				if err := tx.QueryRow(ctx, `SELECT subject FROM tickets WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, tid).Scan(&subject); err != nil {
 					return err
 				}
+				body := s.fillAnswer(ctx, tx, p.WorkspaceID, tid, bot.Name, r.BodyHTML)
 				msg, err = domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{WorkspaceID: p.WorkspaceID, TicketID: tid, Kind: "reply",
-					Direction: "outbound", AuthorType: "system", BodyHTML: r.BodyHTML, BodyText: hd.HTMLToText(r.BodyHTML), Subject: subject,
+					Direction: "outbound", AuthorType: "system", BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject,
 					Trigger: "none", AI: true, FromName: bot.Name, BotID: bot.IDPtr(), DeliveryStatus: "pending"})
 				if err != nil {
 					return err

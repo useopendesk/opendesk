@@ -206,7 +206,8 @@ function LinkButton({ editor }: { editor: Editor }) {
     const v = href.trim();
     if (!v) editor.chain().focus().extendMarkRange("link").unsetLink().run();
     else {
-      const url = /^(https?:|mailto:)/i.test(v) ? v : `https://${v}`;
+      // A template tag (contracts/templates.md) is kept as written.
+      const url = /^(https?:|mailto:|tel:|\{\{)/i.test(v) ? v : `https://${v}`;
       editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
     }
     setOpen(false);
@@ -240,7 +241,9 @@ function LinkButton({ editor }: { editor: Editor }) {
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {
+          // The popover renders in a portal, but React still bubbles the submit to a form around the editor.
           e.preventDefault();
+          e.stopPropagation();
           apply();
         }}
       >

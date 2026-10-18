@@ -19,7 +19,7 @@ A **saved reply** is an answer your team sends often, ready to insert with a sla
 1. **Replies**: every saved reply, with its shortcut and, for a team's reply, the team. Search by title or shortcut.
 2. **Title** and **Shortcut**: the shortcut is what you type after <kbd>/</kbd> in the composer. It is optional, and two replies cannot share one.
 3. **Offered on**: **Everyone**, or one team. A team's reply is offered only on that team's tickets.
-4. **Reply text**: the body, with bold, italic, links and lists. You can edit it in the composer before sending.
+4. **Reply text**: the body, with bold, italic, links and lists, and [variables](/guides/email-templates/variables/) such as the customer's first name. You can edit it in the composer before sending.
 
 </Legend>
 
@@ -44,6 +44,16 @@ Leave **Offered on** at **Everyone**, or pick a team. A private team (shown with
 
 </Step>
 </Steps>
+
+### Use variables
+
+Type `{{` in the reply text to insert a variable, such as the customer's name or the ticket number. Give a value that might be missing a fallback:
+
+```liquid
+Hi {{ contact.first_name | default: "there" }},
+```
+
+A reply with a variable that does not exist, or a tag that does not parse, is not saved until you fix it. See [Template variables and syntax](/guides/email-templates/variables/) for every variable.
 
 <Callout type="tip" title="Write replies that age well">
 
@@ -70,7 +80,7 @@ The **Saved replies** button at the bottom of the reply box opens the same list 
 </Step>
 </Steps>
 
-The reply lands in the editor, where you can change it before sending. On a ticket of the Billing team you see the replies for everyone and Billing's own; Support's replies are not offered there. [Ollie's drafts](/guides/ollie/) use the same rule: only the replies the composer offers on that ticket.
+The reply lands in the editor with its variables filled in for this ticket, so you read the real words, and you can change it before sending. On a ticket of the Billing team you see the replies for everyone and Billing's own; Support's replies are not offered there. [Ollie's drafts](/guides/ollie/) use the same rule: only the replies the composer offers on that ticket.
 
 ## Views
 

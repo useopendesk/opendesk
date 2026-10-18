@@ -179,7 +179,14 @@
     "emptyTips": {
       "roles": "Roles decide what each person can do",
       "expire": "Invitations expire after 7 days"
-    }
+    },
+    "editProfile": "Edit profile",
+    "profileTitle": "Profile for customers",
+    "profileHint": "What customers see of {{name}} in signatures: job title, phone, pronouns and a personal signature.",
+    "discardTitle": "Discard changes?",
+    "discardBody": "Your edits to this profile are not saved.",
+    "discardConfirm": "Discard",
+    "save": "Save profile"
   },
   "teams": {
     "title": "Teams",
@@ -234,8 +241,6 @@
     "emailUnverified": "Verify your email to receive notifications.",
     "verified": "Verified",
     "resend": "Resend verification",
-    "discard": "Discard",
-    "save": "Save changes",
     "appearance": "Appearance",
     "appearanceHint": "Applies to this browser.",
     "sounds": {
@@ -569,5 +574,22 @@
       "ask": "opendesk has not asked this computer for permission to show notifications yet.",
       "allow": "Allow notifications"
     }
+  },
+  "memberProfile": {
+    "title": "Profile for customers",
+    "description": "What customers see of you in {{workspace}}. It fills the sender variables in signatures and replies.",
+    "jobTitle": "Job title",
+    "jobTitlePlaceholder": "Support specialist",
+    "phone": "Phone",
+    "phonePlaceholder": "+1 555 010 0199",
+    "pronouns": "Pronouns",
+    "pronounsPlaceholder": "she/her",
+    "fills": "Fills {{tag}}",
+    "signature": "Personal signature",
+    "signatureHint": "Added to your email replies. When the team or address has its own signature, yours shows only where it includes {{tag}}.",
+    "signaturePlaceholder": "Jane Cooper, Support",
+    "preview": "Preview",
+    "previewOther": "The preview fills the sender's name and details with yours.",
+    "saved": "Profile saved"
   }
 }

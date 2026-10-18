@@ -30,6 +30,9 @@ export const qk = {
   /** Every entity's custom fields, archived included; filter by `entity` when reading. */
   customFields: ["custom-fields"] as const,
   savedReplies: ["saved-replies"] as const,
+  templateVariables: ["templates", "variables"] as const,
+  emailTemplates: (brandId: string) => ["email-templates", brandId] as const,
+  ticketVariables: (id: string, mailboxId: string | null) => ["tickets", "variables", id, mailboxId] as const,
   views: ["views"] as const,
   slaPolicies: ["sla-policies"] as const,
   automations: ["automations"] as const,
@@ -128,6 +131,10 @@ export const q = {
   tagGroups: () => list(qk.tagGroups, () => api.tagGroups.list()),
   customFields: () => list(qk.customFields, () => api.customFields.list()),
   savedReplies: () => list(qk.savedReplies, () => api.savedReplies.list({ limit: 100 })),
+  templateVariables: () => queryOptions({ queryKey: qk.templateVariables, queryFn: api.templates.variables, staleTime: 5 * 60_000 }),
+  emailTemplates: (brandId: string) => queryOptions({ queryKey: qk.emailTemplates(brandId), queryFn: () => api.emailTemplates.get(brandId) }),
+  ticketVariables: (id: string, mailboxId: string | null) =>
+    queryOptions({ queryKey: qk.ticketVariables(id, mailboxId), queryFn: () => api.tickets.variables(id, mailboxId), staleTime: 30_000 }),
   views: () => list(qk.views, () => api.views.list({ limit: 100 })),
   slaPolicies: () => list(qk.slaPolicies, () => api.slaPolicies.list({ limit: 100 })),
   automations: () => list(qk.automations, () => api.automations.list({ limit: 100 })),

@@ -435,6 +435,7 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 			return errStale
 		}
 		if body != "" {
+			body := s.fillAnswer(ctx, tx, wid, tid, in.bot.Name, body)
 			nm := domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: "reply", Direction: "outbound", AuthorType: "system",
 				BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject, Trigger: "none", AI: true, FromName: in.bot.Name, BotID: in.bot.IDPtr()}
 			var aid uuid.UUID

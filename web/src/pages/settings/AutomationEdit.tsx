@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useConfirm } from "@/components/ui/confirm";
 import { toast } from "@/components/ui/toast";
 import { RichEditor } from "@/components/editor/RichEditor";
+import { TemplateEditor } from "@/components/templates/TemplateEditor";
 import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
 import {
   SinglePick,
@@ -793,15 +794,14 @@ function ActionRow({ a, invalid, onChange, onRemove }: { a: Action; invalid: boo
             a.type === "add_note" && "bg-note",
           )}
         >
-          <RichEditor
-            value={a.value}
-            onChange={set}
-            placeholder={a.type === "send_reply" ? ts("edit.replyPlaceholder") : ts("edit.notePlaceholder")}
-            contentClassName="min-h-[72px]"
-            ariaLabel={a.type === "send_reply" ? ts("edit.replyText") : ts("edit.noteText")}
-          />
+          {a.type === "send_reply" ? (
+            <TemplateEditor kind="reply" framed={false} value={a.value} onChange={set} placeholder={ts("edit.replyPlaceholder")} minHeight={72} ariaLabel={ts("edit.replyText")} />
+          ) : (
+            <RichEditor value={a.value} onChange={set} placeholder={ts("edit.notePlaceholder")} contentClassName="min-h-[72px]" ariaLabel={ts("edit.noteText")} />
+          )}
         </div>
       )}
+      {a.type === "send_reply" && <p className="ml-11 mt-1.5 text-[11.5px] leading-4 text-fg-4">{ts("edit.replyVariablesHint")}</p>}
     </div>
   );
 }

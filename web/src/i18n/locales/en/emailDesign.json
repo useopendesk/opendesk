@@ -1,0 +1,80 @@
+{
+  "title": "Email design",
+  "description": "How every email to customers looks: replies, auto-replies and the satisfaction survey. Each brand has its own design.",
+  "brand": "Brand",
+  "docs": "Template guide",
+  "tabs": {
+    "layout": "Layout",
+    "csat": "Satisfaction email",
+    "variables": "Variables"
+  },
+  "readOnly": "Only admins can change the email design.",
+  "default": "Default",
+  "customized": "Customized",
+  "reset": "Reset to default",
+  "resetLayoutConfirm": "The layout goes back to plain, with no logo or footer, quoting the previous message.",
+  "resetCsatConfirm": "The satisfaction email goes back to the built-in wording.",
+  "resetTitle": "Reset to default?",
+  "resetDone": "Back to the default",
+  "saved": "Email design saved",
+  "layout": {
+    "mode": "Layout",
+    "modeHint": "Simple covers most teams. Custom HTML gives you the whole email body.",
+    "simple": "Simple",
+    "custom": "Custom HTML",
+    "style": "Style",
+    "plain": "Plain",
+    "plainHint": "Reads like an email from a person. Best for replies.",
+    "branded": "Branded",
+    "brandedHint": "A card with your logo and an accent line.",
+    "logo": "Show the logo",
+    "logoHint": "The brand's logo at the top of every email.",
+    "noLogo": "This brand has no logo yet.",
+    "addLogo": "Add one",
+    "accent": "Accent colour",
+    "accentHint": "Links, the branded accent line and the survey buttons.",
+    "useBrand": "Brand colour",
+    "accentInvalid": "Use a colour like #2563EB.",
+    "font": "Font",
+    "fonts": {
+      "system": "System",
+      "sans": "Helvetica",
+      "serif": "Georgia"
+    },
+    "footer": "Footer",
+    "footerHint": "Small print under each email, like your address or a link to the help center. Takes variables.",
+    "footerPlaceholder": "Acme Inc, 1 Market Street, San Francisco",
+    "customHtml": "Layout HTML",
+    "customHint": "The whole email body. opendesk puts the message where you write {{content}}, the signature at {{signature}} and earlier messages at {{history}}.",
+    "history": "Earlier messages",
+    "historyHint": "Quoted under each reply so customers keep the context. Notes are never included.",
+    "historyNone": "Don't quote",
+    "historyLast": "The previous message",
+    "historyAll": "The whole conversation",
+    "historyHeader": "Quote line",
+    "historyHeaderHint": "Above each quoted message. Use {{author}} and {{date}}."
+  },
+  "csat": {
+    "off": "Satisfaction surveys are off, so this email is not sent yet.",
+    "turnOn": "Turn them on",
+    "subject": "Subject",
+    "subjectHint": "The ticket number is added when it's missing, so replies thread.",
+    "body": "Email",
+    "bodyHint": "Must include {{survey}}, where the five rating buttons go."
+  },
+  "variables": {
+    "title": "Variables",
+    "description": "Click one to copy its tag. Every template takes every variable; a value that doesn't apply is empty.",
+    "logic": "Logic",
+    "logicHint": "Show parts only when they apply, pick by value, repeat for each item of a list. Click an example to copy it.",
+    "helpers": "Helpers",
+    "helpersHint": "Filters change a value: add them after a |, one after another.",
+    "copy": "Copy",
+    "groups": {
+      "text": "Text",
+      "lists": "Lists",
+      "numbers": "Numbers",
+      "dates": "Dates"
+    }
+  }
+}

@@ -1,21 +1,26 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Volume2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SaveBar } from "@/components/settings/SaveBar";
 import { RolePill } from "@/components/settings2/bits";
+import { MemberProfileFields, profileChanges, profileDirty, profileOf, useSaveProfile } from "@/components/settings2/MemberProfileFields";
+import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
 import { SettingsPage, Section, Row } from "@/components/layout";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { playAlert, setAlertSound, setSoundPref, useAlertSound, useSoundPrefs, type AlertSound, type SoundPref } from "@/lib/alertSound";
 import { api } from "@/lib/api/endpoints";
-import type { User } from "@/lib/api/types";
+import type { MemberProfile, User } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { useMyAvatar } from "@/lib/pictures";
+import { q } from "@/lib/queries";
 import { updateUser, useRole, useSession } from "@/lib/session";
 import { useTheme, type ThemePref } from "@/lib/theme";
 
@@ -30,7 +35,22 @@ export default function Profile() {
     setName(user.name);
   }, [user.name]);
 
-  const dirty = name.trim() !== user.name;
+  // The profile customers see, per workspace, from the members list.
+  const { data: members, isLoading: membersLoading } = useQuery(q.members());
+  const me = members?.find((m) => m.user.id === user.id);
+  const base = useMemo(() => profileOf(me), [me]);
+  const [profile, setProfile] = useState<MemberProfile>(base);
+  const [prevBase, setPrevBase] = useState(base);
+  if (base !== prevBase) {
+    // Saved elsewhere (or the list just came in): take it unless we are mid-edit.
+    // Set while rendering, so the signature editor starts with the saved signature.
+    setPrevBase(base);
+    if (!profileDirty(profile, prevBase)) setProfile(base);
+  }
+
+  const nameDirty = name.trim() !== user.name;
+  const profileChanged = profileDirty(profile, base);
+  const dirty = nameDirty || profileChanged;
 
   const save = useMutation({
     mutationFn: () => api.me.update({ name: name.trim() }),
@@ -48,6 +68,21 @@ export default function Profile() {
       toast.success(t("profile.saved"));
     },
   });
+  const saveProfile = useSaveProfile(user.id, true);
+
+  const submit = () => {
+    if (nameDirty && name.trim()) save.mutate();
+    if (profileChanged) {
+      // A refused save rolls the list back; the edits stay to fix.
+      const edits = profile;
+      saveProfile.mutate(profileChanges(profile, base), { onError: () => setProfile(edits) });
+    }
+  };
+  const discard = () => {
+    setName(user.name);
+    setProfile(base);
+    saveProfile.clearProblems();
+  };
 
   const resend = useMutation({
     mutationFn: api.auth.resendVerification,
@@ -57,10 +92,11 @@ export default function Profile() {
 
   return (
     <SettingsPage title={t("profile.title")} description={t("profile.description")}>
+      <UnsavedGuard when={dirty && !save.isPending && !saveProfile.isPending} />
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (dirty && name.trim()) save.mutate();
+          if (dirty && name.trim()) submit();
         }}
       >
         <Section>
@@ -109,22 +145,27 @@ export default function Profile() {
             )}
           </Row>
         </Section>
-        <div className="mt-3 flex justify-end gap-2">
-          {dirty && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setName(user.name);
-              }}
-            >
-              {t("profile.discard")}
-            </Button>
-          )}
-          <Button type="submit" variant="primary" disabled={!dirty || !name.trim()} loading={save.isPending}>
-            {t("profile.save")}
-          </Button>
-        </div>
       </form>
+
+      <Section title={t("memberProfile.title")} description={t("memberProfile.description", { workspace })}>
+        {membersLoading ? (
+          // The editor picks visual or HTML from the signature it starts with, so it waits for it.
+          <div className="flex flex-col gap-3 py-3.5">
+            {[36, 36, 36, 140].map((h, i) => (
+              <Skeleton key={i} className="w-full rounded-md" style={{ height: h }} />
+            ))}
+          </div>
+        ) : (
+          <MemberProfileFields
+            value={profile}
+            onChange={(p) => {
+              setProfile(p);
+              saveProfile.clearProblems();
+            }}
+            problems={saveProfile.problems}
+          />
+        )}
+      </Section>
 
       <Section title={t("profile.appearance")} description={t("profile.appearanceHint")}>
         <div className="py-3">
@@ -135,6 +176,8 @@ export default function Profile() {
       <Section title={t("profile.sounds.title")} description={t("profile.sounds.hint")}>
         <Sounds />
       </Section>
+
+      <SaveBar dirty={dirty} saving={save.isPending || saveProfile.isPending} disabled={!name.trim()} onSave={submit} onDiscard={discard} />
     </SettingsPage>
   );
 }

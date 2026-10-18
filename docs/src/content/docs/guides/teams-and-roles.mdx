@@ -106,18 +106,11 @@ Choose **Workspace hours**, or **Own schedule** with a time zone, a weekly sched
 
 ### Signature
 
-A team signature is added to replies on the team's tickets in place of the address's signature. Leave it empty to use each address's own. Click a variable to insert it; it is filled in when the reply goes out.
+A team signature is added to every email on the team's tickets, in place of the address's signature: replies, auto-replies and satisfaction emails. Leave it empty to use each address's own, and when that is empty too, the sender's personal signature from their profile. Type `{{` or click **Variables** to insert a variable, such as `{{ agent.name }}` or `{{ team.name }}`; it is filled in when each email goes out. Switch to **HTML** for a designed signature, and check the live preview.
 
 <Screenshot src="/guides/teams/signature" alt="The Signature section of the Support team: the signature editor ringed as 1, and the variables you can insert ringed as 2" />
 
-| Variable | Becomes |
-| --- | --- |
-| `{{agent.name}}`, `{{agent.first_name}}` | The person replying. Empty on automated emails. |
-| `{{team.name}}` | The ticket's team, or the brand when it has none. |
-| `{{brand.name}}` | The ticket's brand. |
-| `{{mailbox.email}}` | The address the reply goes out from. |
-| `{{ticket.number}}`, `{{ticket.subject}}` | The ticket. |
-| `{{contact.name}}` | The customer. |
+Put `{{ agent.signature }}` in the team signature to include each agent's personal signature inside it, so the company part stays the same for everyone. On emails without a person, such as auto-replies, the agent variables are empty. See [Email templates and signatures](/guides/email-templates/#signatures) for examples, and [Template variables and syntax](/guides/email-templates/variables/) for every variable.
 
 ## Private teams
 

@@ -308,6 +308,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	api := humachi.New(r, cfg)
 	s := w.s
 	s.registerMailboxRoutes(api)
+	s.registerTemplateRoutes(api)
 	s.registerConnectRoutes(api)
 	s.registerOAuthRoutes(api, r)
 	r.Post("/v1/inbound/email", s.inboundHTTP)

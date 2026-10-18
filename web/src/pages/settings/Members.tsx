@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Clock, LogOut, MoreHorizontal, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
-import { useState } from "react";
+import { Clock, IdCard, LogOut, MoreHorizontal, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
 import { ListSkeleton, RolePill, roleTone, StatePill, SummaryStrip } from "@/components/settings2/bits";
+import { MemberProfileFields, profileChanges, profileDirty, profileOf, useSaveProfile } from "@/components/settings2/MemberProfileFields";
 import { MemberTeams } from "@/components/settings2/memberTeams";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { EmptyState } from "@/components/ui/empty";
@@ -14,20 +15,21 @@ import { tone as tones } from "@/lib/tones";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
-import { Dialog } from "@/components/ui/dialog";
+import { Dialog, Drawer } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/input";
-import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
-import type { Invitation, Member, Role } from "@/lib/api/types";
+import type { Invitation, Member, MemberProfile, Role } from "@/lib/api/types";
 import { relLong, shortDate } from "@/lib/format";
 import { q, qk, removeFromList } from "@/lib/queries";
 import { atLeast, reloadSession, useRole, useSession } from "@/lib/session";
 import { cn } from "@/lib/cn";
 import { PlanLimitHint, showLimit } from "@/components/billing/PlanLimit";
 import { useLimit } from "@/components/billing/hooks";
+import { useVarSuggest } from "@/components/templates/extension";
 
 const roleLabel: Record<Role, string> = { owner: "Owner", admin: "Admin", agent: "Agent", viewer: "Viewer" };
 const roleHint: Record<Exclude<Role, "owner">, string> = {
@@ -88,6 +90,9 @@ function MembersList({ onInvite }: { onInvite?: () => void }) {
   const role = useRole();
   const meId = useSession((s) => s.user!.id);
   const { data, isLoading } = useQuery(q.members());
+  const admin = atLeast(role, "admin");
+  const [editing, setEditing] = useState<string | null>(null);
+  const editingMember = data?.find((m) => m.user.id === editing);
 
   const patchMembers = (fn: (m: Member[]) => Member[]) => {
     const prev = qc.getQueryData<Member[]>(qk.members);
@@ -226,7 +231,7 @@ function MembersList({ onInvite }: { onInvite?: () => void }) {
                       )}
                     </div>
                     <div className="w-7">
-                      {manageable && (
+                      {admin && (
                         <Menu>
                           <MenuTrigger asChild>
                             <Button size="sm" variant="ghost" square aria-label={`Actions for ${m.user.name}`}>
@@ -234,19 +239,27 @@ function MembersList({ onInvite }: { onInvite?: () => void }) {
                             </Button>
                           </MenuTrigger>
                           <MenuContent>
-                            <MenuItem
-                              danger
-                              icon={<UserMinus />}
-                              onSelect={() =>
-                                confirm.show(t("members.removeBody", { name: m.user.name }), () => remove(m), {
-                                  title: t("members.removeTitle"),
-                                  confirmLabel: t("members.removeConfirm"),
-                                  danger: true,
-                                })
-                              }
-                            >
-                              {t("members.remove")}
+                            <MenuItem icon={<IdCard />} onSelect={() => setEditing(m.user.id)}>
+                              {t("members.editProfile")}
                             </MenuItem>
+                            {manageable && (
+                              <>
+                                <MenuSeparator />
+                                <MenuItem
+                                  danger
+                                  icon={<UserMinus />}
+                                  onSelect={() =>
+                                    confirm.show(t("members.removeBody", { name: m.user.name }), () => remove(m), {
+                                      title: t("members.removeTitle"),
+                                      confirmLabel: t("members.removeConfirm"),
+                                      danger: true,
+                                    })
+                                  }
+                                >
+                                  {t("members.remove")}
+                                </MenuItem>
+                              </>
+                            )}
                           </MenuContent>
                         </Menu>
                       )}
@@ -258,7 +271,87 @@ function MembersList({ onInvite }: { onInvite?: () => void }) {
           </MotionList>
         </>
       )}
+      {editingMember && <ProfileDrawer key={editingMember.user.id} member={editingMember} self={editingMember.user.id === meId} onClose={() => setEditing(null)} />}
     </Section>
+  );
+}
+
+/** An admin edits what customers see of a member (contracts/templates.md "Signatures"). */
+function ProfileDrawer({ member, self, onClose }: { member: Member; self: boolean; onClose: () => void }) {
+  const { t } = useTranslation("settings");
+  const confirm = useConfirm();
+  const base = useMemo(() => profileOf(member), [member]);
+  const [draft, setDraft] = useState<MemberProfile>(base);
+  const save = useSaveProfile(member.user.id, self);
+  const dirty = profileDirty(draft, base);
+
+  const close = () => {
+    if (!dirty || save.isPending) return onClose();
+    confirm.show(t("members.discardBody"), onClose, {
+      title: t("members.discardTitle"),
+      confirmLabel: t("members.discardConfirm"),
+      danger: true,
+    });
+  };
+  // Clicks and Escape in the "{{" variable list belong to the editor, not the drawer.
+  const suggesting = () => useVarSuggest.getState().open;
+
+  return (
+    <Drawer
+      open
+      onOpenChange={(o) => {
+        if (!o) close();
+      }}
+      width={640}
+      title={t("members.profileTitle")}
+      onEscapeKeyDown={(e) => {
+        if (suggesting()) e.preventDefault();
+      }}
+      onInteractOutside={(e) => {
+        if (suggesting()) e.preventDefault();
+      }}
+      header={
+        <span className="flex min-w-0 items-center gap-2.5">
+          <Avatar name={member.user.name || member.user.email} src={member.user.avatar_url} size="sm" />
+          <span className="truncate text-sm font-medium">{member.user.name || member.user.email}</span>
+        </span>
+      }
+    >
+      <form
+        className="flex min-h-full flex-col"
+        onSubmit={(e) => {
+          e.preventDefault();
+          // The editor's link form submits through portals too.
+          if (e.target !== e.currentTarget) return;
+          if (dirty) save.mutate(profileChanges(draft, base), { onSuccess: onClose });
+        }}
+      >
+        <div className="flex flex-1 flex-col gap-4 p-5">
+          <div>
+            <h2 className="text-[13px] font-semibold tracking-[-0.01em]">{t("members.profileTitle")}</h2>
+            <p className="mt-0.5 text-[12px] leading-[18px] text-fg-3">{t("members.profileHint", { name: member.user.name || member.user.email })}</p>
+          </div>
+          <MemberProfileFields
+            variant="stacked"
+            other={!self}
+            value={draft}
+            onChange={(p) => {
+              setDraft(p);
+              save.clearProblems();
+            }}
+            problems={save.problems}
+          />
+        </div>
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line bg-sunken px-5 py-3">
+          <Button variant="ghost" onClick={close}>
+            {t("cancel")}
+          </Button>
+          <Button type="submit" variant="primary" disabled={!dirty} loading={save.isPending}>
+            {t("members.save")}
+          </Button>
+        </div>
+      </form>
+    </Drawer>
   );
 }
 

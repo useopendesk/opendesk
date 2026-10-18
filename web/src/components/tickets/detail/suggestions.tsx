@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useRef } from "react";
 import type { Member, SavedReply } from "@/lib/api/types";
 import { Avatar } from "@/components/ui/avatar";
+import { placeBelowOrAbove, useCaretAnchor } from "@/components/editor/anchor";
 import { cn } from "@/lib/cn";
 import { MessageSquareText } from "lucide-react";
 
@@ -22,25 +23,29 @@ type SuggestState = {
   kind: "mention" | "reply";
   items: SuggestItem[];
   index: number;
-  rect: DOMRect | null;
+  /** The caret's rect, read again as the page scrolls. */
+  getRect: (() => DOMRect | null) | null;
+  anchorEl: HTMLElement | null;
   pick: ((item: SuggestItem) => void) | null;
 };
 
-export const useSuggest = create<SuggestState>(() => ({ open: false, kind: "mention", items: [], index: 0, rect: null, pick: null }));
+export const useSuggest = create<SuggestState>(() => ({ open: false, kind: "mention", items: [], index: 0, getRect: null, anchorEl: null, pick: null }));
+// Closed by Escape or a click outside: stays closed until "/" or "@" is typed again.
+const dismiss = () => useSuggest.setState({ open: false });
 
 function renderer(kind: "mention" | "reply"): SuggestionOptions<SuggestItem>["render"] {
   return () => ({
     onStart: (p: SuggestionProps<SuggestItem>) => {
-      useSuggest.setState({ open: true, kind, items: p.items, index: 0, rect: p.clientRect?.() ?? null, pick: (i) => p.command(i) });
+      useSuggest.setState({ open: true, kind, items: p.items, index: 0, getRect: p.clientRect ?? null, anchorEl: p.editor.view.dom, pick: (i) => p.command(i) });
     },
     onUpdate: (p: SuggestionProps<SuggestItem>) => {
-      useSuggest.setState((s) => ({ items: p.items, index: Math.min(s.index, Math.max(0, p.items.length - 1)), rect: p.clientRect?.() ?? s.rect, pick: (i) => p.command(i) }));
+      useSuggest.setState((s) => ({ items: p.items, index: Math.min(s.index, Math.max(0, p.items.length - 1)), getRect: p.clientRect ?? s.getRect, pick: (i) => p.command(i) }));
     },
     onKeyDown: ({ event }: SuggestionKeyDownProps) => {
       const s = useSuggest.getState();
       if (!s.open) return false;
       if (event.key === "Escape") {
-        useSuggest.setState({ open: false });
+        dismiss();
         return true;
       }
       if (!s.items.length) return false;
@@ -58,7 +63,7 @@ function renderer(kind: "mention" | "reply"): SuggestionOptions<SuggestItem>["re
       }
       return false;
     },
-    onExit: () => useSuggest.setState({ open: false, pick: null }),
+    onExit: () => useSuggest.setState({ open: false, pick: null, getRect: null, anchorEl: null }),
   });
 }
 
@@ -82,7 +87,11 @@ export function mentionExtension(getMembers: () => Member[], enabled: () => bool
 
 const replyKey = new PluginKey("saved-replies");
 
-export function savedReplyExtension(getReplies: () => SavedReply[]) {
+/**
+ * "/" saved replies. `pick` inserts the chosen reply's HTML (the composer fills it
+ * for the ticket first); `clear` removes the typed "/query".
+ */
+export function savedReplyExtension(getReplies: () => SavedReply[], pick: (html: string, clear: () => void) => void) {
   return Extension.create({
     name: "savedReplies",
     addProseMirrorPlugins() {
@@ -99,7 +108,7 @@ export function savedReplyExtension(getReplies: () => SavedReply[]) {
               .map((r) => ({ kind: "reply", id: r.id, label: r.title, sub: r.shortcut ? `/${r.shortcut.replace(/^\//, "")}` : undefined, html: r.body_html })),
           command: ({ editor, range, props }: { editor: Editor; range: Range; props: SuggestItem }) => {
             if (props.kind !== "reply") return;
-            editor.chain().focus().deleteRange(range).insertContent(props.html).run();
+            pick(props.html, () => editor.chain().focus().deleteRange(range).run());
           },
           render: renderer("reply"),
         }),
@@ -110,20 +119,20 @@ export function savedReplyExtension(getReplies: () => SavedReply[]) {
 
 /** The floating list; mount once next to the editor. */
 export function SuggestionPopup() {
-  const { open, items, index, rect, pick, kind } = useSuggest();
+  const { open, items, index, getRect, anchorEl, pick, kind } = useSuggest();
   const ref = useRef<HTMLDivElement>(null);
+  const rect = useCaretAnchor({ open, getRect, anchorEl, popupRef: ref, onDismiss: dismiss });
   useEffect(() => {
     ref.current?.querySelector(`[data-i="${index}"]`)?.scrollIntoView({ block: "nearest" });
   }, [index]);
   if (!open || !rect) return null;
-  const below = rect.bottom + 260 < window.innerHeight;
   return createPortal(
     <div
       ref={ref}
       role="listbox"
       aria-label={kind === "mention" ? "Mention a teammate" : "Saved replies"}
       data-floating
-      style={{ position: "fixed", left: Math.min(rect.left, window.innerWidth - 300), top: below ? rect.bottom + 6 : undefined, bottom: below ? undefined : window.innerHeight - rect.top + 6 }}
+      style={placeBelowOrAbove(rect, 280, 240)}
       className="z-[80] max-h-[240px] w-[280px] overflow-y-auto rounded-lg border border-line bg-raised p-1 shadow-pop animate-pop-in"
     >
       <div className="label-caps px-2 pb-1 pt-1.5">{kind === "mention" ? "Mention" : "Saved replies"}</div>

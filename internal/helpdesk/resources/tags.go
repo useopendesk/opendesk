@@ -20,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 type idPath struct {
@@ -139,7 +140,7 @@ func (b *savedReplyWriteBody) apply(r *SavedReply) error {
 		r.Shortcut = s
 	}
 	if b.BodyHTML != nil {
-		r.BodyHTML = hd.SanitizeRich(*b.BodyHTML)
+		r.BodyHTML = hd.SanitizeRichTemplate(*b.BodyHTML)
 	}
 	if strings.TrimSpace(r.BodyHTML) == "" {
 		return httpx.Validation("body_html is required")
@@ -148,6 +149,15 @@ func (b *savedReplyWriteBody) apply(r *SavedReply) error {
 }
 
 func saveSavedReply(ctx context.Context, tx pgx.Tx, wid uuid.UUID, r *SavedReply, createdBy *uuid.UUID, create bool) error {
+	if templates.HasTags(r.BodyHTML) {
+		fields, err := templates.FieldVariables(ctx, tx, wid)
+		if err != nil {
+			return err
+		}
+		if err := templates.CheckSaved("body_html", r.BodyHTML, templates.KindReply, fields); err != nil {
+			return err
+		}
+	}
 	if err := lockKind(ctx, tx, wid, "saved_reply"); err != nil {
 		return err
 	}

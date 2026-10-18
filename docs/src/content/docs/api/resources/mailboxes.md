@@ -58,6 +58,7 @@ Passwords and tokens are write-only: they are accepted on create and update, enc
 - `outbound_kind` is how replies go out: `smtp` through the mailbox's mail server or a sending service, `google` or `microsoft` through Gmail or Microsoft for a mailbox connected with that sign-in, or `system` through the instance's own mailer, from its sending address with the mailbox's name. `system` is available only where the instance allows it (below).
 - `receiving` is `imap_off` for a mailbox that reads over IMAP while the instance has receiving over IMAP turned off (`MAILBOX_IMAP=false`, as on opendesk Cloud). It receives nothing until you switch it to forwarding (below). Otherwise `ok`.
 - `sending` is `system_off` for a mailbox with `outbound_kind` `system` while the instance has sending through opendesk turned off (`MAILBOX_SYSTEM_SEND=false`, as on opendesk Cloud). It sends nothing until you switch it to SMTP or connect Google or Microsoft (below). Otherwise `ok`.
+- `signature_html`, `auto_reply_subject` and `auto_reply_html` take [template variables](/guides/email-templates/variables/), filled when each email is sent. The signature and auto-reply are up to 64 KB each. An unknown variable or a tag that does not parse is `422 validation_failed`.
 
 ## Receiving over IMAP
 

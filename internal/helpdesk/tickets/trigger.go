@@ -18,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 // MaxAutomationDepth bounds automation chains: changes made by automations re-run the
@@ -474,14 +475,21 @@ func (r *triggerRun) apply(ctx context.Context, a automation, f facts) ([]string
 }
 
 func (r *triggerRun) addMessage(ctx context.Context, act hd.Action, f facts) error {
-	html := hd.SanitizeRich(act.Value)
-	text := hd.HTMLToText(html)
-	if text == "" {
-		return nil
-	}
 	kind := "note"
 	if act.Type == "send_reply" {
 		kind = "reply"
+	}
+	html := hd.SanitizeRich(act.Value)
+	if kind == "reply" {
+		// An automation's reply has no agent (contracts/templates.md).
+		var err error
+		if html, err = hd.FillReply(ctx, r.tx, r.d.Cfg, templates.Ref{WorkspaceID: r.wid, TicketID: &r.tid}, act.Value); err != nil {
+			return err
+		}
+	}
+	text := hd.HTMLToText(html)
+	if text == "" {
+		return nil
 	}
 	nm := domain.NewMessage{WorkspaceID: r.wid, TicketID: r.tid, Kind: kind, Direction: "outbound", AuthorType: "system",
 		BodyHTML: html, BodyText: text, Subject: replySubject(f.subject), Trigger: "none"}

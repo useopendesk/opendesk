@@ -19,6 +19,7 @@ import (
 func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s := newService(d)
 	s.registerMailboxRoutes(api)
+	s.registerTemplateRoutes(api)
 	s.registerConnectRoutes(api)
 	s.registerOAuthRoutes(api, r)
 	// Raw RFC 822 body; authenticated by the shared inbound secret.

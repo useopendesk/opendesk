@@ -4,12 +4,17 @@
 package hd
 
 import (
+	"context"
 	"html"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/microcosm-cc/bluemonday"
+
+	"github.com/useopendesk/opendesk/internal/config"
+	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 var (
@@ -47,10 +52,10 @@ func newRichPolicy() *bluemonday.Policy {
 	return p
 }
 
-// emailPolicy is the policy of every stored email body, and of signatures and auto-replies,
-// which are sent as part of email bodies: no scripts, event handlers, forms or frames;
-// layout attributes and email CSS (css.go) stay; links get rel="nofollow noopener" and
-// open in a new tab; images are allowed (http, https and data: images).
+// emailPolicy is the policy of every stored email body: no scripts, event handlers, forms
+// or frames; layout attributes and email CSS (css.go) stay; links get rel="nofollow
+// noopener" and open in a new tab; images are allowed (http, https and data: images).
+// Signatures and auto-replies use the template design allowlist (SanitizeSignature).
 var emailPolicy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	p.AllowRelativeURLs(false)
@@ -86,13 +91,9 @@ func SanitizeEmailHTML(raw string) string {
 	return body
 }
 
-// SanitizeSignature cleans a signature or auto-reply written by an admin or team lead.
-func SanitizeSignature(raw string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	return SanitizeEmailHTML(raw)
-}
+// SanitizeSignature cleans a signature, auto-reply or other designed email part with the
+// design allowlist, keeping its template tags (contracts/templates.md).
+func SanitizeSignature(raw string) string { return templates.SanitizeDesign(raw) }
 
 // SanitizeRich returns agent HTML reduced to the rich-text allowlist.
 func SanitizeRich(raw string) string {
@@ -100,6 +101,15 @@ func SanitizeRich(raw string) string {
 		return ""
 	}
 	return strings.TrimSpace(richPolicy.Sanitize(raw))
+}
+
+// SanitizeRichTemplate is SanitizeRich keeping template tags, also inside links: saved
+// replies and replies before they are filled.
+func SanitizeRichTemplate(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	return strings.TrimSpace(templates.Protect(raw, richPolicy.Sanitize))
 }
 
 // HTMLToText flattens HTML to readable plain text with line structure kept.
@@ -172,4 +182,18 @@ func compactLines(text string) string {
 		out = append(out, ln)
 	}
 	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+// FillReply sanitizes a reply and fills its template tags for ref's ticket
+// (contracts/templates.md): the stored reply is what the customer gets. Tags it does not
+// know stay as written.
+func FillReply(ctx context.Context, q db.Querier, cfg *config.Config, ref templates.Ref, raw string) (string, error) {
+	if !templates.HasTags(raw) {
+		return SanitizeRich(raw), nil
+	}
+	c, err := templates.Load(ctx, q, cfg, ref)
+	if err != nil {
+		return "", err
+	}
+	return SanitizeRich(templates.Render(SanitizeRichTemplate(raw), c.Values, templates.HTML)), nil
 }

@@ -163,8 +163,9 @@ When you move a ticket to another team, and its address belonged to the old team
 What customers see on every email, replies, auto-replies and satisfaction surveys alike:
 
 - **From name**: each address's sender name format, set in [Mailboxes](/guides/mailboxes/). It can use `{agent}`, `{agent_first}`, `{team}`, `{brand}` and `{mailbox}`, such as `{agent_first} from {team}`. On emails without a person, such as auto-replies, the agent part is left out.
-- **Signature**: the team's signature when it has one, else the address's. See [Signature](/guides/teams-and-roles/#signature).
-- **Satisfaction surveys** ask "How did Billing do?" with the ticket's team, or the brand when it has none.
+- **Signature**: the team's signature when it has one, else the address's, else the sender's personal signature. See [Signatures](/guides/email-templates/#signatures).
+- **Layout**: every email goes out in its brand's [email design](/guides/email-templates/#email-design).
+- **Satisfaction surveys** use the brand's satisfaction email. The default asks "How did Billing do?" with the ticket's team, or the brand when it has none.
 - In chat, the widget header shows the team's name once the conversation has one, and its hours when it is closed.
 
 </Fold>

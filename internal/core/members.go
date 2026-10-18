@@ -2,8 +2,12 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -16,8 +20,26 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
+
+// profileText cleans one line of a member profile: spaces collapsed, at most max
+// characters, no markup or control characters.
+func profileText(field string, v *string, max int) (*string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	s := strings.Join(strings.Fields(*v), " ")
+	if utf8.RuneCountInString(s) > max {
+		return nil, httpx.Validation(fmt.Sprintf("%s must be %d characters or less", field, max))
+	}
+	if strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || r == '<' || r == '>' }) {
+		return nil, httpx.Validation(field + " contains characters that are not allowed")
+	}
+	return &s, nil
+}
 
 // MemberUser is a member's user with the source of their picture.
 type MemberUser struct {
@@ -34,16 +56,27 @@ type CoreMember struct {
 	OpenTickets    int        `json:"open_tickets"`
 	LastSeenAt     *time.Time `json:"last_seen_at"`
 	CreatedAt      time.Time  `json:"created_at"`
+	// Profile feeds the agent template variables (contracts/templates.md).
+	Profile MemberProfile `json:"profile"`
+}
+
+// MemberProfile is what customers can see of a member in signatures, per workspace.
+type MemberProfile struct {
+	Title         string `json:"title"`
+	Phone         string `json:"phone"`
+	Pronouns      string `json:"pronouns"`
+	SignatureHTML string `json:"signature_html"`
 }
 
 const memberSelect = `SELECT u.id, u.name, u.email, u.avatar_url, u.avatar_source, m.role, m.availability, ` + domain.PresenceSQL + `,
-	m.max_open_tickets, ` + domain.OpenTicketsSQL + `, u.last_seen_at, m.created_at
+	m.max_open_tickets, ` + domain.OpenTicketsSQL + `, u.last_seen_at, m.created_at, m.title, m.phone, m.pronouns, m.signature_html
 	FROM members m JOIN users u ON u.id = m.user_id JOIN workspaces w ON w.id = m.workspace_id`
 
 func scanMember(r pgx.Row) (CoreMember, error) {
 	var m CoreMember
 	err := r.Scan(&m.User.ID, &m.User.Name, &m.User.Email, &m.User.AvatarURL, &m.User.AvatarSource, &m.Role, &m.Availability,
-		&m.Presence, &m.MaxOpenTickets, &m.OpenTickets, &m.LastSeenAt, &m.CreatedAt)
+		&m.Presence, &m.MaxOpenTickets, &m.OpenTickets, &m.LastSeenAt, &m.CreatedAt,
+		&m.Profile.Title, &m.Profile.Phone, &m.Profile.Pronouns, &m.Profile.SignatureHTML)
 	return m, err
 }
 
@@ -162,6 +195,75 @@ func (s *svc) registerMembers(api huma.API) {
 					return err
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "member.role_changed", "user", &uid, map[string]any{"from": cur, "to": next})
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body CoreMember }{m}, nil
+		})
+
+	register(s, api, huma.Operation{OperationID: "update-member-profile", Method: http.MethodPatch, Path: "/v1/members/{user_id}/profile",
+		Summary: "Change a member's profile", Tags: tags,
+		Description: "user_id may be me. Title, phone, pronouns and personal signature feed the agent template variables; members edit their own, admins anyone's."},
+		func(ctx context.Context, in *struct {
+			UserID string `path:"user_id"`
+			Body   struct {
+				Title         *string `json:"title,omitempty" maxLength:"80"`
+				Phone         *string `json:"phone,omitempty" maxLength:"40"`
+				Pronouns      *string `json:"pronouns,omitempty" maxLength:"40"`
+				SignatureHTML *string `json:"signature_html,omitempty" maxLength:"65536"`
+			}
+		}) (*struct{ Body CoreMember }, error) {
+			p, err := requireUserWorkspace(ctx, auth.RoleViewer)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			uid := p.UserID
+			if in.UserID != "me" {
+				if uid, err = parseID(in.UserID, "Member"); err != nil {
+					return nil, err
+				}
+			}
+			if uid != p.UserID && !p.Role.AtLeast(auth.RoleAdmin) {
+				return nil, httpx.Forbidden()
+			}
+			b := in.Body
+			title, err := profileText("title", b.Title, 80)
+			if err != nil {
+				return nil, err
+			}
+			phone, err := profileText("phone", b.Phone, 40)
+			if err != nil {
+				return nil, err
+			}
+			pronouns, err := profileText("pronouns", b.Pronouns, 40)
+			if err != nil {
+				return nil, err
+			}
+			var signature *string
+			if b.SignatureHTML != nil {
+				sig := hd.SanitizeSignature(*b.SignatureHTML)
+				if err := templates.CheckSaved("signature_html", sig, templates.KindPersonalSignature, nil); err != nil {
+					return nil, err
+				}
+				signature = &sig
+			}
+			var m CoreMember
+			err = s.tx(ctx, func(tx pgx.Tx) error {
+				tag, err := tx.Exec(ctx, `UPDATE members SET title = COALESCE($3, title), phone = COALESCE($4, phone),
+					pronouns = COALESCE($5, pronouns), signature_html = COALESCE($6, signature_html)
+					WHERE workspace_id = $1 AND user_id = $2`, p.WorkspaceID, uid, title, phone, pronouns, signature)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 0 {
+					return httpx.NotFound("Member")
+				}
+				if err := publishMember(ctx, tx, p.WorkspaceID, uid); err != nil {
+					return err
+				}
+				m, err = loadMember(ctx, tx, p.WorkspaceID, uid)
+				return err
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)

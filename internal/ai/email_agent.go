@@ -378,6 +378,7 @@ func (s *Service) postEmailAnswer(ctx context.Context, in agentInput, mode strin
 			return nil
 		}
 		if mode == modeSend {
+			body := s.fillAnswer(ctx, tx, wid, tid, in.bot.Name, body)
 			m, err := domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: "reply",
 				Direction: "outbound", AuthorType: "system", BodyHTML: body, BodyText: hd.HTMLToText(body), Subject: subject,
 				Trigger: "none", AI: true, FromName: in.bot.Name, BotID: in.bot.IDPtr(), DeliveryStatus: "pending"})

@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 const maxSettingsHTML = 64 << 10
@@ -861,6 +862,15 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		return httpx.Validation("Signature and auto-reply are limited to 64 KB.")
 	}
 	m.AutoReplySubject = strings.TrimSpace(strings.Map(dropControl, m.AutoReplySubject))
+	for _, t := range []struct{ field, src, kind string }{
+		{"signature_html", m.SignatureHTML, templates.KindSignature},
+		{"auto_reply_html", m.AutoReplyHTML, templates.KindAutoReply},
+		{"auto_reply_subject", m.AutoReplySubject, templates.KindSubject},
+	} {
+		if err := templates.CheckSaved(t.field, t.src, t.kind, nil); err != nil {
+			return err
+		}
+	}
 	if m.Aliases, err = s.cleanAliases(m.Email, m.Aliases); err != nil {
 		return err
 	}

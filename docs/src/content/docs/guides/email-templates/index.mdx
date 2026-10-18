@@ -1,0 +1,240 @@
+---
+title: Email templates and signatures
+description: Write replies, signatures, auto-replies and the satisfaction email with one set of variables, give each member a profile and personal signature, and design how every email of a brand looks.
+---
+
+import Steps from '../../../../components/Steps.astro';
+import Step from '../../../../components/Step.astro';
+import Callout from '../../../../components/Callout.astro';
+import Fold from '../../../../components/Fold.astro';
+
+Everything opendesk sends to a customer is written with one template language and one list of variables: replies, saved replies, automation replies, signatures, auto-replies, the satisfaction email and the email layout around them. A variable like `{{ contact.first_name }}` is replaced with the customer's first name when the message is filled in. Each brand also has its own email design, so every email it sends looks the same.
+
+This page covers what you can change and where. For the syntax and the full list of variables, see [Template variables and syntax](/guides/email-templates/variables/).
+
+## What you can change, and where
+
+| What | Where | Who can change it |
+| --- | --- | --- |
+| Email layout of a brand | **Settings**, **Email design**, **Layout** | Admins |
+| Satisfaction email of a brand | **Settings**, **Email design**, **Satisfaction email** | Admins |
+| Team signature | **Settings**, **Teams**, a team, **Signature** | Admins and the team's leads |
+| Address signature and auto-reply | **Settings**, **Mailboxes**, an address, **Signature** and **Auto-reply** | Admins |
+| Your job title, phone, pronouns and personal signature | **Settings**, **Profile** | You, and admins for anyone |
+| Saved replies | **Settings**, **Saved replies** | See [Saved replies and views](/guides/saved-replies-and-views/) |
+| Automation replies | The **Send a reply** action of an [automation](/guides/automations/) | Admins |
+| A single reply | The reply box on a ticket | Agents |
+
+## Write a template
+
+Every editor that takes variables works the same way:
+
+- Type `{{` to pick a variable from a list, or click **Variables** to browse and search them all.
+- Signatures, auto-replies and the satisfaction email have an **HTML** mode, for designed signatures with tables, images and inline styles.
+- A live preview next to the editor shows the result with sample values.
+
+A variable that does not apply is empty. Give it a fallback with `default`, or show a line only when it has a value with `{% if %}`:
+
+```liquid
+Hi {{ contact.first_name | default: "there" }},
+{% if agent.phone %}Call me on {{ agent.phone }}.{% endif %}
+```
+
+When you save, opendesk checks the template. A variable that does not exist, or a tag that does not parse, is named in the editor and the template is not saved until you fix it.
+
+<Callout type="note" title="Notes are never filled">
+
+Internal notes are kept exactly as written. Only what goes to the customer is filled in.
+
+</Callout>
+
+## Signatures
+
+Every email to a customer carries one signature. opendesk picks it in this order:
+
+<Steps>
+<Step title="The ticket team's signature">
+
+When the ticket's [team](/guides/teams-and-roles/#signature) has a signature, every email on its tickets carries it.
+
+</Step>
+<Step title="Else, the sending address's signature">
+
+When the team has none, the signature of the [address](/guides/mailboxes/#choose-how-replies-look) the email goes out from.
+
+</Step>
+<Step title="Else, the author's personal signature">
+
+When neither has one, the personal signature of the person who sent the reply, from their profile.
+
+</Step>
+</Steps>
+
+A team or address signature can place each person's personal signature inside it with `{{ agent.signature }}`. That way the company part stays the same for everyone and each agent keeps their own lines. A personal signature cannot contain `{{ agent.signature }}` itself.
+
+Here is a team signature that wraps each agent's lines (or their name and title when they have not written any), shows a phone number only when the agent has one, and links the help center when the brand has one:
+
+```html
+{% if agent.signature %}
+  {{ agent.signature }}
+{% else %}
+  {% if agent.name %}<p><strong>{{ agent.name }}</strong>{% if agent.title %}, {{ agent.title }}{% endif %}</p>{% endif %}
+{% endif %}
+{% if agent.phone %}<p>Phone: <a href='tel:{{ agent.phone }}'>{{ agent.phone }}</a></p>{% endif %}
+<p>{{ team.name }} at {{ brand.name }}</p>
+{% if brand.help_center_url %}<p><a href='{{ brand.help_center_url }}'>Visit our help center</a></p>{% endif %}
+```
+
+<Callout type="note" title="Emails without a person">
+
+Automation replies, auto-replies and satisfaction emails have no author, so every `agent` variable is empty and there is no personal signature to fall back to. They still carry the team's or the address's signature, so write those signatures to read well without an agent, as the example above does with `{% if agent.name %}`. Replies [Ollie](/guides/ollie/) sends use its bot's name as `{{ agent.name }}`, with no title or phone.
+
+</Callout>
+
+Signatures go on emails, including the email a chat visitor gets when an agent answers after they leave the page. See [Routing](/guides/routing/#from-name-and-signature) for the sender name that goes with them.
+
+## Your profile
+
+Each member has a profile in each workspace they belong to. Open **Settings**, **Profile** to set:
+
+- **Job title**: up to 80 characters, read by `{{ agent.title }}`.
+- **Phone**: up to 40 characters, read by `{{ agent.phone }}`.
+- **Pronouns**: up to 40 characters, read by `{{ agent.pronouns }}`.
+- **Personal signature**: your own sign-off, read by `{{ agent.signature }}` and used when neither the team nor the address has a signature. It takes variables like any other signature.
+
+Your name and profile picture fill `{{ agent.name }}`, `{{ agent.first_name }}`, `{{ agent.last_name }}` and `{{ agent.avatar_url }}`. Admins can edit other members' profiles too, so a company can fill in everyone's title and phone at once.
+
+A personal signature could look like this:
+
+```html
+<p><strong>{{ agent.name }}</strong>{% if agent.pronouns %} ({{ agent.pronouns }}){% endif %}<br>
+{{ agent.title | default: "Support" }}</p>
+```
+
+## Saved replies and the reply box
+
+Saved replies take variables. When you insert one in the reply box, it is filled in for that ticket straight away, so you read the real words and can edit them before sending. A greeting with a fallback:
+
+```liquid
+Hi {{ contact.first_name | default: "there" }},
+
+Thanks for getting in touch about "{{ ticket.subject }}". I'm looking into it now and will get back to you today.
+```
+
+In the reply box itself, type `{{` to insert a variable (the list shows each variable's value for this ticket) or `{%` to add logic. Anything still written as a variable when you send is filled in then, with you as the agent.
+
+Replies sent through the [API](/api/resources/templates/) are filled in the same way. With an API key there is no person, so the `agent` variables are empty.
+
+## Automations and auto-replies
+
+The **Send a reply** action of an [automation](/guides/automations/) and each address's **Auto-reply** (subject and message) take variables too. They are filled in when they are sent, with no agent. An auto-reply could read:
+
+```liquid
+Hi {{ contact.first_name | default: "there" }},
+
+We got your message and opened request #{{ ticket.number }}. {{ team.name }} usually answers within a day.
+{% if brand.help_center_url %}Many answers are already in our help center: {{ brand.help_center_url }}{% endif %}
+```
+
+## Email design
+
+Every email to a customer is sent in its brand's layout: replies, chat follow-ups, auto-replies and satisfaction emails. Open **Settings**, **Email design** and pick a [brand](/guides/brands-and-widgets/). A brand you have not changed uses the default: plain, no logo, and the previous message quoted.
+
+### Layout
+
+The **Layout** tab sets how the brand's emails look.
+
+- **Style**: **Plain** reads like a personal email. **Branded** puts the message on a card, with a header and a line of the accent colour on top.
+- **Show logo**: the brand's logo on top of each email. In the branded style, a brand without a logo shows its name instead.
+- **Accent colour**: the colour of links, the branded accent and the satisfaction buttons. Leave it empty to use the brand's colour.
+- **Font**: **System**, **Sans** or **Serif**.
+- **Footer**: a short text under every email, such as your company's address. It takes variables.
+- **Quote earlier messages**: **None**, **Previous message**, or **Whole conversation** (up to the 10 most recent replies).
+- **Quote line**: the line above each quoted message. It can use `{{ message.author }}` and `{{ message.date }}`; empty means `On {{ message.date }}, {{ message.author }} wrote:`.
+
+Quoted messages are the ticket's earlier public replies, newest first, with their text and links but without images. Notes are never quoted. Only replies quote earlier messages; auto-replies and satisfaction emails do not.
+
+Every email also has a plain-text version for mail apps that do not show HTML. It follows the same order: the message, the signature, the footer, then the quoted messages as `> ` lines.
+
+### Custom HTML
+
+For full control, switch the layout to **Custom HTML** and write the email body yourself. opendesk adds the document around it, and fills these places:
+
+| Slot | What goes there |
+| --- | --- |
+| `{{ content }}` | The message itself. Required. |
+| `{{ signature }}` | The team's, address's or sender's signature. |
+| `{{ history }}` | The quoted earlier messages, as picked under **Quote earlier messages**. |
+
+Any variable works in a custom layout too. Mail apps handle tables and inline styles best, so a layout usually looks like this:
+
+```html
+<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' bgcolor='#F4F4F5'>
+  <tr>
+    <td align='center' style='padding: 28px 12px'>
+      <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='max-width: 600px; background-color: #FFFFFF; border-radius: 10px'>
+        <tr>
+          <td style='padding: 20px 32px; border-bottom: 3px solid {{ brand.color }}'>
+            {% if brand.logo_url %}<img src='{{ brand.logo_url }}' alt='{{ brand.name }}' height='28'>{% else %}<strong>{{ brand.name }}</strong>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td style='padding: 24px 32px'>
+            {{ content }}
+            {{ signature }}
+            {{ history }}
+          </td>
+        </tr>
+      </table>
+      <p style='font-size: 12px; color: #8A8A8A'>{{ brand.name }}{% if brand.help_center_url %} · <a href='{{ brand.help_center_url }}'>Help center</a>{% endif %}</p>
+    </td>
+  </tr>
+</table>
+```
+
+In a custom layout, write the footer into the HTML, as above.
+
+<Fold>
+
+## What a designed template can contain
+
+Signatures, auto-replies, layouts and the satisfaction email keep what email clients show reliably: text formatting, links (including `mailto:` and `tel:`), images, tables, `width`, `height`, `bgcolor` and `valign`, and inline `style` with layout, spacing, colour, border and font properties. Anything else, such as scripts, forms and style sheets, is removed when you save. Replies and saved replies keep the formatting of the reply box: bold, italic, links, lists, quotes and code.
+
+</Fold>
+
+### Satisfaction email
+
+When [CSAT](/guides/csat/) is on, solving a ticket sends the customer a satisfaction email. The **Satisfaction email** tab sets its subject and body for the brand. The body must contain `{{ survey }}`, where opendesk puts the five rating buttons in the accent colour. The default subject is "How did we do?", and the default body asks `How did {{ team.name }} do?` with the request's number and subject.
+
+```html
+<p>Hi {{ contact.first_name | default: "there" }},</p>
+<p>We marked your request #{{ ticket.number }}, "{{ ticket.subject }}", as solved. How did {{ team.name }} do?</p>
+{{ survey }}
+<p style='font-size: 12px; color: #8A8A8A'>One click records your answer. You can add a comment on the next page.</p>
+```
+
+The satisfaction email has no author, so the `agent` variables are empty. It carries the team's or address's signature and goes out in the brand's layout.
+
+### Variables
+
+The **Variables** tab lists every variable with what it means and an example, including your workspace's [custom fields](/guides/labels-and-custom-fields/#custom-fields). Search it to find the one you need.
+
+## Preview and test
+
+Every editor shows a live preview as you type, on a desktop or a mobile width. A signature or auto-reply is shown inside its brand's layout; a layout or satisfaction email is shown around sample content.
+
+- **Preview with a real ticket** fills the preview from a ticket you can see, instead of sample data. You are the agent.
+- **Send a test to me** sends the email as the customer would get it to your own login address, with `[Test]` before the subject. You can send 10 tests an hour.
+
+## Reset to default
+
+**Reset to default** puts a brand's layout or satisfaction email back to the built-in version. Other brands are not affected.
+
+## Related
+
+- [Template variables and syntax](/guides/email-templates/variables/)
+- [Teams and roles](/guides/teams-and-roles/#signature)
+- [Connect a mailbox](/guides/mailboxes/)
+- [CSAT](/guides/csat/)
+- [Saved replies and views](/guides/saved-replies-and-views/)
+- [Templates API](/api/resources/templates/)

@@ -412,7 +412,7 @@
     "theCustomer": "the customer",
     "noteHint": "Only your team sees notes. Type @ to mention someone.",
     "ccBcc": "Cc / Bcc",
-    "replyPlaceholder": "Write a reply. Type / for saved replies.",
+    "replyPlaceholder": "Write a reply. Type / for saved replies, {{braces}} for this ticket's details.",
     "notePlaceholder": "Write a note for your team",
     "attach": "Attach files",
     "savedReplies": "Saved replies",
@@ -439,6 +439,9 @@
     "replyingAs": "Replying as",
     "changeAddress": "Change the address this reply goes out from",
     "signature": "Signature",
+    "showSignature": "Show the signature this reply carries",
+    "thisTicket": "This ticket",
+    "valueSet": "Set",
     "addressChosen": "This reply and the next ones go from this address.",
     "addressMoved": "Switched to this address when the ticket moved to {{team}}.",
     "cannotSend": "This address can't send replies yet. An admin can connect a way to send in its mailbox settings."

@@ -460,6 +460,11 @@ const sTeamDetail = createRoute({
   component: page(() => import("./pages/settings/TeamDetail")),
   staticData: { title: "Team" },
 });
+// Each brand's email layout and satisfaction email (contracts/templates.md).
+const sEmailDesign = settingsPage("/email-design", "Email design", () => import("./pages/settings/EmailDesign"), (qc) => {
+  void qc.prefetchQuery(q.templateVariables());
+  return qc.ensureQueryData(q.brands());
+});
 const sBrands = settingsPage("/brands", "Brands", () => import("./pages/settings/Brands"), (qc) => qc.ensureQueryData(q.brands()));
 const sBrandDetail = createRoute({
   getParentRoute: () => settingsLayout,
@@ -744,6 +749,7 @@ const routeTree = rootRoute.addChildren([
       sBrands,
       sBrandDetail,
       sWidgetDetail,
+      sEmailDesign,
       sRouting,
       sRoutingRule,
       sMailboxes,

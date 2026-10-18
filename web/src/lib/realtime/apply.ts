@@ -32,6 +32,8 @@ const onboardingResources = new Set(["mailbox", "member", "tag", "kb_article", "
 const agentSetupResources = new Set(["mailbox", "kb_article", "workspace", "ai_knowledge", "ai_mcp_server", "bot"]);
 // Bots list where they answer, so widget and address changes move their usage too.
 const botResources = new Set(["bot", "widget", "mailbox"]);
+// Events that change what a reply's template values or signature read.
+const templateResources = new Set(["member", "team", "mailbox", "brand", "contact", "company", "workspace"]);
 // Events that move a plan limit's count (billing usage).
 const limitEvents = new Set(["mailbox.created", "mailbox.deleted", "member.added", "member.removed"]);
 
@@ -153,6 +155,13 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
   if (botResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.bots });
   if (limitEvents.has(env.type)) void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
   if (resource === "bot") return;
+  // What templates fill in (contracts/templates.md): signatures, profiles, fields and designs.
+  if (templateResources.has(resource)) void qc.invalidateQueries({ queryKey: ["tickets", "variables"] });
+  if (resource === "custom_field") void qc.invalidateQueries({ queryKey: qk.templateVariables });
+  if (env.type === "email_template.updated") {
+    void qc.invalidateQueries({ queryKey: qk.emailTemplates(d.brand_id as string) });
+    return;
+  }
 
   switch (env.type) {
     // A stand-in for an event of a private team's ticket: it only keeps seq contiguous.

@@ -157,29 +157,6 @@ func fromName(format string, n senderNames) string {
 	return out
 }
 
-// templateVars are the variables of signatures and auto-replies: {{agent.name}},
-// {{agent.first_name}}, {{team.name}}, {{brand.name}}, {{mailbox.email}},
-// {{ticket.number}}, {{ticket.subject}} and {{contact.name}}.
-func templateVars(n senderNames, mailboxEmail string, number int64, subject, contact string) map[string]string {
-	return map[string]string{
-		"agent.name": n.agent, "agent.first_name": n.agentFirst(), "team.name": n.teamOrBrand(), "brand.name": n.brand,
-		"mailbox.email": mailboxEmail, "ticket.number": itoa(number), "ticket.subject": subject, "contact.name": contact,
-	}
-}
-
-// signatureFor is the team's signature when it has one, else the address's, with its
-// variables filled in (values are escaped; the stored HTML is already sanitized).
-func signatureFor(teamSignature, mailboxSignature string, vars map[string]string) string {
-	sig := mailboxSignature
-	if strings.TrimSpace(teamSignature) != "" {
-		sig = teamSignature
-	}
-	if strings.TrimSpace(sig) == "" {
-		return ""
-	}
-	return fillTemplate(sig, vars, true)
-}
-
 // cleanAliases normalizes a mailbox's aliases: at most 20 distinct valid addresses, none
 // the mailbox's own address and none on the inbound forwarding domain.
 func (s *service) cleanAliases(own string, list []string) ([]string, error) {

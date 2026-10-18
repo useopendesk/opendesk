@@ -148,9 +148,9 @@
   },
   "signature": {
     "title": "Signature",
-    "hint": "Added to replies on the team's tickets, in place of the address's signature. Leave it empty to use each address's own.",
+    "hint": "Added to replies on the team's tickets, in place of the address's signature. Include each sender's own lines with {{tag}}. Leave it empty to use each address's own.",
     "placeholder": "The Billing team",
-    "variables": "Variables"
+    "preview": "Preview"
   },
   "addresses": {
     "title": "Addresses",

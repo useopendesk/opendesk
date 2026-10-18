@@ -122,6 +122,13 @@ export default defineConfig({
               ],
             },
             { label: 'Brands and widgets', slug: 'guides/brands-and-widgets' },
+            {
+              label: 'Email templates',
+              items: [
+                { label: 'Templates and signatures', slug: 'guides/email-templates' },
+                { label: 'Variables and syntax', slug: 'guides/email-templates/variables' },
+              ],
+            },
             { label: 'Teams and roles', slug: 'guides/teams-and-roles' },
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Knowledge base and help center', slug: 'guides/knowledge-base' },
@@ -166,6 +173,7 @@ export default defineConfig({
                 { label: 'Automations and SLA', slug: 'api/resources/automations-sla' },
                 { label: 'Knowledge base', slug: 'api/resources/knowledge-base' },
                 { label: 'Mailboxes', slug: 'api/resources/mailboxes' },
+                { label: 'Templates and email design', slug: 'api/resources/templates' },
                 { label: 'Widget', slug: 'api/resources/widget' },
                 { label: 'Workspace and members', slug: 'api/resources/workspace' },
                 { label: 'Pictures, assignment and setup', slug: 'api/resources/pictures-assignment' },

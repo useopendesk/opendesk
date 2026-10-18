@@ -201,6 +201,20 @@ export const api = {
     /** `userId` may be "me". Members set their own availability; admins anyone's, and the cap. */
     setAvailability: (userId: string, b: { availability?: T.Availability; max_open_tickets?: number | null }) =>
       http.patch<T.Member>(`/v1/members/${userId}/availability`, b),
+    /** `userId` may be "me". Members edit their own profile; admins anyone's. */
+    updateProfile: (userId: string, b: Partial<T.MemberProfile>) => http.patch<T.Member>(`/v1/members/${userId}/profile`, b),
+  },
+  /** Templates and email design (contracts/templates.md). */
+  templates: {
+    variables: () => http.get<T.TemplateCatalog>("/v1/templates/variables"),
+    preview: (b: T.TemplatePreviewBody) => http.post<T.TemplatePreview>("/v1/templates/preview", b),
+    test: (b: T.TemplatePreviewBody) => http.post<T.TemplatePreview>("/v1/templates/test", b),
+  },
+  emailTemplates: {
+    get: (brandId: string) => http.get<T.EmailTemplates>(`/v1/email-templates/${brandId}`),
+    save: (brandId: string, kind: "layout" | "csat", b: { subject?: string; body_html?: string; options?: T.EmailLayoutOptions }) =>
+      http.put<T.EmailTemplate>(`/v1/email-templates/${brandId}/${kind}`, b),
+    reset: (brandId: string, kind: "layout" | "csat") => http.del(`/v1/email-templates/${brandId}/${kind}`),
   },
   assignment: {
     get: () => http.get<T.Assignment>("/v1/assignment"),
@@ -364,6 +378,11 @@ export const api = {
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     send: (id: string, b: SendMessageBody) => http.create<T.Message>(`/v1/tickets/${id}/messages`, b),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    /** The ticket's template values with me as the agent, and the signature my reply from `mailbox_id` carries. */
+    variables: (id: string, mailboxId?: string | null) =>
+      http.get<T.TicketVariables>(`/v1/tickets/${id}/variables`, { query: mailboxId ? { mailbox_id: mailboxId } : undefined }),
+    /** Fills a saved reply for this ticket. */
+    render: (id: string, body_html: string) => http.post<{ body_html: string }>(`/v1/tickets/${id}/render`, { body_html }),
     links: (id: string) => http.get<{ data: T.TicketLink[] }>(`/v1/tickets/${id}/links`),
     addLink: (id: string, b: { url: string; title?: string; integration_id?: string }) => http.create<T.TicketLink>(`/v1/tickets/${id}/links`, b),
     removeLink: (id: string, linkId: string) => http.del(`/v1/tickets/${id}/links/${linkId}`),

@@ -47,7 +47,8 @@
     "emptyTips": {
       "slash": "Type / and a shortcut in the composer",
       "team": "Replies are shared with your whole team"
-    }
+    },
+    "variablesHint": "Variables are filled in for each ticket when the reply is inserted."
   },
   "views": {
     "reorderAria": "Reorder {{name}}. Hold Alt and press the arrow keys to move it.",
@@ -281,7 +282,8 @@
       "actionValue": "Every action needs a value."
     },
     "chooseSeverity": "Choose a severity",
-    "noSeverity": "No severity"
+    "noSeverity": "No severity",
+    "replyVariablesHint": "Sender variables, like the agent's name, are empty in automated replies."
   },
   "triggers": {
     "ticket_created": "A ticket is created",

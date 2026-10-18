@@ -13,6 +13,7 @@ import common from "./locales/en/common.json";
 import imports from "./locales/en/imports.json";
 import inbox from "./locales/en/inbox.json";
 import contacts from "./locales/en/contacts.json";
+import emailDesign from "./locales/en/emailDesign.json";
 import kb from "./locales/en/kb.json";
 import pub from "./locales/en/public.json";
 import reports from "./locales/en/reports.json";
@@ -24,6 +25,6 @@ import settingsTeams from "./locales/en/settingsTeams.json";
 import setup from "./locales/en/setup.json";
 import shell from "./locales/en/shell.json";
 
-export const en = { common, billing, ai, agent, agentQuality, bots, aiSetup, aiTicket, assistant, public: pub, shell, settings, settingsInbox, settingsDev, settingsChannels, settingsTeams, contacts, kb, reports, inbox, imports, setup } as const;
-export const NAMESPACES = ["common", "billing", "ai", "agent", "agentQuality", "bots", "aiSetup", "aiTicket", "assistant", "public", "shell", "settings", "settingsInbox", "settingsDev", "settingsChannels", "settingsTeams", "contacts", "kb", "reports", "inbox", "imports", "setup"] as const;
+export const en = { common, billing, ai, agent, agentQuality, bots, aiSetup, aiTicket, assistant, public: pub, shell, settings, settingsInbox, settingsDev, settingsChannels, settingsTeams, emailDesign, contacts, kb, reports, inbox, imports, setup } as const;
+export const NAMESPACES = ["common", "billing", "ai", "agent", "agentQuality", "bots", "aiSetup", "aiTicket", "assistant", "public", "shell", "settings", "settingsInbox", "settingsDev", "settingsChannels", "settingsTeams", "emailDesign", "contacts", "kb", "reports", "inbox", "imports", "setup"] as const;
 export type Namespace = (typeof NAMESPACES)[number];

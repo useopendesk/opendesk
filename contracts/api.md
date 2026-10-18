@@ -53,6 +53,7 @@ type Role = "owner" | "admin" | "agent" | "viewer";
 type Member = { user: UserRef & { avatar_source: AvatarSource | null }; role: Role;
   availability: Availability /* what the member set */; presence: Availability /* availability, or "away" when auto-away applies */;
   max_open_tickets: number | null /* auto-assignment cap on open + pending tickets; null = no cap */; open_tickets: number;
+  profile: MemberProfile /* title, phone, pronouns, personal signature (contracts/templates.md) */;
   last_seen_at: string | null; created_at: string };
 type Availability = "online" | "away" | "offline";
 type Invitation = { id: string; email: string; role: Role; expires_at: string; created_at: string; invited_by: UserRef | null };
@@ -260,6 +261,7 @@ type NotificationPreferences = {
 | POST | `/v1/workspace/transfer` | owner + MFA, `{user_id}` |
 | POST | `/v1/workspace/widget-secret/rotate` | admin → `{secret}` (shown once): the default brand's first widget. Any widget: `POST /v1/widgets/{id}/secret/rotate` (contracts/teams.md) |
 | GET | `/v1/members` · PATCH/DELETE `/v1/members/{user_id}` | `{role}` |
+| PATCH | `/v1/members/{user_id}/profile` | `{title?, phone?, pronouns?, signature_html?}` → `Member`. `user_id` may be `me`; members edit their own, admins anyone's. One line each (80, 40, 40 characters, no markup); `signature_html` is the personal signature (design allowlist, template variables except itself, contracts/templates.md). Publishes `member.updated` |
 | PATCH | `/v1/members/{user_id}/availability` | `{availability?: Availability, max_open_tickets?: number \| null /* 1..1000, null clears */}` → `Member`. `user_id` may be `me`. Members set their own `availability`; admins set anyone's and `max_open_tickets` (viewers cannot be assigned, so theirs is refused). Publishes `member.updated` |
 | PUT/DELETE | `/v1/workspace/images/{slot}` | admin. `slot`: `logo` (the workspace `avatar_url`), `help_center_logo`, `help_center_favicon`, `widget_avatar`, `widget_launcher` (a bot's picture is `PUT /v1/bots/{id}/image`, contracts/bots.md). PUT multipart `file` (image, 5 MB) → `Workspace`; DELETE → `Workspace`. Audit `workspace.image_updated` / `workspace.image_removed`; publishes `workspace.updated` |
 | GET | `/v1/images/{id}?s=256\|64` | public. The processed PNG behind every `avatar_url` (`s` defaults to 256). Ids are unguessable and immutable: `Cache-Control: public, max-age=31536000, immutable`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` |
@@ -412,7 +414,9 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | POST | `/v1/tickets/bulk` | `{ids, patch: {...PATCH body}}` or `{ids, delete: true}` |
 | POST | `/v1/tickets/{id}/merge` | `{into_id}` |
 | GET | `/v1/tickets/{id}/messages` | ascending, all |
-| POST | `/v1/tickets/{id}/messages` | `{kind: "reply"\|"note", body_html, cc?, bcc?, attachment_ids?, status?: TicketStatus, mailbox_id?}` → `Message`. `mailbox_id` (replies only) sends from that address and makes it the ticket's reply address (same rules as PATCH). An email reply from a mailbox with `sending: "system_off"` is `422 mailbox_cannot_send` ("This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings.") and stores nothing; automations skip their email replies there, and the AI agent's answers wait as a suggested reply |
+| GET | `/v1/tickets/{id}/variables` | agent+, `?mailbox_id=` → `{values, signature_html}`: the ticket's template values with the caller as the agent, and the signature their email reply would carry (contracts/templates.md) |
+| POST | `/v1/tickets/{id}/render` | agent+. `{body_html}` → `{body_html}`: filled for this ticket and sanitized like a reply (inserting saved replies) |
+| POST | `/v1/tickets/{id}/messages` | `{kind: "reply"\|"note", body_html, cc?, bcc?, attachment_ids?, status?: TicketStatus, mailbox_id?}` → `Message`. A reply's template variables are filled when it is created, with the caller as the agent (contracts/templates.md); notes are not. `mailbox_id` (replies only) sends from that address and makes it the ticket's reply address (same rules as PATCH). An email reply from a mailbox with `sending: "system_off"` is `422 mailbox_cannot_send` ("This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings.") and stores nothing; automations skip their email replies there, and the AI agent's answers wait as a suggested reply |
 | GET | `/v1/tickets/{id}/activities` | ascending |
 | GET | `/v1/messages/{id}/original` | → `{full_html}` quoted history / raw view |
 | CRUD | `/v1/contacts`, `/v1/contacts/{id}` | list supports `q`, `company_id`, `tag`, `field.<key>`. Write bodies also take `tags?: string[]` (replaces), `add_tags?`, `remove_tags?` (names, as for tickets) and `fields?` (merged; null clears) |
@@ -435,7 +439,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | PATCH | `/v1/custom-fields/{id}` | admin. `{name?, options?, required_on_solve?, description?, position?, archived?}` → `CustomField`. `entity`, `key` and `type` never change (`422`). Removing an option clears it from stored values |
 | DELETE | `/v1/custom-fields/{id}` | admin → 204; removes the field's values from every record |
 | POST | `/v1/custom-fields/reorder` | admin. `{entity, ids: string[]}` → `{data: CustomField[]}` (that entity's fields) |
-| CRUD | `/v1/saved-replies` | body takes `team_id?` (null for everyone). List `?ticket_id=` (replies of no team and of the ticket's team) or `?team_id=<id\|none>`. A team's replies are written by admins and the team's leads and members (`403 forbidden` otherwise); a private team's are listed only to its members (others get `404`) |
+| CRUD | `/v1/saved-replies` | `body_html` takes template variables (contracts/templates.md); an unknown variable or a tag that does not parse is `422`. Body takes `team_id?` (null for everyone). List `?ticket_id=` (replies of no team and of the ticket's team) or `?team_id=<id\|none>`. A team's replies are written by admins and the team's leads and members (`403 forbidden` otherwise); a private team's are listed only to its members (others get `404`) |
 | CRUD | `/v1/views` | `{name, filters, shared, team_id?}`. `team_id` shares the view with that team's members (admins and the team's leads write it; with `shared: true` it is `422`). List `?team_id=` |
 | CRUD | `/v1/sla-policies` | body takes `business_hours?: boolean`, `team_id?` (null for every team). List `?team_id=` |
 | GET/PUT | `/v1/business-hours` | GET members → `BusinessHours`; PUT admin, full `BusinessHours` (`timezone` sets `settings.timezone`) → `BusinessHours`. Audit `business_hours.updated` |
@@ -644,6 +648,12 @@ runs of whitespace collapsed, and refuse `<`, `>` and control characters (`422 v
 | GET | `/v1/mailboxes/oauth/{provider}/callback` | → 302 `APP_URL/settings/mailboxes?connected=<id>`. A send-only connection creates (or turns the reconnected or same-address mailbox into) `inbound_kind: "forwarding"`, `outbound_kind: <provider>`, `config.oauth_grant: "send"`, with a forwarding address like any forwarding mailbox; its IMAP settings and passwords are dropped. A sync connection sets `inbound_kind` and `outbound_kind` to the provider and `config.oauth_grant: "sync"` (should IMAP be off by the callback, it receives by forwarding and keeps the sync connection for sending). Audit `mailbox.connected` with `{provider, email, reconnect, grant, inbound_kind}` |
 | GET | `/v1/mailboxes/connect-options` | admin, `settings:read` → `{google: {configured, oauth}, microsoft: {configured, oauth}, forwarding: {enabled, domain}, mailbox_imap, system_sender}`. `configured`: the OAuth client is set; `oauth`: new connections with that sign-in are allowed; `mailbox_imap`: mailboxes may receive over IMAP (`MAILBOX_IMAP`, the web app's `mailboxImap`); `system_send`: mailboxes may send through the platform mailer from `system_sender` (`MAILBOX_SYSTEM_SEND`) |
 | GET | `/v1/mailboxes/detect?email=` | admin, users only (not API keys), 30 a minute per user → `MailDetection` (below); `422 validation_failed` for an invalid address |
+| GET | `/v1/templates/variables` | → `TemplateCatalog` (contracts/templates.md) |
+| GET | `/v1/email-templates/{brand_id}` | → `{layout: EmailTemplate, csat: EmailTemplate}` |
+| PUT | `/v1/email-templates/{brand_id}/{kind}` | admin. `{subject?, body_html?, options?}` → `EmailTemplate`; problems are `422` with each in `errors`. Publishes `email_template.updated` |
+| DELETE | `/v1/email-templates/{brand_id}/{kind}` | admin → 204, back to the default |
+| POST | `/v1/templates/preview` | agent+. `{kind, body_html?, subject?, options?, brand_id?, team_id?, mailbox_id?, ticket_id?}` → `{subject, html, text, problems}` |
+| POST | `/v1/templates/test` | agent+, users only. Same body; sends the preview to the caller's login address, `[Test]` subject. 10 an hour (`429`) |
 | POST | `/v1/inbound/email` | header `OD-Inbound-Secret`, query `to=<rcpt>`, body raw RFC 822 → 202 (Cloudflare Email Worker / SES) |
 
 Connecting a mailbox:

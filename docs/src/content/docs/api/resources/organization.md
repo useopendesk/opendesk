@@ -57,6 +57,8 @@ curl https://api.opendesk.sh/v1/saved-replies \
   -d '{ "title": "Password reset", "shortcut": "reset", "body_html": "<p>You can reset your password from the sign-in page.</p>" }'
 ```
 
+`body_html` takes [template variables](/guides/email-templates/variables/). An unknown variable or a tag that does not parse is `422 validation_failed`. To insert a saved reply filled for a ticket, use [`POST /v1/tickets/{id}/render`](/api/resources/templates/#ticket-values).
+
 ## Events
 
 `view.*` and `saved_reply.*` (`created`, `updated`, `deleted`). Label events are listed under [Labels and custom fields](/api/resources/labels-fields/#events).

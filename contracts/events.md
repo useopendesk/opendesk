@@ -65,7 +65,7 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `tag_group.created` / `tag_group.updated` / `tag_group.deleted` | agents | — | `{ "tag_group": TagGroup }` / `{ "tag_group_id" }` |
 | `custom_field.created` / `custom_field.updated` / `custom_field.deleted` | agents | — | `{ "custom_field": CustomField }` / `{ "custom_field_id", "entity", "key" }` |
 | `mailbox.created` / `mailbox.updated` / `mailbox.deleted` | agents | — | `{ "mailbox": Mailbox }` / `{ "mailbox_id" }` |
-| `member.added` / `member.updated` / `member.removed` | agents | `user:<uid>` | `{ "member": Member }` / `{ "user_id" }`. `member.updated` also on availability and picture changes (in every workspace of that user) |
+| `member.added` / `member.updated` / `member.removed` | agents | `user:<uid>` | `{ "member": Member }` / `{ "user_id" }`. `member.updated` also on availability, profile and picture changes (in every workspace of that user) |
 | `workspace.updated`      | agents     | —                                     | `{ "workspace": Workspace }` (name, settings, logo and brand images) |
 | `notification.created`   | agents     | `user:<uid>`                          | `{ "notification": Notification }` |
 | `ai_suggested_reply.created` / `ai_suggested_reply.updated` | agents | — | `{ "ticket_id": "...", "suggested_reply": SuggestedReply }` (`contracts/agent.md` "Email"). `created` when the agent suggests a reply on an email ticket (it supersedes the pending one); `updated` when a teammate sends or discards it |
@@ -77,6 +77,7 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `ai_agent_review.updated` | agents | — | `{ "message_id", "ticket_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
 | `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, AI balance, prices. Sent on subscription changes, seat syncs, AI top-ups and recharges |
 | `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*`, `webhook.*` | agents | — | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `email_template.updated` | agents | — | `{ "brand_id", "kind": "layout" \| "csat" }` (contracts/templates.md): a brand's email layout or CSAT email was saved or reset; refetch it |
 | `bot.created` / `bot.updated` / `bot.deleted` | agents | — | `{ "bot": Bot }` / `{ "bot_id" }` (contracts/bots.md); a new default, a reorder or a new picture is `bot.updated` of each bot it changed |
 | `integration.created` / `integration.updated` / `integration.deleted` | agents | — | `{ "integration": Integration }` / `{ "integration_id" }` (`contracts/integrations.md`; never credentials) |
 | `ticket_link.created` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |

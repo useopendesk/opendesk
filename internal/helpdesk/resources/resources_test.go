@@ -305,7 +305,7 @@ func TestSavedReplies(t *testing.T) {
 
 	var r savedReply
 	e.Do("POST", "/v1/saved-replies", a, map[string]any{"title": "Refund", "shortcut": "/Refund",
-		"body_html": `<p onclick="x">Hi <script>bad()</script>{{name}}</p>`}).Want(t, 201).JSON(t, &r)
+		"body_html": `<p onclick="x">Hi <script>bad()</script>{{contact.first_name}}</p>`}).Want(t, 201).JSON(t, &r)
 	if r.Shortcut != "refund" || strings.Contains(r.BodyHTML, "script") || strings.Contains(r.BodyHTML, "onclick") {
 		t.Fatalf("created %+v", r)
 	}

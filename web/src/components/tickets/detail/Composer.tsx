@@ -26,6 +26,10 @@ import { floatingPanel } from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import { RichEditor, type RichEditorHandle } from "@/components/editor/RichEditor";
 import { mentionExtension, savedReplyExtension, SuggestionPopup } from "./suggestions";
+import { GROUP_LABELS, useCatalog } from "@/components/templates/catalog";
+import { matchVars, refreshTags, templateExtension, VarSuggestPopup, type VarItem } from "@/components/templates/extension";
+import { variableText } from "./composerTemplates";
+import { SignaturePreview } from "./SignaturePreview";
 import { StatusIcon, statusLabel } from "../bits";
 import { useTicketViewers } from "../presence";
 import { applyPatch } from "../useTicketActions";
@@ -168,17 +172,78 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const viewers = useTicketViewers(ticket.id);
   const others = viewers.filter((v) => v.state === "replying");
 
+  // Variables in replies: "{{" offers them with this ticket's values, from the address the reply goes out from.
+  const catalog = useCatalog("reply");
+  const { data: vars } = useQuery({ ...q.ticketVariables(ticket.id, draft.mailboxId ?? ticket.mailbox_id), enabled: mode === "reply" });
+  const varItems = useMemo<VarItem[]>(
+    () =>
+      catalog.variables.map((v) => {
+        const value = vars?.values[v.key];
+        return { key: v.key, label: v.label, group: GROUP_LABELS[v.group] ?? v.group, value: vars ? (v.html && value ? t("composer.valueSet") : (value ?? "")) : undefined };
+      }),
+    [catalog.variables, vars, t],
+  );
+
   const editor = useRef<RichEditorHandle>(null);
   const membersRef = useRef<Member[]>([]);
   const repliesRef = useRef<SavedReply[]>([]);
   const modeRef = useRef<Mode>(mode);
+  const ticketRef = useRef(ticket.id);
+  const knownRef = useRef<Set<string> | null>(null);
+  const varItemsRef = useRef<VarItem[]>([]);
+  const varsRef = useRef(vars);
+  const catalogRef = useRef(catalog);
+  const tRef = useRef(t);
   membersRef.current = members ?? [];
   repliesRef.current = replies;
   modeRef.current = mode;
+  ticketRef.current = ticket.id;
+  knownRef.current = catalog.loading ? null : catalog.known;
+  varItemsRef.current = varItems;
+  varsRef.current = vars;
+  catalogRef.current = catalog;
+  tRef.current = t;
+
+  // Saved replies go in filled for this ticket, so the agent reads real words; notes are never filled.
+  // A reply that can't be filled goes in as written (the server fills it on send).
+  const [filling, setFilling] = useState(0);
+  const insertSavedReply = useCallback((html: string, clear?: () => void) => {
+    clear?.();
+    if (modeRef.current === "note") return editor.current?.insertHtml(html);
+    const id = ticketRef.current;
+    setFilling((n) => n + 1);
+    api.tickets
+      .render(id, html)
+      .then((r) => r.body_html, () => html)
+      .then((out) => {
+        // Another ticket opened meanwhile: this one's draft is not the place.
+        if (ticketRef.current === id) editor.current?.insertHtml(out);
+      })
+      .finally(() => setFilling((n) => n - 1));
+  }, []);
+
   const extensions = useMemo(
-    () => [mentionExtension(() => membersRef.current, () => modeRef.current === "note"), savedReplyExtension(() => repliesRef.current)],
-    [],
+    () => [
+      mentionExtension(() => membersRef.current, () => modeRef.current === "note"),
+      savedReplyExtension(() => repliesRef.current, insertSavedReply),
+      templateExtension({
+        known: () => knownRef.current,
+        items: (query) => matchVars(varItemsRef.current, query, (g) => g),
+        insert: (item) => variableText(item.key, varsRef.current?.values[item.key], catalogRef.current.byKey.get(item.key)?.html),
+        filters: () => catalogRef.current.filters,
+        enabled: () => modeRef.current === "reply",
+        // Read when the list opens, so it follows the language.
+        get valueLabel() {
+          return tRef.current("composer.thisTicket");
+        },
+      }),
+    ],
+    [insertSavedReply],
   );
+  // Unknown tags are marked once the list is in.
+  useEffect(() => {
+    if (!catalog.loading) refreshTags(editor.current?.editor);
+  }, [catalog.loading, catalog.known]);
 
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -238,7 +303,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const busyUploads = uploads.some((u) => u.status === "uploading");
   // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
   const noSender = mode === "reply" && ticket.channel === "email" && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off";
-  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender;
+  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender && !filling;
 
   // The send button's moment: sending while the request is out, then a check.
   const [sent, setSent] = useState(false);
@@ -429,7 +494,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
               ref={editor}
               value={draft.html}
               onChange={(html) => setDraft({ html })}
-              placeholder={note ? t("composer.notePlaceholder") : t("composer.replyPlaceholder")}
+              placeholder={note ? t("composer.notePlaceholder") : t("composer.replyPlaceholder", { braces: "{{", interpolation: { escapeValue: false } })}
               extensions={extensions}
               onSubmit={() => submit()}
               onKeyDown={onKeyDown}
@@ -460,12 +525,12 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
                     items={replies.map((r) => ({ value: r.id, label: r.title, hint: r.shortcut ? `/${r.shortcut.replace(/^\//, "")}` : undefined }))}
                     onSelect={(id) => {
                       const r = replies.find((x) => x.id === id);
-                      if (r) editor.current?.insertHtml(r.body_html);
+                      if (r) insertSavedReply(r.body_html);
                     }}
                     trigger={
                       <Tooltip content={t("composer.savedReplies")}>
-                        <button type="button" aria-label="Saved replies" className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95">
-                          <MessageSquareText className="size-[15px]" />
+                        <button type="button" aria-label="Saved replies" aria-busy={filling > 0} className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95">
+                          {filling > 0 ? <Loader2 className="size-[15px] animate-spin motion-reduce:animate-none" /> : <MessageSquareText className="size-[15px]" />}
                         </button>
                       </Tooltip>
                     }
@@ -505,25 +570,11 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
           )}
         </div>
         <SuggestionPopup />
+        <VarSuggestPopup />
       </div>
     </div>
   );
 });
-
-/** Plain text of a signature with its variables filled in, when it fits on one line. */
-function signatureLine(html: string, v: Record<string, string>): string | null {
-  if (!html) return null;
-  const text = html
-    .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<\/(p|div|li)>/gi, " ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/\{\{\s*([a-z_.]+)\s*\}\}/gi, (_, k: string) => v[k] ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text && text.length <= 120 ? text : null;
-}
 
 /**
  * Who the customer sees the reply from, and from which address: the address's From
@@ -548,20 +599,11 @@ function ReplyingAs({
   const { data: activities } = useQuery(q.activities(ticket.id));
   const { data: messages } = useQuery(q.messages(ticket.id));
   const mailbox = ctx.mailbox(mailboxId);
+  // The signature this reply carries, filled by the server: the team's, else the address's, else mine.
+  const { data: vars } = useQuery({ ...q.ticketVariables(ticket.id, mailboxId), enabled: !!mailbox });
   const options = replyAddresses(ctx, ticket);
   if (!mailbox || (ticket.channel !== "email" && !ticket.mailbox_id)) return null;
   const from = fromLine(ctx, ticket, mailbox, user.name);
-  const team = ctx.team(ticket.team_id);
-  const sig = signatureLine(team?.signature_html || mailbox.signature_html, {
-    "agent.name": user.name,
-    "agent.first_name": user.name.split(" ")[0] ?? user.name,
-    "team.name": team?.name ?? ctx.brand(ticket.brand_id)?.name ?? "",
-    "brand.name": ctx.brand(ticket.brand_id)?.name ?? "",
-    "mailbox.email": from.email,
-    "ticket.number": String(ticket.number),
-    "ticket.subject": ticket.subject,
-    "contact.name": ticket.contact?.name ?? "",
-  });
   const moved = chosen ? null : movedTo(activities, messages, mailbox, ctx);
   const canPick = options.length > 1 || (options.length === 1 && options[0].id !== mailbox.id);
   const chip = (
@@ -603,11 +645,7 @@ function ReplyingAs({
             chip
           )}
         </div>
-        {sig && (
-          <Tooltip content={t("composer.signature")}>
-            <span className="hidden max-w-[34%] shrink truncate text-[11.5px] text-fg-4 @[600px]:block">{sig}</span>
-          </Tooltip>
-        )}
+        {vars?.signature_html && <SignaturePreview html={vars.signature_html} />}
       </div>
       {mailbox.sending === "system_off" && (
         <p className="flex items-start gap-1.5 px-3 pb-1.5 text-[11.5px] leading-4 text-fg-2 animate-fade-in motion-reduce:animate-none" role="status">

@@ -647,6 +647,20 @@
   .prose-od .mention { font-weight: 500; background: var(--hover); border-radius: 4px; padding: 0 3px; }
   .prose-od.prose-lg { font-size: 15.5px; line-height: 1.7; }
 
+  /* Template tags in editors (contracts/templates.md): a soft pill, red when unknown. */
+  .tpl-tag {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--tone-blue-soft);
+    color: var(--tone-blue);
+    box-shadow: inset 0 0 0 1px var(--tone-blue-line);
+    border-radius: 4px;
+    padding: 0.05em 0.3em;
+    white-space: nowrap;
+  }
+  .tpl-tag.tpl-logic { background: var(--tone-violet-soft); color: var(--tone-violet); box-shadow: inset 0 0 0 1px var(--tone-violet-line); }
+  .tpl-tag.tpl-bad { background: var(--tone-red-soft); color: var(--tone-red); box-shadow: inset 0 0 0 1px var(--tone-red-line); }
+
   /* TipTap editor surface. */
   .tiptap { outline: none; }
   .tiptap:focus-visible { box-shadow: none; }

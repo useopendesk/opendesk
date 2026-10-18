@@ -224,16 +224,9 @@ func TestAutoReplyPerSenderAndAddress(t *testing.T) {
 	w.receive(one, rawMail(from, one.Email, "First", ""))
 	w.receive(one, rawMail(from, one.Email, "Second", ""))
 	w.receive(two, rawMail(from, two.Email, "Third", ""))
-	rows, err := w.d.DB.Pool.Query(w.ctx, `SELECT args->>'subject', args->>'html' FROM river_job
-		WHERE kind = 'email.send_ticket_email' AND args->>'workspace_id' = $1 ORDER BY id`, w.wid.String())
-	if err != nil {
-		t.Fatal(err)
-	}
 	var got [][2]string
-	for rows.Next() {
-		var s, h string
-		_ = rows.Scan(&s, &h)
-		got = append(got, [2]string{s, h})
+	for _, env := range w.sendQueued(t) {
+		got = append(got, [2]string{env.GetHeader("Subject"), env.HTML})
 	}
 	if len(got) != 2 {
 		t.Fatalf("want one auto-reply per sender per address, got %d", len(got))

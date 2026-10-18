@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { InBrowserNote } from "@/components/desktop/InBrowser";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
-import { Forward, RefreshCw, TriangleAlert, Zap } from "lucide-react";
+import { Braces, Forward, RefreshCw, TriangleAlert, Zap } from "lucide-react";
 import { useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Row, Section, SettingsPage } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,12 @@ import { Switch } from "@/components/ui/switch";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
-import { RichEditor } from "@/components/editor/RichEditor";
 import { SaveBar } from "@/components/settings/SaveBar";
+import { templateProblems } from "@/components/settings2/MemberProfileFields";
+import { tagFor } from "@/components/templates/catalog";
+import { EmailPreview } from "@/components/templates/EmailPreview";
+import { TemplateEditor } from "@/components/templates/TemplateEditor";
+import { VariablePicker } from "@/components/templates/VariablePicker";
 import { connectionLabel, GoogleGlyph, MailboxIcon, MailboxStatus, MicrosoftGlyph, notReceiving, TestResults } from "@/components/mailboxes/kinds";
 import { ForwardingInstructions } from "@/components/mailboxes/forwarding";
 import { PortInput, validPort } from "@/components/mailboxes/PortInput";
@@ -39,7 +43,7 @@ import { useBrands, useTeams } from "@/components/settings2/teams";
 import { ContactFormsField } from "@/components/settings/ContactFormsField";
 import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { Mailbox, MailboxConfig, MailboxTest, TlsMode } from "@/lib/api/types";
+import type { Mailbox, MailboxConfig, MailboxTest, TemplatePreviewBody, TemplateProblem, TlsMode } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
 import { isMicrosoftHost, mailboxHost, offersNoTls, receivesOverImap, sendOnly, signedInProvider } from "@/lib/mailHost";
 import { q, qk, upsertInList } from "@/lib/queries";
@@ -179,6 +183,34 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
+  // What the server found wrong with the signature and the auto-reply: in the previews' check, or a refused save.
+  const [signatureProblems, setSignatureProblems] = useState<TemplateProblem[]>([]);
+  const [autoReplyProblems, setAutoReplyProblems] = useState<TemplateProblem[]>([]);
+  const [saveProblems, setSaveProblems] = useState<{ signature: TemplateProblem[]; autoReply: TemplateProblem[] }>({ signature: [], autoReply: [] });
+  const onSignatureProblems = useCallback((p: TemplateProblem[]) => setSignatureProblems(p), []);
+  const onAutoReplyProblems = useCallback((p: TemplateProblem[]) => setAutoReplyProblems(p), []);
+  const signatureHtml = draft.signature_html;
+  const signatureBody = useMemo<TemplatePreviewBody>(() => ({ kind: "signature", mailbox_id: mailbox.id, body_html: signatureHtml }), [mailbox.id, signatureHtml]);
+  const { auto_reply_subject: autoSubject, auto_reply_html: autoHtml } = draft;
+  const autoReplyBody = useMemo<TemplatePreviewBody>(
+    () => ({ kind: "auto_reply", mailbox_id: mailbox.id, subject: autoSubject, body_html: autoHtml }),
+    [mailbox.id, autoSubject, autoHtml],
+  );
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const insertInSubject = (text: string, select?: string) => {
+    const el = subjectRef.current;
+    const cur = draft.auto_reply_subject;
+    const start = el?.selectionStart ?? cur.length;
+    const end = el?.selectionEnd ?? start;
+    set("auto_reply_subject", cur.slice(0, start) + text + cur.slice(end));
+    const i = select ? text.indexOf(select) : -1;
+    requestAnimationFrame(() => {
+      el?.focus();
+      if (select && i >= 0) el?.setSelectionRange(start + i, start + i + select.length);
+      else el?.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
+
   const aliasTeams = aliasTeamsFor(draft.alias_teams, draft.aliases, !!teams.find((x) => x.id === draft.team_id)?.private);
   const dirty = JSON.stringify(draft) !== JSON.stringify(base);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
@@ -244,7 +276,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         // A changed server or password is signed in to before it is saved.
         ...(imapChanged || sendChanged ? { verify: true } : {}),
       }),
-    onMutate: () => setRefused(null),
+    onMutate: () => {
+      setRefused(null);
+      setSaveProblems({ signature: [], autoReply: [] });
+    },
     onSuccess: (m) => {
       upsertInList(qc, qk.mailboxes, m);
       setDraft(toDraft(m));
@@ -254,7 +289,10 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
     onError: (e) => {
       const failed = connectFailure(e);
       if (failed) setRefused(failed);
-      else toast.error(e);
+      else {
+        setSaveProblems({ signature: templateProblems(e, "signature"), autoReply: templateProblems(e, "auto_reply") });
+        toast.error(e);
+      }
     },
   });
 
@@ -578,15 +616,22 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         </div>
       </Section>
 
-      <Section title={t("detail.signature")} description={t("detail.signatureHint")}>
-        <div className="-mx-4 -my-1">
-          <RichEditor
+      <Section title={t("detail.signature")} description={t("detail.signatureHint", { tag: "{{ agent.signature }}" })}>
+        <div className="flex flex-col gap-3 py-3.5">
+          <TemplateEditor
+            kind="signature"
+            html
             value={draft.signature_html}
-            onChange={(v) => set("signature_html", v)}
+            onChange={(v) => {
+              set("signature_html", v);
+              setSaveProblems((p) => ({ ...p, signature: [] }));
+            }}
             placeholder={t("detail.signaturePlaceholder")}
             ariaLabel={t("detail.signature")}
-            contentClassName="min-h-[88px]"
+            minHeight={88}
+            problems={signatureProblems.length ? signatureProblems : saveProblems.signature}
           />
+          <EmailPreview collapsible defaultOpen={false} height={420} title={t("detail.preview")} body={signatureBody} onProblems={onSignatureProblems} />
         </div>
       </Section>
 
@@ -598,21 +643,56 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           <div className="flex flex-col gap-3 py-3.5">
             <Field label={t("detail.subject")}>
               {({ id }) => (
-                <TextInput id={id} value={draft.auto_reply_subject} placeholder={t("detail.subjectPlaceholder")} onChange={(e) => set("auto_reply_subject", e.target.value)} />
+                <TextInput
+                  ref={subjectRef}
+                  id={id}
+                  value={draft.auto_reply_subject}
+                  placeholder={t("detail.subjectPlaceholder")}
+                  onChange={(e) => {
+                    set("auto_reply_subject", e.target.value);
+                    setSaveProblems((p) => ({ ...p, autoReply: [] }));
+                  }}
+                  trailing={
+                    <VariablePicker
+                      kind="subject"
+                      side="bottom"
+                      onPick={(k) => insertInSubject(tagFor(k))}
+                      onInsert={insertInSubject}
+                      trigger={
+                        <Tooltip content={t("detail.subjectVariable")}>
+                          <button
+                            type="button"
+                            aria-label={t("detail.subjectVariable")}
+                            onMouseDown={(e) => e.preventDefault()}
+                            className="flex size-6 items-center justify-center rounded text-fg-3 transition-colors hover:bg-hover hover:text-fg data-[state=open]:bg-hover"
+                          >
+                            <Braces className="size-3.5" />
+                          </button>
+                        </Tooltip>
+                      }
+                    />
+                  }
+                />
               )}
             </Field>
             <div className="flex flex-col gap-1.5">
               <span className="text-[12.5px] font-medium">{t("detail.message")}</span>
-              <div className="rounded-md border border-line focus-within:border-fg-3 focus-within:shadow-[0_0_0_3px_var(--focus)]">
-                <RichEditor
-                  value={draft.auto_reply_html}
-                  onChange={(v) => set("auto_reply_html", v)}
-                  placeholder={t("detail.messagePlaceholder")}
-                  ariaLabel={t("detail.autoReplyLabel")}
-                  contentClassName="min-h-[100px]"
-                />
-              </div>
+              <TemplateEditor
+                kind="auto_reply"
+                html
+                value={draft.auto_reply_html}
+                onChange={(v) => {
+                  set("auto_reply_html", v);
+                  setSaveProblems((p) => ({ ...p, autoReply: [] }));
+                }}
+                placeholder={t("detail.messagePlaceholder")}
+                ariaLabel={t("detail.autoReplyLabel")}
+                minHeight={100}
+                problems={autoReplyProblems.length ? autoReplyProblems : saveProblems.autoReply}
+              />
+              <span className="text-[11.5px] leading-4 text-fg-4">{t("detail.autoReplyNoAgent")}</span>
             </div>
+            <EmailPreview collapsible defaultOpen={false} height={420} title={t("detail.preview")} body={autoReplyBody} onProblems={onAutoReplyProblems} />
           </div>
         )}
       </Section>

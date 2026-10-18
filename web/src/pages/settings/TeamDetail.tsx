@@ -6,15 +6,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowRight, AtSign, ChevronDown, Clock, Eye, Globe, Inbox, Lock, LogOut, MessageCircle, Plus, Route, Shuffle, Ticket, Trash2, UserPlus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, ListRow, Row, Section, SettingsPage } from "@/components/layout";
-import { RichEditor, type RichEditorHandle } from "@/components/editor/RichEditor";
 import { SaveBar } from "@/components/settings/SaveBar";
 import { ColorSwatchPicker } from "@/components/settings2/ColorSwatchPicker";
+import { templateProblems } from "@/components/settings2/MemberProfileFields";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { Note, PrivatePill, TeamDot, teamItems, useMyTeamRole } from "@/components/settings2/teams";
 import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
+import { EmailPreview } from "@/components/templates/EmailPreview";
+import { TemplateEditor } from "@/components/templates/TemplateEditor";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -29,7 +31,7 @@ import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
-import type { AssignMode, BusinessHours as BH, LabelColor, Member, Team, TeamRole, TimeRange, Weekday } from "@/lib/api/types";
+import type { AssignMode, BusinessHours as BH, LabelColor, Member, Team, TeamRole, TemplatePreviewBody, TemplateProblem, TimeRange, Weekday } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
 import { atLeast, useRole, useUser } from "@/lib/session";
@@ -37,16 +39,6 @@ import { DayRow, Holidays, WEEK, dayError, norm, timezones } from "./BusinessHou
 
 const ROLES: TeamRole[] = ["lead", "member", "observer"];
 const MODES: AssignMode[] = ["none", "round_robin", "load_balanced"];
-const SIGNATURE_VARS = [
-  "{{agent.name}}",
-  "{{agent.first_name}}",
-  "{{team.name}}",
-  "{{brand.name}}",
-  "{{mailbox.email}}",
-  "{{ticket.number}}",
-  "{{ticket.subject}}",
-  "{{contact.name}}",
-];
 
 type Draft = Pick<Team, "name" | "description" | "color" | "members" | "signature_html" | "business_hours" | "assign_mode">;
 
@@ -107,7 +99,10 @@ function TeamEditor({ team }: { team: Team }) {
   const { data: members } = useQuery(q.members());
   const { data: mailboxes } = useQuery({ ...q.mailboxes(), enabled: canEdit, retry: false });
   const [deleting, setDeleting] = useState(false);
-  const signatureRef = useRef<RichEditorHandle>(null);
+  // What the server found wrong with the signature: in the preview's check, or a refused save.
+  const [previewProblems, setPreviewProblems] = useState<TemplateProblem[]>([]);
+  const [saveProblems, setSaveProblems] = useState<TemplateProblem[]>([]);
+  const onProblems = useCallback((p: TemplateProblem[]) => setPreviewProblems(p), []);
 
   const base = useMemo(() => toDraft(team), [team]);
   const [draft, setDraft] = useState<Draft>(base);
@@ -120,6 +115,8 @@ function TeamEditor({ team }: { team: Team }) {
   }, [base]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(base);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const signatureHtml = draft.signature_html;
+  const previewBody = useMemo<TemplatePreviewBody>(() => ({ kind: "signature", team_id: team.id, body_html: signatureHtml }), [team.id, signatureHtml]);
   const hoursErrors = draft.business_hours ? WEEK.map((d) => dayError(draft.business_hours!.schedule[d])) : [];
   const noLead = draft.members.length > 0 && !draft.members.some((m) => m.role === "lead");
 
@@ -132,12 +129,16 @@ function TeamEditor({ team }: { team: Team }) {
       if (body.description !== undefined) body.description = body.description.trim();
       return api.teams.update(team.id, body);
     },
+    onMutate: () => setSaveProblems([]),
     onSuccess: (x) => {
       upsertInList(qc, qk.teams, x);
       setDraft(toDraft(x));
       toast.success(t("detail.saved"));
     },
-    onError: (e) => toast.error(e, t("detail.saveFailed")),
+    onError: (e) => {
+      setSaveProblems(templateProblems(e, "signature"));
+      toast.error(e, t("detail.saveFailed"));
+    },
   });
 
   const write = useMutation({
@@ -261,31 +262,22 @@ function TeamEditor({ team }: { team: Team }) {
 
         <AssignSection value={draft.assign_mode} disabled={!canEdit} onChange={(m) => set("assign_mode", m)} />
 
-        <Section title={t("signature.title")} description={t("signature.hint")}>
-          <div className="-mx-4 -mt-0.5 border-b border-line-soft">
-            <RichEditor
-              ref={signatureRef}
+        <Section title={t("signature.title")} description={t("signature.hint", { tag: "{{ agent.signature }}" })}>
+          <div className="flex flex-col gap-3 py-3.5">
+            <TemplateEditor
+              kind="signature"
+              html
               value={draft.signature_html}
-              onChange={(v) => set("signature_html", v)}
+              onChange={(v) => {
+                set("signature_html", v);
+                setSaveProblems([]);
+              }}
               placeholder={t("signature.placeholder")}
               ariaLabel={t("signature.title")}
-              editable={canEdit}
-              contentClassName="min-h-[96px]"
+              disabled={!canEdit}
+              problems={previewProblems.length ? previewProblems : saveProblems}
             />
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 py-3">
-            <span className="mr-1 text-[12px] text-fg-3">{t("signature.variables")}</span>
-            {SIGNATURE_VARS.map((v) => (
-              <button
-                key={v}
-                type="button"
-                disabled={!canEdit}
-                onClick={() => signatureRef.current?.insertHtml(v)}
-                className="mono inline-flex h-[22px] items-center rounded-sm border border-line bg-sunken px-1.5 text-[11px] text-fg-2 transition-colors hover:border-line-strong hover:text-fg disabled:opacity-60"
-              >
-                {v}
-              </button>
-            ))}
+            <EmailPreview collapsible defaultOpen={false} height={420} title={t("signature.preview")} body={previewBody} onProblems={onProblems} />
           </div>
         </Section>
 

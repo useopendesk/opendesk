@@ -164,7 +164,7 @@
     "teamHint": "New tickets from this mailbox go to this team.",
     "noTeam": "No team",
     "signature": "Signature",
-    "signatureHint": "Added below every reply sent from this mailbox.",
+    "signatureHint": "Added below every reply sent from this address, unless the ticket's team has its own. Include each sender's own lines with {{tag}}.",
     "signaturePlaceholder": "The Support team at Company",
     "autoReply": "Auto-reply",
     "autoReplyHint": "Sent once when a customer opens a new ticket by email.",
@@ -192,7 +192,10 @@
     "password": "Password",
     "passwordKeep": "Leave empty to keep the saved one.",
     "security": "Security",
-    "tlsNone": "None"
+    "tlsNone": "None",
+    "preview": "Preview",
+    "subjectVariable": "Insert a variable",
+    "autoReplyNoAgent": "Sender variables, like the agent's name, are empty in auto-replies."
   },
   "new": {
     "title": "Add a mailbox",

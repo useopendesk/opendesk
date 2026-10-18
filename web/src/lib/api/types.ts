@@ -72,6 +72,17 @@ export type Member = {
   open_tickets: number;
   last_seen_at: string | null;
   created_at: string;
+  /** Feeds the agent template variables (contracts/templates.md). Older servers leave it out. */
+  profile?: MemberProfile;
+};
+
+/** What customers can see of a member in signatures, per workspace. */
+export type MemberProfile = {
+  title: string;
+  phone: string;
+  pronouns: string;
+  /** The personal signature; takes template variables. */
+  signature_html: string;
 };
 export type Invitation = {
   id: string;
@@ -1727,3 +1738,53 @@ export type ImportCreateBody = {
   options?: ImportOptions;
   mapping?: ImportMapping;
 };
+
+// Templates and email design (contracts/templates.md).
+
+export type TemplateGroup = "contact" | "company" | "ticket" | "agent" | "team" | "brand" | "mailbox" | "workspace" | "date";
+export type TemplateVariable = { key: string; group: TemplateGroup; label: string; description: string; example: string; html: boolean; list?: boolean };
+export type TemplateFilter = { name: string; group: "text" | "list" | "number" | "date"; args: string; description: string; example: string };
+export type TemplateTag = { name: string; syntax: string; description: string };
+export type TemplateSlotKey = "content" | "signature" | "history" | "survey";
+export type TemplateSlot = { key: TemplateSlotKey; label: string; description: string; required_in: TemplateKind[] | null };
+export type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject";
+export type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags?: TemplateTag[] };
+export type TemplateProblem = { message: string; token: string };
+
+export type EmailLayoutOptions = {
+  mode: "simple" | "custom";
+  style: "plain" | "branded";
+  logo: boolean;
+  /** "#rrggbb", or "" for the brand colour. */
+  accent: string;
+  font: "system" | "sans" | "serif";
+  footer_html: string;
+  history: "none" | "last" | "all";
+  /** "" is the default "On {{ message.date }}, {{ message.author }} wrote:". */
+  history_header: string;
+};
+export type EmailTemplate = {
+  brand_id: string;
+  kind: "layout" | "csat";
+  subject: string;
+  body_html: string;
+  options: EmailLayoutOptions;
+  /** The brand has not changed it; the fields carry the default. */
+  is_default: boolean;
+  updated_at: string | null;
+};
+export type EmailTemplates = { layout: EmailTemplate; csat: EmailTemplate };
+
+export type PreviewKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat";
+export type TemplatePreviewBody = {
+  kind: PreviewKind;
+  body_html?: string;
+  subject?: string;
+  options?: EmailLayoutOptions;
+  brand_id?: string;
+  team_id?: string;
+  mailbox_id?: string;
+  ticket_id?: string;
+};
+export type TemplatePreview = { subject: string; html: string; text: string; problems: TemplateProblem[] };
+export type TicketVariables = { values: Record<string, string>; signature_html: string };

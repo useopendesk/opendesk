@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 // Teams (contracts/teams.md). A team's members hold a role: lead, member or observer. A
@@ -218,6 +219,9 @@ func (b coreTeamBody) fields(create bool) (teamFields, error) {
 			return f, httpx.Validation("signature_html must be 64 KB or less")
 		}
 		s := hd.SanitizeSignature(*b.SignatureHTML)
+		if err := templates.CheckSaved("signature_html", s, templates.KindSignature, nil); err != nil {
+			return f, err
+		}
 		f.signature = &s
 	}
 	if b.BusinessHours.Set {

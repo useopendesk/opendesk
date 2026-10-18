@@ -306,6 +306,7 @@ export function CommandPalette() {
                     ["/settings/members", "Members"],
                     ["/settings/teams", "Teams"],
                     ["/settings/mailboxes", "Mailboxes"],
+                    ["/settings/email-design", "Email design"],
                     ["/settings/tags", "Labels"],
                     ["/settings/saved-replies", "Saved replies"],
                     ["/settings/views", "Views"],

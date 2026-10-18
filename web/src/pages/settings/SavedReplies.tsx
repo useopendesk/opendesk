@@ -11,10 +11,10 @@ import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { Kbd } from "@/components/ui/kbd";
 import { useConfirm } from "@/components/ui/confirm";
 import { toast } from "@/components/ui/toast";
-import { RichEditor } from "@/components/editor/RichEditor";
 import { ListSkeleton, MonoChip } from "@/components/settings2/bits";
 import { rowSpring } from "@/components/settings2/motion";
 import { TeamChip, TeamPick, useTeams } from "@/components/settings2/teams";
+import { TemplateEditor } from "@/components/templates/TemplateEditor";
 import { api } from "@/lib/api/endpoints";
 import type { SavedReply } from "@/lib/api/types";
 import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
@@ -241,7 +241,8 @@ export default function SavedReplies() {
                 className="flex flex-1 flex-col"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  submit();
+                  // The editor's link form submits through portals too.
+                  if (e.target === e.currentTarget) submit();
                 }}
               >
                 <div className={cn("grid grid-cols-1 gap-3 p-5", teams.length || draft.team_id ? "sm:grid-cols-[1fr_160px_180px]" : "sm:grid-cols-[1fr_200px]")}>
@@ -281,18 +282,26 @@ export default function SavedReplies() {
                     </Field>
                   )}
                 </div>
-                <div className="mx-5 mb-5 flex min-h-[260px] flex-1 flex-col rounded-md border border-line focus-within:border-fg-3 focus-within:shadow-[0_0_0_3px_var(--focus)]">
-                  <RichEditor
+                <div
+                  className="mx-5 mb-5 flex flex-1 flex-col gap-1.5"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canEdit) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                >
+                  <TemplateEditor
                     key={selected}
-                    className="flex-1"
+                    kind="reply"
                     value={draft.body_html}
                     onChange={(html) => setDraft((d) => ({ ...d, body_html: html }))}
                     placeholder={t("savedReplies.bodyPlaceholder")}
-                    contentClassName="min-h-[220px]"
-                    editable={canEdit}
-                    onSubmit={submit}
+                    minHeight={220}
+                    disabled={!canEdit}
                     ariaLabel={t("savedReplies.bodyLabel")}
                   />
+                  <span className="text-[11.5px] leading-4 text-fg-4">{t("savedReplies.variablesHint")}</span>
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-2 border-t border-line bg-sunken px-5 py-3">

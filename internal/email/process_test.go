@@ -321,13 +321,13 @@ func TestAutoReplyRateLimited(t *testing.T) {
 	if n := w.jobCount("email.send_ticket_email", "", ""); n != 1 {
 		t.Fatalf("want one auto-reply per sender per window, got %d", n)
 	}
-	var subject, html string
-	var auto bool
-	if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT args->>'subject', args->>'html', (args->>'auto_generated')::bool FROM river_job
-		WHERE kind = 'email.send_ticket_email' AND args->>'workspace_id' = $1`, w.wid.String()).Scan(&subject, &html, &auto); err != nil {
-		t.Fatal(err)
+	// The subject and body are filled when the email goes out.
+	sent := w.sendQueued(t)
+	if len(sent) != 1 {
+		t.Fatalf("sent %d", len(sent))
 	}
-	if !auto || !strings.HasPrefix(subject, "We got it: Question 0 [#") || !strings.Contains(html, "Hi Zed") {
-		t.Fatalf("auto reply %q %q %v", subject, html, auto)
+	subject, html := sent[0].GetHeader("Subject"), sent[0].HTML
+	if sent[0].GetHeader("Auto-Submitted") == "" || !strings.HasPrefix(subject, "We got it: Question 0 [#") || !strings.Contains(html, "Hi Zed") {
+		t.Fatalf("auto reply %q %q", subject, html)
 	}
 }

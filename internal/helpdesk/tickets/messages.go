@@ -18,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 type ticketMessageBody struct {
@@ -265,6 +266,13 @@ func postMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		}
 	}
 	bodyHTML := hd.SanitizeRich(b.BodyHTML)
+	if b.Kind == "reply" {
+		ref := templates.Ref{WorkspaceID: wid, TicketID: &tid, AuthorUserID: actor.UserID, MailboxID: mailboxID}
+		var err error
+		if bodyHTML, err = hd.FillReply(ctx, tx, d.Cfg, ref, b.BodyHTML); err != nil {
+			return domain.Message{}, err
+		}
+	}
 	bodyText := hd.HTMLToText(bodyHTML)
 	attIDs, err := hd.ParseAttachmentIDs(b.AttachmentIDs)
 	if err != nil {

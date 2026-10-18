@@ -205,10 +205,12 @@ Further down, every mailbox has its own signature and an optional auto-reply.
 
 <Legend>
 
-1. **Signature**: added below every reply sent from this mailbox.
+1. **Signature**: added below every email sent from this mailbox, unless the ticket's team has its own signature.
 2. **Auto-reply**: sent once when a customer opens a new ticket by email, with your subject and message. It is marked as automatic, so other autoresponders ignore it.
 
 </Legend>
+
+Both take [template variables](/guides/email-templates/variables/), such as `{{ contact.first_name | default: "there" }}` or `{{ ticket.number }}`: type `{{` for a variable, `{%` for logic, or click **Insert**. An auto-reply has no agent, so the agent variables are empty there. See [Email templates and signatures](/guides/email-templates/).
 
 <Callout>
 

@@ -24,6 +24,7 @@ import {
   ListChecks,
   MessageCircle,
   MessageSquareText,
+  Palette,
   Plug,
   Route,
   Shield,
@@ -52,6 +53,7 @@ type NavPath =
   | "/settings/teams"
   | "/settings/mailboxes"
   | "/settings/brands"
+  | "/settings/email-design"
   | "/settings/routing"
   | "/settings/tags"
   | "/settings/custom-fields"
@@ -121,6 +123,7 @@ const groups: { title: string; items: { to: NavPath; label: string; icon: ReactN
       { to: "/settings/mailboxes", label: "Mailboxes", icon: <Inbox /> },
       { to: "/settings/routing", label: "Routing", icon: <Route /> },
       { to: "/settings/brands", label: "Brands and widgets", icon: <MessageCircle /> },
+      { to: "/settings/email-design", label: "Email design", icon: <Palette /> },
     ],
   },
   {

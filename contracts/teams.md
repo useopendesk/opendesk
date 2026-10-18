@@ -25,7 +25,7 @@ type Team = {
   private: boolean;
   members: { user_id: string; role: TeamRole }[];
   member_ids: string[] /* every member, any role; kept for older clients */;
-  signature_html: string /* sanitized; "" = the address's signature */;
+  signature_html: string /* design allowlist, takes template variables (contracts/templates.md); "" = the address's signature */;
   business_hours: (BusinessHours & { timezone: string /* IANA, "" = the workspace's */ }) | null /* null = the workspace's */;
   assign_mode: AssignMode | null /* the assignment rule for this team; null = the workspace default */;
   mailbox_ids: string[] /* addresses whose default team this is (Mailbox.team_id) */;
@@ -235,15 +235,16 @@ What the customer sees on every email (replies, auto-replies, CSAT):
   `"{agent} at {mailbox}"` reads `"<mailbox>"`, `"{agent_first} from {team}"` reads `"<team>"`. A
   format with no other variable falls back to `{mailbox}`; separators left at either end are trimmed
   (`"{brand} - {agent}"` reads `"<brand>"`). The AI agent's replies use its bot's name (the mailbox's bot, contracts/bots.md) as the agent.
-- **Signature**: the team's `signature_html`, else the address's. Variables in signatures and
-  auto-replies: `{{agent.name}}`, `{{agent.first_name}}`, `{{team.name}}`, `{{brand.name}}`,
-  `{{mailbox.email}}`, `{{ticket.number}}`, `{{ticket.subject}}`, `{{contact.name}}` (values are
-  HTML-escaped; `{{team.name}}` reads the brand without a team, `{{agent.*}}` are empty without an
-  author, `{{mailbox.email}}` is the alias when replies go out as one). Auto-replies and CSAT emails
-  carry the signature too.
+- **Signature**: the team's `signature_html`, else the address's, else the author's personal signature
+  (contracts/templates.md "Signatures"). Signatures, auto-replies and CSAT emails take every template
+  variable (`{{ agent.name }}`, `{{ contact.first_name | default: "there" }}`, `{% if agent.phone %}`…,
+  contracts/templates.md); `{{ team.name }}` reads the brand without a team, `{{ agent.* }}` are empty
+  without an author, `{{ mailbox.email }}` is the alias when replies go out as one. Auto-replies and
+  CSAT emails carry the signature too, and every email goes out in its brand's layout.
 - Auto-replies are throttled per sender **and address** (4 hours), so writing to two teams gets both.
   Mail from another of the workspace's addresses opens a ticket but gets no auto-reply (contracts/api.md "Email").
-- CSAT asks "How did <team or brand> do?" with the brand's colour and logo.
+- CSAT is the brand's survey email (contracts/templates.md "Email design"); the default asks "How did
+  <team or brand> do?" with score buttons in the layout's accent, else the brand's colour.
 
 In chat, the widget header shows the routed team's name under the title once a conversation has one,
 with its hours when it is closed.

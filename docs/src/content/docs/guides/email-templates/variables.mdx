@@ -1,0 +1,373 @@
+---
+title: Template variables and syntax
+description: The template language opendesk fills in replies, signatures, auto-replies, layouts and the satisfaction email, and every variable it offers.
+---
+
+import Callout from '../../../../components/Callout.astro';
+import Fold from '../../../../components/Fold.astro';
+
+Replies, saved replies, automation replies, signatures, auto-replies, email layouts and the satisfaction email all use the same template language and the same variables. This page is the reference. For where each template is set, see [Email templates and signatures](/guides/email-templates/).
+
+## Writing templates in the app
+
+You don't need to remember the syntax. In every template editor (signatures, auto-replies, saved replies, footers, layouts and the satisfaction email):
+
+- Type `{{` to pick a variable. The list searches as you type.
+- Type `|` after a variable, inside the braces, to pick a helper such as `default` or `truncate`.
+- Type `{%` to pick ready-made logic: show a part only when a value is set, if and else, pick by value, list each label, and more. It goes in as working code with the part to change selected, so you can type over it straight away.
+- Or click **Insert** for the same three lists: **Variables**, **Logic** and **Helpers**.
+
+Tags show as coloured pills: blue for variables, violet for logic, red for something that isn't right. When you save, opendesk names each problem and suggests a fix when it looks like a typo ("There is no variable called contact.frist_name. Did you mean contact.first_name?"). The preview next to the editor shows the email filled in, with sample data or a real ticket.
+
+In the reply box, `{{` inserts this ticket's actual values, and `{%` adds logic that is filled in when you send.
+
+## Syntax
+
+A template is ordinary text or HTML with two kinds of tags: `{{ ... }}` writes a value, `{% ... %}` adds logic. Everything else is copied as it is. The language follows [Liquid](https://shopify.github.io/liquid/), so most Liquid you already know works.
+
+### Variables
+
+Write a variable between double braces. Names are lower case, with dots between the parts. The spaces inside the braces are optional, so `{{contact.name}}` and `{{ contact.name }}` are the same.
+
+```liquid
+Hi {{ contact.first_name }},
+```
+
+Some variables are **lists**, like `{{ ticket.labels }}` or a multi-select field. Written on their own they read as the items joined with `, ` (`Billing, Refund`); loop over them with [`for`](#loops).
+
+### Filters
+
+Add a filter after a `|` to change a value. Filters run left to right, and a filter's values go after a colon, separated by commas.
+
+```liquid
+{{ contact.first_name | default: "there" | capitalize }}
+{{ ticket.subject | remove: "Re: " | truncate: 40 }}
+```
+
+**Text**
+
+| Filter | What it does | Example |
+| --- | --- | --- |
+| `default` | The fallback when the value is empty. | `{{ contact.first_name \| default: "there" }}` |
+| `upcase` | Upper case. | `{{ team.name \| upcase }}` reads `BILLING` |
+| `downcase` | Lower case. | `{{ contact.email \| downcase }}` |
+| `capitalize` | The first letter upper case. | `{{ ticket.status \| capitalize }}` |
+| `titlecase` | Every word starting upper case. | `{{ contact.name \| titlecase }}` |
+| `strip` | Spaces at both ends removed. | `{{ contact.name \| strip }}` |
+| `truncate` | Cut to a number of characters, the ending (default `…`) included. | `{{ ticket.subject \| truncate: 40 }}` |
+| `truncatewords` | Cut to a number of words. | `{{ ticket.subject \| truncatewords: 5, "..." }}` |
+| `append`, `prepend` | Text added at the end or the start. | `{{ ticket.number \| prepend: "#" }}` |
+| `replace`, `replace_first` | Every match, or the first, replaced. | `{{ ticket.subject \| replace: "Re: ", "" }}` |
+| `remove` | Every match removed. | `{{ ticket.subject \| remove: "[urgent]" }}` |
+| `slice` | Characters from a position, with an optional length. | `{{ contact.name \| slice: 0, 1 }}` reads `J` |
+| `url_encode` | Safe inside a link. | `{{ contact.email \| url_encode }}` |
+
+**Lists**
+
+| Filter | What it does | Example |
+| --- | --- | --- |
+| `join` | A list into text, with the separator (default `, `). | `{{ ticket.labels \| join: " / " }}` |
+| `split` | Text into a list, at each separator. | `{{ contact.fields.notes \| split: "," }}` |
+| `first`, `last` | The first or last item, or word of text. | `{{ ticket.labels \| first }}` |
+| `size` | How many items, or characters of text. | `{{ ticket.labels \| size }}` |
+| `sort`, `uniq` | Alphabetical order; repeats removed. | `{{ contact.labels \| sort \| join }}` |
+
+**Numbers and dates**
+
+| Filter | What it does | Example |
+| --- | --- | --- |
+| `plus`, `minus`, `times`, `divided_by` | Arithmetic. | `{{ ticket.fields.seats \| times: 12 }}` |
+| `round` | Rounds, to a number of decimals (default 0). | `{{ ticket.fields.score \| round: 1 }}` |
+| `date` | A date in another format, with strftime codes: `%Y` `%m` `%d` `%e` `%B` `%b` `%A` `%a` `%H` `%I` `%M` `%p`. `"now"` is the current time, in the workspace's time zone. | `{{ ticket.created_date \| date: "%A, %b %e" }}` reads `Sunday, Oct 18` |
+
+A filter's value can be a quoted string, a number or another variable: `{{ contact.first_name | default: company.name }}`.
+
+### Conditions
+
+`{% if %}` shows its content only when the condition holds. `{% elsif %}` and `{% else %}` are optional.
+
+```liquid
+{% if agent.phone %}
+  Call me on {{ agent.phone }}.
+{% elsif agent.title %}
+  {{ agent.title }}, {{ team.name }}
+{% else %}
+  Just reply to this email.
+{% endif %}
+```
+
+A variable on its own is true when it has a value (a list, when it has items). Compare with:
+
+| Operator | Means |
+| --- | --- |
+| `==`, `!=` | Equal, not equal. Text ignores capital letters and uses the value as it reads in a message (`"on hold"` for the status). |
+| `>`, `<`, `>=`, `<=` | Greater or smaller. Numbers compare as numbers. |
+| `contains` | A list has the item, or text has the words. |
+| `== empty`, `!= empty` | Empty or not (`blank` and `nil` mean the same). |
+
+Combine conditions with `and`, `or` and `not`, and group them with parentheses. `and` binds tighter than `or`.
+
+```liquid
+{% if ticket.priority == "urgent" and ticket.labels contains "VIP" %}…{% endif %}
+{% if ticket.fields.seats >= 50 or company.labels contains "Enterprise" %}…{% endif %}
+{% if not (agent.phone or agent.title) %}…{% endif %}
+```
+
+`{% unless %}` is the opposite of `if`:
+
+```liquid
+{% unless contact.name %}Could you tell us your name?{% endunless %}
+```
+
+Blocks can be nested inside each other, up to 24 deep.
+
+### Case
+
+`{% case %}` picks a part by value. A `when` can list several values.
+
+```liquid
+{% case ticket.priority %}
+  {% when "Urgent", "High" %}We're on it right away.
+  {% when "Low" %}We'll get back to you this week.
+  {% else %}We'll get back to you soon.
+{% endcase %}
+```
+
+### Loops
+
+`{% for %}` repeats its content for each item of a list or a range of numbers. `{% else %}` shows when the list is empty.
+
+```liquid
+{% for label in ticket.labels limit: 5 %}
+  {{ forloop.index }}. {{ label }}{% unless forloop.last %}, {% endunless %}
+{% else %}
+  No labels yet.
+{% endfor %}
+
+{% for i in (1..3) %}{{ i }}{% endfor %}
+```
+
+After the list, a loop takes `limit: n`, `offset: n` and `reversed`. Inside it, `forloop.index` (from 1), `forloop.index0` (from 0), `forloop.rindex`, `forloop.length`, `forloop.first` and `forloop.last` tell where you are. Loops can be nested. A loop goes over at most 100 items, and one email runs at most 1,000 loop rounds in total.
+
+### Your own variables
+
+`{% assign %}` names a value, filters included; `{% capture %}` names a whole piece of the template. Both are usable after they are set.
+
+```liquid
+{% assign greeting = contact.first_name | default: "there" %}
+{% capture signoff %}{{ agent.first_name }} from {{ team.name }}{% endcapture %}
+Hi {{ greeting }}, … {{ signoff }}
+```
+
+### Comments and raw text
+
+```liquid
+{% comment %}Only your team sees this; it never reaches the customer.{% endcomment %}
+{% raw %}{{ this is written as it is }}{% endraw %}
+```
+
+### Quotes inside HTML attributes
+
+Inside an HTML attribute, write strings in single quotes so they do not end the attribute:
+
+```html
+<a href="{{ brand.help_center_url }}" style="color: {{ brand.color | default: '#0A0A0A' }}">Help center</a>
+```
+
+## How templates are filled
+
+- **One pass.** A value is never read again as a template. A customer whose name is literally `{{agent.name}}` is greeted with exactly that text.
+- **Escaping.** In HTML templates, values are inserted as text: a `<` in a customer's name shows as `<`, it never becomes markup. In subjects, values are copied as plain text. `{{ agent.signature }}` and the [slots](#slots) insert formatted HTML, cleaned of anything unsafe.
+- **Empty values.** Every template can use every variable. A value that does not apply, such as `{{ company.name }}` for a customer without a company, is empty. Use `default` or `{% if %}` to cover it.
+- **Unknown variables.** When a message is filled, a variable that does not exist, or a tag that does not parse, is left exactly as written, so a code sample with braces in a reply arrives intact. When you save a template, the same mistakes are refused, with each one named, so a typo never reaches a customer.
+
+### When each template is filled
+
+| Template | Filled when | Agent |
+| --- | --- | --- |
+| A reply (reply box, API, or an [Ollie](/guides/ollie/) draft an agent sends) | The reply is created. The stored message is what the customer got. | The sender |
+| A saved reply | It is inserted in the reply box, and again when the reply is sent | The sender |
+| An automation's **Send a reply** | The action runs | Empty |
+| Team, address and personal signatures | Each email is sent | The sender, or empty |
+| An address's auto-reply (subject and message) | It is sent | Empty |
+| The satisfaction email (subject and body) | It is sent | Empty |
+| The email layout | Each email is sent | The sender, or empty |
+
+Chat replies are filled like email replies. Internal notes are never filled.
+
+## Variables
+
+The same list is in the app (**Settings**, **Email design**, **Variables**, or the **Insert** menu of any editor) and in the API at [`GET /v1/templates/variables`](/api/resources/templates/#variables), with your workspace's custom fields.
+
+### Contact
+
+The customer the ticket is with.
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `contact.name` | The customer's full name. | Jane Cooper |
+| `contact.first_name` | The first word of the customer's name. | Jane |
+| `contact.last_name` | The rest of the customer's name. | Cooper |
+| `contact.email` | The customer's email address. | `jane@example.com` |
+| `contact.phone` | The customer's phone number. | +1 555 0100 |
+| `contact.labels` | The customer's labels, a list. | VIP |
+| `contact.fields.<key>` | A contact [custom field](#custom-fields). | |
+
+### Company
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `company.name` | The customer's company. | Acme Inc |
+| `company.domain` | The company's web domain. | acme.com |
+| `company.labels` | The company's labels, a list. | Enterprise |
+| `company.fields.<key>` | A company [custom field](#custom-fields). | |
+
+### Ticket
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `ticket.number` | The ticket number, without the #. | 1042 |
+| `ticket.subject` | The ticket's subject. | Can't sign in |
+| `ticket.status` | Open, Pending, On hold, Solved or Closed. | Open |
+| `ticket.priority` | Low, Normal, High or Urgent. | Normal |
+| `ticket.channel` | Email, Chat, API or Form. | Email |
+| `ticket.created_date` | The day the ticket was opened, in the workspace's time zone. | 18 October 2026 |
+| `ticket.labels` | The ticket's labels, a list. | Billing, Refund |
+| `ticket.fields.<key>` | A ticket [custom field](#custom-fields). | |
+
+### Agent
+
+The author of the reply. See [who the agent is](#who-the-agent-is).
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `agent.name` | Who sends the reply. Empty for automations and auto-replies. | Alex Morgan |
+| `agent.first_name` | The first word of the sender's name. | Alex |
+| `agent.last_name` | The rest of the sender's name. | Morgan |
+| `agent.title` | Job title, from the sender's profile. | Support engineer |
+| `agent.phone` | Phone, from the sender's profile. | +1 555 0199 |
+| `agent.pronouns` | Pronouns, from the sender's profile. | they/them |
+| `agent.avatar_url` | The sender's profile picture, for an image in a signature. | `https://api.opendesk.sh/v1/images/…` |
+| `agent.signature` | The sender's own signature (HTML), placed inside a team or address signature. | Alex Morgan, Support engineer |
+
+### Team
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `team.name` | The ticket's team, or the brand when it has none. | Billing |
+| `team.description` | The team's description. | Invoices, refunds and plans |
+
+### Brand
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `brand.name` | The ticket's brand. | Acme |
+| `brand.color` | The brand colour, as `#rrggbb`: the brand's, else the workspace's, else `#0A0A0A`. | #2563EB |
+| `brand.logo_url` | The brand's logo, for an image. Empty without one. | `https://api.opendesk.sh/v1/images/…` |
+| `brand.help_center_url` | The brand's help center, when it is on. | `https://help.acme.com` |
+
+### Mailbox
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `mailbox.name` | The sending address's name: its sender name, else its name. | Acme Support |
+| `mailbox.email` | The address the email goes out from. When replies go out as an alias, the alias. | `support@acme.com` |
+
+### Workspace and date
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `workspace.name` | Your workspace's name. | Acme |
+| `date.today` | Today's date in the workspace's time zone. | 18 October 2026 |
+
+### Who the agent is
+
+The `agent` variables describe the author of the message:
+
+- On a reply a person sends, from the reply box or the API with their own sign-in, it is that person, with the details from [their profile](/guides/email-templates/#your-profile).
+- On a reply [Ollie](/guides/ollie/) sends by itself, `agent.name` is the name of the bot that answers for the address or widget, and the title, phone and other profile values are empty.
+- Automation replies, auto-replies, satisfaction emails and replies sent with an API key have no person, so every `agent` variable is empty.
+
+In a preview, you are the agent.
+
+## Custom fields
+
+Every [custom field](/guides/labels-and-custom-fields/#custom-fields) of your workspace is a variable, by its key:
+
+- `contact.fields.<key>` for a contact field, such as `{{ contact.fields.plan }}`
+- `company.fields.<key>` for a company field, such as `{{ company.fields.account_manager }}`
+- `ticket.fields.<key>` for a ticket field, such as `{{ ticket.fields.order_number }}`
+
+A field reads as it shows in the app:
+
+| Type | Reads as |
+| --- | --- |
+| Text, Long text, Link, Email | The text as entered. |
+| Number | The number, like `42` or `3.5`. |
+| Select | The chosen option's label. |
+| Multi-select | A list of the chosen options: joined with `, ` when written, or loop over it with `for`. |
+| Date | A date like `18 October 2026`. |
+| Checkbox | `Yes` or `No`. |
+| Person | The member's name. |
+
+A field with no value is empty. Archived fields are not offered in the variable list, but templates that already use them keep filling them.
+
+## Slots
+
+Slots are places in an email layout or the satisfaction email that opendesk fills with a whole part of the email. They can only be used in those templates.
+
+| Slot | Used in | What goes there |
+| --- | --- | --- |
+| `{{ content }}` | A custom layout (required) | The message itself. |
+| `{{ signature }}` | A custom layout | The team's, address's or sender's signature. |
+| `{{ history }}` | A custom layout | The quoted earlier messages, when the layout quotes them. |
+| `{{ survey }}` | The satisfaction email (required) | The five rating buttons, in the accent colour. |
+
+The quote line above each quoted message has two variables of its own, and takes no others:
+
+| Variable | What it is | Example |
+| --- | --- | --- |
+| `message.author` | Who wrote the quoted message. | Jane Cooper |
+| `message.date` | When it was written. | Sat, 17 Oct 2026 at 14:03 |
+
+<Fold>
+
+## Examples
+
+A greeting that works with or without a name:
+
+```liquid
+Hi {{ contact.first_name | default: "there" }},
+```
+
+A line only for urgent tickets:
+
+```liquid
+{% if ticket.priority == "urgent" %}We've flagged this as urgent and someone is on it now.{% endif %}
+```
+
+A reference to the request, for a subject:
+
+```liquid
+Your request #{{ ticket.number }}: {{ ticket.subject }}
+```
+
+A plan from a contact custom field, with a fallback:
+
+```liquid
+Your {{ contact.fields.plan | default: "current" }} plan includes priority support.
+```
+
+An agent picture in a signature, only when there is one:
+
+```html
+{% if agent.avatar_url %}<img src='{{ agent.avatar_url }}' alt='{{ agent.name }}' width='48' height='48' style='border-radius: 24px'>{% endif %}
+```
+
+</Fold>
+
+## Related
+
+- [Email templates and signatures](/guides/email-templates/)
+- [Labels and custom fields](/guides/labels-and-custom-fields/)
+- [Templates API](/api/resources/templates/)
