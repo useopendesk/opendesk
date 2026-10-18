@@ -238,6 +238,16 @@ type AvatarSweepArgs struct{}
 
 func (AvatarSweepArgs) Kind() string { return "images.sweep" }
 
+// IntegrationIconArgs looks up a connected custom MCP server's icon (its advertised
+// icon, else its site's) and stores it processed (contracts/integrations.md). Owner:
+// integrations.
+type IntegrationIconArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	ID          uuid.UUID `json:"id"`
+}
+
+func (IntegrationIconArgs) Kind() string { return "integrations.icon" }
+
 // PushNotificationArgs sends a notification as an alert to the user's iPhones
 // (contracts/native.md "Push"). Enqueued by hd.Notify in the notification's transaction.
 // Owner: core.

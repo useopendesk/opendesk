@@ -56,6 +56,8 @@ func current(ctx context.Context, tx pgx.Tx, o Owner) (domain.Avatar, *string, e
 			*o.WorkspaceID, o.ID, o.Slot).Scan(&val)
 	case OwnerBot:
 		err = tx.QueryRow(ctx, `SELECT avatar FROM bots WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, *o.WorkspaceID, o.ID).Scan(&val)
+	case OwnerIntegration:
+		err = tx.QueryRow(ctx, `SELECT icon FROM integrations WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, *o.WorkspaceID, o.ID).Scan(&val)
 	default:
 		return "", nil, fmt.Errorf("images: unknown owner %q", o.Type)
 	}
@@ -99,6 +101,8 @@ func write(ctx context.Context, tx pgx.Tx, o Owner, val domain.Avatar, source *s
 		}
 	case OwnerBot:
 		_, err = tx.Exec(ctx, `UPDATE bots SET avatar = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`, *o.WorkspaceID, o.ID, string(val))
+	case OwnerIntegration:
+		_, err = tx.Exec(ctx, `UPDATE integrations SET icon = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2`, *o.WorkspaceID, o.ID, string(val))
 	case OwnerBrand, OwnerWidget:
 		table, slots := "brands", BrandSlots
 		if o.Type == OwnerWidget {

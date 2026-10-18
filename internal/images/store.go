@@ -25,6 +25,8 @@ const (
 	OwnerBrand     = "brand"
 	OwnerWidget    = "widget"
 	OwnerBot       = "bot"
+	// OwnerIntegration is a custom MCP server's icon (integrations.icon).
+	OwnerIntegration = "integration"
 
 	SlotAvatar = "avatar"
 	SlotLogo   = "logo"

@@ -812,6 +812,8 @@ export type Integration = {
   name: string;
   host: string;
   url?: string;
+  /** A custom server's own icon (its advertised icon, else its site's), or null. */
+  icon_url: string | null;
   auth_type: "oauth" | "token" | "none";
   status: "pending" | "connected" | "error";
   enabled: boolean;

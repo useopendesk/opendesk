@@ -9,6 +9,7 @@ import { ProviderMark } from "@/components/settings2/integrations";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
+import { appForUrl, appLogo } from "@/lib/appLogos";
 import type { TicketLink } from "@/lib/api/types";
 import { ease } from "@/lib/motion";
 import { q, qk, removeFromList, upsertInList } from "@/lib/queries";
@@ -47,7 +48,10 @@ export function TicketLinks({ ticketId, canEdit }: { ticketId: string; canEdit: 
   });
 
   if (!links?.length) return null;
-  const nameOf = (l: TicketLink) => integrations?.find((x) => x.id === l.integration_id)?.name ?? new URL(l.url).host;
+  const integrationOf = (l: TicketLink) => integrations?.find((x) => x.id === l.integration_id);
+  const nameOf = (l: TicketLink) => integrationOf(l)?.name ?? new URL(l.url).host;
+  // A plain link, or one from a custom server, shows the logo of the product it points to.
+  const appOf = (l: TicketLink) => (appLogo(l.provider) ? l.provider : (appForUrl(l.url) ?? l.provider));
 
   return (
     <section className="border-b border-line-soft px-4 py-3.5" aria-label={t("links.title")}>
@@ -68,7 +72,7 @@ export function TicketLinks({ ticketId, canEdit }: { ticketId: string; canEdit: 
                 className="group -mx-1.5 flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
               >
                 <span className="relative">
-                  <ProviderMark provider={l.provider} name={source} size="sm" />
+                  <ProviderMark provider={appOf(l)} name={source} icon={integrationOf(l)?.icon_url} size="sm" />
                   {l.actor_type === "ai" && <SetByOllie size={10} note={t("links.byOllie", { name: ollie })} className="absolute -right-1 -top-1 ring-1 ring-surface" />}
                 </span>
                 {url ? (

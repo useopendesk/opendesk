@@ -15,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/core"
 	"github.com/useopendesk/opendesk/internal/helpdesk"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
+	"github.com/useopendesk/opendesk/internal/images"
 )
 
 func TestMain(m *testing.M) {
@@ -225,5 +226,79 @@ func TestTicketLinksFollowVisibility(t *testing.T) {
 	e.Scalar(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'ticket_link.created' AND team_id = $2`, &scoped, ws.ID, team)
 	if scoped != 1 {
 		t.Fatalf("link event not scoped to the team: %d", scoped)
+	}
+}
+
+func TestCustomServerIcon(t *testing.T) {
+	e, ws := apiEnv(t)
+	mux := http.NewServeMux()
+	mcp := &fakeMCP{bearer: "pat-1"}
+	mux.Handle("/mcp", mcp)
+	mux.HandleFunc("/icon.png", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			http.Error(w, "credentials sent", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pngOf(t, 96))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	mcp.icons = []any{map[string]any{"src": srv.URL + "/icon.png", "sizes": []string{"96x96"}}}
+	admin := ws.Admin.As(ws)
+
+	var created struct {
+		Integration Integration `json:"integration"`
+	}
+	e.Do("POST", "/v1/integrations", admin, map[string]any{"provider": "custom", "url": srv.URL + "/mcp", "auth": "token", "token": "pat-1"}).
+		Want(t, 201).JSON(t, &created)
+	x := created.Integration
+	if x.Icon != "" {
+		t.Fatalf("icon before the lookup = %q", x.Icon)
+	}
+	if queued := e.Jobs("integrations.icon", ws.ID); len(queued) != 1 {
+		t.Fatalf("icon jobs = %d", len(queued))
+	}
+	_, seq := e.Events(ws.ID, 0)
+	s, f := For(e.D), &images.Fetcher{Dev: true}
+	if err := s.refreshIcon(e.Ctx, f, ws.ID, x.ID); err != nil {
+		t.Fatal(err)
+	}
+	list := e.Do("GET", "/v1/integrations", ws.Viewer.As(ws), nil).Want(t, 200).Map(t)
+	icon, _ := list["data"].([]any)[0].(map[string]any)["icon_url"].(string)
+	if !strings.HasPrefix(icon, "http://api.test/v1/images/") {
+		t.Fatalf("icon_url = %v", list["data"])
+	}
+	var owner string
+	e.Scalar(`SELECT owner_type || ':' || source FROM images WHERE owner_id = $1`, &owner, x.ID)
+	if owner != "integration:server" {
+		t.Fatalf("image = %s", owner)
+	}
+	types, seq := e.Events(ws.ID, seq)
+	if !slices.Contains(types, "integration.updated") {
+		t.Fatalf("events = %v", types)
+	}
+	// The same icon again changes nothing; a lookup that finds nothing keeps the icon.
+	if err := s.refreshIcon(e.Ctx, f, ws.ID, x.ID); err != nil {
+		t.Fatal(err)
+	}
+	mcp.icons = nil
+	s.forget(x.ID)
+	if err := s.refreshIcon(e.Ctx, f, ws.ID, x.ID); err != nil {
+		t.Fatal(err)
+	}
+	if types, _ := e.Events(ws.ID, seq); len(types) != 0 {
+		t.Fatalf("events = %v", types)
+	}
+	var n int
+	e.Scalar(`SELECT count(*) FROM images WHERE owner_id = $1 AND 'img:' || id = (SELECT icon FROM integrations WHERE id = $1)`, &n, x.ID)
+	if n != 1 {
+		t.Fatalf("icon images = %d", n)
+	}
+
+	// A connection that fails is not looked up.
+	e.Do("POST", "/v1/integrations", admin, map[string]any{"provider": "custom", "url": srv.URL + "/mcp", "auth": "token", "token": "wrong"}).Want(t, 422)
+	if queued := e.Jobs("integrations.icon", ws.ID); len(queued) != 0 {
+		t.Fatalf("icon jobs after a failed connect = %d", len(queued))
 	}
 }

@@ -9,6 +9,7 @@ import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AppMark } from "@/components/appmark";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/input";
@@ -39,23 +40,21 @@ const markTone: Record<string, Tone> = {
   zapier: "orange",
 };
 
-/** A product's initial in its tone: calm, recognisable, no borrowed logos. */
-export function ProviderMark({ provider, name, size = "md", className }: { provider: string; name: string; size?: "sm" | "md" | "lg"; className?: string }) {
-  const t = markTone[provider] ?? "teal";
-  const letter = (name.trim()[0] ?? "?").toUpperCase();
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex shrink-0 select-none items-center justify-center rounded-md font-semibold tracking-[-0.02em]",
-        size === "sm" ? "size-5 text-[10.5px]" : size === "lg" ? "size-10 rounded-lg text-[17px]" : "size-8 text-[13.5px]",
-        tone[t].chip,
-        className,
-      )}
-    >
-      {letter}
-    </span>
-  );
+/** A product's logo; a custom server's own icon; else its initial in its tone. */
+export function ProviderMark({
+  provider,
+  name,
+  icon,
+  size = "md",
+  className,
+}: {
+  provider: string;
+  name: string;
+  icon?: string | null;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  return <AppMark app={provider} name={name} icon={icon} tint={markTone[provider] ?? "teal"} size={size} className={className} />;
 }
 
 function validServer(v: string): string | null {

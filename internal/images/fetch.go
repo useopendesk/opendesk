@@ -3,12 +3,14 @@ package images
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -135,6 +137,10 @@ func (f *Fetcher) image(ctx context.Context, raw string, fit Fit, header http.He
 	if ico := icoPNG(b); ico != nil {
 		b = ico
 	}
+	return processMin(b, fit, minSide)
+}
+
+func processMin(b []byte, fit Fit, minSide int) (Processed, error) {
 	img, err := Decode(b)
 	if err != nil {
 		return Processed{}, err
@@ -143,6 +149,53 @@ func (f *Fetcher) image(ctx context.Context, raw string, fit Fit, header http.He
 		return Processed{}, ErrDimensions
 	}
 	return Render(img, fit)
+}
+
+// Icon processes a logo-like picture fitted on a square: an https URL downloaded like
+// Image, or a base64 data: URI of a PNG, JPEG, GIF or WebP image. Icons under 32 px a
+// side are refused, like site icons.
+func (f *Fetcher) Icon(ctx context.Context, raw string) (Processed, error) {
+	if b, ok, err := DataImage(raw); ok {
+		if err != nil {
+			return Processed{}, err
+		}
+		return processMin(b, Contain, minIconSide)
+	}
+	return f.image(ctx, raw, Contain, nil, minIconSide)
+}
+
+var dataImage = regexp.MustCompile(`(?i)^data:image/(png|jpeg|jpg|gif|webp);base64,`)
+
+// DataImage decodes a base64 data: URI of a PNG, JPEG, GIF or WebP picture (the bytes
+// are still sniffed and decoded by Process). ok is false when raw is not a data: URI;
+// other media types, SVG among them, are ErrUnsupported.
+func DataImage(raw string) (b []byte, ok bool, err error) {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 5 || !strings.EqualFold(raw[:5], "data:") {
+		return nil, false, nil
+	}
+	head := dataImage.FindString(raw)
+	if head == "" {
+		return nil, true, ErrUnsupported
+	}
+	enc := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, raw[len(head):])
+	if base64.StdEncoding.DecodedLen(len(enc)) > MaxBytes+3 {
+		return nil, true, ErrTooLarge
+	}
+	if b, err = base64.StdEncoding.DecodeString(enc); err != nil {
+		if b, err = base64.RawStdEncoding.DecodeString(enc); err != nil {
+			return nil, true, ErrUnsupported
+		}
+	}
+	if len(b) > MaxBytes {
+		return nil, true, ErrTooLarge
+	}
+	return b, true, nil
 }
 
 // icoPNG returns the largest PNG image embedded in an ICO file, or nil. Bitmap entries

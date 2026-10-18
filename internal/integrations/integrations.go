@@ -30,6 +30,8 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/images"
 	"github.com/useopendesk/opendesk/internal/netsafe"
 )
 
@@ -88,10 +90,14 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerLinks(api)
 }
 
-// RegisterWorkers, Periodic and Background: integrations have no jobs.
-func RegisterWorkers(*deps.Deps, *river.Workers) {}
-func Periodic(*deps.Deps) []*river.PeriodicJob   { return nil }
-func Background(context.Context, *deps.Deps)     {}
+// RegisterWorkers adds the icon lookup of custom servers.
+func RegisterWorkers(d *deps.Deps, w *river.Workers) {
+	river.AddWorker(w, &iconWorker{s: For(d), f: images.NewFetcher(d)})
+}
+
+// Periodic and Background: integrations have none.
+func Periodic(*deps.Deps) []*river.PeriodicJob { return nil }
+func Background(context.Context, *deps.Deps)   {}
 
 // --- storage --------------------------------------------------------------------------
 
@@ -119,19 +125,20 @@ type row struct {
 	DisabledTools  []string
 	Enabled        bool
 	LastError      string
+	Icon           domain.Avatar
 	SyncedAt       *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
 const rowSelect = `SELECT id, workspace_id, provider, slug, name, url, auth_type, status, credentials_enc, oauth_enc, tools,
-	disabled_tools, enabled, last_error, synced_at, created_at, updated_at FROM integrations`
+	disabled_tools, enabled, last_error, icon, synced_at, created_at, updated_at FROM integrations`
 
 func scanRow(r pgx.Row) (*row, error) {
 	var x row
 	var tools []byte
 	if err := r.Scan(&x.ID, &x.WorkspaceID, &x.Provider, &x.Slug, &x.Name, &x.URL, &x.AuthType, &x.Status, &x.CredentialsEnc,
-		&x.OAuthEnc, &tools, &x.DisabledTools, &x.Enabled, &x.LastError, &x.SyncedAt, &x.CreatedAt, &x.UpdatedAt); err != nil {
+		&x.OAuthEnc, &tools, &x.DisabledTools, &x.Enabled, &x.LastError, &x.Icon, &x.SyncedAt, &x.CreatedAt, &x.UpdatedAt); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(tools, &x.Tools)

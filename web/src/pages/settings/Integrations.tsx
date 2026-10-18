@@ -95,7 +95,7 @@ function ConnectedRow({ x, admin }: { x: Integration; admin: boolean }) {
           aria-expanded={open}
           className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
         >
-          <ProviderMark provider={x.provider} name={x.name} />
+          <ProviderMark provider={x.provider} name={x.name} icon={x.icon_url} />
           <div className={cn("min-w-0 flex-1", !x.enabled && "opacity-60")}>
             <div className="flex items-center gap-2">
               <span className="truncate text-[13px] font-medium text-fg">{x.name}</span>

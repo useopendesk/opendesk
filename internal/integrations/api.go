@@ -23,6 +23,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -39,19 +40,20 @@ const (
 // Integration is a workspace's connection to one MCP server. Credentials never leave
 // the server; custom URLs are shown by host only, since a path can carry a secret.
 type Integration struct {
-	ID        uuid.UUID  `json:"id"`
-	Provider  string     `json:"provider"`
-	Name      string     `json:"name"`
-	Host      string     `json:"host"`
-	URL       string     `json:"url,omitempty" doc:"Catalog integrations only"`
-	AuthType  string     `json:"auth_type" enum:"oauth,token,none"`
-	Status    string     `json:"status" enum:"pending,connected,error"`
-	Enabled   bool       `json:"enabled"`
-	LastError string     `json:"last_error"`
-	Tools     []ToolInfo `json:"tools"`
-	Starters  []Starter  `json:"starters"`
-	SyncedAt  *time.Time `json:"synced_at"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID        uuid.UUID     `json:"id"`
+	Provider  string        `json:"provider"`
+	Name      string        `json:"name"`
+	Host      string        `json:"host"`
+	URL       string        `json:"url,omitempty" doc:"Catalog integrations only"`
+	AuthType  string        `json:"auth_type" enum:"oauth,token,none"`
+	Status    string        `json:"status" enum:"pending,connected,error"`
+	Enabled   bool          `json:"enabled"`
+	LastError string        `json:"last_error"`
+	Icon      domain.Avatar `json:"icon_url" doc:"Custom servers: the server's own icon, else its site's. Null when none; the app draws catalog products"`
+	Tools     []ToolInfo    `json:"tools"`
+	Starters  []Starter     `json:"starters"`
+	SyncedAt  *time.Time    `json:"synced_at"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
 // ToolInfo is one of a connection's tools as settings shows it.
@@ -65,7 +67,7 @@ type ToolInfo struct {
 
 func (x *row) api() Integration {
 	out := Integration{ID: x.ID, Provider: x.Provider, Name: x.Name, Host: hostOf(x.URL), AuthType: x.AuthType, Status: x.Status,
-		Enabled: x.Enabled, LastError: x.LastError, Tools: []ToolInfo{}, Starters: []Starter{}, SyncedAt: x.SyncedAt, CreatedAt: x.CreatedAt}
+		Enabled: x.Enabled, LastError: x.LastError, Icon: x.Icon, Tools: []ToolInfo{}, Starters: []Starter{}, SyncedAt: x.SyncedAt, CreatedAt: x.CreatedAt}
 	if p, ok := provider(x.Provider); ok {
 		out.URL = x.URL
 		out.Starters = p.Starters
@@ -284,6 +286,9 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				if err := s.publish(ctx, tx, "integration.created", p.WorkspaceID, map[string]any{"integration": x.api()}); err != nil {
 					return err
 				}
+				if err := s.enqueueIcon(ctx, tx, x); err != nil {
+					return err
+				}
 				if x.Status == "connected" {
 					return audit.Log(ctx, tx, p, p.WorkspaceID, "integration.connected", "integration", &x.ID,
 						map[string]any{"provider": x.Provider, "host": hostOf(x.URL), "auth": x.AuthType})
@@ -371,7 +376,10 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				return nil, wrapRemote(err)
 			}
 			if err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				return s.publish(ctx, tx, "integration.updated", p.WorkspaceID, map[string]any{"integration": x.api()})
+				if err := s.publish(ctx, tx, "integration.updated", p.WorkspaceID, map[string]any{"integration": x.api()}); err != nil {
+					return err
+				}
+				return s.enqueueIcon(ctx, tx, x)
 			}); err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -455,6 +463,11 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				}
 				if err := s.publish(ctx, tx, "integration.updated", p.WorkspaceID, map[string]any{"integration": x.api()}); err != nil {
 					return err
+				}
+				if b.Token != nil {
+					if err := s.enqueueIcon(ctx, tx, x); err != nil {
+						return err
+					}
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "integration.updated", "integration", &x.ID,
 					map[string]any{"provider": x.Provider, "changes": changed})
@@ -640,6 +653,11 @@ func (s *Service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	_ = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		if err := s.publish(ctx, tx, "integration.updated", wid, map[string]any{"integration": x.api()}); err != nil {
 			return err
+		}
+		if syncErr == nil {
+			if err := s.enqueueIcon(ctx, tx, x); err != nil {
+				return err
+			}
 		}
 		return audit.Log(ctx, tx, p, wid, "integration.connected", "integration", &x.ID,
 			map[string]any{"provider": x.Provider, "host": hostOf(x.URL), "auth": "oauth", "client": c.RegisteredVia})

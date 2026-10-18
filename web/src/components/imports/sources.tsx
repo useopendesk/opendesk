@@ -1,11 +1,11 @@
 // The products an import reads (contracts/imports.md "Credentials"): what each asks for,
-// where its people find it, and its mark.
+// where its people find it, and its logo.
 
 import { FileSpreadsheet } from "lucide-react";
 import type { ImportSource, ImportStatus } from "@/lib/api/types";
+import { AppMark } from "@/components/appmark";
 import type { ItemState } from "@/components/settings2/bits";
-import { cn } from "@/lib/cn";
-import { tone, type Tone } from "@/lib/tones";
+import type { Tone } from "@/lib/tones";
 
 export const SOURCES: ImportSource[] = ["zendesk", "helpscout", "freshdesk", "intercom", "csv"];
 
@@ -97,20 +97,17 @@ export const defaultCredentials = (src: ImportSource): Record<string, string> =>
 
 const markTone: Record<ImportSource, Tone> = { zendesk: "green", helpscout: "blue", freshdesk: "teal", intercom: "indigo", csv: "gray" };
 
-/** A source's initial in its tone, or a sheet for a CSV file. No borrowed logos. */
+/** A source's logo, or a sheet for a CSV file. */
 export function SourceMark({ source, size = "md", className }: { source: ImportSource; size?: "sm" | "md" | "lg"; className?: string }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex shrink-0 select-none items-center justify-center rounded-md font-semibold tracking-[-0.02em]",
-        size === "sm" ? "size-5 text-[10.5px] [&_svg]:size-3" : size === "lg" ? "size-10 rounded-lg text-[17px] [&_svg]:size-5" : "size-8 text-[13.5px] [&_svg]:size-4",
-        tone[markTone[source]].chip,
-        className,
-      )}
-    >
-      {source === "csv" ? <FileSpreadsheet /> : sourceName[source][0]}
-    </span>
+    <AppMark
+      app={source === "csv" ? null : source}
+      name={sourceName[source]}
+      tint={markTone[source]}
+      glyph={source === "csv" ? <FileSpreadsheet /> : undefined}
+      size={size}
+      className={className}
+    />
   );
 }
 

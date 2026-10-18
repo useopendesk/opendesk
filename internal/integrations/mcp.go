@@ -135,6 +135,67 @@ type session struct {
 	version   string
 	legacy    bool
 	used      time.Time
+	icons     []ServerIcon
+}
+
+// ServerIcon is one of the icons a server advertises in its initialize result
+// (serverInfo.icons).
+type ServerIcon struct {
+	Src      string    `json:"src"`
+	MimeType string    `json:"mimeType,omitempty"`
+	Sizes    iconSizes `json:"sizes,omitempty"`
+	Theme    string    `json:"theme,omitempty"`
+}
+
+// iconSizes reads sizes as a list ("48x48", "any") or as one space-separated string.
+type iconSizes []string
+
+func (z *iconSizes) UnmarshalJSON(b []byte) error {
+	var list []string
+	if json.Unmarshal(b, &list) == nil {
+		*z = list
+		return nil
+	}
+	var one string
+	if json.Unmarshal(b, &one) == nil {
+		*z = strings.Fields(one)
+	}
+	return nil
+}
+
+// maxIcons bounds the icons kept from one server.
+const maxIcons = 20
+
+// parseServerIcons reads serverInfo.icons from an initialize result; anything malformed
+// is left out.
+func parseServerIcons(res json.RawMessage) []ServerIcon {
+	var init struct {
+		ServerInfo struct {
+			Icons []json.RawMessage `json:"icons"`
+		} `json:"serverInfo"`
+	}
+	if json.Unmarshal(res, &init) != nil {
+		return nil
+	}
+	var out []ServerIcon
+	for _, raw := range init.ServerInfo.Icons {
+		var ic ServerIcon
+		if json.Unmarshal(raw, &ic) != nil || strings.TrimSpace(ic.Src) == "" {
+			continue
+		}
+		if out = append(out, ic); len(out) >= maxIcons {
+			break
+		}
+	}
+	return out
+}
+
+// Icons are the icons the server advertised when the session opened (none for the
+// legacy transport).
+func (s *session) Icons() []ServerIcon {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.icons
 }
 
 func newSession(c *http.Client, endpoint, bearer string) *session {
@@ -167,9 +228,11 @@ func (s *session) initialize(ctx context.Context) error {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
 	_ = json.Unmarshal(res, &init)
+	icons := parseServerIcons(res)
 	s.mu.Lock()
 	s.sessionID = hdr.Get("Mcp-Session-Id")
 	s.version = init.ProtocolVersion
+	s.icons = icons
 	s.mu.Unlock()
 	return s.notify(ctx, "notifications/initialized")
 }

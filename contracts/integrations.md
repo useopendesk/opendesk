@@ -19,6 +19,7 @@ interface Starter { label: string; prompt: string } // one-click asks on a ticke
 interface Integration { id: string; provider: string /* catalog key or "custom" */; name: string; host: string;
   url?: string /* catalog only; custom servers show the host, since a path can carry a secret */;
   auth_type: "oauth"|"token"|"none"; status: "pending"|"connected"|"error"; enabled: boolean; last_error: string;
+  icon_url: string | null /* custom servers: the server's advertised icon, else its site's; catalog products are drawn by the app */;
   tools: ToolInfo[]; starters: Starter[]; synced_at: string | null; created_at: string }
 interface ToolInfo { name: string; title: string; description: string; read_only: boolean; enabled: boolean }
 interface Link { id: string; ticket_id: string; integration_id: string | null; provider: string /* key, custom or link */;
@@ -48,6 +49,23 @@ interface Link { id: string; ticket_id: string; integration_id: string | null; p
 - Callback errors: `oauth_state`, `access_denied`, `forbidden` (no longer admin), `not_found`,
   `provider_error`, `sync_failed`.
 - API keys cannot connect (`403`): signing in to another service needs a person in a browser.
+
+### Icons
+
+A custom server's icon is looked up in a job (`integrations.icon`) after each successful
+sync (connect, sign-in, sync, new token), so it never slows connecting down:
+
+1. The icons the server advertises in its `initialize` result (`serverInfo.icons`). Only
+   raster images (PNG, JPEG, GIF, WebP; never SVG), as a base64 `data:` URI or an https URL
+   on the server's own registrable domain (`mcp.example.com` may use `cdn.example.com`).
+   Icons for any or the light theme come first, then the smallest at least 64 px; at
+   most 3 are tried. Legacy HTTP+SSE servers advertise none.
+2. Else its site's icon: the server's registrable domain (`example.com`), found like a
+   company logo (logo provider, apple-touch-icon, manifest, favicon).
+
+Icons are downloaded without the connection's credentials, through the outbound URL
+rules, and re-encoded as PNGs (`/v1/images`). A lookup that finds nothing keeps the
+current icon. A new icon publishes `integration.updated`.
 
 ## Sign-in (OAuth 2.1 for MCP)
 

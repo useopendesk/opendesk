@@ -24,6 +24,7 @@ import (
 type fakeMCP struct {
 	sse    bool
 	bearer string
+	icons  []any // serverInfo.icons
 	mu     sync.Mutex
 	calls  []string
 }
@@ -31,8 +32,12 @@ type fakeMCP struct {
 func (f *fakeMCP) answer(m rpcMessage) any {
 	switch m.Method {
 	case "initialize":
+		info := map[string]any{"name": "fake", "version": "1"}
+		if f.icons != nil {
+			info["icons"] = f.icons
+		}
 		return map[string]any{"protocolVersion": protocolVersion, "capabilities": map[string]any{"tools": map[string]any{}},
-			"serverInfo": map[string]any{"name": "fake", "version": "1"}}
+			"serverInfo": info}
 	case "tools/list":
 		var p struct {
 			Cursor string `json:"cursor"`
