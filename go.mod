@@ -3,6 +3,7 @@ module github.com/useopendesk/opendesk
 go 1.27.1
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/anthropics/anthropic-sdk-go v1.81.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
