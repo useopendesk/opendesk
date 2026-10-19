@@ -43,19 +43,19 @@ func TestTurnstileFailure(t *testing.T) {
 	}
 }
 
-func TestTurnstileExpectedHostMatches(t *testing.T) {
+func TestTurnstileHostnameMatches(t *testing.T) {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	err := verifyAgainst(t, `{"success":true,"challenge_ts":"`+ts+`","hostname":"app.opendesk.sh"}`,
-		TurnstileConfig{ExpectedHost: "app.opendesk.sh"})
+		TurnstileConfig{Hostnames: []string{"app.opendesk.sh", "admin.opendesk.sh"}})
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
 }
 
-func TestTurnstileExpectedHostMismatch(t *testing.T) {
+func TestTurnstileHostnameMismatch(t *testing.T) {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	err := verifyAgainst(t, `{"success":true,"challenge_ts":"`+ts+`","hostname":"attacker.example"}`,
-		TurnstileConfig{ExpectedHost: "app.opendesk.sh"})
+		TurnstileConfig{Hostnames: []string{"app.opendesk.sh", "admin.opendesk.sh"}})
 	if err != ErrCaptcha {
 		t.Fatalf("expected ErrCaptcha for host mismatch, got %v", err)
 	}
@@ -126,5 +126,18 @@ func TestTurnstileInvalidRemoteIP(t *testing.T) {
 	turn := NewTurnstileFromConfig(TurnstileConfig{})
 	if err := turn.Verify(context.Background(), "token", "not-an-ip"); err != ErrCaptcha {
 		t.Fatalf("expected ErrCaptcha for an invalid remote IP, got %v", err)
+	}
+}
+
+func TestTurnstileIsTestSecret(t *testing.T) {
+	for _, s := range []string{"1x0000000000000000000000000000000AA", "2x0000000000000000000000000000000AA", "3x0000000000000000000000000000000AA"} {
+		if !IsTestSecret(s) {
+			t.Errorf("%s is a test secret", s)
+		}
+	}
+	for _, s := range []string{"", "0x4AAAAAAABkMYinukE8nzYS_real-secret", "1x0000000000000000000000000000000AB"} {
+		if IsTestSecret(s) {
+			t.Errorf("%q is not a test secret", s)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"regexp"
@@ -47,6 +48,9 @@ type Config struct {
 	SignupEnabled  bool
 	TrustProxy     bool
 	ProxyHops      int // TRUSTED_PROXY_HOPS: proxies in front that append to X-Forwarded-For
+	// LogLevel is the least severe level logged (LOG_LEVEL): info in production,
+	// debug in development.
+	LogLevel slog.Level
 	// UpdateCheck looks for new opendesk releases on GitHub (UPDATE_CHECK, default on) and
 	// tells the instance admins. Builds that are not a release never look.
 	UpdateCheck bool
@@ -594,6 +598,15 @@ func Load() (*Config, error) {
 		adminURL = "http://localhost:5174"
 	}
 	c.AdminURL = strings.TrimRight(env("ADMIN_URL", adminURL), "/")
+	c.LogLevel = slog.LevelInfo
+	if !c.IsProduction() {
+		c.LogLevel = slog.LevelDebug
+	}
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		if err := c.LogLevel.UnmarshalText([]byte(v)); err != nil {
+			return nil, errors.New("LOG_LEVEL must be debug, info, warn or error")
+		}
+	}
 	if u, err := url.Parse(c.AdminURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" {
 		return nil, errors.New("ADMIN_URL must be an http(s) URL, e.g. https://admin.example.com")
 	}

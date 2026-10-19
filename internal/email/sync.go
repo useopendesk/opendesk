@@ -87,6 +87,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 	if !receivesIMAP(m.InboundKind) || m.Status == "disabled" || !s.mailboxIMAP {
 		return nil
 	}
+	start := time.Now()
 	sess, err := s.dialIMAP(ctx, m)
 	if err != nil {
 		return s.recordSyncError(ctx, m, err)
@@ -105,7 +106,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		lastUID = 0
 	}
 	if upToDate {
-		return s.setSyncOK(ctx, m, int64(sel.Validity), int64(finalCursor(initial, lastUID, sel, true)))
+		return s.finishSync(ctx, m, sel, finalCursor(initial, lastUID, sel, true), 0, start)
 	}
 
 	var cands []candidate
@@ -149,7 +150,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		cands, complete = cands[:syncBatch], false
 	}
 
-	cursor := lastUID
+	cursor, ingested := lastUID, 0
 	for _, cand := range cands {
 		if cand.size > maxRawBytes {
 			s.log.Warn("skipping oversized message", "mailbox_id", m.ID, "uid", cand.uid, "bytes", cand.size)
@@ -174,10 +175,21 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 				_ = s.saveProgress(ctx, m, int64(sel.Validity), int64(cursor))
 				return err // storage or database trouble: let River log it
 			}
+			ingested++
 		}
 		cursor = cand.uid
 	}
-	return s.setSyncOK(ctx, m, int64(sel.Validity), int64(finalCursor(initial, cursor, sel, complete)))
+	return s.finishSync(ctx, m, sel, finalCursor(initial, cursor, sel, complete), ingested, start)
+}
+
+// finishSync records a successful pass and logs it at debug level.
+func (s *service) finishSync(ctx context.Context, m *mailboxRow, sel selectInfo, lastUID uint32, ingested int, start time.Time) error {
+	if err := s.setSyncOK(ctx, m, int64(sel.Validity), int64(lastUID)); err != nil {
+		return err
+	}
+	s.log.Debug("mailbox synced", "mailbox_id", m.ID, "workspace_id", m.WorkspaceID,
+		"last_uid", lastUID, "new_messages", ingested, "duration", time.Since(start))
+	return nil
 }
 
 func (s *service) recordSyncError(ctx context.Context, m *mailboxRow, err error) error {

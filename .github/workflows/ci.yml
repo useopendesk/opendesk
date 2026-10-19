@@ -442,9 +442,9 @@ jobs:
       - name: Run the e2e suite
         env:
           # widget (the brand/multi-widget redesign) and ai (the Ollie panel
-          # rename) and settings (the teams add-member redesign) need their
-          # flows updated to match; add each back to E2E_ONLY as it's fixed.
-          E2E_ONLY: account,inbox,tickets,kb,danger
+          # rename) need their flows updated to match; add each back to
+          # E2E_ONLY as it's fixed.
+          E2E_ONLY: account,inbox,tickets,kb,settings,danger
         run: cd scripts/e2e && bash run.sh
       - name: Logs on failure
         if: failure()

@@ -73,6 +73,8 @@ services:
       SIGNUP_ENABLED: ${SIGNUP_ENABLED:-true}
       # Look for new releases and tell the instance admins (docs: self-hosting/backups-and-upgrades).
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
+      # debug, info, warn or error (docs: self-hosting/configuration).
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       # Help centers at <slug>.HELP_DOMAIN (a wildcard DNS record to this host);
       # empty keeps them at OPENDESK_URL/help/<slug>. Custom domains CNAME to
       # HELP_CNAME_TARGET, the host of OPENDESK_URL when empty. Caddy issues

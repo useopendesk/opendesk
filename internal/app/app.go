@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,12 +78,27 @@ var areas = []area{
 	{admin.Register, admin.RegisterWorkers, admin.Periodic, admin.Background},
 }
 
+// turnstileHostnames are the hosts that render the Turnstile widget: the web app (login,
+// registration, password reset; the desktop app loads it too) and the admin panel.
+func turnstileHostnames(cfg *config.Config) []string {
+	if captcha.IsTestSecret(cfg.TurnstileSecret) {
+		return nil
+	}
+	var hosts []string
+	for _, raw := range []string{cfg.AppURL, cfg.AdminURL} {
+		if u, err := url.Parse(raw); err == nil && u.Hostname() != "" && !slices.Contains(hosts, u.Hostname()) {
+			hosts = append(hosts, u.Hostname())
+		}
+	}
+	return hosts
+}
+
 // NewLogger returns a JSON logger in production and a text logger in development.
 func NewLogger(cfg *config.Config) *slog.Logger {
 	if cfg.IsProduction() {
-		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 }
 
 // Build connects everything. The caller closes the returned cleanup.
@@ -111,7 +127,8 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 	if err != nil {
 		return nil, nil, err
 	}
-	turnstile := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{Secret: cfg.TurnstileSecret, Disabled: cfg.TurnstileSecret == ""})
+	turnstile := captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{Secret: cfg.TurnstileSecret, Disabled: cfg.TurnstileSecret == "",
+		Hostnames: turnstileHostnames(cfg)})
 	d := &deps.Deps{Cfg: cfg, Log: log, DB: database, NATS: nc, Storage: store, Mailer: m,
 		Analytics: analytics.New(cfg.PosthogKey, cfg.PosthogHost, log), Box: box, Tokens: auth.NewTokens(cfg.AuthSecret),
 		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AIUsageMarkup)}

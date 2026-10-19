@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -232,5 +233,21 @@ func TestTrustedProxyHops(t *testing.T) {
 		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_HOPS") {
 			t.Fatalf("%q: want refusal, got %v", v, err)
 		}
+	}
+}
+
+func TestLogLevel(t *testing.T) {
+	productionEnv(t)
+	c, err := Load()
+	if err != nil || c.LogLevel != slog.LevelInfo {
+		t.Fatalf("production default: %v %v", c.LogLevel, err)
+	}
+	t.Setenv("LOG_LEVEL", "debug")
+	if c, err = Load(); err != nil || c.LogLevel != slog.LevelDebug {
+		t.Fatalf("LOG_LEVEL=debug: %v %v", c.LogLevel, err)
+	}
+	t.Setenv("LOG_LEVEL", "loud")
+	if _, err = Load(); err == nil {
+		t.Fatal("LOG_LEVEL=loud was accepted")
 	}
 }
