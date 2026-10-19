@@ -173,12 +173,12 @@ function HoldNotices({ prefs, onChange }: { prefs: NotificationPreferences; onCh
 }
 
 /**
- * In the desktop app, OS notifications need the system's permission: say when it is
- * blocked, and ask when it was never asked.
+ * OS notifications need permission, from the system in the desktop app and from the
+ * browser elsewhere: say when it is blocked, and ask when it was never asked.
  */
 function DesktopPermission() {
   const { t } = useTranslation("settings");
-  const supported = isDesktop && typeof window !== "undefined" && "Notification" in window;
+  const supported = typeof window !== "undefined" && "Notification" in window;
   const [perm, setPerm] = useState<NotificationPermission | null>(supported ? Notification.permission : null);
   useEffect(() => {
     if (!supported) return;
@@ -190,7 +190,7 @@ function DesktopPermission() {
   if (perm === "denied") {
     return (
       <Note icon={<BellOff />} strong>
-        {t("notifications.desktop.blocked")}
+        {t(isDesktop ? "notifications.desktop.blocked" : "notifications.desktop.blockedBrowser")}
       </Note>
     );
   }
