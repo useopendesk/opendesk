@@ -42,6 +42,7 @@ import {
 } from "@/lib/notificationPrefs";
 import { q, qk } from "@/lib/queries";
 import { useWorkspace } from "@/lib/session";
+import { subscribeWebPush } from "@/lib/webPush";
 import { tone, type Tone } from "@/lib/tones";
 import { useNow } from "@/lib/useNow";
 
@@ -180,6 +181,7 @@ function DesktopPermission() {
   const { t } = useTranslation("settings");
   const supported = typeof window !== "undefined" && "Notification" in window;
   const [perm, setPerm] = useState<NotificationPermission | null>(supported ? Notification.permission : null);
+  const { data: config } = useQuery(q.authConfig());
   useEffect(() => {
     if (!supported) return;
     const sync = () => setPerm(Notification.permission);
@@ -200,7 +202,12 @@ function DesktopPermission() {
       <button
         type="button"
         className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg"
-        onClick={() => void Notification.requestPermission().then(setPerm)}
+        onClick={() =>
+          void Notification.requestPermission().then((p) => {
+            setPerm(p);
+            if (p === "granted") void subscribeWebPush(config?.web_push_key).catch(() => undefined);
+          })
+        }
       >
         {t("notifications.desktop.allow")}
       </button>

@@ -503,7 +503,7 @@
       "emailOffShort": "off",
       "emailOff": "Notification emails are off. Choose a schedule above to send them again. Your choices here are kept.",
       "phoneHint": "Phone: the opendesk iPhone app. Each phone can also mute types of its own, in the app's settings.",
-      "desktopHint": "Desktop: in the opendesk desktop app, or in this browser once you allow notifications, while opendesk is in the background.",
+      "desktopHint": "Desktop: in the opendesk desktop app, or in this browser once you allow notifications, while opendesk is in the background or closed.",
       "urgent": "Urgent",
       "urgentHint": "Can be emailed sooner, at most every {{gap}}"
     },

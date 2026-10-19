@@ -174,6 +174,8 @@ export const api = {
     /** PNG, JPEG, GIF or WebP, at most 5 MB. */
     uploadAvatar: (file: File | Blob) => http.put<T.User>("/v1/me/avatar", imageForm(file), { workspace: false }),
     removeAvatar: () => http.del<T.User>("/v1/me/avatar", undefined, { workspace: false }),
+    /** Subscribes this browser to web pushes for the current session (contracts/native.md "Web Push"). */
+    webPush: (s: PushSubscriptionJSON) => http.put<void>("/v1/me/web-push", s, { workspace: false }),
     /** Marks you as seen, for auto-away, in the active workspace (notification emails wait while you are active there). */
     heartbeat: () => http.post<void>("/v1/me/heartbeat"),
     password: (current_password: string, new_password: string) =>

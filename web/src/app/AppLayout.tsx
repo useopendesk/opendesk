@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWaitingAlerts } from "@/components/tickets/useWaitingAlerts";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
@@ -15,7 +15,8 @@ import { useUpgrade } from "@/lib/upgrade";
 import { toast } from "@/components/ui/toast";
 import { AssistantDock, AssistantRoot } from "@/components/assistant/AssistantRoot";
 import type { Notification, Ticket } from "@/lib/api/types";
-import { qk } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
+import { subscribeWebPush } from "@/lib/webPush";
 import { i18n } from "@/i18n";
 import { describe, joinedTeam } from "./Notifications";
 import { Sidebar } from "./Sidebar";
@@ -160,6 +161,16 @@ function useRealtimeConnection() {
   }, [wid, uid, suspended, qc, navigate, router]);
 }
 
+/** Subscribes this browser to web pushes for the session once notifications are allowed. */
+function useWebPushSubscription() {
+  const uid = useSession((s) => s.user?.id);
+  const { data } = useQuery(q.authConfig());
+  const key = data?.web_push_key;
+  useEffect(() => {
+    if (uid && key) void subscribeWebPush(key).catch(() => undefined);
+  }, [uid, key]);
+}
+
 export function AppLayout() {
   // The top-level area (inbox, views, contacts, settings/...) keys the route transition.
   const section = useRouterState({ select: (s) => { const p = s.location.pathname.split("/").filter(Boolean); return p[0] ?? ""; } });
@@ -167,6 +178,7 @@ export function AppLayout() {
   useHeartbeat();
   useDesktopBadge();
   useDesktopPreferences();
+  useWebPushSubscription();
   const navigate = useNavigate();
   const newTicketOpen = useShell((s) => s.newTicketOpen);
   const sidebarOpen = useShell((s) => s.sidebarOpen);

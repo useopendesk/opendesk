@@ -963,6 +963,8 @@ export type AuthConfig = {
   password_login: boolean;
   signup_enabled: boolean;
   turnstile_site_key: string | null;
+  /** The VAPID public key browsers subscribe to web pushes with; null when the server sends none. */
+  web_push_key: string | null;
 };
 export type TokenResponse = { access_token: string; expires_in: number; user: User; redirect_to?: string };
 /** One account this browser is signed in to (POST /v1/auth/accounts). */
