@@ -605,11 +605,13 @@ machine and open ports 80 and 443. The installer:
 2. asks for the domain (and an email for certificate notices) unless given;
 3. generates every secret and writes `/opt/opendesk/.env` (mode 0600);
 4. pins the newest release in `.env`, downloads that release's
-   `docker-compose.yml`, `Caddyfile`, `env.template` and `opendesk-ctl`, and
-   checks each against the release's `SHA256SUMS`;
+   `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`,
+   `env.template` and `opendesk-ctl`, and checks each against the release's
+   `SHA256SUMS`;
 5. pulls the images, starts the stack and waits for the first boot's migrations.
 
-Flags: `--domain`, `--email`, `--dir` (default `/opt/opendesk`), `--version`,
+Flags: `--domain`, `--email`, `--proxy` (`caddy` or `external`), `--dir`
+(default `/opt/opendesk`), `--version`,
 `--no-start`, `--wizard` (also asks about SMTP, attachment storage, inbound
 mail, AI and sign-ups), `--ai-key`, `--ai-url`, `--ai-model`, `--ollama`,
 `--no-ai`, `--yes`, `--dry-run`, `--help`. Each has an `OPENDESK_*`
@@ -833,12 +835,17 @@ Caddy gets every help center certificate on its first visit, after asking
 opendesk (`/v1/public/help-domains/tls`) whether the host is one of its help
 centers, so no wildcard certificate is needed.
 
-**Behind another proxy.** Set `OPENDESK_DOMAIN=:80`, `HTTP_PORT` to a free
-port, and `OPENDESK_URL` / `OPENDESK_GATEWAY_URL` to the public https / wss
-URLs; the outer proxy terminates TLS and must pass WebSocket upgrades on
-`/socket`. It also gets the help center certificates: a wildcard for
-`*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, with the
-`Host` header passed on as is.
+**Behind your own reverse proxy.** `install.sh --proxy external`, or
+`COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml` in `.env`, runs
+without Caddy: opendesk is published on `127.0.0.1:8080` and realtime on
+`127.0.0.1:4000` (`OPENDESK_BIND`, `OPENDESK_PORT`, `REALTIME_PORT`), and both
+join the `opendesk_proxy` network for a proxy in a container. The proxy
+terminates TLS, sends `/socket/*` to realtime with WebSocket upgrades and the
+rest to opendesk with the `Host` header as is, and gets the help center
+certificates: a wildcard for `*.HELP_DOMAIN`, or its own on-demand TLS asking
+the same endpoint. The client address is read `TRUSTED_PROXY_HOPS` (default 1)
+entries from the right of `X-Forwarded-For`. Examples for nginx, Traefik,
+Caddy and Nginx Proxy Manager: "Your own reverse proxy" (self-hosting).
 
 ### Troubleshooting
 

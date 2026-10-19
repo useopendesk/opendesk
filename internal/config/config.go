@@ -46,6 +46,7 @@ type Config struct {
 	CORSOrigins    []string
 	SignupEnabled  bool
 	TrustProxy     bool
+	ProxyHops      int // TRUSTED_PROXY_HOPS: proxies in front that append to X-Forwarded-For
 	// UpdateCheck looks for new opendesk releases on GitHub (UPDATE_CHECK, default on) and
 	// tells the instance admins. Builds that are not a release never look.
 	UpdateCheck bool
@@ -600,6 +601,14 @@ func Load() (*Config, error) {
 		if o = strings.TrimSpace(o); o != "" {
 			c.CORSOrigins = append(c.CORSOrigins, strings.TrimRight(o, "/"))
 		}
+	}
+
+	if v := strings.TrimSpace(os.Getenv("TRUSTED_PROXY_HOPS")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 10 {
+			return nil, errors.New("TRUSTED_PROXY_HOPS must be a number from 0 to 10: the proxies in front that append to X-Forwarded-For")
+		}
+		c.ProxyHops = n
 	}
 
 	switch c.Role {

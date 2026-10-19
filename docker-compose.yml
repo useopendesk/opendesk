@@ -13,6 +13,10 @@
 #   realtime   the Phoenix gateway, joined to opendesk's NATS with NATS_TOKEN
 #   postgres   17 with pgvector, data in the postgres-data volume
 #
+# Behind a reverse proxy you already run (Traefik, nginx, Nginx Proxy Manager),
+# compose.external-proxy.yml turns Caddy off and publishes opendesk and realtime
+# for it: COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml in .env.
+#
 # Optional profiles (COMPOSE_PROFILES in .env, or --profile on the command line):
 #   minio         S3-compatible attachment storage instead of the opendesk-data volume
 #   smtp-inbound  publish the built-in SMTP receiver so mail can be pointed at this host

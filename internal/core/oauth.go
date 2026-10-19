@@ -366,7 +366,7 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 404, "not_found", "Unknown sign-in provider.")
 		return
 	}
-	ip := httpx.ClientIP(s.d.Cfg.TrustProxy)(r)
+	ip := httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
 	if !s.d.Limiter.Allow("oauth:start:"+ip, 30, 15*time.Minute) {
 		writeProblem(w, 429, "rate_limited", "Too many requests. Wait a moment and try again.")
 		return

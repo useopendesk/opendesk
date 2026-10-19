@@ -234,7 +234,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := &auth.Principal{Kind: auth.KindUser, UserID: uid, WorkspaceID: wid, Role: auth.Role(role),
-		IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: truncate(r.UserAgent(), 400)}
+		IP: httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r), UserAgent: truncate(r.UserAgent(), 400)}
 	var mailboxID *uuid.UUID
 	if v := claims.Data["mailbox_id"]; v != "" {
 		id, err := uuid.Parse(v)

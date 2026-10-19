@@ -164,7 +164,7 @@ func Router(d *deps.Deps) http.Handler {
 	// Help centers answer on their own hosts and at /help/<slug>, before the API's
 	// sessions are read (contracts/teams.md "Help center addresses").
 	r.Use(helpsite.Middleware(d))
-	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(cfg.TrustProxy)}
+	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(cfg.TrustProxy, cfg.ProxyHops)}
 	r.Use(resolver.Middleware, idempotency.New(d.DB.Pool, d.Box, cfg.AuthSecret, d.Log).Middleware)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

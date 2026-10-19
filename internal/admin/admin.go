@@ -185,7 +185,7 @@ func op[I, O any](s *svc, api huma.API, o huma.Operation, h func(context.Context
 func (s *svc) resolve(ctx huma.Context, next func(huma.Context)) {
 	ri := reqInfo{}
 	if r, _ := humachi.Unwrap(ctx); r != nil {
-		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy)(r)
+		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
 		ri.UserAgent = truncate(r.UserAgent(), 400)
 		ri.Origin = r.Header.Get("Origin")
 		if c, err := r.Cookie(RefreshCookie); err == nil {
