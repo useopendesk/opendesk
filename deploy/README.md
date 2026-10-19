@@ -355,8 +355,8 @@ Google scope above, with its verification and yearly CASA assessment.
 
 **Collab mail accounts** (`contracts/collab.md`; the hidden collab plan). A member
 of a workspace with Collab connects their own account, which Collab reads and
-changes like a mail client: Google with `https://www.googleapis.com/auth/gmail.modify`
-(a **restricted** scope) and `https://www.googleapis.com/auth/gmail.settings.basic`
+changes like a mail client: Google with `openid`, `email`, `profile` (the account's
+name), `https://www.googleapis.com/auth/gmail.modify` (a **restricted** scope) and `https://www.googleapis.com/auth/gmail.settings.basic`
 (a sensitive scope: the account's signature, From name and vacation responder),
 Microsoft with Graph `Mail.ReadWrite`, `Mail.Send`, `User.Read`,
 `MailboxSettings.ReadWrite` (automatic replies and categories) and `offline_access`,
@@ -436,7 +436,7 @@ for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PRICE_PRO STRIPE_PRICE_P
 done
 ```
 
-(and `STRIPE_PRICE_COLLAB`, `STRIPE_PRICE_COLLAB_YEARLY` the same way when the collab
+(and `STRIPE_PRICE_COLLAB`, optionally `STRIPE_PRICE_COLLAB_YEARLY`, the same way when the collab
 plan is sold), then add the names to `optional_secrets` in `terraform.tfvars`, `terraform
 apply`, and run the Deploy workflow from the current release tag (target `backend`) so the api and worker
 pick up the new task definitions. Test end to end in test mode with

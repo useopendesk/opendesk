@@ -50,6 +50,9 @@ locals {
     "STRIPE_PRICE_PRO",
     "STRIPE_PRICE_PRO_YEARLY",
     "STRIPE_PRICE_CREDITS",
+    # The hidden collab plan (contracts/billing.md "Collab").
+    "STRIPE_PRICE_COLLAB",
+    "STRIPE_PRICE_COLLAB_YEARLY",
     "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
     "VOYAGE_API_KEY",
@@ -61,6 +64,9 @@ locals {
     "MCP_SLACK_CLIENT_SECRET",
     "MCP_BOX_CLIENT_SECRET",
     "MCP_GITHUB_CLIENT_SECRET",
+    # Collab mail accounts in their own Google project and Entra app.
+    "COLLAB_GOOGLE_CLIENT_SECRET",
+    "COLLAB_MICROSOFT_CLIENT_SECRET",
   ])
 
   all_keys = setunion(

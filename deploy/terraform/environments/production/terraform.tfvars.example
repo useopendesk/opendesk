@@ -55,6 +55,8 @@ microsoft_mailbox_oauth = true
 #   "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
 #   # Billing (opendesk Cloud only): turns plans and limits on.
 #   "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
+#   # The hidden collab plan, and its own Google and Microsoft clients (collab_google_client_id, collab_microsoft_client_id).
+#   "STRIPE_PRICE_COLLAB", "COLLAB_GOOGLE_CLIENT_SECRET", "COLLAB_MICROSOFT_CLIENT_SECRET",
 #   # AI: OPENROUTER_API_KEY sets AI_PROVIDER=openrouter (chat, Jev and embeddings),
 #   # else ANTHROPIC_API_KEY sets AI_PROVIDER=anthropic; VOYAGE_API_KEY sets EMBEDDINGS_DRIVER=voyage.
 #   "OPENROUTER_API_KEY",

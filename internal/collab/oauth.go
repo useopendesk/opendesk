@@ -71,7 +71,7 @@ func oauthClients(cfg *config.Config) map[string]*oauthClient {
 			name: ProviderGoogle, clientID: cfg.CollabGoogleClientID, clientSecret: cfg.CollabGoogleClientSecret,
 			authURL: "https://accounts.google.com/o/oauth2/v2/auth", tokenURL: "https://oauth2.googleapis.com/token",
 			userinfoURL: "https://openidconnect.googleapis.com/v1/userinfo", revokeURL: "https://oauth2.googleapis.com/revoke",
-			scopes: []string{"openid", "email", googleModifyScope, googleSettingsScope},
+			scopes: []string{"openid", "email", "profile", googleModifyScope, googleSettingsScope},
 			authParams: []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"),
 				oauth2.SetAuthURLParam("include_granted_scopes", "false")},
 		},

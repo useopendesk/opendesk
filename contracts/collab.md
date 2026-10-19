@@ -32,7 +32,7 @@ are and stop syncing; nothing is deleted. Turning it back on resumes them.
 
 | provider | connects with | reads and changes mail through | sends through |
 | --- | --- | --- | --- |
-| `google` | OAuth: `openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic` | Gmail API (labels, history) | Gmail API `messages.send` |
+| `google` | OAuth: `openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic` | Gmail API (labels, history) | Gmail API `messages.send` |
 | `microsoft` | OAuth: `openid email offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read https://graph.microsoft.com/MailboxSettings.ReadWrite` | Microsoft Graph (mail folders, delta) | Graph `sendMail` (MIME) |
 | `imap` | address, IMAP and SMTP servers and a password (an app password where the host needs one) | IMAP (UID, flags, MOVE or COPY + EXPUNGE, CONDSTORE when offered) | SMTP, then APPEND to the Sent folder |
 
