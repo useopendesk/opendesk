@@ -190,7 +190,7 @@ type Device = { id: string; platform: "ios"; name: string; app_version: string; 
   muted_types: string[]; current: boolean /* bound to the caller's session */; created_at: string; last_push_at: string | null };
 // Notification preferences ("Notification preferences and emails" below). Channels per type, per workspace;
 // the email schedule and the pause are the account's, across workspaces.
-type NotificationChannels = { email: boolean; push: boolean /* the phone */; desktop: boolean /* the desktop app */ };
+type NotificationChannels = { email: boolean; push: boolean /* the phone */; desktop: boolean /* the desktop app, or a browser that allowed notifications */ };
 type NotificationTypePrefs = NotificationChannels & { type: Notification["type"]; group: "tickets" | "team" | "ai_billing" | "workspace"; defaults: NotificationChannels;
   urgent: boolean /* may be emailed before a cooldown ends ("Pacing" below) */ };
 type NotificationPacing = { delay_minutes: number; cooldown_minutes: number[]; quiet_reset_minutes: number; urgent_gap_minutes: number;
@@ -344,7 +344,7 @@ Core notes:
 
 Every notification lands in the app (the bell, always on). Each type also has three channels, chosen per workspace
 (`notification_preferences`, deleted with the membership): `email`, `push` (the user's phones) and `desktop` (OS
-notifications from the desktop app). A channel the user never set follows its default:
+notifications from the desktop app, or from a browser that allowed them). A channel the user never set follows its default:
 
 | type | group | email | push | desktop |
 | --- | --- | --- | --- | --- |

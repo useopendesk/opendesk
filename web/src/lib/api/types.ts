@@ -882,7 +882,7 @@ export type Notification = {
   created_at: string;
 };
 
-/** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app. */
+/** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app or browser (`desktop`). */
 export type NotificationChannels = { email: boolean; push: boolean; desktop: boolean };
 export type NotificationChannel = keyof NotificationChannels;
 export type NotificationGroup = "tickets" | "team" | "ai_billing" | "workspace";
