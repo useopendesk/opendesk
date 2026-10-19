@@ -48,9 +48,12 @@ func DeriveVAPIDKeys(secret []byte) (VAPIDKeys, error) {
 }
 
 // WebSubscription is a browser's PushSubscription as its toJSON() gives it.
+// ExpirationTime is accepted and not stored: a push service's 404 or 410 ends a
+// subscription.
 type WebSubscription struct {
-	Endpoint string `json:"endpoint" maxLength:"2048" doc:"The push service URL, https"`
-	Keys     struct {
+	Endpoint       string `json:"endpoint" maxLength:"2048" doc:"The push service URL, https"`
+	ExpirationTime *int64 `json:"expirationTime,omitempty" doc:"From toJSON(); not used"`
+	Keys           struct {
 		P256dh string `json:"p256dh" maxLength:"200" doc:"The browser's P-256 public key, base64url"`
 		Auth   string `json:"auth" maxLength:"100" doc:"The 16-byte auth secret, base64url"`
 	} `json:"keys"`

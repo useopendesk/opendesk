@@ -59,7 +59,8 @@ func newFakeBrowser(t *testing.T) *fakeBrowser {
 
 func (b *fakeBrowser) subscription() map[string]any {
 	enc := base64.RawURLEncoding.EncodeToString
-	return map[string]any{"endpoint": b.srv.URL + "/push/" + uuid.NewString(),
+	// The shape PushSubscription.toJSON() gives, expirationTime included.
+	return map[string]any{"endpoint": b.srv.URL + "/push/" + uuid.NewString(), "expirationTime": nil,
 		"keys": map[string]any{"p256dh": enc(b.priv.PublicKey().Bytes()), "auth": enc(b.auth)}}
 }
 
