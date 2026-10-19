@@ -53,6 +53,7 @@ type coreAuthConfig struct {
 	Passkeys         bool               `json:"passkeys" doc:"Passkey sign-in is available"`
 	TurnstileSiteKey *string            `json:"turnstile_site_key"`
 	Native           coreNativeConfig   `json:"native" doc:"What the native apps need to sign in and receive pushes"`
+	WebPushKey       *string            `json:"web_push_key" doc:"The VAPID public key browsers subscribe to web pushes with; null when this server sends none"`
 }
 
 type coreNativeConfig struct {
@@ -99,6 +100,10 @@ func (s *svc) registerAuth(api huma.API) {
 				c.TurnstileSiteKey = &k
 			}
 			c.Native = coreNativeConfig{AppAttest: len(s.d.Cfg.AppAttestAppIDs) > 0, Push: s.d.Cfg.PushMode()}
+			if s.push.web != nil {
+				k := s.push.web.Keys.Public
+				c.WebPushKey = &k
+			}
 			if c.Native.Push == "relay" {
 				u := s.d.Cfg.PushRelayURL
 				c.Native.RelayURL = &u

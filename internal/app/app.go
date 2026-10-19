@@ -160,9 +160,9 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 	if err != nil {
 		return nil, nil, fmt.Errorf("river: %w", err)
 	}
-	if cfg.PushMode() != "off" {
-		hd.ConfigurePush(d.Jobs)
-	}
+	// Browsers can always be pushed (Web Push needs no outside service), so push jobs are
+	// always enqueued for users with a phone or a subscribed browser.
+	hd.ConfigurePush(d.Jobs)
 	cleanup := func() {
 		d.Analytics.Close()
 		nc.Close()
