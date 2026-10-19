@@ -383,6 +383,11 @@ locals {
     POSTHOG_HOST                = var.posthog_host
     APP_ATTEST_APP_IDS          = var.app_attest_app_ids
 
+    # Integrations that only accept apps registered in advance (variables.tf).
+    MCP_SLACK_CLIENT_ID  = var.mcp_slack_client_id
+    MCP_BOX_CLIENT_ID    = var.mcp_box_client_id
+    MCP_GITHUB_CLIENT_ID = var.mcp_github_client_id
+
     # Mailbox sign-in per provider (variables.tf).
     GOOGLE_MAILBOX_OAUTH    = tostring(var.google_mailbox_oauth)
     MICROSOFT_MAILBOX_OAUTH = tostring(var.microsoft_mailbox_oauth)

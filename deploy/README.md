@@ -320,6 +320,16 @@ The client ids are not secret: set `google_client_id`, `microsoft_client_id`
 `optional_secrets`, and `terraform apply`. The same goes for `TURNSTILE_SECRET`
 (Cloudflare Turnstile, with `turnstile_site_key`) and `POSTHOG_KEY`.
 
+**Integrations** (optional): Slack and Box only accept apps registered in
+advance, and GitHub signs in with a GitHub App (asking for a token without
+one). Create a Slack app (api.slack.com/apps), a Box Platform app and a GitHub
+App (Issues read and write; Pull requests, Contents and Metadata read; webhook
+off; expiring user tokens; any account) with the redirect URL
+`https://api.opendesk.sh/v1/integrations/oauth/callback`, set
+`mcp_slack_client_id`, `mcp_box_client_id` and `mcp_github_client_id`, and store
+`MCP_SLACK_CLIENT_SECRET`, `MCP_BOX_CLIENT_SECRET` and `MCP_GITHUB_CLIENT_SECRET`
+the same way. Every other integration registers itself on first sign-in.
+
 **Mailbox sign-in while a provider's review is pending.** Each provider's
 mailbox sign-in, which sends replies, has its own switch, separate from user
 sign-in: the API reads `GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` (Terraform

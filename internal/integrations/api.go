@@ -150,7 +150,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 					Data []Provider `json:"data"`
 				}
 			}{}
-			out.Body.Data = Catalog
+			out.Body.Data = catalog()
 			return out, nil
 		})
 

@@ -35,6 +35,11 @@ google_client_id    = ""
 microsoft_client_id = ""
 github_client_id    = ""
 turnstile_site_key  = ""
+# Integrations that sign in with apps registered in advance (secrets MCP_SLACK_CLIENT_SECRET,
+# MCP_BOX_CLIENT_SECRET, MCP_GITHUB_CLIENT_SECRET)
+# mcp_slack_client_id  = ""
+# mcp_box_client_id    = ""
+# mcp_github_client_id = ""   # a GitHub App; empty asks for a token
 
 # Mailbox sign-in per provider (user sign-in is not affected). Match the Pages
 # variable MAILBOX_OAUTH so the wizard and the API agree.
@@ -56,6 +61,8 @@ microsoft_mailbox_oauth = true
 #   # Help center custom domains: a token with SSL and Certificates edit on the
 #   # help zone only. Sets CLOUDFLARE_SAAS_ZONE_ID to that zone.
 #   "CLOUDFLARE_SAAS_TOKEN",
+#   # Integrations: the Slack, Box and GitHub apps (with mcp_slack_client_id, mcp_box_client_id, mcp_github_client_id).
+#   "MCP_SLACK_CLIENT_SECRET", "MCP_BOX_CLIENT_SECRET", "MCP_GITHUB_CLIENT_SECRET",
 # ]
 # Empty uses the app's default for the provider; ids are the provider's own.
 # ai_model      = "anthropic/claude-sonnet-5.5"

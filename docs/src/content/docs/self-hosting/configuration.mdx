@@ -257,7 +257,7 @@ Connected products for Ollie (MCP servers). Most sign in without any setup; see 
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MCP_<KEY>_CLIENT_ID` | | An OAuth client registered in advance with a product that does not accept self-registration, for example `MCP_SLACK_CLIENT_ID`. Redirect URL: `<API_URL>/v1/integrations/oauth/callback`. |
+| `MCP_<KEY>_CLIENT_ID` | | An OAuth client registered in advance with a product that does not accept self-registration: `MCP_SLACK_CLIENT_ID`, `MCP_BOX_CLIENT_ID`, and `MCP_GITHUB_CLIENT_ID` (a GitHub App; without one GitHub asks for a token). Redirect URL: `<API_URL>/v1/integrations/oauth/callback`. |
 | `MCP_<KEY>_CLIENT_SECRET` | | That client's secret, when the product issued one. |
 
 ## Native apps
