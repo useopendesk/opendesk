@@ -105,17 +105,17 @@ func TestIMAPSync(t *testing.T) {
 	if n := inboundCount(); n != 3 || m2.LastUID != 4 {
 		t.Fatalf("incremental: %d messages, cursor %d", n, m2.LastUID)
 	}
-	// Nothing new: the last-checked time still advances and is broadcast.
+	// Nothing new: the last-synced time advances without an event.
 	before := w.eventCount("mailbox.updated")
+	mustExec(t, w.d, `UPDATE mailboxes SET last_synced_at = now() - interval '1 hour' WHERE id = $1`, m.ID)
 	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil || inboundCount() != 3 {
 		t.Fatalf("idle pass: %v %d", err, inboundCount())
 	}
-	if got := w.eventCount("mailbox.updated") - before; got != 1 {
-		t.Fatalf("successful idle sync published %d mailbox.updated events, want 1", got)
+	if got := w.eventCount("mailbox.updated") - before; got != 0 {
+		t.Fatalf("idle sync published %d mailbox.updated events, want 0", got)
 	}
-	if got := w.count(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'mailbox.updated'
-		AND data->'mailbox'->>'id' = $2 AND data->'mailbox'->>'last_synced_at' IS NOT NULL`, w.wid, m.ID.String()); got == 0 {
-		t.Fatal("successful sync event is missing last_synced_at")
+	if got := w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND last_synced_at > now() - interval '1 minute'`, m.ID); got != 1 {
+		t.Fatal("idle sync did not advance last_synced_at")
 	}
 
 	// A changed UIDVALIDITY restarts the import; dedupe keeps one row per message.
