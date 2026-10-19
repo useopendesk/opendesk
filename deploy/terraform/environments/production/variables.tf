@@ -245,6 +245,18 @@ variable "microsoft_mailbox_client_id" {
   default     = ""
 }
 
+variable "collab_google_client_id" {
+  description = "COLLAB_GOOGLE_CLIENT_ID: the Google client Collab mail accounts connect with (gmail.modify, a restricted scope), when it is not the mailbox client. Its secret is COLLAB_GOOGLE_CLIENT_SECRET (optional_secrets)."
+  type        = string
+  default     = ""
+}
+
+variable "collab_microsoft_client_id" {
+  description = "COLLAB_MICROSOFT_CLIENT_ID: the Microsoft app Collab mail accounts connect with (Mail.ReadWrite, Mail.Send), when it is not the mailbox app. Its secret is COLLAB_MICROSOFT_CLIENT_SECRET (optional_secrets)."
+  type        = string
+  default     = ""
+}
+
 variable "google_mailbox_oauth" {
   description = "Offer Google sign-in for new mailbox connections. Keep false until the Google OAuth client is verified for the Gmail scopes; mailboxes then connect with an app password or forwarding. User sign-in with Google is not affected."
   type        = bool

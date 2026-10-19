@@ -31,6 +31,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/billing"
 	"github.com/useopendesk/opendesk/internal/captcha"
+	"github.com/useopendesk/opendesk/internal/collab"
 	"github.com/useopendesk/opendesk/internal/config"
 	"github.com/useopendesk/opendesk/internal/core"
 	"github.com/useopendesk/opendesk/internal/core/mcpserver"
@@ -76,6 +77,7 @@ var areas = []area{
 	{mcp.Register, mcp.RegisterWorkers, mcp.Periodic, mcp.Background},
 	{mcpserver.Register, mcpserver.RegisterWorkers, mcpserver.Periodic, mcpserver.Background},
 	{admin.Register, admin.RegisterWorkers, admin.Periodic, admin.Background},
+	{collab.Register, collab.RegisterWorkers, collab.Periodic, collab.Background},
 }
 
 // turnstileHostnames are the hosts that render the Turnstile widget: the web app (login,
@@ -132,6 +134,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 	d := &deps.Deps{Cfg: cfg, Log: log, DB: database, NATS: nc, Storage: store, Mailer: m,
 		Analytics: analytics.New(cfg.PosthogKey, cfg.PosthogHost, log), Box: box, Tokens: auth.NewTokens(cfg.AuthSecret),
 		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AIUsageMarkup)}
+	d.Plan.CollabOff = !cfg.Collab
 	domain.Configure(cfg.APIURL, cfg.AuthSecret)
 	domain.ConfigureSending(cfg.MailboxSystemSend)
 	if cfg.APNsKey != "" {
