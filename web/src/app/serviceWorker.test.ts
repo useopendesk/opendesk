@@ -1,13 +1,10 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import source from "../../public/sw.js?raw";
 
 // public/sw.js runs as written, against a stand-in for the service worker global.
 
 type Handler = (event: Record<string, unknown>) => void;
 type Win = { focused: boolean; focus: ReturnType<typeof vi.fn>; navigate: ReturnType<typeof vi.fn> };
-
-const source = readFileSync(resolve(__dirname, "../../public/sw.js"), "utf8");
 
 let handlers: Record<string, Handler>;
 let windows: Win[];
