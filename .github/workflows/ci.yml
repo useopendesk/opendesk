@@ -441,10 +441,7 @@ jobs:
           curl -sf http://localhost:5173/ || { echo "--- web log ---"; cat /tmp/opendesk-web.log; exit 1; }
       - name: Run the e2e suite
         env:
-          # widget (the brand/multi-widget redesign) and ai (the Ollie panel
-          # rename) need their flows updated to match; add each back to
-          # E2E_ONLY as it's fixed.
-          E2E_ONLY: account,inbox,tickets,kb,settings,danger
+          E2E_ONLY: account,inbox,tickets,kb,widget,ai,settings,danger
         run: cd scripts/e2e && bash run.sh
       - name: Logs on failure
         if: failure()
