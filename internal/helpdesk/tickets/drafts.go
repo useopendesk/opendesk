@@ -26,24 +26,24 @@ import (
 // clears the draft. Staging again replaces it. The draft is the ticket's, never the
 // staging credential's.
 
-// Draft is a ticket's pending reply body.
-type Draft struct {
-	TicketID  uuid.UUID `json:"ticket_id"`
-	BodyHTML  string    `json:"body_html"`
-	BodyText  string    `json:"body_text"`
-	By        DraftBy   `json:"by"`
-	UpdatedAt time.Time `json:"updated_at"`
+// TicketDraft is a ticket's pending reply body.
+type TicketDraft struct {
+	TicketID  uuid.UUID     `json:"ticket_id"`
+	BodyHTML  string        `json:"body_html"`
+	BodyText  string        `json:"body_text"`
+	By        TicketDraftBy `json:"by"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
-// DraftBy is who staged the draft: a teammate, or an API key by its name.
-type DraftBy struct {
+// TicketDraftBy is who staged the draft: a teammate, or an API key by its name.
+type TicketDraftBy struct {
 	Type string          `json:"type" enum:"user,api"`
 	Name string          `json:"name"`
 	User *domain.UserRef `json:"user,omitempty"`
 }
 
-// DraftInput is PUT /v1/tickets/{id}/draft.
-type DraftInput struct {
+// TicketDraftInput is PUT /v1/tickets/{id}/draft.
+type TicketDraftInput struct {
 	BodyHTML string `json:"body_html" minLength:"1" maxLength:"500000"`
 }
 
@@ -51,8 +51,8 @@ const draftSelect = `SELECT d.ticket_id, d.body_html, d.body_text, d.updated_at,
 FROM ticket_drafts d LEFT JOIN users u ON u.id = d.author_id LEFT JOIN api_keys k ON k.id = d.api_key_id
 WHERE d.workspace_id = $1 AND d.ticket_id = $2`
 
-func scanDraft(row pgx.Row) (Draft, error) {
-	var d Draft
+func scanDraft(row pgx.Row) (TicketDraft, error) {
+	var d TicketDraft
 	var uID *uuid.UUID
 	var uName, uEmail, uAvatar, keyName *string
 	if err := row.Scan(&d.TicketID, &d.BodyHTML, &d.BodyText, &d.UpdatedAt, &uID, &uName, &uEmail, &uAvatar, &keyName); err != nil {
@@ -60,17 +60,17 @@ func scanDraft(row pgx.Row) (Draft, error) {
 	}
 	switch {
 	case uID != nil:
-		d.By = DraftBy{Type: "user", Name: str(uName), User: &domain.UserRef{ID: *uID, Name: str(uName), Email: str(uEmail), AvatarURL: domain.Avatar(str(uAvatar))}}
+		d.By = TicketDraftBy{Type: "user", Name: str(uName), User: &domain.UserRef{ID: *uID, Name: str(uName), Email: str(uEmail), AvatarURL: domain.Avatar(str(uAvatar))}}
 	case keyName != nil:
-		d.By = DraftBy{Type: "api", Name: *keyName}
+		d.By = TicketDraftBy{Type: "api", Name: *keyName}
 	default:
-		d.By = DraftBy{Type: "api", Name: "API"}
+		d.By = TicketDraftBy{Type: "api", Name: "API"}
 	}
 	return d, nil
 }
 
 // loadDraft returns the ticket's draft, or nil when it has none.
-func loadDraft(ctx context.Context, q db.Querier, wid, tid uuid.UUID) (*Draft, error) {
+func loadDraft(ctx context.Context, q db.Querier, wid, tid uuid.UUID) (*TicketDraft, error) {
 	d, err := scanDraft(q.QueryRow(ctx, draftSelect, wid, tid))
 	if db.IsNotFound(err) {
 		return nil, nil
@@ -81,7 +81,7 @@ func loadDraft(ctx context.Context, q db.Querier, wid, tid uuid.UUID) (*Draft, e
 	return &d, nil
 }
 
-func publishDraft(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, d *Draft) error {
+func publishDraft(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, d *TicketDraft) error {
 	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket_draft.updated", TicketID: &tid,
 		Data: map[string]any{"ticket_id": tid, "draft": d}})
 	return err
@@ -107,7 +107,7 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 		Summary: "Get the shared draft", Description: "The reply staged on the ticket for a teammate to review and send, or null.", Tags: tags},
 		func(ctx context.Context, in *input) (*struct {
 			Body struct {
-				Draft *Draft `json:"draft"`
+				TicketDraft *TicketDraft `json:"draft"`
 			}
 		}, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
@@ -120,10 +120,10 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 			}
 			out := &struct {
 				Body struct {
-					Draft *Draft `json:"draft"`
+					TicketDraft *TicketDraft `json:"draft"`
 				}
 			}{}
-			if out.Body.Draft, err = loadDraft(ctx, d.DB.Pool, p.WorkspaceID, tid); err != nil {
+			if out.Body.TicketDraft, err = loadDraft(ctx, d.DB.Pool, p.WorkspaceID, tid); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			return out, nil
@@ -134,8 +134,8 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 			"sees it in their composer, edits it and sends it as their own reply. Staging again replaces it; a reply going out clears it.", Tags: tags},
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
-			Body DraftInput
-		}) (*struct{ Body Draft }, error) {
+			Body TicketDraftInput
+		}) (*struct{ Body TicketDraft }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleAgent, auth.ScopeTicketsWrite)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -145,7 +145,7 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 			if text == "" && !strings.Contains(html, "<img") {
 				return nil, httpx.Validation("the draft is empty")
 			}
-			var out Draft
+			var out TicketDraft
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				tid, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
@@ -168,7 +168,7 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return &struct{ Body Draft }{out}, nil
+			return &struct{ Body TicketDraft }{out}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "delete-ticket-draft", Method: http.MethodDelete, Path: "/v1/tickets/{id}/draft",

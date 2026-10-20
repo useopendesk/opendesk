@@ -18,14 +18,14 @@ func TestSharedDraft(t *testing.T) {
 	_, seq := e.Events(ws.ID, 0)
 
 	// Nothing staged yet.
-	var got struct{ Draft *tickets.Draft }
+	var got struct{ Draft *tickets.TicketDraft }
 	e.Do("GET", path, ws.Viewer.As(ws), nil).Want(t, 200).JSON(t, &got)
 	if got.Draft != nil {
 		t.Fatalf("draft before staging: %+v", got.Draft)
 	}
 
 	// An API key stages one: sanitized, attributed to the key by name, visible to every teammate.
-	var d tickets.Draft
+	var d tickets.TicketDraft
 	e.Do("PUT", path, hdtest.Auth{Bearer: key}, map[string]any{"body_html": "<p>Hi <b>there</b></p><script>alert(1)</script>"}).Want(t, 200).JSON(t, &d)
 	if d.TicketID != tk.ID || d.BodyText != "Hi there" || strings.Contains(d.BodyHTML, "script") || d.By.Type != "api" || d.By.Name != "test" {
 		t.Fatalf("staged draft %+v", d)
