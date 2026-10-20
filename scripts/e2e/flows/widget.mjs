@@ -91,7 +91,7 @@ export async function run(t) {
 
   await t.step("visitor asks for a person: handoff notifies the team", async () => {
     await visitor.getByRole("button", { name: "Talk to a person" }).click();
-    await visitor.locator(".handoff-note").filter({ hasText: "We've let the team know" }).waitFor();
+    await visitor.locator(".handed").filter({ hasText: "A person will reply here" }).waitFor();
     const n = await until(async () => {
       const r = await api("GET", "/v1/notifications", opts());
       return r.json?.data?.find((x) => x.type === "ai_handoff" && x.ticket?.id === ticket.id);
