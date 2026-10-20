@@ -100,6 +100,76 @@ test("an agent edits and deletes an internal note", async ({ page, proof }) => {
   await proof.shot("note-deleted", { caption: "The deletion recorded in the ticket timeline" });
 });
 
+test("a reply drafted over MCP waits in the composer, to edit and send as your own", async ({ page, proof }) => {
+  await proof.open("/inbox/mine/1072");
+  await expect(page.getByRole("heading", { name: "SSO login loops back to sign-in page" })).toBeVisible();
+  const ollieNotice = page.getByRole("button", { name: "Not now" });
+
+  const bar = page.getByRole("status", { name: "Shared draft" });
+  await expect(bar).toContainText("Draft by Claude");
+  const reply = page.getByRole("textbox", { name: "Reply" });
+  await expect(reply).toContainText("Hi Dana,");
+  await expect(reply).toContainText("added the new certificate fingerprint");
+  if (await ollieNotice.isVisible()) await ollieNotice.click();
+  await proof.chapter("A draft waits on the ticket", "An AI agent staged it over MCP; the team sees the same text in the composer");
+  await proof.shot("shared-draft-in-composer", { caption: "The draft an AI agent staged over MCP, already in the reply box, with who staged it" });
+
+  await reply.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Best, Maya", { delay: 60 });
+  await expect(reply).toContainText("Best, Maya");
+  await proof.chapter("Edit and send as yourself", "The reply goes out as Maya's, and the draft is gone for everyone");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  const sent = page.getByRole("article", { name: "Message from Maya Chen" }).last();
+  await expect(sent.getByText("Best, Maya", { exact: false })).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  if (await ollieNotice.isVisible()) await ollieNotice.click();
+  await proof.dwell();
+  await proof.shot("shared-draft-sent", { caption: "Sent as Maya's own reply; the shared draft is cleared" });
+});
+
+test("a draft staged while you are writing waits with Use it, and can be discarded", async ({ page, proof }) => {
+  await proof.open("/inbox/mine/1068");
+  await expect(page.getByRole("heading", { name: "Refund for duplicate annual charge" })).toBeVisible();
+  const ollieNotice = page.getByRole("button", { name: "Not now" });
+
+  const reply = page.getByRole("textbox", { name: "Reply" });
+  await reply.click();
+  await page.keyboard.type("Hi Tomás, sorry for the wait.", { delay: 40 });
+  if (await ollieNotice.isVisible()) await ollieNotice.click();
+  await proof.chapter("A draft arrives while you write", "An AI agent stages one over MCP; your own text stays, the draft waits");
+  // The mock's stand-in for an AI client calling the MCP tool draft_reply.
+  await page.evaluate(() => {
+    const mock = (window as unknown as { __odMock?: { draft: (ticket: string, text: string) => void } }).__odMock;
+    mock?.draft(
+      "1068",
+      "Hi Tomás,\n\nSorry for the silence. The refund of €4,320 was issued on our side on the day I wrote, and the payment provider confirms it left for your bank on the next business day. Banks usually show it within 5 to 10 business days, so it should appear on your statement this week.\n\nIf it is not there by Friday, send me the last four digits of the card and I will chase it with the provider.",
+    );
+  });
+  const bar = page.getByRole("status", { name: "Shared draft" });
+  await expect(bar).toContainText("Claude drafted a reply");
+  await expect(bar.getByRole("button", { name: "Use it" })).toBeVisible();
+  await expect(reply).toContainText("sorry for the wait.");
+  await proof.shot("shared-draft-waiting", { caption: "Your own text stays; the draft waits above the composer with Use it" });
+
+  await bar.getByRole("button", { name: "Use it" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByText("The draft by Claude replaces what you have written.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Replace", exact: true }).click();
+  await expect(reply).toContainText("confirms it left for your bank");
+  await expect(bar).toContainText("Draft by Claude");
+  await proof.chapter("Take it, or discard it", "Use it puts the draft in the reply box; Discard removes it for everyone");
+  await proof.shot("shared-draft-taken", { caption: "The draft replaced your text and is in the reply box" });
+
+  await bar.getByRole("button", { name: "Discard" }).click();
+  await expect(bar).toHaveCount(0);
+  await expect(reply).not.toContainText("confirms it left for your bank");
+  await proof.dwell();
+  await proof.shot("shared-draft-discarded", { caption: "Discarded: the bar is gone and the reply box is empty again" });
+});
+
 test("play a visitor's voice message in a live chat", async ({ page, proof }) => {
   await proof.open("/inbox/unassigned");
   const tickets = page.getByRole("listbox", { name: "Tickets" });

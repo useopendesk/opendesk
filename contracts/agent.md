@@ -572,6 +572,7 @@ Tools (offered only when the key has the scope):
 | `search_tickets` | `tickets:read` | filters (status, assignee, team, label, priority, text, dates), at most 50 |
 | `get_ticket` | `tickets:read` | a ticket with its thread (notes included), team, brand, `received_at` and the reply address |
 | `reply_to_ticket` | `tickets:write` | a public reply (`body` markdown) |
+| `draft_reply` | `tickets:write` | stages the ticket's shared draft (`body` markdown) without sending; a teammate sends it from the composer (`contracts/api.md` "Drafts") |
 | `add_note` | `tickets:write` | an internal note |
 | `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels |
 | `create_ticket` | `tickets:write` | a ticket for a contact email |

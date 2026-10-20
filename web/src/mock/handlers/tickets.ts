@@ -8,6 +8,7 @@ import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
+import { clearDraft } from "./drafts";
 import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
@@ -398,6 +399,8 @@ export function registerTickets() {
       { status, actor: myRef },
     );
     if (msg.delivery_status === "pending") simulateDelivery(ctx.ws, t, msg.id);
+    // A reply going out ends the ticket's shared draft, whoever sends it.
+    if (kind === "reply") clearDraft(ctx.ws, t);
     return respond(201, msg);
   });
   patch("/v1/tickets/:id/messages/:messageId", (ctx) => {

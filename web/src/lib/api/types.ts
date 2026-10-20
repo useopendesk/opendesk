@@ -1537,6 +1537,16 @@ export type AgentChannelReport = {
   suggested_sent: number;
 };
 
+/** A ticket's shared draft (contracts/api.md "Drafts"): one pending reply body, staged for whoever opens the ticket next. */
+export type TicketDraft = {
+  ticket_id: string;
+  body_html: string;
+  body_text: string;
+  /** Who staged it: a teammate, or an API client (an AI agent over MCP) by its key's name. */
+  by: { type: "user" | "api"; name: string; user?: UserRef };
+  updated_at: string;
+};
+
 /** Ollie's suggested reply on an email ticket (contracts/agent.md "Email"). */
 export type SuggestedReply = {
   id: string;

@@ -81,6 +81,17 @@ func ticketTools() []*tool {
 			Run: replyToTicket,
 		},
 		{
+			Name: "draft_reply", Title: "Draft a reply for the team", Scopes: []string{auth.ScopeTicketsWrite}, Idempotent: true,
+			Description: "Stage a reply on a ticket without sending it. Nothing reaches the customer: the draft appears in the composer of every " +
+				"teammate who opens the ticket, for one of them to review, edit and send as their own reply. Staging again replaces the draft; " +
+				"a reply going out clears it. Write the body in markdown, without a signature. Prefer this over reply_to_ticket when a person should check the answer first.",
+			Schema: obj(map[string]any{
+				"ticket": str(ticketArg),
+				"body":   strN("The draft reply, in markdown.", 1, maxBodyChars),
+			}, "ticket", "body"),
+			Run: draftReply,
+		},
+		{
 			Name: "add_note", Title: "Add an internal note", Scopes: []string{auth.ScopeTicketsWrite},
 			Description: "Add an internal note to a ticket. Notes are visible to the team only, never to the customer. Markdown body.",
 			Schema: obj(map[string]any{
@@ -509,6 +520,45 @@ func replyToTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, er
 		return nil, invalid("at most 20 cc addresses")
 	}
 	return postMessage(ctx, c, a.Ticket, "reply", a.Body, a.Status, a.Cc)
+}
+
+type draftResult struct {
+	TicketID     string `json:"ticket_id"`
+	TicketNumber int64  `json:"ticket_number,omitempty"`
+	By           string `json:"by"`
+	Note         string `json:"note"`
+}
+
+func draftReply(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
+	a, err := decode[struct {
+		Ticket string `json:"ticket"`
+		Body   string `json:"body"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := ticketRef(a.Ticket)
+	if err != nil {
+		return nil, err
+	}
+	html, err := markdownBody(a.Body)
+	if err != nil {
+		return nil, err
+	}
+	var d struct {
+		TicketID string `json:"ticket_id"`
+		By       struct {
+			Name string `json:"name"`
+		} `json:"by"`
+	}
+	if err := c.do(ctx, http.MethodPut, "/v1/tickets/"+ref+"/draft", nil, map[string]any{"body_html": html}, &d); err != nil {
+		return nil, err
+	}
+	out := draftResult{TicketID: d.TicketID, By: d.By.Name, Note: "staged, not sent; a teammate reviews and sends it from the ticket"}
+	if n, ok := strings.CutPrefix(ref, "%23"); ok {
+		out.TicketNumber, _ = strconv.ParseInt(n, 10, 64)
+	}
+	return out, nil
 }
 
 func addNote(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {

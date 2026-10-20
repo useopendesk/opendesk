@@ -37,6 +37,7 @@ import { applyPatch, useUpdateTicket } from "../useTicketActions";
 import { patchTicketEverywhere } from "@/lib/ticketCache";
 import { ComposerAiMenu, ComposerAiStatus, ComposerSources, useComposerAi } from "@/components/ai/ticket/ComposerAi";
 import { SuggestedReplyCard } from "./SuggestedReply";
+import { SharedDraftBar } from "./SharedDraft";
 import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
 
 type Mode = "reply" | "note" | "thread";
@@ -391,6 +392,19 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     },
   }));
 
+  // The ticket's shared draft goes into the reply box; discarding it takes it back out.
+  const takeShared = useCallback(
+    (html: string) => {
+      setDraft({ mode: "reply", html });
+      editor.current?.setHtml(html);
+    },
+    [setDraft],
+  );
+  const dropShared = useCallback(() => {
+    setDraft({ html: "" });
+    editor.current?.clear();
+  }, [setDraft]);
+
   // Presence: "replying" while a draft exists, "viewing" otherwise.
   const hasDraft = !!draft.html;
   useEffect(() => {
@@ -526,6 +540,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
             }}
           />
         )}
+        {!disabled && <SharedDraftBar ticket={ticket} html={draft.html} onUse={takeShared} onClear={dropShared} />}
         <AnimatePresence initial={false}>
           {others.length > 0 && mode === "reply" && (
             <motion.div

@@ -18,6 +18,7 @@ import type {
   Team,
   Thread,
   Ticket,
+  TicketDraft,
   TicketLink,
   Workspace,
 } from "../api/types";
@@ -243,6 +244,12 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
         if (s.status === "pending") return s;
         return old && old.id !== s.id ? old : null;
       });
+      return;
+    }
+    case "ticket_draft.updated": {
+      const tid = d.ticket_id as string | undefined;
+      if (!tid) return;
+      qc.setQueryData<TicketDraft | null>(qk.ticketDraft(tid), (d.draft as TicketDraft | null) ?? null);
       return;
     }
     case "thread.created":

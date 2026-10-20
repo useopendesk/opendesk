@@ -17,6 +17,7 @@ import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
 import { registerCollab } from "./handlers/collab";
+import { registerDrafts, stageDraft } from "./handlers/drafts";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerImports } from "./handlers/imports";
 import { registerIntegrations } from "./handlers/integrations";
@@ -33,6 +34,8 @@ import { pauseLive, resumeLive, startLive } from "./live";
 import { chatTicket, ollieReply } from "./ollie";
 import { dispatch } from "./router";
 import { seed } from "./seed";
+import { findTicket } from "./tickets";
+import { textToHtml } from "./util";
 
 declare global {
   interface Window {
@@ -45,6 +48,8 @@ declare global {
       reconnect: () => void;
       /** Ollie answers a visitor now on the given ticket (id or number), else the chat ticket you're viewing. */
       ollie: (ticketId?: string) => Promise<string | null>;
+      /** An AI client stages a reply draft on the ticket (id or number) over MCP, as `draft_reply` would. */
+      draft: (ticketId: string, text: string, by?: string) => void;
     };
   }
 }
@@ -75,6 +80,7 @@ export function installMock(): void {
   registerAgent();
   registerAgentQuality();
   registerEmailAnswers();
+  registerDrafts();
   registerMcp();
   registerKnowledge();
   registerIntegrations();
@@ -113,6 +119,15 @@ export function installMock(): void {
         return null;
       }
       return ollieReply(ws, t);
+    },
+    draft: (ticketId, text, by = "Claude") => {
+      const ws = db.workspaces[0];
+      const t = findTicket(ws, ticketId);
+      if (!t) {
+        console.warn("[opendesk] mock: no such ticket to draft on");
+        return;
+      }
+      stageDraft(ws, t, textToHtml(text), by);
     },
   };
   console.info("[opendesk] mock mode: in-memory API and gateway. window.__odMock has helpers.");

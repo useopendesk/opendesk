@@ -20,6 +20,8 @@ export const qk = {
   threads: (id: string) => ["tickets", "threads", id] as const,
   /** Ollie's pending suggested reply on an email ticket. */
   suggestedReply: (id: string) => ["tickets", "suggested-reply", id] as const,
+  /** The ticket's shared draft (contracts/api.md "Drafts"). */
+  ticketDraft: (id: string) => ["tickets", "draft", id] as const,
   contactLists: ["contacts", "list"] as const,
   contacts: (q: { q?: string; company_id?: string }) => ["contacts", "list", q] as const,
   contact: (id: string) => ["contacts", "detail", id] as const,
@@ -129,6 +131,7 @@ export const q = {
   threads: (id: string) => list(qk.threads(id), () => api.tickets.threads(id)),
   suggestedReply: (id: string) =>
     queryOptions({ queryKey: qk.suggestedReply(id), queryFn: async () => (await api.ai.suggestedReply.get(id)).suggested_reply }),
+  ticketDraft: (id: string) => queryOptions({ queryKey: qk.ticketDraft(id), queryFn: async () => (await api.tickets.draft.get(id)).draft }),
   contacts: (query: { q?: string; company_id?: string }) =>
     infiniteQueryOptions({
       queryKey: qk.contacts(query),

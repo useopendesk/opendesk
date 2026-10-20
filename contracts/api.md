@@ -437,6 +437,9 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | PATCH | `/v1/tickets/{id}/messages/{messageId}` | agent, author only; `{body_html}` edits a plain internal note and returns `Message`. Replies and side-conversation messages return `422`; successful edits publish `message.updated` and `activity.created` (`note_edited`, message id only). Members it now mentions for the first time are notified; earlier mention notifications show the edited text |
 | DELETE | `/v1/tickets/{id}/messages/{messageId}` | agent; the author may delete their own plain internal note, admins may delete any. Returns 204; replies and side-conversation messages return `422`. Deletes the note, its attachment records and its mention notifications, removes unshared stored files, publishes `message.deleted` and records `note_deleted` with the message id only. Both routes are for a signed-in member: an API key gets `403`, so a note an API key wrote is deleted by an admin. A copy already posted to a support channel (contracts/support-channels.md) stays as posted |
 | GET | `/v1/tickets/{id}/activities` | ascending |
+| GET | `/v1/tickets/{id}/draft` | viewer → `{draft: Draft \| null}` ("Drafts") |
+| PUT | `/v1/tickets/{id}/draft` | agent (`tickets:write`). `{body_html}` → `Draft`; replaces the ticket's draft. Sanitized like a reply, `422` when empty |
+| DELETE | `/v1/tickets/{id}/draft` | agent (`tickets:write`) → 204; idempotent |
 | GET | `/v1/tickets/{id}/threads` | viewer → `{data: Thread[]}`, oldest first ("Threads") |
 | POST | `/v1/tickets/{id}/threads` | `{to: string[] /* 1..20 */, cc?: string[], subject, body_html, attachment_ids?, mailbox_id?, include_history?: boolean, forward_attachment_ids?: string[]}` → 201 `{thread: Thread, message: Message}` |
 | POST | `/v1/tickets/{id}/threads/{threadId}/messages` | `{body_html, attachment_ids?}` → 201 `Message` |
@@ -517,6 +520,26 @@ type Thread = { id: string; ticket_id: string; subject: string; to: string[]; cc
 - Merging a ticket moves its threads to the target with their messages.
 - Events: `thread.created` and `thread.updated` (contracts/events.md); the messages themselves are
   `message.created` / `message.updated` like any note.
+
+#### Drafts
+
+A ticket has at most one shared draft: a pending reply body staged for whoever opens the ticket
+next, by a teammate or by an API client such as an AI agent over MCP (`draft_reply`,
+contracts/agent.md). It is the ticket's, not the staging credential's: every teammate who can see
+the ticket sees the same text in their composer, and the app says who staged it.
+
+```ts
+type Draft = { ticket_id: string; body_html: string; body_text: string;
+  by: { type: "user" | "api"; name: string; user?: UserRef /* type user */ }; updated_at: string };
+```
+
+- Whoever sends it edits it in the composer and sends it as their own reply through
+  `POST /v1/tickets/{id}/messages`, like any reply. Nothing is attributed to who staged it.
+- A reply going out on the ticket (any `kind: "reply"` through that route, whoever sends it)
+  clears the draft. `PUT` replaces it; `DELETE` discards it without sending.
+- This is not Ollie's suggested reply (contracts/agent.md "Email"), which answers one customer
+  message and is sent as written, attributed to the agent.
+- Event: `ticket_draft.updated` (contracts/events.md) with the draft, or `null` once it is gone.
 
 #### Labels and custom fields
 

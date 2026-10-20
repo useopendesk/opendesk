@@ -257,7 +257,7 @@ func TestToolsFollowScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"search_tickets", "get_ticket", "reply_to_ticket", "add_note", "update_ticket", "create_ticket",
+	want := []string{"search_tickets", "get_ticket", "reply_to_ticket", "draft_reply", "add_note", "update_ticket", "create_ticket",
 		"search_contacts", "get_contact", "search_knowledge", "create_kb_draft", "get_report"}
 	var names []string
 	for _, tl := range res.Tools {
@@ -378,6 +378,19 @@ func TestWritesRunAsTheKey(t *testing.T) {
 		WHERE k.workspace_id = $1 AND k.key LIKE 'mcp-%' AND k.path = $2`, &claimed, e.WS.ID, fmt.Sprintf("/v1/tickets/#%d/messages", tk.Number))
 	if claimed != 1 {
 		t.Fatalf("idempotency keys: %d", claimed)
+	}
+
+	// A drafted reply is staged on the ticket for the team, as HTML, and nothing is sent.
+	var draft struct {
+		TicketID string `json:"ticket_id"`
+		By       string `json:"by"`
+	}
+	call(t, s, "draft_reply", map[string]any{"ticket": fmt.Sprintf("#%d", tk.Number), "body": "Hi, we are **on it**."}, &draft)
+	var staged, replies int
+	e.Scalar(`SELECT count(*) FROM ticket_drafts WHERE ticket_id = $1 AND body_html LIKE '%<strong>on it</strong>%' AND api_key_id IS NOT NULL`, &staged, tk.ID)
+	e.Scalar(`SELECT count(*) FROM messages WHERE ticket_id = $1 AND kind = 'reply' AND direction = 'outbound'`, &replies, tk.ID)
+	if draft.TicketID != tk.ID.String() || draft.By == "" || staged != 1 || replies != 0 {
+		t.Fatalf("draft_reply: %+v staged=%d replies=%d", draft, staged, replies)
 	}
 
 	var upd struct {

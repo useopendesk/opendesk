@@ -73,6 +73,7 @@ view to its owner.
 | `message.deleted`        | agents | — | `{ "ticket_id": "...", "message_id": "..." }` (an internal note was deleted) |
 | `activity.created`       | agents     | —                                     | `{ "ticket_id": "...", "activity": Activity }` |
 | `thread.created` / `thread.updated` | agents | — | `{ "ticket_id": "...", "thread": Thread }` (contracts/api.md "Threads"): started; a message written or answered, closed or reopened |
+| `ticket_draft.updated` | agents | — | `{ "ticket_id": "...", "draft": Draft \| null }` (contracts/api.md "Drafts"): the ticket's shared draft was staged or replaced; `null` once it was sent, discarded or replaced by a reply going out |
 | `contact.created` / `contact.updated` / `contact.deleted` | agents | — | `{ "contact": Contact }` / `{ "contact_id" }`. `contact.updated` also when a picture is uploaded, removed or found automatically |
 | `company.created` / `company.updated` / `company.deleted` | agents | — | `{ "company": Company }` / `{ "company_id" }` |
 | `tag.created` / `tag.updated` / `tag.deleted` | agents | — | `{ "tag": Tag }` / `{ "tag_id" }` |

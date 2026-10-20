@@ -474,6 +474,18 @@
     "sideSentAndMarked": "Sent to {{to}} and marked {{status}}",
     "threadFailed": "Couldn't send the side conversation message"
   },
+  "sharedDraft": {
+    "label": "Shared draft",
+    "inComposer": "Draft by {{name}}, {{when}}",
+    "inComposerHint": "Edit it and send as yourself",
+    "waiting": "{{name}} drafted a reply, {{when}}",
+    "use": "Use it",
+    "discard": "Discard",
+    "discardFailed": "Couldn't discard the draft",
+    "replaceTitle": "Replace what you wrote?",
+    "replaceBody": "The draft by {{name}} replaces what you have written.",
+    "replaceConfirm": "Replace"
+  },
   "message": {
     "from": "Message from {{name}}",
     "noteFrom": "Note from {{name}}",

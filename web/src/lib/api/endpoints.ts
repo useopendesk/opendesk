@@ -413,6 +413,11 @@ export const api = {
     editMessage: (id: string, messageId: string, b: { body_html: string }) => http.patch<T.Message>(`/v1/tickets/${id}/messages/${messageId}`, b),
     deleteMessage: (id: string, messageId: string) => http.del(`/v1/tickets/${id}/messages/${messageId}`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    /** The ticket's shared draft (contracts/api.md "Drafts"): staged for the team, sent by whoever picks it up. */
+    draft: {
+      get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
+      discard: (id: string) => http.del(`/v1/tickets/${id}/draft`),
+    },
     threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
     startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
     sendInThread: (id: string, threadId: string, b: { body_html: string; attachment_ids?: string[] }) =>
