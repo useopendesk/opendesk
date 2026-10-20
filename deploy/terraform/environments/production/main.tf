@@ -378,6 +378,8 @@ locals {
     # The Microsoft mailbox app, when it is not the sign-in app; empty uses the sign-in app.
     MICROSOFT_MAILBOX_CLIENT_ID = var.microsoft_mailbox_client_id
     MICROSOFT_TENANT            = var.microsoft_tenant
+    COLLAB_GOOGLE_CLIENT_ID     = var.collab_google_client_id # Collab's own clients; empty uses the mailbox clients
+    COLLAB_MICROSOFT_CLIENT_ID  = var.collab_microsoft_client_id
     GITHUB_CLIENT_ID            = var.github_client_id
     TURNSTILE_SITE_KEY          = var.turnstile_site_key
     POSTHOG_HOST                = var.posthog_host

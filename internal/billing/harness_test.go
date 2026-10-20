@@ -96,6 +96,7 @@ func newEnv(t *testing.T, stripeOn bool) *env {
 		billing.SetStripeBackend(e.fake.srv.URL)
 		cfg.StripeSecretKey, cfg.StripeWebhookSecret = "sk_test_123", whSecret
 		cfg.StripePricePro, cfg.StripePriceProYear, cfg.StripePriceTopUp = "price_pro", "price_pro_y", "price_ai_topup"
+		cfg.StripePriceCollab, cfg.StripePriceCollabYear = "price_collab", "price_collab_y"
 	}
 	d := &deps.Deps{Cfg: cfg, Log: log, DB: database, NATS: nc, Analytics: analytics.New("", "", log), Box: box,
 		Tokens: auth.NewTokens(cfg.AuthSecret), Captcha: captcha.NewTurnstileFromConfig(captcha.TurnstileConfig{Disabled: true}),

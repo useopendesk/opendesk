@@ -119,7 +119,9 @@ type Config struct {
 	// MailboxIMAP lets mailboxes receive over IMAP (MAILBOX_IMAP, default on): generic
 	// IMAP, and Google and Microsoft mailboxes connected to read the inbox. Off, every
 	// mailbox receives by forwarding and Google and Microsoft connect send-only; existing
-	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off.
+	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off. Workspaces with
+	// Collab still receive over generic IMAP (with COLLAB_IMAP) and may read Google and
+	// Microsoft inboxes through their APIs with the Collab clients (contracts/api.md).
 	MailboxIMAP bool
 	// MailboxSystemSend lets mailboxes send replies through the platform mailer
 	// (MAILBOX_SYSTEM_SEND, default on): outbound_kind "system", from MAIL_FROM. Off,
@@ -127,6 +129,19 @@ type Config struct {
 	// sends through the platform mailer sends nothing until it connects one. opendesk
 	// Cloud turns it off.
 	MailboxSystemSend bool
+	// Collab (contracts/collab.md): members' own mail accounts. COLLAB (default on) makes it
+	// exist on this instance; with billing it is still only the collab plan's. The OAuth
+	// clients default to the mailbox clients; COLLAB_IMAP (default on) offers IMAP accounts.
+	Collab                      bool
+	CollabIMAP                  bool
+	CollabGoogleClientID        string
+	CollabGoogleClientSecret    string
+	CollabMicrosoftClientID     string
+	CollabMicrosoftClientSecret string
+	// StripePriceCollab and StripePriceCollabYear are the collab plan's recurring per-seat
+	// prices (contracts/billing.md "Collab"); without one the plan cannot be bought.
+	StripePriceCollab     string
+	StripePriceCollabYear string
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -589,6 +604,18 @@ func Load() (*Config, error) {
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.MailboxIMAP = envBool("MAILBOX_IMAP", true)
 	c.MailboxSystemSend = envBool("MAILBOX_SYSTEM_SEND", true)
+	c.Collab = envBool("COLLAB", true)
+	c.CollabIMAP = envBool("COLLAB_IMAP", true)
+	c.CollabGoogleClientID, c.CollabGoogleClientSecret = env("COLLAB_GOOGLE_CLIENT_ID", ""), env("COLLAB_GOOGLE_CLIENT_SECRET", "")
+	if c.CollabGoogleClientID == "" {
+		c.CollabGoogleClientID, c.CollabGoogleClientSecret = c.GoogleMailboxClientID, c.GoogleMailboxClientSecret
+	}
+	c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = env("COLLAB_MICROSOFT_CLIENT_ID", ""), env("COLLAB_MICROSOFT_CLIENT_SECRET", "")
+	if c.CollabMicrosoftClientID == "" {
+		c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret
+	}
+	c.StripePriceCollab = env("STRIPE_PRICE_COLLAB", "")
+	c.StripePriceCollabYear = env("STRIPE_PRICE_COLLAB_YEARLY", "")
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	// The binary serves the panel at <APP_URL>/admin; a development API pairs with the
