@@ -199,7 +199,7 @@ function DesktopPermission() {
   }
   return (
     <Note icon={<BellRing />} strong>
-      {t("notifications.desktop.ask")}{" "}
+      {t(isDesktop ? "notifications.desktop.ask" : "notifications.desktop.askBrowser")}{" "}
       <button
         type="button"
         className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg"

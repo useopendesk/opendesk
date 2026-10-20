@@ -657,6 +657,8 @@ export type MailboxConfig = {
   oauth_client?: "collab";
   /** Who hosts the mailbox's mail (MailHost), for labels and connection fixes. */
   mail_host?: MailHost | "";
+  /** Where the first sync of an inbox that reads its inbox starts: the last 7 days (default) or only new mail. */
+  sync_start?: SyncStart;
   /**
    * Tidy-up in Gmail or Outlook, only for a mailbox that reads its inbox directly
    * (oauth_grant api); off (absent) by default. Mark emails read once they become ticket
@@ -666,6 +668,7 @@ export type MailboxConfig = {
   provider_archive_on_solve?: boolean;
   provider_label?: boolean;
 };
+export type SyncStart = "recent" | "new";
 /** Mail hosts the API names (config.mail_host, detect). */
 export type MailHost =
   | "google_workspace"
@@ -1717,7 +1720,10 @@ export type CsvField =
   | "created_at"
   | "assignee_email"
   | "team"
-  | "company";
+  | "company"
+  | "message_id"
+  | "in_reply_to"
+  | "references";
 /** Each field's column name; a missing field is not imported. */
 export type CsvMapping = Partial<Record<CsvField, string>>;
 export type ImportMapping = { agents: Record<string, string | null>; groups: Record<string, string | null>; csv?: CsvMapping };

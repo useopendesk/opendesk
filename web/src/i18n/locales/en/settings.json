@@ -588,6 +588,7 @@
       "blocked": "Notifications are blocked for opendesk on this computer. Allow them in your system settings: on a Mac, System Settings, Notifications, opendesk; on Windows, Settings, System, Notifications.",
       "blockedBrowser": "Notifications are blocked for opendesk in this browser. Allow them in the site settings, next to the address bar.",
       "ask": "opendesk has not asked this computer for permission to show notifications yet.",
+      "askBrowser": "opendesk has not asked this browser for permission to show notifications yet.",
       "allow": "Allow notifications"
     }
   },
