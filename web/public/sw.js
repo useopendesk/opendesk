@@ -1,7 +1,9 @@
 // The web app's service worker (contracts/native.md "Web Push"): it shows a web push
 // while no opendesk window is focused (a focused one shows its own toast) and opens the
 // notification's link on click. Notifications are tagged with their id, so the one the
-// open page shows and the pushed one replace each other instead of stacking.
+// open page shows and the pushed one replace each other instead of stacking. Browsers
+// expect every push to show a notification, so with a window focused it is shown and
+// closed at once.
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -15,14 +17,16 @@ self.addEventListener("push", (event) => {
   }
   if (!alert || typeof alert.title !== "string") return;
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      if (windows.some((w) => w.focused)) return;
-      return self.registration.showNotification(alert.title, {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+      await self.registration.showNotification(alert.title, {
         body: alert.body || undefined,
         tag: alert.id,
         icon: "/icon-192.png",
         data: { url: alert.url },
       });
+      if (!windows.some((w) => w.focused)) return;
+      const shown = await self.registration.getNotifications({ tag: alert.id });
+      shown.forEach((n) => n.close());
     }),
   );
 });

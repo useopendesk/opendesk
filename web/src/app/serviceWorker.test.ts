@@ -8,7 +8,7 @@ type Win = { focused: boolean; focus: ReturnType<typeof vi.fn>; navigate: Return
 
 let handlers: Record<string, Handler>;
 let windows: Win[];
-let shown: { title: string; options: NotificationOptions }[];
+let shown: { title: string; options: NotificationOptions; close: ReturnType<typeof vi.fn> }[];
 let opened: string[];
 
 function load() {
@@ -22,7 +22,10 @@ function load() {
       matchAll: vi.fn(async () => windows),
       openWindow: vi.fn(async (url: string) => opened.push(url)),
     },
-    registration: { showNotification: vi.fn(async (title: string, options: NotificationOptions) => shown.push({ title, options })) },
+    registration: {
+      showNotification: vi.fn(async (title: string, options: NotificationOptions) => shown.push({ title, options, close: vi.fn() })),
+      getNotifications: vi.fn(async ({ tag }: { tag: string }) => shown.filter((n) => n.options.tag === tag)),
+    },
   };
   new Function("self", source)(self);
 }
@@ -50,14 +53,16 @@ describe("service worker pushes", () => {
     windows = [win(false)];
     await dispatch("push", push(alert));
     expect(shown).toEqual([
-      { title: alert.title, options: { body: "#12 Refund", tag: "n1", icon: "/icon-192.png", data: { url: alert.url } } },
+      { title: alert.title, options: { body: "#12 Refund", tag: "n1", icon: "/icon-192.png", data: { url: alert.url } }, close: expect.any(Function) },
     ]);
+    expect(shown[0].close).not.toHaveBeenCalled();
   });
 
-  it("leaves a focused window to its toasts", async () => {
+  it("leaves a focused window to its toasts, closing the push it must show", async () => {
     windows = [win(true)];
     await dispatch("push", push(alert));
-    expect(shown).toHaveLength(0);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].close).toHaveBeenCalled();
   });
 
   it("ignores a push it cannot read", async () => {

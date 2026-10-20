@@ -265,9 +265,9 @@ when it is https, else the `MAIL_FROM` address.
   allowed notifications (Allow notifications in the notification settings, or a permission given
   before), then saves the subscription on every app start, so a new session gets it. A
   subscription made with another key is replaced. The desktop app never subscribes.
-- `/sw.js` shows a push only when no opendesk window is focused (a focused one shows its toast),
-  tagged with the notification id, so the notification the open page shows and the pushed one
-  replace each other. A click focuses an open window and navigates it to `url`, or opens one.
+- `/sw.js` shows every push, tagged with the notification id, so the notification the open page
+  shows and the pushed one replace each other. When an opendesk window is focused (it shows its
+  toast), the push is closed as soon as it is shown: browsers expect each push to show one. A click focuses an open window and navigates it to `url`, or opens one.
 - `/manifest.webmanifest` lets browsers install the web app (standalone window, the app icons).
 
 ## Desktop shell
