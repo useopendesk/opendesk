@@ -560,8 +560,12 @@ func typeLabel(t string) string {
 // Push"): the heading its email would have, the ticket's number and subject on one
 // short line, and the link a click opens.
 func WebPush(s Site, wid uuid.UUID, n Note) (title, body, link string) {
-	if n.TicketID != nil {
-		body = clip(fmt.Sprintf("#%d %s", n.TicketNumber, strings.Join(strings.Fields(n.TicketSubject), " ")), 120)
+	subject := strings.Join(strings.Fields(n.TicketSubject), " ")
+	switch {
+	case n.TicketID != nil:
+		body = clip(fmt.Sprintf("#%d %s", n.TicketNumber, subject), 120)
+	case subject != "":
+		body = clip(subject, 120) // a Collab conversation's subject
 	}
 	return describe(n).heading, body, noteURL(s, wid, n)
 }

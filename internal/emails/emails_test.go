@@ -87,6 +87,10 @@ func TestWebPushText(t *testing.T) {
 	if title != "Your AI balance is used up" || body != "" || link != "https://app.example/settings/billing?ws="+wid.String() {
 		t.Errorf("billing: %q %q %q", title, body, link)
 	}
+	_, body, _ = WebPush(s, wid, Note{Type: "collab_mention", TicketSubject: "Quarterly\nnumbers"})
+	if body != "Quarterly numbers" {
+		t.Errorf("collab: %q", body)
+	}
 }
 
 // A list email groups by ticket, collapses one person's bulk assignment, leads with what
