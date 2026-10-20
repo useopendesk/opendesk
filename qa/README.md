@@ -4,7 +4,8 @@ Every pull request is held to one rule (`lib/gate.ts`):
 
 - a **QA section**: `pnpm qa` passed on the pull request's head commit
 - for a change to something people see, a **Proof section**: stills of every surface it changes,
-  and a walkthrough video for the app and the widget, recorded after the last change to those files
+  and a walkthrough video wherever the surface has behaviour (everything but the site and docs),
+  recorded after the last change to those files
 
 CI's `Proof` check (`.github/workflows/proof.yml`) runs main's copy of the gate against the
 pull request's commits and its current description, and re-runs whenever the description
@@ -59,10 +60,12 @@ Logs go to `.artifacts/qa/logs/<sha>/`.
 | widget | `web/widget/src`, `web/widget/demo.html` | stills and video | `pnpm proof` on the widget's demo page and mock |
 | site | `site/src`, `site/public`, `brand/` | stills | `pnpm proof` on the astro dev server |
 | docs | `docs/src` except `content/`, `docs/public` | stills | `pnpm proof` on the astro dev server |
-| desktop | `desktop/src` | stills | the app's `--capture` switch on the mock, then `pnpm share --add` |
-| admin, iOS | `admin/src`, `ios/` | not required yet | no mock to record against; the gate names them for the reviewer |
+| admin | `admin/src` | stills and video | `pnpm proof` on the admin mock (`VITE_MOCK=1`) |
+| desktop | `desktop/src` | stills and video | `pnpm proof`: the Electron app in a sandbox run, on the app's mock |
+| iOS | `ios/` Swift, assets and strings | stills and video | `pnpm proof`: the Debug build in demo mode on the `opendesk-qa` simulator |
 
-Tests, the mock backend (`web/src/mock/`) and docs prose (`docs/src/content/`) never need proof.
+Tests, the mocks (`web/src/mock/`, `admin/src/mock/`) and docs prose (`docs/src/content/`) never
+need proof.
 
 A maintainer can apply the `qa-exempt` label in GitHub to a pull request that cannot carry QA or
 proof. Agents never apply it, and pull requests opened by bots are exempt.
@@ -97,7 +100,8 @@ test("assign a ticket from the queue", async ({ page, proof }) => {
   least one
 - `proof.chapter(title, description?)` shows a title card in the video
 - `proof.dwell(ms?)` holds a result on screen long enough to read
-- `test.use({ target: "widget" })`, `"site"` or `"docs"` for the other surfaces; `"web"` is the default
+- `test.use({ target: "widget" })`, `"admin"`, `"site"`, `"docs"` or `"desktop"` for the other
+  surfaces; `"web"` is the default. iOS flows have their own API (below)
 - `test.use({ colorScheme: "dark" })` for the dark theme; shoot both when the change is about colour
 - `test.use({ live: true })` keeps the mock's simulated customers, teammates and Ollie running
   (off by default so screens hold still); `test.use({ fixedClock: false })` lets time run
@@ -118,32 +122,74 @@ opening a browser:
 ```bash
 pnpm aria /inbox/unassigned          # the app, whole page
 pnpm aria /inbox/unassigned main     # one region, fewer tokens
-pnpm aria site:/pricing/             # another target: widget, site, docs
+pnpm aria admin:/jobs                # another target: widget, admin, site, docs
 ```
 
 Then **read every still once** (they are PNGs under `.artifacts/run/<flow>/shots/`). The flow's
 assertions say the page worked; only the still says it shows what the reviewer needs to see.
 
-The mock is deterministic: every flow runs at the same fixed instant with the same random
-sequence, so the same code gives pixel-identical stills and a follow-up comment shows only what
-changed.
+Stills are deterministic, so the same code gives pixel-identical stills and a follow-up comment
+shows only what changed:
 
-## Surfaces captured outside the harness
+- the mocks run at the same fixed instant with the same random sequence
+- `proof.open` on the app waits for its realtime connection (presence, live counts) before it returns
+- a still is the first frame two captures in a row agree on, so motion in flight is waited out
+- the site and docs record with reduced motion, since their showpiece animations loop forever
+  (`test.use({ reducedMotion: "no-preference" })` when the motion is what changed); the iPhone
+  simulator runs with Reduce Motion for the same reason
 
-The desktop app loads the instance's web app, so it shows the mock too, and its development
-build saves its own window's page (never the screen) with `--capture`, composited over the macOS
-material with the traffic lights drawn in:
+## The admin panel
 
-```bash
-cd web && VITE_MOCK=1 VITE_MOCK_QUIET=1 pnpm exec vite --port 5199 --strictPort   # its own shell
-cd desktop && OPENDESK_DESKTOP_URL=http://localhost:5199 pnpm dev -- \
-  --capture=/tmp/desktop --capture-paths='/inbox/unassigned;;/settings' --capture-quit=1
+`test.use({ target: "admin" })` records the admin panel on its mock (`admin/src/mock/`), signed in
+as Ava Reyes, a super admin; `proof.open("/", { mock: "anon" })` starts signed out, and
+`{ mock_role: "support" }` or `"viewer"` signs in with fewer permissions. A full page load re-seeds
+the data, so after `open` move around inside the app (the sidebar) to keep a change on screen.
+Lists are newest first: search (`/workspaces?q=halcyon`) for the seeded workspaces and users named
+in `admin/src/mock/seed.ts`.
+
+## The desktop app
+
+`test.use({ target: "desktop" })` launches the desktop app's development build pointed at the app's
+mock, in a sandbox run (`OPENDESK_DESKTOP_SANDBOX`, `desktop/src/main/env.ts`): its own throwaway
+settings, no `opendesk://` handler, no OS notification, badge or Dock icon, and a window that is
+invisible and click-through, so recording never disturbs the person at the machine. Playwright
+drives the window's page like a tab, so a desktop flow reads like an app flow. Stills are the
+page at the display's scale; the native title bar and material are not in them.
+
+## The iPhone app
+
+iOS flows import their own `test` and drive the Debug build in demo mode (`OPENDESK_DEMO=1`,
+`ios/Opendesk/Core/Demo/`): signed in as Maya Chen in Margin, no network, a fixed clock. They run
+on a simulator of the harness's own, `opendesk-qa`, created on first use and shut down afterwards;
+no other simulator is ever booted, shut down or touched. The first run builds the app (`xcodebuild`
+into `.artifacts/ios-build`, incremental after that); macOS with Xcode only.
+
+```ts
+import { test } from "../lib/ios.ts";
+
+test.use({ start: "/inbox/unassigned" });
+
+test("a live chat from the unassigned queue", async ({ ios }) => {
+  await ios.shot("unassigned", { caption: "Unassigned, with live chats waiting" });
+  await ios.open("/inbox/unassigned/1086");
+  await ios.shot("ticket", { caption: "The live chat with Yusuf" });
+});
 ```
 
-Stop the vite server when done, read the stills, then
-`pnpm share --add 'desktop:/tmp/desktop/shot-1.png#The inbox in the desktop window'` (one `--add`
-per still; `ls /tmp/desktop` for the names). `--add` takes images (png, jpg, gif) and videos (mp4,
-mov, webm) up to 10 MB. Never attach a capture of the whole screen: it shows whatever else is open.
+- `start` is the path the app opens on launch; `ios.open(path)` moves to another while recording.
+  Paths are the deep link paths (`/inbox/<folder>`, `/inbox/<folder>/<ticket id or number>`,
+  `/views/<id>`, `/notifications`) plus `/account` and `/ollie`. Seeded tickets, views and their
+  ids are listed at the top of `ios/Opendesk/Core/Demo/DemoSeed.swift`
+- `ios.shot(name, { caption })` and `ios.dwell(ms)` work like their browser twins
+- the whole flow is one screen recording; `test.use({ colorScheme: "dark" })` for dark mode
+- there is no tapping: show a state by navigating to it, and seed it in demo mode when it does not
+  exist yet (extend `DemoSeed.swift` in the same pull request)
+
+## Anything else
+
+Media captured some other way can go into the Proof section with
+`pnpm share --add '<surface>:<file>#Caption'` (images png, jpg, gif; videos mp4, mov, webm; up to
+10 MB each). Never attach a capture of the whole screen: it shows whatever else is open.
 
 ## Being frugal with the machine
 

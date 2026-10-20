@@ -60,7 +60,7 @@ export function evaluate(input: GateInput): GateResult {
   const proof = parseProof(input.body);
   const surfaces = classified.required.join(", ");
   if (!proof) {
-    result.problems.push(`This changes what people see (${surfaces}), and the description has no Proof section. Record it with \`pnpm proof <flow>\` in \`qa/\` (or capture it, qa/README.md "Surfaces"), then \`pnpm share\`.`);
+    result.problems.push(`This changes what people see (${surfaces}), and the description has no Proof section. Record it with \`pnpm proof <flow>\` in \`qa/\` (qa/README.md "When proof is required"), then \`pnpm share\`.`);
   } else {
     const missing: Kind[] = classified.required.filter((k) => !proof.kinds.includes(k));
     for (const k of missing) {

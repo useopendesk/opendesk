@@ -143,7 +143,7 @@ function qaSection(qa: QaRun, flows: FlowMeta[] | undefined): string {
 }
 
 function proofSection(sha: string, kinds: Kind[], flows: FlowMeta[], added: Added[], files: Attachments): string {
-  const lines = [proofStart(sha, kinds), "## Proof", "", `Recorded at \`${short(sha)}\`. The app and the widget run on their in-memory mock with sample data.`, ""];
+  const lines = [proofStart(sha, kinds), "## Proof", "", `Recorded at \`${short(sha)}\` on the in-memory mocks and the iPhone app's demo mode, with sample data.`, ""];
   for (const flow of flows) {
     lines.push(`### ${KIND_LABEL[flow.target]}: ${sentence(flow.title)}`, "");
     for (const shot of flow.shots) lines.push(`**${shot.caption}**`, "", image(shot.caption, files.add(shot.file, `${flow.slug}-${shot.name}.png`)), "");
@@ -249,7 +249,12 @@ function main(): void {
   if (publishProof) {
     const missing = required.filter((k) => !covered.has(k));
     for (const k of missing) {
-      const how = RECORDED_KINDS.has(k) ? `record a flow with \`test.use({ target: "${k}" })\` and \`pnpm proof <flow>\`` : `capture it and pass \`--add ${k}:<file>\` (qa/README.md "Surfaces")`;
+      const how =
+        k === "ios"
+          ? "record an iOS flow (`import { test } from \"../lib/ios.ts\"`) and `pnpm proof <flow>`"
+          : RECORDED_KINDS.has(k)
+            ? `record a flow with \`test.use({ target: "${k}" })\` and \`pnpm proof <flow>\``
+            : `capture it and pass \`--add ${k}:<file>\``;
       console.error(`share: this changes ${k} (${classified.kinds.get(k)!.slice(0, 3).join(", ")}) and there is no proof of it at HEAD: ${how}`);
     }
     if (missing.length) process.exit(1);

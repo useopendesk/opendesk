@@ -2,7 +2,7 @@
 // One table, read by `pnpm qa`, `pnpm share`, the CI gate and the Claude Code hooks,
 // so all four always agree. Pure node: the gate and the hooks run it without `pnpm install`.
 
-// A surface someone can see. Each has its own way to record proof (qa/README.md "Surfaces").
+// A surface someone can see. Each has its own way to record proof (qa/README.md "When proof is required").
 export type Kind = "web" | "widget" | "site" | "docs" | "desktop" | "ios" | "admin";
 
 type Rule = { kind: Kind; include: RegExp; exclude?: RegExp };
@@ -14,7 +14,7 @@ const RULES: Rule[] = [
   { kind: "widget", include: /^web\/widget\/(src\/|demo\.html$)/, exclude: new RegExp(`${TESTS.source}|^web/widget/src/mock\\.ts$`) },
   // The mock backend changes what the screens show in mock mode only, never in the product.
   { kind: "web", include: /^web\/(src\/|public\/|index\.html$)/, exclude: new RegExp(`${TESTS.source}|^web/src/mock/`) },
-  { kind: "admin", include: /^admin\/(src\/|public\/|index\.html$)/, exclude: TESTS },
+  { kind: "admin", include: /^admin\/(src\/|public\/|index\.html$)/, exclude: new RegExp(`${TESTS.source}|^admin/src/mock/`) },
   { kind: "site", include: /^site\/(src\/|public\/|astro\.config\.mjs$)/, exclude: TESTS },
   // Docs prose is reviewed as text; the docs chrome (components, styles, sidebar) is a surface.
   { kind: "docs", include: /^docs\/(src\/|public\/|astro\.config\.mjs$)/, exclude: new RegExp(`${TESTS.source}|^docs/src/content/`) },
@@ -26,16 +26,16 @@ const RULES: Rule[] = [
 const BRAND = /^brand\//;
 
 // Surfaces where a change is to how something behaves as well as how it looks: a walkthrough video
-// is required too. The desktop app has no recorder that sees only its own window yet, so it gives stills.
-export const VIDEO_KINDS: ReadonlySet<Kind> = new Set<Kind>(["web", "widget", "ios", "admin"]);
+// is required too.
+export const VIDEO_KINDS: ReadonlySet<Kind> = new Set<Kind>(["web", "widget", "admin", "desktop", "ios"]);
 
-// Surfaces the harness records itself (`pnpm proof`). The others are captured outside it and
-// published with `pnpm share --add <kind>:<file>` (qa/README.md "Surfaces").
-export const RECORDED_KINDS: ReadonlySet<Kind> = new Set<Kind>(["web", "widget", "site", "docs"]);
+// Surfaces the harness records itself (`pnpm proof`). Anything else is captured outside it and
+// published with `pnpm share --add <kind>:<file>`.
+export const RECORDED_KINDS: ReadonlySet<Kind> = new Set<Kind>(["web", "widget", "admin", "site", "docs", "desktop", "ios"]);
 
-// Surfaces whose proof the gate does not require yet, because they have no mock to record against
-// and recordings never use a backend. Listed in the gate's output so a reviewer knows to look.
-export const UNENFORCED_KINDS: ReadonlySet<Kind> = new Set<Kind>(["admin", "ios"]);
+// Surfaces whose proof the gate does not require (none today): a surface with nothing to record
+// against goes here, and the gate names it for the reviewer instead of failing.
+export const UNENFORCED_KINDS: ReadonlySet<Kind> = new Set<Kind>([]);
 
 export const KINDS: readonly Kind[] = ["web", "widget", "site", "docs", "desktop", "ios", "admin"];
 

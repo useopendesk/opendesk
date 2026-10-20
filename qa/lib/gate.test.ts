@@ -31,11 +31,11 @@ test("kinds: app code is web, mock and tests are not", () => {
   assert.equal(kindOf("internal/core/auth.go"), undefined);
 });
 
-test("classify: brand tokens touch the app and the site; admin and iOS are noted, not required", () => {
-  const c = classify(["brand/tokens.css", "admin/src/pages/Users.tsx", "ios/Opendesk/Features/Inbox/InboxView.swift", "desktop/src/main/tray.ts", "internal/x.go"]);
-  assert.deepEqual(c.required, ["web", "site", "desktop"]);
-  assert.deepEqual(c.video, ["web"]);
-  assert.ok(c.kinds.has("admin") && c.kinds.has("ios"));
+test("classify: brand tokens touch the app and the site; every surface's video rule", () => {
+  const c = classify(["brand/tokens.css", "admin/src/pages/Users.tsx", "desktop/src/main/tray.ts", "ios/Opendesk/Features/Inbox/InboxView.swift", "internal/x.go"]);
+  assert.deepEqual(c.required, ["web", "site", "desktop", "ios", "admin"]);
+  assert.deepEqual(c.video, ["web", "desktop", "ios", "admin"]);
+  assert.equal(kindOf("admin/src/mock/seed.ts"), undefined);
 });
 
 test("body: sections parse, count stills and videos, and flag unuploaded references", () => {

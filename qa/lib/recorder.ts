@@ -87,12 +87,17 @@ export async function encodeFrames(framesDir: string, out: string): Promise<void
     "format=yuv420p",
   ].join(",");
   await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-vf", vf, ...x264(crf, preset), out]);
+  await fitVideo(out, crf);
+  rmSync(framesDir, { recursive: true, force: true });
+}
+
+// Re-encodes a clip smaller until it fits under the attachment limit.
+export async function fitVideo(out: string, crf = VIDEO.crf): Promise<void> {
   for (let next = crf + 5; statSync(out).size > MAX_BYTES && next <= 38; next += 5) {
     const tmp = out.replace(/\.mp4$/, `.crf${next}.mp4`);
-    await ffmpeg(["-i", out, ...x264(next, preset), tmp]);
+    await ffmpeg(["-i", out, ...x264(next, VIDEO.preset), tmp]);
     await rename(tmp, out);
   }
-  rmSync(framesDir, { recursive: true, force: true });
 }
 
 function x264(crf: number, preset: string): string[] {

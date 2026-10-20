@@ -4,16 +4,17 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { ARTIFACTS, ROOT } from "./env.ts";
 
-// What a flow records, each served by this worktree's own dev server on a free port.
-// None of them needs a backend: the app and the widget run on their in-memory mocks.
-export type Target = "web" | "widget" | "site" | "docs";
+// The dev servers flows record against, each this worktree's own, on a free port.
+// None of them needs a backend: the app, the widget and the admin panel run on in-memory mocks.
+export type Server = "web" | "widget" | "admin" | "site" | "docs";
 
 type Spec = { dir: string; args: (port: number) => string[]; env?: Record<string, string>; ready: string };
 
-const SPECS: Record<Target, Spec> = {
+const SPECS: Record<Server, Spec> = {
   // VITE_MOCK=1 is `pnpm dev:mock`: an in-memory API and gateway seeded with sample data.
   // VITE_MOCK_QUIET=1 keeps its simulated activity off unless a flow opens with ?mock_live=1.
   web: { dir: "web", args: (p) => ["exec", "vite", "--port", String(p), "--strictPort", "--host", "127.0.0.1"], env: { VITE_MOCK: "1", VITE_MOCK_QUIET: "1" }, ready: "/" },
+  admin: { dir: "admin", args: (p) => ["exec", "vite", "--port", String(p), "--strictPort", "--host", "127.0.0.1"], env: { VITE_MOCK: "1" }, ready: "/" },
   widget: { dir: "web", args: (p) => ["exec", "vite", "--config", "vite.widget.config.ts", "--port", String(p), "--strictPort", "--host", "127.0.0.1"], ready: "/widget/demo.html" },
   // --ignore-lock keeps astro in the foreground (it backgrounds itself under an agent) and clear of
   // the lock file of a dev server someone else is running in the same tree.
@@ -21,7 +22,7 @@ const SPECS: Record<Target, Spec> = {
   docs: { dir: "docs", args: (p) => ["exec", "astro", "dev", "--ignore-lock", "--port", String(p), "--host", "127.0.0.1"], ready: "/" },
 };
 
-const running = new Map<Target, { url: string; child: ChildProcess }>();
+const running = new Map<Server, { url: string; child: ChildProcess }>();
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -54,7 +55,7 @@ async function waitReady(ready: string, child: ChildProcess, log: string, timeou
   throw new Error(`the dev server did not answer within ${timeoutMs / 1000}s; its log is ${log}`);
 }
 
-function ensureInstalled(dir: string): void {
+export function ensureInstalled(dir: string): void {
   if (existsSync(join(ROOT, dir, "node_modules"))) return;
   console.log(`qa: installing ${dir}/ dependencies (first recording in this worktree)`);
   const res = spawnSync("pnpm", ["install", "--frozen-lockfile"], { cwd: join(ROOT, dir), stdio: "inherit" });
@@ -62,7 +63,7 @@ function ensureInstalled(dir: string): void {
 }
 
 // Starts the target's dev server once per run and returns its origin.
-export async function serve(target: Target): Promise<string> {
+export async function serve(target: Server): Promise<string> {
   const have = running.get(target);
   if (have) return have.url;
   const spec = SPECS[target];

@@ -26,7 +26,7 @@ export type QaRun = {
   surfaces: string[];
 };
 
-type Check = { name: string; dir: string; cmd: string[]; summarize?: (out: string) => string | undefined; ok?: (code: number, out: string) => boolean };
+type Check = { name: string; dir: string; cmd: string[]; env?: Record<string, string>; summarize?: (out: string) => string | undefined; ok?: (code: number, out: string) => boolean };
 type Area = { name: string; match: RegExp; checks: (files: string[]) => Check[] };
 
 const flags = new Set(process.argv.slice(2));
@@ -109,13 +109,24 @@ const AREAS: Area[] = [
       { name: "mix test", dir: "realtime", cmd: ["mix", "test"] },
     ],
   },
+  {
+    name: "ios",
+    match: /^ios\//,
+    checks: () => [
+      {
+        name: "xcodebuild (Debug, simulator)",
+        dir: ".",
+        cmd: ["xcodebuild", "-project", "ios/Opendesk.xcodeproj", "-scheme", "Opendesk", "-configuration", "Debug", "-sdk", "iphonesimulator", "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", "qa/.artifacts/ios-build", "-quiet", "build"],
+        env: { DEVELOPER_DIR: process.env.DEVELOPER_DIR ?? "/Applications/Xcode.app/Contents/Developer" },
+      },
+    ],
+  },
   { name: "terraform", match: /^deploy\/terraform\//, checks: () => [{ name: "fmt and validate", dir: ".", cmd: ["make", "tf-check"] }] },
   { name: "installer", match: /^(deploy\/(install|self-host|caddy)\/|docker-compose\.yml$)/, checks: () => [{ name: "installer checks", dir: ".", cmd: ["make", "installer-check"] }] },
 ];
 
 // Areas a change can touch that have no local check here; named in the QA section so a reviewer knows.
 const UNCHECKED: [string, RegExp][] = [
-  ["ios", /^ios\//],
   ["e2e flows", /^scripts\/e2e\//],
   ["workflows", /^\.github\//],
   ["cloudflare", /^deploy\/cloudflare\//],
@@ -126,7 +137,7 @@ function run(area: string, c: Check, logDir: string): CheckResult {
   const cmd = c.cmd.join(" ");
   process.stdout.write(`qa: ${area}: ${c.name} ... `);
   const started = Date.now();
-  const res = spawnSync(c.cmd[0], c.cmd.slice(1), { cwd: join(ROOT, c.dir), encoding: "utf8", maxBuffer: 256 * 1024 * 1024, env: { ...process.env, CI: "1", FORCE_COLOR: "0" } });
+  const res = spawnSync(c.cmd[0], c.cmd.slice(1), { cwd: join(ROOT, c.dir), encoding: "utf8", maxBuffer: 256 * 1024 * 1024, env: { ...process.env, CI: "1", NO_COLOR: "1", ...c.env } });
   const seconds = (Date.now() - started) / 1000;
   const out = `${res.stdout ?? ""}${res.stderr ?? ""}${res.error ? `\n${res.error.message}` : ""}`;
   writeFileSync(log, `$ (cd ${c.dir} && ${cmd})\n${out}`);
