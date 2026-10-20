@@ -316,12 +316,15 @@ const (
 	outcomeCreated outcome = iota
 	outcomeUpdated
 	outcomeUnchanged
+	outcomeSkipped
 )
 
-// writeTicket writes one source ticket: a new ticket with its messages, or the new
-// messages, status and labels of one an earlier run wrote. All in one transaction with
-// the import's progress.
+// writeTicket writes one source ticket, or skips it when the source marks it to leave out.
+// Ticket writes share a transaction with the import's progress.
 func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, error) {
+	if t.Skip {
+		return outcomeSkipped, nil
+	}
 	prev, err := w.lookup(ctx, w.s.d.DB.Pool, "ticket", t.ID)
 	if err != nil {
 		return 0, err
@@ -333,6 +336,9 @@ func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, er
 		if err := w.src.Load(ctx, t); err != nil {
 			return 0, err
 		}
+	}
+	if t.Skip {
+		return outcomeSkipped, nil
 	}
 	msgs := t.Messages
 	if len(msgs) > maxMessages {

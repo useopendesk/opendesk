@@ -31,13 +31,14 @@ import (
 
 // fake is a source answering from memory.
 type fake struct {
-	mu       sync.Mutex
-	scan     source.Scan
-	tickets  []source.Ticket
-	loads    map[string][]source.Message // what Load fills in, by ticket id
-	articles []source.Article
-	files    map[string][]byte // attachment contents by URL
-	pageSize int
+	mu         sync.Mutex
+	scan       source.Scan
+	tickets    []source.Ticket
+	loads      map[string][]source.Message // what Load fills in, by ticket id
+	skipOnLoad map[string]bool
+	articles   []source.Article
+	files      map[string][]byte // attachment contents by URL
+	pageSize   int
 	// errs are answered by Tickets first, one per call.
 	errs []error
 	// updatedSince is what each Tickets call was asked.
@@ -96,6 +97,9 @@ func (f *fake) Load(_ context.Context, t *source.Ticket) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	t.Messages, t.Loaded = slices.Clone(f.loads[t.ID]), true
+	if f.skipOnLoad[t.ID] {
+		t.Skip = true
+	}
 	return nil
 }
 
@@ -563,6 +567,29 @@ func TestRunImport(t *testing.T) {
 	}
 	if n := e.count(t, `SELECT count(*) FROM kb_articles WHERE workspace_id = $1`, e.ws.ID); n != 2 {
 		t.Errorf("articles after undoing the second import %d", n)
+	}
+}
+
+func TestRunImportSkipsTicketMarkedByLoad(t *testing.T) {
+	e := newEnv(t)
+	e.f.skipOnLoad = map[string]bool{"102": true}
+	x := e.start(t, e.zendeskBody())
+	done := e.drive(t, x.ID)
+
+	if done.Status != StatusCompleted {
+		t.Fatalf("status %s, want %s (problems %+v)", done.Status, StatusCompleted, done.Problems)
+	}
+	if done.Counts.Skipped != 2 {
+		t.Errorf("skipped %d, want 2", done.Counts.Skipped)
+	}
+	if done.Counts.Tickets != 2 {
+		t.Errorf("tickets %d, want 2", done.Counts.Tickets)
+	}
+	if n := e.count(t, `SELECT count(*) FROM tickets WHERE workspace_id = $1`, e.ws.ID); n != 2 {
+		t.Errorf("stored %d tickets, want 2", n)
+	}
+	if n := e.count(t, `SELECT count(*) FROM import_records WHERE workspace_id = $1 AND kind = 'ticket' AND external_id = '102'`, e.ws.ID); n != 0 {
+		t.Errorf("stored %d records for skipped ticket 102, want 0", n)
 	}
 }
 

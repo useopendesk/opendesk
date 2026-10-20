@@ -173,17 +173,18 @@ func (s *Service) step(ctx context.Context, w *writer) (bool, error) {
 		}
 		for i := range page.Items {
 			t := &page.Items[i]
-			if t.Skip {
-				x.Counts.Skipped++
-				continue
-			}
-			if _, err := w.writeTicket(ctx, t); err != nil {
+			result, err := w.writeTicket(ctx, t)
+			if err != nil {
 				if stopping(err) {
 					return false, err
 				}
 				s.d.Log.Warn("import ticket failed", "import_id", x.ID, "ticket", t.ID, "error", err)
 				w.problem("Ticket "+t.Ref, plain(err))
 				x.Counts.Failed++
+				continue
+			}
+			if result == outcomeSkipped {
+				x.Counts.Skipped++
 			}
 		}
 		return false, s.checkpoint(ctx, w, PhaseTickets, page.Next)
