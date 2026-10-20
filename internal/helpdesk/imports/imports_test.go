@@ -570,6 +570,16 @@ func TestRunImport(t *testing.T) {
 	}
 }
 
+func TestCheckSourceLeavesOutTicketMarkedByLoad(t *testing.T) {
+	e := newEnv(t)
+	e.f.skipOnLoad = map[string]bool{"102": true}
+	var c ImportCheck
+	e.Do("POST", "/v1/imports/check", e.admin, map[string]any{"source": "zendesk", "credentials": map[string]string{"token": "secret-token"}}).Want(t, 200).JSON(t, &c)
+	if len(c.Samples) != 2 || c.Samples[0].Ref != "#101" || c.Samples[1].Ref != "#104" {
+		t.Fatalf("samples %+v", c.Samples)
+	}
+}
+
 func TestRunImportSkipsTicketMarkedByLoad(t *testing.T) {
 	e := newEnv(t)
 	e.f.skipOnLoad = map[string]bool{"102": true}
