@@ -81,7 +81,11 @@ export function RecipientField({
 
   return (
     <div className="relative border-b border-line-soft">
-      <div className="flex min-h-8 items-center gap-2 px-3" onClick={() => inputRef.current?.focus()}>
+      <div
+        className="flex min-h-8 items-center gap-2 px-3"
+        // A click on the row's empty space types into it; its buttons (remove, Cc, Bcc) do their own thing.
+        onClick={(e) => !(e.target as HTMLElement).closest("button") && inputRef.current?.focus()}
+      >
         <span className="w-9 shrink-0 text-xs text-fg-3">{label}</span>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 py-1">
           {values.map((v) => (
@@ -165,7 +169,7 @@ export function RecipientField({
               if (e.key === "Backspace" && !text && values.length) onChange(values.slice(0, -1));
             }}
             placeholder={values.length ? "" : "name@example.com"}
-            className="h-6 min-w-[140px] flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4"
+            className="h-6 min-w-[140px] flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4 focus-visible:shadow-none"
           />
         </div>
         {end}

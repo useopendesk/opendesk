@@ -73,6 +73,34 @@ test("an unsent comment waits for its conversation", async ({ page, proof }) => 
   await proof.shot("unsent-kept", { caption: "Back on the newsletter: the comment is still there, ready to post" });
 });
 
+test("Cc in a forward opens its own field", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await openNewsletter(page);
+  await page.getByRole("button", { name: "Forward", exact: true }).click();
+  const to = page.getByRole("combobox", { name: "To" });
+  await expect(to).toBeVisible();
+  await proof.chapter("Cc", "Adding Cc puts the cursor in Cc, and the To suggestions stay closed");
+  await page.getByRole("button", { name: "Cc", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Cc" })).toBeFocused();
+  await expect(to).toHaveAttribute("aria-expanded", "false");
+  await proof.dwell();
+  await proof.shot("forward-cc", { caption: "Forwarding: Cc added with the cursor in it and its own suggestions, To untouched" });
+});
+
+test("a toast's button stays on one line", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await expect(page.getByRole("option", { name: /Wednesday Web Drop/ })).toBeVisible();
+  // The toast a mention raises, with a long description beside its button.
+  await page.evaluate(async () => {
+    const { toast } = await import("/src/components/ui/toast.tsx");
+    toast.info("You were mentioned #1034", { description: "Can guests comment without an account?", action: { label: "Open", onClick: () => undefined } });
+  });
+  const toastEl = page.locator("[data-sonner-toast]").first();
+  await expect(toastEl.getByRole("button", { name: "Open", exact: true })).toBeVisible();
+  await proof.dwell();
+  await proof.shot("toast-open", { caption: "A mention toast: the description wraps, Open stays whole", target: toastEl });
+});
+
 test.describe("dark", () => {
   test.use({ colorScheme: "dark" });
 

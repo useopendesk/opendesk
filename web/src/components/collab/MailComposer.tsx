@@ -377,15 +377,27 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
   };
 
   const showSubject = variant === "floating" || draft.mode === "forward" || draft.mode === "new";
+  // Cc or Bcc just added: the cursor goes there.
+  const opened = useRef<"cc" | "bcc" | null>(null);
   const ccToggles = (
     <span className="flex shrink-0 items-center gap-0.5">
       {!draft.showCc && (
-        <button type="button" onClick={() => setDraft({ showCc: true })} className="rounded-sm px-1.5 py-0.5 text-[11.5px] text-fg-3 hover:bg-hover hover:text-fg">
+        <button
+          type="button"
+          onClick={() => {
+            opened.current = "cc";
+            setDraft({ showCc: true });
+          }} className="rounded-sm px-1.5 py-0.5 text-[11.5px] text-fg-3 hover:bg-hover hover:text-fg">
           {t("composer.addCc")}
         </button>
       )}
       {!draft.showBcc && (
-        <button type="button" onClick={() => setDraft({ showBcc: true })} className="rounded-sm px-1.5 py-0.5 text-[11.5px] text-fg-3 hover:bg-hover hover:text-fg">
+        <button
+          type="button"
+          onClick={() => {
+            opened.current = "bcc";
+            setDraft({ showBcc: true });
+          }} className="rounded-sm px-1.5 py-0.5 text-[11.5px] text-fg-3 hover:bg-hover hover:text-fg">
           {t("composer.addBcc")}
         </button>
       )}
@@ -430,8 +442,8 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
         </div>
       )}
       <RecipientField label={t("composer.to")} values={draft.to} onChange={(to) => edit({ to })} suggestions={suggestions} autoFocus={autoFocus && !draft.to.length} end={ccToggles} onSubmit={() => void submit()} />
-      {draft.showCc && <RecipientField label={t("composer.cc")} values={draft.cc} onChange={(cc) => edit({ cc })} suggestions={suggestions} onSubmit={() => void submit()} />}
-      {draft.showBcc && <RecipientField label={t("composer.bcc")} values={draft.bcc} onChange={(bcc) => edit({ bcc })} suggestions={suggestions} onSubmit={() => void submit()} />}
+      {draft.showCc && <RecipientField label={t("composer.cc")} values={draft.cc} onChange={(cc) => edit({ cc })} suggestions={suggestions} autoFocus={opened.current === "cc"} onSubmit={() => void submit()} />}
+      {draft.showBcc && <RecipientField label={t("composer.bcc")} values={draft.bcc} onChange={(bcc) => edit({ bcc })} suggestions={suggestions} autoFocus={opened.current === "bcc"} onSubmit={() => void submit()} />}
       {showSubject && (
         <div className="flex min-h-8 items-center gap-2 border-b border-line-soft px-3">
           <label htmlFor={`subject-${threadId ?? "new"}`} className="min-w-9 shrink-0 text-xs text-fg-3">
@@ -447,7 +459,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
                 void submit();
               }
             }}
-            className="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4"
+            className="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4 focus-visible:shadow-none"
             data-ph-mask
           />
         </div>

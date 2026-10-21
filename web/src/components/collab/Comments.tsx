@@ -204,6 +204,9 @@ const unsent = new Map<string, string>();
 
 export type CommentBarHandle = { focus: () => void };
 
+// The editor's buttons opening and the reply buttons stepping aside move as one.
+const barMotion = { duration: dur.base, ease: ease.out };
+
 /**
  * Writing a comment, pinned under the conversation so it is there however long the
  * mail is: one line until it is used, then the editor, who reads it and the buttons.
@@ -245,7 +248,7 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
   useImperativeHandle(ref, () => ({ focus: () => editor.current?.focus() }), []);
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center">
       <div
         className={cn(
           "min-w-0 flex-1 rounded-md border border-dashed border-note-line bg-note transition-colors duration-150 hover:border-line-strong",
@@ -266,7 +269,7 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
             placeholder={t("comments.placeholder")}
             ariaLabel={t("comments.placeholder")}
             className="max-h-[40vh] min-w-0 flex-1"
-            contentClassName={cn("min-h-0 px-2 py-[5px] text-[12.5px] leading-5 transition-[min-height] duration-200 ease-out motion-reduce:transition-none", writing && "min-h-[52px]")}
+            contentClassName="min-h-0 px-2 py-[5px] text-[12.5px] leading-5"
             onFocus={() => setFocused(true)}
             onKeyDown={(e) => {
               // Escape leaves the comment as it is (a mention list open closes first).
@@ -284,7 +287,7 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
               initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
-              transition={{ duration: dur.base, ease: ease.out }}
+              transition={barMotion}
               className="overflow-hidden"
             >
               <div className="flex items-center gap-2 pb-2 pl-[30px] pr-2">
@@ -317,8 +320,8 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
             initial={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
             animate={{ opacity: 1, width: "auto" }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
-            transition={{ duration: dur.base, ease: ease.out }}
-            className="flex shrink-0 items-center gap-1.5 overflow-hidden"
+            transition={barMotion}
+            className="-my-1 -mr-1 flex shrink-0 items-center gap-1.5 overflow-hidden py-1 pl-1.5 pr-1"
           >
             {children}
           </motion.div>
