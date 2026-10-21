@@ -91,10 +91,11 @@ test("a toast's button stays on one line", async ({ page, proof }) => {
   await proof.open("/mail");
   await expect(page.getByRole("option", { name: /Wednesday Web Drop/ })).toBeVisible();
   // The toast a mention raises, with a long description beside its button.
-  await page.evaluate(async () => {
-    const { toast } = await import("/src/components/ui/toast.tsx");
+  // The app's own toast module, loaded from the dev server inside the page.
+  await page.evaluate(async (path) => {
+    const { toast } = (await import(path)) as { toast: { info: (msg: string, opts: object) => void } };
     toast.info("You were mentioned #1034", { description: "Can guests comment without an account?", action: { label: "Open", onClick: () => undefined } });
-  });
+  }, "/src/components/ui/toast.tsx");
   const toastEl = page.locator("[data-sonner-toast]").first();
   await expect(toastEl.getByRole("button", { name: "Open", exact: true })).toBeVisible();
   await proof.dwell();
