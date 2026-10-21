@@ -102,6 +102,26 @@ test("a toast's button stays on one line", async ({ page, proof }) => {
   await proof.shot("toast-open", { caption: "A mention toast: the description wraps, Open stays whole", target: toastEl });
 });
 
+test("scroll the folder tabs beside an open conversation", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await openNewsletter(page);
+  const tabs = page.getByRole("navigation", { name: "Folders" });
+  const right = tabs.getByRole("button", { name: "Scroll tabs right" });
+  await expect(right).toBeVisible();
+  await proof.chapter("Folder tabs", "The arrows scroll the tabs and stay where they went");
+  await proof.shot("tabs-start", { caption: "A narrow list: more tabs to the right", target: tabs });
+
+  await right.click();
+  await expect(tabs.getByRole("link", { name: /Archive/ })).toBeInViewport();
+  await proof.dwell();
+  await proof.shot("tabs-right", { caption: "Scrolled right: Drafts and Archive in view, the open Inbox tab does not pull it back", target: tabs });
+
+  await tabs.getByRole("button", { name: "Scroll tabs left" }).click();
+  await expect(tabs.getByRole("link", { name: /Inbox/ })).toBeInViewport();
+  await proof.dwell();
+  await proof.shot("tabs-back", { caption: "And back to the start", target: tabs });
+});
+
 test.describe("dark", () => {
   test.use({ colorScheme: "dark" });
 

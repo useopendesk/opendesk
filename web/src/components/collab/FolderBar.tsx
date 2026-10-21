@@ -250,6 +250,7 @@ export function FolderBar({
   // or many tabs): arrows show while there is more on that side, the wheel scrolls too, and
   // the open tab is kept in view. More and the customize button stay put at the end.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const EDGE = 44;
   const [edges, setEdges] = useState({ left: false, right: false });
   const itemsKey = items.map((x) => `${x.id}:${x.label}:${x.count ?? ""}`).join("|");
   const activeId = items.find((x) => x.active)?.id;
@@ -266,29 +267,37 @@ export function FolderBar({
       ro.disconnect();
     };
   }, [itemsKey]);
-  // Keep the open tab fully in view, clear of the faded edges; again once the arrows show,
-  // since they narrow the strip.
+  // Keep the open tab fully in view, clear of the faded edges, when it or the set of tabs
+  // changes. Never on scrolling: browsing with the arrows or the wheel stays where it went.
+  const tabsKey = items.map((x) => `${x.id}:${x.label}`).join("|");
   useLayoutEffect(() => {
     const el = scrollRef.current;
     const tab = el?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!el || !tab) return;
-    const pad = 20;
+    const pad = EDGE + 4;
     const left = tab.offsetLeft - el.offsetLeft;
     if (left - pad < el.scrollLeft) el.scrollLeft = Math.max(0, left - pad);
     else if (left + tab.offsetWidth + pad > el.scrollLeft + el.clientWidth) el.scrollLeft = left + tab.offsetWidth + pad - el.clientWidth;
-  }, [activeId, itemsKey, edges.left, edges.right]);
+  }, [activeId, tabsKey]);
   const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const scrollBy = (dir: -1 | 1) => {
     const el = scrollRef.current;
-    if (el) el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.7), behavior: reduce ? "auto" : "smooth" });
+    if (el) el.scrollBy({ left: dir * Math.max(120, (el.clientWidth - 2 * EDGE) * 0.8), behavior: reduce ? "auto" : "smooth" });
   };
-  const arrow = (dir: -1 | 1) => (
+  // The arrows sit over the faded edges and fade in and out, so the tabs never move when one shows.
+  const arrow = (dir: -1 | 1, shown: boolean) => (
     <Tooltip content={dir < 0 ? t("bar.scrollLeft") : t("bar.scrollRight")}>
       <button
         type="button"
         aria-label={dir < 0 ? t("bar.scrollLeft") : t("bar.scrollRight")}
+        aria-hidden={!shown || undefined}
+        tabIndex={shown ? undefined : -1}
         onClick={() => scrollBy(dir)}
-        className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-3 outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+        className={cn(
+          "absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-fg-3 outline-none transition-[opacity,background-color,color] duration-150 hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)] motion-reduce:transition-none",
+          dir < 0 ? "left-0" : "right-0",
+          shown ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
       >
         {dir < 0 ? <ChevronLeft className="size-3.5" /> : <ChevronRight className="size-3.5" />}
       </button>
@@ -298,64 +307,66 @@ export function FolderBar({
   return (
     <>
       <nav aria-label={t("bar.label")} className="group/bar flex h-9 shrink-0 items-center gap-0.5 border-b border-line px-2">
-        {edges.left && arrow(-1)}
-        <div
-          ref={scrollRef}
-          onWheel={(e) => {
-            const el = scrollRef.current;
-            if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY;
-          }}
-          className={cn(
-            "flex min-w-0 shrink items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            edges.left && edges.right
-              ? "[mask-image:linear-gradient(to_right,transparent,black_16px,black_calc(100%-16px),transparent)]"
-              : edges.left
-                ? "[mask-image:linear-gradient(to_right,transparent,black_16px)]"
-                : edges.right && "[mask-image:linear-gradient(to_left,transparent,black_16px)]",
-          )}
-        >
-          {items.map((x) =>
-            x.link ? (
-              <TabMenu key={x.id} id={x.id} label={x.label} prefs={prefs} onChange={change} onCustomize={() => setCustomizing(true)} removable colorFolder={x.folder} provider={providerOf(x.folder)}>
-                <Link
-                  to="/mail/$box/{-$threadId}"
-                  params={{ box: x.link.box, threadId: undefined }}
-                  search={x.link.search}
-                  aria-current={x.active ? "page" : undefined}
-                  title={x.title}
-                  className={cn(tabCls, x.active ? "font-medium text-fg" : "text-fg-3 hover:text-fg-2")}
+        <div className="relative flex min-w-0 shrink">
+          <div
+            ref={scrollRef}
+            onWheel={(e) => {
+              const el = scrollRef.current;
+              if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY;
+            }}
+            className={cn(
+              "flex min-w-0 shrink items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+              edges.left && edges.right
+                ? "[mask-image:linear-gradient(to_right,transparent_24px,black_44px,black_calc(100%-44px),transparent_calc(100%-24px))]"
+                : edges.left
+                  ? "[mask-image:linear-gradient(to_right,transparent_24px,black_44px)]"
+                  : edges.right && "[mask-image:linear-gradient(to_left,transparent_24px,black_44px)]",
+            )}
+          >
+            {items.map((x) =>
+              x.link ? (
+                <TabMenu key={x.id} id={x.id} label={x.label} prefs={prefs} onChange={change} onCustomize={() => setCustomizing(true)} removable colorFolder={x.folder} provider={providerOf(x.folder)}>
+                  <Link
+                    to="/mail/$box/{-$threadId}"
+                    params={{ box: x.link.box, threadId: undefined }}
+                    search={x.link.search}
+                    aria-current={x.active ? "page" : undefined}
+                    title={x.title}
+                    className={cn(tabCls, x.active ? "font-medium text-fg" : "text-fg-3 hover:text-fg-2")}
+                  >
+                    <Underline active={x.active}>
+                      {x.icon}
+                      <span className="max-w-[160px] truncate">{x.label}</span>
+                      <TabCount n={x.count} />
+                    </Underline>
+                  </Link>
+                </TabMenu>
+              ) : (
+                <TabMenu
+                  key={x.id}
+                  id={x.id}
+                  label={x.label}
+                  prefs={prefs}
+                  onChange={change}
+                  onCustomize={() => setCustomizing(true)}
+                  removable={false}
+                  colorFolder={x.folder}
+                  provider={providerOf(x.folder)}
                 >
-                  <Underline active={x.active}>
-                    {x.icon}
-                    <span className="max-w-[160px] truncate">{x.label}</span>
-                    <TabCount n={x.count} />
-                  </Underline>
-                </Link>
-              </TabMenu>
-            ) : (
-              <TabMenu
-                key={x.id}
-                id={x.id}
-                label={x.label}
-                prefs={prefs}
-                onChange={change}
-                onCustomize={() => setCustomizing(true)}
-                removable={false}
-                colorFolder={x.folder}
-                provider={providerOf(x.folder)}
-              >
-                <span aria-current="page" tabIndex={-1} className={cn(tabCls, "font-medium text-fg")}>
-                  <Underline active>
-                    {x.icon}
-                    <span className="max-w-[160px] truncate">{x.label}</span>
-                    <TabCount n={x.count} />
-                  </Underline>
-                </span>
-              </TabMenu>
-            ),
-          )}
+                  <span aria-current="page" tabIndex={-1} className={cn(tabCls, "font-medium text-fg")}>
+                    <Underline active>
+                      {x.icon}
+                      <span className="max-w-[160px] truncate">{x.label}</span>
+                      <TabCount n={x.count} />
+                    </Underline>
+                  </span>
+                </TabMenu>
+              ),
+            )}
+          </div>
+          {arrow(-1, edges.left)}
+          {arrow(1, edges.right)}
         </div>
-        {edges.right && arrow(1)}
         <Menu>
           <MenuTrigger asChild>
             <button type="button" className={cn(tabCls, "text-fg-3 hover:text-fg-2 data-[state=open]:text-fg")}>
