@@ -1,6 +1,7 @@
 // A conversation: its subject, folders and labels, who it is shared with and
 // assigned to, the actions (each mirrored at the provider), the messages oldest
 // first with the older ones folded, the team's comments, and the reply composer.
+// Writing a comment and the reply buttons are pinned under it, whatever its length.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +15,7 @@ import {
   Link2,
   Mail,
   MailOpen,
+  MessageSquare,
   MoreHorizontal,
   PencilLine,
   RefreshCw,
@@ -50,13 +52,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, LabelPill } from "./bits";
-import { Comments } from "./Comments";
+import { CommentBar, Comments, type CommentBarHandle } from "./Comments";
 import { draftFromMessage, MailComposer, startDraft, useForwardBlock } from "./MailComposer";
 import { MailMessageItem } from "./MailMessageItem";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "./pickers";
 import { ShareDialog } from "./ShareDialog";
 
-export type ThreadViewHandle = { reply: (mode: ComposeMode) => void; move: () => void; labels: () => void };
+export type ThreadViewHandle = { reply: (mode: ComposeMode) => void; comment: () => void; move: () => void; labels: () => void };
 
 export type ThreadViewProps = {
   threadId: string;
@@ -168,6 +170,10 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const [labelOpen, setLabelOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
+  const commentsRef = useRef<HTMLDivElement>(null);
+  const commentBar = useRef<CommentBarHandle>(null);
+  // A comment just posted comes into view once it is in the list.
+  const posted = useRef<string | null>(null);
   const marked = useRef<string | null>(null);
 
   const subject = detail?.thread.subject || t("list.noSubject");
@@ -202,13 +208,16 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   // Moving to a label is Gmail's; an Outlook category is not a place to move to.
   const moveFolders = gmail ? (folders ?? []) : (folders ?? []).filter((f) => f.kind !== "label");
 
+  // Once the composer has laid out, so all of it comes into view. Not smooth: the editor
+  // focusing itself meanwhile would stop a smooth scroll partway.
+  const showComposer = () => requestAnimationFrame(() => requestAnimationFrame(() => composerRef.current?.scrollIntoView({ block: "nearest" })));
   const openComposer = (mode: ComposeMode) => {
     if (!detail?.can_act) return;
     setEditing(null);
     setComposerDraftId(null);
     setComposer(mode);
     setComposerKey((k) => k + 1);
-    requestAnimationFrame(() => composerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    showComposer();
   };
   /** Continues a draft: under its conversation, or new mail in the floating composer. */
   const editDraft = (m: MailMessage) => {
@@ -222,13 +231,21 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
     setEditing(m);
     setComposerDraftId(m.id);
     setComposerKey((k) => k + 1);
-    requestAnimationFrame(() => composerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    showComposer();
   };
   useImperativeHandle(ref, () => ({
     reply: openComposer,
+    comment: () => detail?.can_act && commentBar.current?.focus(),
     move: () => detail?.can_act && setMoveOpen(true),
     labels: () => detail?.can_act && hasLabels && setLabelOpen(true),
   }));
+
+  const commentCount = detail?.comments.length ?? 0;
+  useEffect(() => {
+    if (!posted.current || !document.getElementById(`comment-${posted.current}`)) return;
+    posted.current = null;
+    commentsRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [commentCount]);
 
   // Opened from the Drafts box: its newest draft continues in the composer.
   const draftOpened = useRef(false);
@@ -526,13 +543,15 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
 
           {drafts.map((m) => (canAct ? <DraftRow key={m.id} m={m} onOpen={() => editDraft(m)} /> : <MailMessageItem key={m.id} m={m} ownEmail={ownEmail} open={false} onToggle={() => undefined} />))}
 
-          <div className="mt-3">
-            <Comments detail={detail} />
-          </div>
+          {detail.comments.length > 0 && (
+            <div ref={commentsRef} className="mt-3 scroll-my-4">
+              <Comments detail={detail} />
+            </div>
+          )}
 
-          <div ref={composerRef} className="mt-1">
-            {canAct ? (
-              editing ? (
+          {canAct && (editing || composer) && (
+            <div ref={composerRef} className="mt-1 scroll-mb-4">
+              {editing ? (
                 <MailComposer
                   key={`draft-${editing.id}-${composerKey}`}
                   variant="inline"
@@ -574,27 +593,57 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
                     setComposerDraftId(null);
                   }}
                 />
-              ) : (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button icon={<Reply />} onClick={() => openComposer("reply")}>
-                    {t("action.reply")}
-                  </Button>
-                  {target && hasReplyAll(target, ownEmail) && (
-                    <Button icon={<ReplyAll />} onClick={() => openComposer("reply_all")}>
-                      {t("action.replyAll")}
-                    </Button>
-                  )}
-                  <Button icon={<Forward />} onClick={() => openComposer("forward")}>
-                    {t("action.forward")}
-                  </Button>
-                </div>
-              )
-            ) : (
-              <p className="rounded-md bg-sunken px-3 py-2 text-[12px] text-fg-3">{t("thread.readOnly")}</p>
-            )}
-          </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
+
+      <footer className="@container shrink-0 border-t border-line bg-surface">
+        <div className="mx-auto w-full max-w-[860px] px-4 py-2.5 md:px-6">
+          {canAct ? (
+            <CommentBar
+              ref={commentBar}
+              detail={detail}
+              onPosted={(id) => (posted.current = id)}
+            >
+              {detail.comments.length > 0 && (
+                <>
+                  <Tooltip content={t("thread.showComments")}>
+                    <Button size="md" variant="ghost" icon={<MessageSquare />} aria-label={t("list.comments", { count: detail.comments.length })} onClick={() => commentsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })}>
+                      <span className="mono text-[11.5px]">{detail.comments.length}</span>
+                    </Button>
+                  </Tooltip>
+                  {!editing && !composer && <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
+                </>
+              )}
+              {!editing && !composer && (
+                <>
+                  <Tooltip content={t("action.reply")} shortcut="r">
+                    <Button size="md" icon={<Reply />} aria-label={t("action.reply")} onClick={() => openComposer("reply")}>
+                      <span className="hidden @[36rem]:inline">{t("action.reply")}</span>
+                    </Button>
+                  </Tooltip>
+                  {target && hasReplyAll(target, ownEmail) && (
+                    <Tooltip content={t("action.replyAll")} shortcut="a">
+                      <Button size="md" icon={<ReplyAll />} aria-label={t("action.replyAll")} onClick={() => openComposer("reply_all")}>
+                        <span className="hidden @[36rem]:inline">{t("action.replyAll")}</span>
+                      </Button>
+                    </Tooltip>
+                  )}
+                  <Tooltip content={t("action.forward")} shortcut="f">
+                    <Button size="md" icon={<Forward />} aria-label={t("action.forward")} onClick={() => openComposer("forward")}>
+                      <span className="hidden @[36rem]:inline">{t("action.forward")}</span>
+                    </Button>
+                  </Tooltip>
+                </>
+              )}
+            </CommentBar>
+          ) : (
+            <p className="rounded-md bg-sunken px-3 py-2 text-[12px] text-fg-3">{t("thread.readOnly")}</p>
+          )}
+        </div>
+      </footer>
       <ShareDialog detail={detail} open={share} onOpenChange={setShare} />
     </div>
   );

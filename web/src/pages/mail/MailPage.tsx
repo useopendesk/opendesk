@@ -291,7 +291,7 @@ export default function MailPage() {
     r: () => answer("reply"),
     a: () => answer("reply_all"),
     f: () => answer("forward"),
-    c: () => compose.open({ accountId: account?.id ?? folderAccount?.id }),
+    c: (e) => (e.shiftKey ? openId && threadRef.current?.comment() : compose.open({ accountId: account?.id ?? folderAccount?.id })),
     "/": () => searchRef.current?.focus(),
     escape: () => {
       if (selected.size) setSelected(new Set());

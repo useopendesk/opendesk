@@ -311,7 +311,67 @@ function seedState(ws: WsData): State {
     });
   }
 
+  // A long newsletter in the shared inbox, with the team discussing it below.
+  {
+    const tid = uuid();
+    const subject = "Wednesday Web Drop";
+    const from = { name: "Webdrop", email: "newsletter@webdrop.dev" };
+    const text = "New web apps this week. Featuring Base44, Plane, and Quo.";
+    const at = (ago: number) => new Date(now - ago).toISOString();
+    const comment = (author: string, body: string, ago: number): MailComment => ({ id: uuid(), thread_id: tid, author: userRef(author), body_html: `<p>${body}</p>`, mentions: [], created_at: at(ago), updated_at: at(ago) });
+    threads.set(tid, {
+      id: tid,
+      account_id: sales.id,
+      subject,
+      shares: emptyAudience(),
+      assignees: [],
+      comments: [comment(other, "Plane and Quo both sell to teams our size. Worth a look for the partner list?", 14 * MIN), comment(me, "Agreed, I'll add Plane to the Leads folder.", 9 * MIN)],
+    });
+    messages.push({
+      id: uuid(),
+      thread_id: tid,
+      account_id: sales.id,
+      message_id: `${uuid()}@webdrop.dev`,
+      from,
+      to: [{ name: sales.display_name, email: sales.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      subject,
+      snippet: text,
+      body_html: newsletter(),
+      body_text: text,
+      sent_at: at(20 * MIN),
+      unread: true,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(sales.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+    });
+  }
+
   return { accounts, folders, threads, messages, prefs: {} };
+}
+
+/** A long designed newsletter: the kind of mail that pushes everything under it out of sight. */
+function newsletter() {
+  const apps: [string, string][] = [
+    ["Base44", "A no-code AI platform for building apps, websites and AI agents."],
+    ["Plane", "Work infrastructure for humans and AI agents."],
+    ["Quo", "Calls, texts and contacts together in one shared space."],
+    ["Mercury", "Online business banking."],
+    ["Voicenotes", "An AI notetaker that works in the background."],
+    ["Tally", "Create beautiful forms for free."],
+    ["Cal", "Scheduling infrastructure for everyone."],
+    ["Raycast", "A launcher for everything on your Mac."],
+  ];
+  const row = ([name, line]: [string, string]) =>
+    `<tr><td style="padding:14px 0;border-bottom:1px solid #eceef1"><table cellpadding="0" cellspacing="0"><tr><td width="44" height="44" bgcolor="#f1f3f5" style="border-radius:10px"></td><td style="padding-left:14px"><div style="font-weight:600;font-size:14px">${name}</div><div style="color:#5b6472;font-size:13px;margin-top:2px">${line}</div></td></tr></table></td></tr>`;
+  return `<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px"><table width="520" cellpadding="0" cellspacing="0" style="font-family:Helvetica,Arial,sans-serif;color:#1f2328"><tr><td style="padding-bottom:28px;border-bottom:1px solid #dfe2e6"><h1 style="margin:0;font-size:22px">New web apps this week.</h1><p style="margin:6px 0 0;font-size:18px;color:#5b6472">Featuring Base44, Plane, and Quo.</p></td></tr>${apps
+    .slice(0, 3)
+    .map(([n, l]) => `<tr><td style="padding:22px 0 0;font-size:13px;line-height:1.6;color:#3b424b"><strong>${n}</strong> ${l}</td></tr>`)
+    .join("")}<tr><td style="padding-top:36px"><table width="100%" cellpadding="0" cellspacing="0">${apps.map(row).join("")}</table></td></tr><tr><td align="center" style="padding:32px 0"><a href="https://webdrop.dev" style="display:block;background:#111;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:14px;border-radius:999px">View on Webdrop</a></td></tr><tr><td style="padding-top:24px;border-top:1px solid #eceef1;font-size:12px;line-height:1.6;color:#8a929c">You are receiving this because you subscribed to the Wednesday Web Drop.<br>Webdrop, 548 Market St, San Francisco, CA</td></tr></table></td></tr></table>`;
 }
 
 function state(ws: WsData): State {

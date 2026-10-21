@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/endpoints";
 import type { MailComment, MailThreadDetail, Member } from "@/lib/api/types";
@@ -15,7 +15,7 @@ import { qk, q } from "@/lib/queries";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { RichEditor, type RichEditorHandle } from "@/components/editor/RichEditor";
-import { mentionExtension, SuggestionPopup } from "@/components/tickets/detail/suggestions";
+import { mentionExtension, SuggestionPopup, useSuggest } from "@/components/tickets/detail/suggestions";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -72,7 +72,7 @@ function CommentItem({ c, threadId, canAct }: { c: MailComment; threadId: string
     );
 
   return (
-    <li className="group/comment flex gap-2.5">
+    <li id={`comment-${c.id}`} className="group/comment flex scroll-mt-4 gap-2.5">
       <Avatar name={name} src={c.author?.avatar_url} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -137,19 +137,50 @@ function CommentItem({ c, threadId, canAct }: { c: MailComment; threadId: string
   );
 }
 
+/** The comments, in the conversation under its messages; written in the pinned `CommentBar`. */
 export function Comments({ detail }: { detail: MailThreadDetail }) {
+  const { t } = useTranslation("collab");
+  if (!detail.comments.length) return null;
+  return (
+    <section aria-label={t("comments.title")} className="rounded-lg border border-dashed border-note-line bg-note px-4 py-3">
+      <div className="flex items-center gap-1.5">
+        <Lock className="size-3 text-fg-3" />
+        <h3 className="text-[12px] font-semibold tracking-[-0.01em]">{t("comments.title")}</h3>
+        <span className="mono text-[10.5px] text-fg-4">{detail.comments.length}</span>
+      </div>
+      <p className="mt-0.5 text-[11.5px] text-fg-3">{t("comments.hint")}</p>
+      <ul className="mt-3 flex flex-col gap-3">
+        {detail.comments.map((c) => (
+          <CommentItem key={c.id} c={c} threadId={detail.thread.id} canAct={detail.can_act} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export type CommentBarHandle = { focus: () => void };
+
+/**
+ * Writing a comment, pinned under the conversation so it is there however long the
+ * mail is: one line until it is used, then the editor, who reads it and the buttons.
+ * `children` sit beside the line (the reply buttons) and step aside while writing.
+ */
+export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetail; onPosted?: (id: string) => void; children?: ReactNode }>(function CommentBar({ detail, onPosted, children }, ref) {
   const { t } = useTranslation("collab");
   const qc = useQueryClient();
   const threadId = detail.thread.id;
   const [html, setHtml] = useState("");
+  const [focused, setFocused] = useState(false);
   const editor = useRef<RichEditorHandle>(null);
   const extensions = useMentionExtension();
+  const writing = focused || !isBlankHtml(html);
   const add = useMutation({
     mutationFn: (body_html: string) => api.collab.threads.comment(threadId, { body_html, mentions: mentionIds(body_html) }),
     onSuccess: (c) => {
       patchComments(qc, threadId, (list) => (list.some((x) => x.id === c.id) ? list : [...list, c]));
       editor.current?.clear();
       setHtml("");
+      onPosted?.(c.id);
     },
     onError: (e) => toast.error(e),
   });
@@ -157,24 +188,25 @@ export function Comments({ detail }: { detail: MailThreadDetail }) {
     const body = editor.current?.editor?.getHTML() ?? html;
     if (!isBlankHtml(body) && !add.isPending) add.mutate(body);
   };
+  const leave = () => {
+    editor.current?.editor?.commands.blur();
+    setFocused(false);
+  };
+  useImperativeHandle(ref, () => ({ focus: () => editor.current?.focus() }), []);
 
   return (
-    <section aria-label={t("comments.title")} className="rounded-lg border border-dashed border-note-line bg-note px-4 py-3">
-      <div className="flex items-center gap-1.5">
-        <Lock className="size-3 text-fg-3" />
-        <h3 className="text-[12px] font-semibold tracking-[-0.01em]">{t("comments.title")}</h3>
-        <span className="mono text-[10.5px] text-fg-4">{detail.comments.length || ""}</span>
-      </div>
-      <p className="mt-0.5 text-[11.5px] text-fg-3">{t("comments.hint")}</p>
-      {detail.comments.length > 0 ? (
-        <ul className="mt-3 flex flex-col gap-3">
-          {detail.comments.map((c) => (
-            <CommentItem key={c.id} c={c} threadId={threadId} canAct={detail.can_act} />
-          ))}
-        </ul>
-      ) : null}
-      {detail.can_act && (
-        <div className={cn("mt-3 rounded-md border border-line bg-surface focus-within:border-line-strong")}>
+    <div className="flex items-center gap-1.5">
+      <div
+        className={cn(
+          "min-w-0 flex-1 rounded-md border border-dashed border-note-line bg-note transition-colors duration-150 hover:border-line-strong",
+          writing && "border-solid border-line-strong bg-surface",
+        )}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+        }}
+      >
+        <div className="flex items-start">
+          <Lock aria-hidden className="ml-2.5 mt-[9px] size-3 shrink-0 text-fg-4" />
           <RichEditor
             ref={editor}
             value={html}
@@ -183,19 +215,42 @@ export function Comments({ detail }: { detail: MailThreadDetail }) {
             toolbar="none"
             placeholder={t("comments.placeholder")}
             ariaLabel={t("comments.placeholder")}
-            contentClassName="min-h-[40px] text-[12.5px]"
+            className="max-h-[40vh] min-w-0 flex-1"
+            contentClassName={cn("min-h-0 px-2 py-[5px] text-[12.5px] leading-5", writing && "min-h-[52px]")}
+            onFocus={() => setFocused(true)}
+            onKeyDown={(e) => {
+              // Escape leaves the comment as it is (a mention list open closes first).
+              if (e.key !== "Escape" || useSuggest.getState().open) return false;
+              leave();
+              return true;
+            }}
             onSubmit={submit}
           />
-          <div className="flex justify-end px-2 pb-2">
+        </div>
+        {writing && (
+          <div className="flex items-center gap-2 pb-2 pl-[30px] pr-2">
+            <p className="min-w-0 flex-1 truncate text-[11px] text-fg-4">{t("comments.hint")}</p>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                editor.current?.clear();
+                setHtml("");
+                leave();
+              }}
+            >
+              {t("comments.cancel")}
+            </Button>
             <Tooltip content={t("comments.add")} shortcut="mod enter">
               <Button size="xs" variant="primary" loading={add.isPending} disabled={isBlankHtml(html)} onClick={submit}>
                 {t("comments.add")}
               </Button>
             </Tooltip>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+      {!writing && children}
       <SuggestionPopup />
-    </section>
+    </div>
   );
-}
+});

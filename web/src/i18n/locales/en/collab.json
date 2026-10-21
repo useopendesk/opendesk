@@ -213,6 +213,7 @@
     "preview": "Preview {{name}}",
     "fullSize": "Open full size",
     "readOnly": "You can read this conversation. Agents and above can act on it.",
+    "showComments": "Show comments",
     "draft": "Draft",
     "draftTo": "To {{who}}",
     "draftNoRecipients": "No recipients yet"
@@ -530,6 +531,7 @@
     "reply": "Reply",
     "replyAll": "Reply all",
     "forward": "Forward",
+    "comment": "Comment for the team",
     "compose": "Compose",
     "select": "Select conversation",
     "search": "Search mail",
