@@ -1,23 +1,21 @@
 # One ALB shared by the API and the realtime gateway, routed by host header.
 #
-# Both hostnames are proxied by Cloudflare, so by default the ALB only accepts
-# connections from Cloudflare's published ranges: the origin cannot be reached
-# around the WAF. Cloudflare connects with SNI set to the public hostname and
+# Both hostnames are proxied by Cloudflare, so the caller passes Cloudflare's
+# published ranges as the only sources the ALB accepts: the origin cannot be
+# reached around the WAF. The ranges are read by the caller, at plan time: a
+# data source in here would wait for apply whenever the module depends on
+# something still to be created, and the rules below are keyed by range. Cloudflare connects with SNI set to the public hostname and
 # validates the ACM certificate (zone SSL mode "strict").
 #
 # The idle timeout covers WebSockets: the gateway's sockets are long-lived and
 # the Phoenix client heartbeats every 30s, so anything >= 300s is safe. The
 # Cloudflare proxy itself keeps WebSockets open while traffic flows.
 
-data "cloudflare_ip_ranges" "this" {}
-
 locals {
-  hostnames  = [var.api_hostname, var.gateway_hostname]
-  ingress_v4 = var.restrict_to_cloudflare ? data.cloudflare_ip_ranges.this.ipv4_cidrs : ["0.0.0.0/0"]
-  ingress_v6 = var.restrict_to_cloudflare ? data.cloudflare_ip_ranges.this.ipv6_cidrs : ["::/0"]
+  hostnames = [var.api_hostname, var.gateway_hostname]
   ingress = merge(
-    { for c in local.ingress_v4 : "v4-${c}" => { v4 = c, v6 = null } },
-    { for c in local.ingress_v6 : "v6-${c}" => { v4 = null, v6 = c } },
+    { for c in var.ingress_ipv4 : "v4-${c}" => { v4 = c, v6 = null } },
+    { for c in var.ingress_ipv6 : "v6-${c}" => { v4 = null, v6 = c } },
   )
 }
 

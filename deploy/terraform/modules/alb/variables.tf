@@ -40,10 +40,14 @@ variable "idle_timeout" {
   }
 }
 
-variable "restrict_to_cloudflare" {
-  description = "Only accept connections from Cloudflare's IP ranges (both hostnames are proxied)."
-  type        = bool
-  default     = true
+variable "ingress_ipv4" {
+  description = "IPv4 CIDRs the ALB accepts HTTP(S) from: Cloudflare's ranges, as both hostnames are proxied."
+  type        = list(string)
+}
+
+variable "ingress_ipv6" {
+  description = "IPv6 CIDRs the ALB accepts HTTP(S) from: Cloudflare's ranges, as both hostnames are proxied."
+  type        = list(string)
 }
 
 variable "deletion_protection" {

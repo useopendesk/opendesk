@@ -24,6 +24,11 @@ data "cloudflare_zone" "help" {
   }
 }
 
+# Cloudflare's published ranges, the only sources the ALB accepts (module alb). Read
+# here, at plan time, so the ALB's rules can be planned before the resources it waits
+# on exist.
+data "cloudflare_ip_ranges" "this" {}
+
 locals {
   env     = "production"
   cluster = "${var.name}-${local.env}"
@@ -294,7 +299,8 @@ module "alb" {
   gateway_hostname       = local.host.gateway
   cloudflare_zone_id     = local.zone_id
   idle_timeout           = var.alb_idle_timeout
-  restrict_to_cloudflare = var.restrict_alb_to_cloudflare
+  ingress_ipv4           = var.restrict_alb_to_cloudflare ? data.cloudflare_ip_ranges.this.ipv4_cidrs : ["0.0.0.0/0"]
+  ingress_ipv6           = var.restrict_alb_to_cloudflare ? data.cloudflare_ip_ranges.this.ipv6_cidrs : ["::/0"]
   deletion_protection    = var.alb_deletion_protection
   connection_logs_bucket = aws_s3_bucket.logs.id
   connection_logs_prefix = "alb"
