@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/endpoints";
@@ -11,6 +12,7 @@ import type { MailComment, MailThreadDetail, Member } from "@/lib/api/types";
 import { isBlankHtml, mentionIds } from "@/lib/collab/html";
 import { fullDate, relShort } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { dur, ease, springs } from "@/lib/motion";
 import { qk, q } from "@/lib/queries";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { atLeast, useRole, useSession } from "@/lib/session";
@@ -39,7 +41,7 @@ function patchComments(qc: ReturnType<typeof useQueryClient>, threadId: string, 
   });
 }
 
-function CommentItem({ c, threadId, canAct }: { c: MailComment; threadId: string; canAct: boolean }) {
+function CommentItem({ c, threadId, canAct, fresh }: { c: MailComment; threadId: string; canAct: boolean; fresh: boolean }) {
   const { t } = useTranslation("collab");
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -72,9 +74,13 @@ function CommentItem({ c, threadId, canAct }: { c: MailComment; threadId: string
     );
 
   return (
-    <li id={`comment-${c.id}`} className="group/comment flex scroll-mt-4 gap-2.5">
-      <Avatar name={name} src={c.author?.avatar_url} size="sm" className="mt-0.5" />
-      <div className="min-w-0 flex-1">
+    <div id={`comment-${c.id}`} className="group/comment relative flex scroll-my-4 gap-2.5">
+      {fresh && (
+        // A comment that arrived while the conversation is open (yours or a teammate's) glows once.
+        <motion.span aria-hidden className="pointer-events-none absolute -inset-x-2 -inset-y-1.5 rounded-md bg-hover" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={{ duration: 1.4, delay: 0.5, ease: ease.out }} />
+      )}
+      <Avatar name={name} src={c.author?.avatar_url} size="sm" className="relative mt-0.5" />
+      <div className="relative min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate text-[12.5px] font-medium">{name}</span>
           <Tooltip content={fullDate(c.created_at)}>
@@ -133,30 +139,68 @@ function CommentItem({ c, threadId, canAct }: { c: MailComment; threadId: string
           <div className="prose-od mt-0.5 text-[12.5px] text-fg" data-ph-mask dangerouslySetInnerHTML={{ __html: body }} />
         )}
       </div>
-    </li>
+    </div>
   );
 }
 
 /** The comments, in the conversation under its messages; written in the pinned `CommentBar`. */
 export function Comments({ detail }: { detail: MailThreadDetail }) {
   const { t } = useTranslation("collab");
+  const reduce = useReducedMotion();
+  // The comments there when it opened; any other arrived since, and enters.
+  const seen = useRef<Set<string> | null>(null);
+  seen.current ??= new Set(detail.comments.map((c) => c.id));
   if (!detail.comments.length) return null;
   return (
     <section aria-label={t("comments.title")} className="rounded-lg border border-dashed border-note-line bg-note px-4 py-3">
       <div className="flex items-center gap-1.5">
         <Lock className="size-3 text-fg-3" />
         <h3 className="text-[12px] font-semibold tracking-[-0.01em]">{t("comments.title")}</h3>
-        <span className="mono text-[10.5px] text-fg-4">{detail.comments.length}</span>
+        <Count n={detail.comments.length} className="text-[10.5px] text-fg-4" />
       </div>
       <p className="mt-0.5 text-[11.5px] text-fg-3">{t("comments.hint")}</p>
       <ul className="mt-3 flex flex-col gap-3">
-        {detail.comments.map((c) => (
-          <CommentItem key={c.id} c={c} threadId={detail.thread.id} canAct={detail.can_act} />
-        ))}
+        <AnimatePresence initial={false} mode="popLayout">
+          {detail.comments.map((c) => (
+            <motion.li
+              key={c.id}
+              layout={reduce ? false : "position"}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+              transition={springs.row}
+            >
+              <CommentItem c={c} threadId={detail.thread.id} canAct={detail.can_act} fresh={!seen.current?.has(c.id)} />
+            </motion.li>
+          ))}
+        </AnimatePresence>
       </ul>
     </section>
   );
 }
+
+/** A number that ticks over when it changes: the new one rises in. */
+export function Count({ n, className }: { n: number; className?: string }) {
+  const reduce = useReducedMotion();
+  return (
+    <span className={cn("mono relative inline-flex overflow-hidden tabular-nums", className)}>
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={n}
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: "70%" }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, y: "-70%" }}
+          transition={springs.snap}
+        >
+          {n}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+// A comment not posted yet waits for its conversation while you read another.
+const unsent = new Map<string, string>();
 
 export type CommentBarHandle = { focus: () => void };
 
@@ -169,7 +213,13 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
   const { t } = useTranslation("collab");
   const qc = useQueryClient();
   const threadId = detail.thread.id;
-  const [html, setHtml] = useState("");
+  const reduce = useReducedMotion();
+  const [html, setHtmlState] = useState(() => unsent.get(threadId) ?? "");
+  const setHtml = (v: string) => {
+    setHtmlState(v);
+    if (isBlankHtml(v)) unsent.delete(threadId);
+    else unsent.set(threadId, v);
+  };
   const [focused, setFocused] = useState(false);
   const editor = useRef<RichEditorHandle>(null);
   const extensions = useMentionExtension();
@@ -216,7 +266,7 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
             placeholder={t("comments.placeholder")}
             ariaLabel={t("comments.placeholder")}
             className="max-h-[40vh] min-w-0 flex-1"
-            contentClassName={cn("min-h-0 px-2 py-[5px] text-[12.5px] leading-5", writing && "min-h-[52px]")}
+            contentClassName={cn("min-h-0 px-2 py-[5px] text-[12.5px] leading-5 transition-[min-height] duration-200 ease-out motion-reduce:transition-none", writing && "min-h-[52px]")}
             onFocus={() => setFocused(true)}
             onKeyDown={(e) => {
               // Escape leaves the comment as it is (a mention list open closes first).
@@ -227,29 +277,53 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
             onSubmit={submit}
           />
         </div>
-        {writing && (
-          <div className="flex items-center gap-2 pb-2 pl-[30px] pr-2">
-            <p className="min-w-0 flex-1 truncate text-[11px] text-fg-4">{t("comments.hint")}</p>
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => {
-                editor.current?.clear();
-                setHtml("");
-                leave();
-              }}
+        <AnimatePresence initial={false}>
+          {writing && (
+            <motion.div
+              key="actions"
+              initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              transition={{ duration: dur.base, ease: ease.out }}
+              className="overflow-hidden"
             >
-              {t("comments.cancel")}
-            </Button>
-            <Tooltip content={t("comments.add")} shortcut="mod enter">
-              <Button size="xs" variant="primary" loading={add.isPending} disabled={isBlankHtml(html)} onClick={submit}>
-                {t("comments.add")}
-              </Button>
-            </Tooltip>
-          </div>
-        )}
+              <div className="flex items-center gap-2 pb-2 pl-[30px] pr-2">
+                <p className="min-w-0 flex-1 truncate text-[11px] text-fg-4">{t("comments.hint")}</p>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    editor.current?.clear();
+                    setHtml("");
+                    leave();
+                  }}
+                >
+                  {t("comments.cancel")}
+                </Button>
+                <Tooltip content={t("comments.add")} shortcut="mod enter">
+                  <Button size="xs" variant="primary" loading={add.isPending} disabled={isBlankHtml(html)} onClick={submit}>
+                    {t("comments.add")}
+                  </Button>
+                </Tooltip>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-      {!writing && children}
+      <AnimatePresence initial={false}>
+        {!writing && children && (
+          <motion.div
+            key="aside"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
+            animate={{ opacity: 1, width: "auto" }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
+            transition={{ duration: dur.base, ease: ease.out }}
+            className="flex shrink-0 items-center gap-1.5 overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <SuggestionPopup />
     </div>
   );

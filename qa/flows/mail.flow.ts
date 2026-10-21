@@ -7,6 +7,11 @@ async function openNewsletter(page: Page) {
   await page.getByRole("button", { name: "Not now" }).click();
 }
 
+async function openNewsletterAgain(page: Page) {
+  await page.getByRole("option", { name: /Wednesday Web Drop/ }).click();
+  await expect(page.getByRole("heading", { name: "Wednesday Web Drop" })).toBeVisible();
+}
+
 test("comment on a long email without scrolling to the end", async ({ page, proof }) => {
   await proof.open("/mail");
   await openNewsletter(page);
@@ -46,6 +51,26 @@ test("jump to the comments and reply from the pinned bar", async ({ page, proof 
   await expect(page.getByRole("button", { name: "Send" }).first()).toBeVisible();
   await proof.dwell();
   await proof.shot("replying", { caption: "Replying: the reply buttons step aside, the comment field stays" });
+});
+
+test("an unsent comment waits for its conversation", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await openNewsletter(page);
+  await proof.chapter("Unsent comments", "A comment you started stays with its conversation while you read another");
+  const field = page.getByRole("textbox", { name: "Comment, @ to mention a teammate" });
+  await field.click();
+  await field.pressSequentially("Check whether Quo has an API", { delay: 40 });
+
+  await page.getByRole("option", { name: /Q4 renewal and seat count/ }).first().click();
+  await expect(page.getByRole("heading", { name: /Q4 renewal and seat count/ })).toBeVisible();
+  await expect(field).toHaveText("");
+  await proof.dwell();
+  await proof.shot("other-conversation", { caption: "Another conversation: its own empty comment field" });
+
+  await openNewsletterAgain(page);
+  await expect(field).toHaveText("Check whether Quo has an API");
+  await proof.dwell();
+  await proof.shot("unsent-kept", { caption: "Back on the newsletter: the comment is still there, ready to post" });
 });
 
 test.describe("dark", () => {

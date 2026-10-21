@@ -46,7 +46,7 @@ export function RootLayout() {
   useDesktopNavigation();
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={400} skipDelayDuration={200}>
+      <TooltipProvider delayDuration={200} skipDelayDuration={300}>
         <ConfirmProvider>
           <Outlet />
           <Toaster />

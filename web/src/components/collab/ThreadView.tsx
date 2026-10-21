@@ -30,6 +30,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
@@ -41,6 +42,7 @@ import { compose } from "@/lib/collab/compose";
 import { useMailAccounts } from "@/lib/collab/hooks";
 import { hasReplyAll, replyTarget, type ComposeMode } from "@/lib/collab/recipients";
 import { cn } from "@/lib/cn";
+import { springs } from "@/lib/motion";
 import { qk, q } from "@/lib/queries";
 import { usePageCrumb } from "@/app/useBreadcrumbs";
 import { useDocumentTitle } from "@/app/RootLayout";
@@ -52,7 +54,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, LabelPill } from "./bits";
-import { CommentBar, Comments, type CommentBarHandle } from "./Comments";
+import { CommentBar, Comments, Count, type CommentBarHandle } from "./Comments";
 import { draftFromMessage, MailComposer, startDraft, useForwardBlock } from "./MailComposer";
 import { MailMessageItem } from "./MailMessageItem";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "./pickers";
@@ -174,6 +176,12 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const commentBar = useRef<CommentBarHandle>(null);
   // A comment just posted comes into view once it is in the list.
   const posted = useRef<string | null>(null);
+  const reduce = useReducedMotion();
+  const behavior: ScrollBehavior = reduce ? "auto" : "smooth";
+  // The bar lifts off the conversation while there is more of it underneath.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [below, setBelow] = useState(false);
+  const [flash, setFlash] = useState(false);
   const marked = useRef<string | null>(null);
 
   const subject = detail?.thread.subject || t("list.noSubject");
@@ -244,8 +252,34 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   useEffect(() => {
     if (!posted.current || !document.getElementById(`comment-${posted.current}`)) return;
     posted.current = null;
-    commentsRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [commentCount]);
+    commentsRef.current?.scrollIntoView({ block: "end", behavior });
+  }, [commentCount, behavior]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const measure = () => setBelow(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", measure);
+      ro.disconnect();
+    };
+  }, [isPending]);
+
+  // Jumping to the comments marks them for a moment, so the eye lands there.
+  const showComments = () => {
+    commentsRef.current?.scrollIntoView({ block: "start", behavior });
+    setFlash(true);
+  };
+  useEffect(() => {
+    if (!flash) return;
+    const id = setTimeout(() => setFlash(false), 900);
+    return () => clearTimeout(id);
+  }, [flash]);
 
   // Opened from the Drafts box: its newest draft continues in the composer.
   const draftOpened = useRef(false);
@@ -492,7 +526,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[860px] flex-col gap-2.5 px-4 pb-10 pt-5 md:px-6">
           <div className="mb-1.5 flex flex-col gap-2">
             <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.02em]" data-ph-mask>
@@ -543,11 +577,21 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
 
           {drafts.map((m) => (canAct ? <DraftRow key={m.id} m={m} onOpen={() => editDraft(m)} /> : <MailMessageItem key={m.id} m={m} ownEmail={ownEmail} open={false} onToggle={() => undefined} />))}
 
-          {detail.comments.length > 0 && (
-            <div ref={commentsRef} className="mt-3 scroll-my-4">
-              <Comments detail={detail} />
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {detail.comments.length > 0 && (
+              <motion.div
+                key="comments"
+                ref={commentsRef}
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={springs.row}
+                className={cn("mt-3 scroll-my-4 rounded-lg transition-shadow duration-500 ease-out motion-reduce:transition-none", flash && "shadow-[0_0_0_3px_var(--focus)] duration-150")}
+              >
+                <Comments detail={detail} />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {canAct && (editing || composer) && (
             <div ref={composerRef} className="mt-1 scroll-mb-4">
@@ -599,7 +643,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
         </div>
       </div>
 
-      <footer className="@container shrink-0 border-t border-line bg-surface">
+      <footer className={cn("@container relative z-10 shrink-0 border-t border-line bg-surface transition-shadow duration-200 ease-out", below && "shadow-[0_-8px_16px_-12px_rgb(10_10_10/0.18)] dark:shadow-[0_-8px_16px_-12px_rgb(0_0_0/0.6)]")}>
         <div className="mx-auto w-full max-w-[860px] px-4 py-2.5 md:px-6">
           {canAct ? (
             <CommentBar
@@ -610,8 +654,8 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
               {detail.comments.length > 0 && (
                 <>
                   <Tooltip content={t("thread.showComments")}>
-                    <Button size="md" variant="ghost" icon={<MessageSquare />} aria-label={t("list.comments", { count: detail.comments.length })} onClick={() => commentsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })}>
-                      <span className="mono text-[11.5px]">{detail.comments.length}</span>
+                    <Button size="md" variant="ghost" icon={<MessageSquare />} aria-label={t("list.comments", { count: detail.comments.length })} onClick={showComments}>
+                      <Count n={detail.comments.length} className="text-[11.5px]" />
                     </Button>
                   </Tooltip>
                   {!editing && !composer && <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
