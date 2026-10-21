@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { alertSoundOn, playAlertOnce } from "@/lib/alertSound";
 import { useUrgentChats } from "./useUrgentChats";
@@ -12,7 +12,15 @@ const REMINDER_MS = 60_000;
 
 export function useWaitingAlerts(enabled: boolean) {
   const { t } = useTranslation("inbox");
-  const { urgent, now, ready } = useUrgentChats(enabled, true);
+  const { urgent, ready } = useUrgentChats(enabled, true);
+  // Checked once a minute while someone waits, never every second: this runs in the app's frame.
+  const [minute, setMinute] = useState(0);
+  const waiting = urgent.length > 0;
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => setMinute((m) => m + 1), REMINDER_MS / 4);
+    return () => clearInterval(id);
+  }, [waiting]);
   const key = urgent
     .map((x) => x.ticket.id)
     .sort()
@@ -45,7 +53,7 @@ export function useWaitingAlerts(enabled: boolean) {
     if (Date.now() - lastSound.current < REMINDER_MS) return;
     lastSound.current = Date.now();
     playAlertOnce("reminder", String(Math.floor(Date.now() / REMINDER_MS)));
-  }, [now, urgent.length]);
+  }, [minute, urgent.length]);
 
   // In a background tab, the title blinks with the count.
   const count = urgent.length;

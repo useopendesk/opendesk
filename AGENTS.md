@@ -216,6 +216,9 @@ Errors, logging, data
   behind triage, never a name in the UI.
 - Motion is subtle and fast (shared presets in `web/src/lib/motion.ts`), always honours
   reduced motion. Empty pages use the shared EmptyState, never a lone icon and one line.
+  A clock never ticks high in the tree: a live duration runs `useNow` in the small component
+  that shows it, and app-wide state wakes on a timer for the moment it changes, so nothing
+  redraws the shell every second and stutters an animation.
 - Light and dark themes. Dense, calm, keyboard-first. Learn from `~/projects/warmbly/web`
   for patterns (drawers, pickers, confirm dialogs, optimistic updates, realtime
   invalidation), but restyle everything to the opendesk palette.

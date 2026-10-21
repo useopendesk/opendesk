@@ -18,7 +18,7 @@ import { useAssistantName } from "@/components/assistant/name";
 // or replying, or assigned) it is handled: amber, quiet, and out of the alerts.
 
 /** How long Ollie may take before a waiting visitor needs a person. */
-const OLLIE_GRACE_MS = 60_000;
+export const OLLIE_GRACE_MS = 60_000;
 
 /** Who has a waiting chat: you with it open, a teammate on it, or its assignee. */
 export type Handler = { me: boolean; name: string; how: "open" | "replying" | "viewing" | "assigned" };

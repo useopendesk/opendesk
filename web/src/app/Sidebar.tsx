@@ -37,6 +37,7 @@ import { Fragment, lazy, Suspense, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChecklistMini } from "@/components/onboarding/Checklist";
 import { useUrgentChats, useWaitingFor } from "@/components/tickets/useUrgentChats";
+import { useNow } from "@/lib/useNow";
 import { formatWait, urgentWash } from "@/components/tickets/waiting";
 import { AvailabilityMenuItems } from "@/components/presence/availability";
 import { Avatar } from "@/components/ui/avatar";
@@ -86,7 +87,9 @@ const folderIcons: Record<FolderId, ReactNode> = {
 function WaitingChats({ rail }: { rail: boolean }) {
   const { t } = useTranslation("shell");
   const navigate = useNavigate();
-  const { urgent, now } = useUrgentChats();
+  const { urgent } = useUrgentChats();
+  // The duration ticks here alone, not in everything that reads the waiting chats.
+  const now = useNow(urgent.length > 0);
   if (!urgent.length) return null;
   const longest = urgent[0];
   const time = formatWait(now - longest.wait.since);

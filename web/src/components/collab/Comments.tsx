@@ -317,13 +317,15 @@ export const CommentBar = forwardRef<CommentBarHandle, { detail: MailThreadDetai
         {!writing && children && (
           <motion.div
             key="aside"
-            initial={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
-            animate={{ opacity: 1, width: "auto" }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
+            // Everything that takes room is inside, so at width 0 it takes none and leaving moves nothing.
+            // The margin gives focus rings room past the edge and closes with the width.
+            initial={reduce ? { opacity: 0 } : { opacity: 0, width: 0, marginRight: 0 }}
+            animate={{ opacity: 1, width: "auto", marginRight: -4 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0, marginRight: 0 }}
             transition={barMotion}
-            className="-my-1 -mr-1 flex shrink-0 items-center gap-1.5 overflow-hidden py-1 pl-1.5 pr-1"
+            className="-my-1 shrink-0 overflow-hidden"
           >
-            {children}
+            <div className="flex w-max items-center gap-1.5 py-1 pl-1.5 pr-1">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
