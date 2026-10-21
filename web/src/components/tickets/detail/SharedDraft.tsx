@@ -12,8 +12,8 @@ import { useTranslation } from "react-i18next";
 import type { Ticket, TicketDraft } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { relLong } from "@/lib/format";
+import { useNow } from "@/lib/useNow";
 import { q, qk } from "@/lib/queries";
-import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -31,6 +31,7 @@ export function SharedDraftBar({ ticket, html, onUse, onClear }: { ticket: Ticke
   const key = qk.ticketDraft(ticket.id);
   const { data: draft } = useQuery(q.ticketDraft(ticket.id));
   const inComposer = !!draft && seeded.get(ticket.id) === draft.updated_at;
+  const now = useNow(!!draft);
 
   // An empty composer takes the draft as it arrives.
   useEffect(() => {
@@ -73,7 +74,7 @@ export function SharedDraftBar({ ticket, html, onUse, onClear }: { ticket: Ticke
           animate={{ opacity: 1, y: 0 }}
           exit={reduced ? { opacity: 0 } : { opacity: 0, y: 4 }}
           transition={{ duration: 0.18 }}
-          className="mb-2 flex min-h-9 items-center gap-2 rounded-md border border-line bg-sunken px-2 py-1 text-[12.5px]"
+          className="@container mb-2 flex min-h-9 items-center gap-2 rounded-md border border-line bg-sunken px-2 py-1 text-[12.5px]"
         >
           <PenLine className="ml-1 size-3.5 shrink-0 text-fg-3" aria-hidden />
           {draft.by.user ? (
@@ -83,9 +84,9 @@ export function SharedDraftBar({ ticket, html, onUse, onClear }: { ticket: Ticke
               <Bot className="size-3" aria-hidden />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-fg-2">
-            {t(inComposer ? "sharedDraft.inComposer" : "sharedDraft.waiting", { name: draft.by.name, when: relLong(draft.updated_at) })}
-            {inComposer && <span className={cn("hidden text-fg-3 sm:inline")}> · {t("sharedDraft.inComposerHint")}</span>}
+          <span className="min-w-0 flex-1 truncate text-fg-2" title={inComposer ? t("sharedDraft.inComposerHint") : undefined}>
+            {t(inComposer ? "sharedDraft.inComposer" : "sharedDraft.waiting", { name: draft.by.name, when: relLong(draft.updated_at, now) })}
+            {inComposer && <span className="hidden text-fg-3 @lg:inline"> · {t("sharedDraft.inComposerHint")}</span>}
           </span>
           {!inComposer && (
             <Button size="sm" onClick={() => use(draft)}>
