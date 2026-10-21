@@ -329,12 +329,6 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 			return domain.Message{}, err
 		}
 	}
-	// A reply going out ends the ticket's shared draft, whoever sends it.
-	if b.Kind == "reply" {
-		if err := clearDraft(ctx, tx, wid, tid); err != nil {
-			return domain.Message{}, err
-		}
-	}
 	if b.Status != nil {
 		if _, err := applyPatch(ctx, tx, d, wid, tid, actor, Patch{Status: b.Status}, applyOpts{Enqueue: true, RequireFields: true}); err != nil {
 			return domain.Message{}, err

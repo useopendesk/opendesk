@@ -23,7 +23,7 @@ import (
 // ticket, staged by a teammate or an API client (an AI agent over MCP) for whoever opens
 // the ticket next. Every teammate who can see the ticket sees the same text in their
 // composer, edits it and sends it as their own reply through the normal reply path, which
-// clears the draft. Staging again replaces it. The draft is the ticket's, never the
+// clears the draft (domain.AddMessage). Staging again replaces it. The draft is the ticket's, never the
 // staging credential's.
 
 // TicketDraft is a ticket's pending reply body.
@@ -85,16 +85,6 @@ func publishDraft(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, d *TicketD
 	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket_draft.updated", TicketID: &tid,
 		Data: map[string]any{"ticket_id": tid, "draft": d}})
 	return err
-}
-
-// clearDraft removes the ticket's draft, if any, and tells everyone it is gone. A reply
-// going out ends the pending one (PostMessage), whoever sends it.
-func clearDraft(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) error {
-	tag, err := tx.Exec(ctx, `DELETE FROM ticket_drafts WHERE workspace_id = $1 AND ticket_id = $2`, wid, tid)
-	if err != nil || tag.RowsAffected() == 0 {
-		return err
-	}
-	return publishDraft(ctx, tx, wid, tid, nil)
 }
 
 func registerDrafts(d *deps.Deps, api huma.API) {
@@ -183,7 +173,7 @@ func registerDrafts(d *deps.Deps, api huma.API) {
 				if err != nil {
 					return err
 				}
-				return clearDraft(ctx, tx, p.WorkspaceID, tid)
+				return domain.ClearTicketDraft(ctx, tx, p.WorkspaceID, tid)
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)

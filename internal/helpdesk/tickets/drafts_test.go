@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 )
@@ -60,6 +63,26 @@ func TestSharedDraft(t *testing.T) {
 	if got.Draft == nil {
 		t.Fatal("a note cleared the draft")
 	}
+	// A customer's message leaves it for the team to adjust.
+	inbound(t, e, ws, tk.ID, "Any news?")
+	e.Do("GET", path, ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &got)
+	if got.Draft == nil {
+		t.Fatal("a customer message cleared the draft")
+	}
+	// A reply sent outside the composer (Ollie, a support channel thread) clears it too.
+	if err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		_, err := domain.AddMessage(e.Ctx, tx, e.D.Jobs, domain.NewMessage{WorkspaceID: ws.ID, TicketID: tk.ID, Kind: "reply",
+			Direction: "outbound", AuthorType: "system", BodyHTML: "<p>Ollie here</p>", BodyText: "Ollie here", Trigger: "none"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.Do("GET", path, ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &got)
+	if got.Draft != nil {
+		t.Fatalf("draft after a reply from outside the composer: %+v", got.Draft)
+	}
+	e.Do("PUT", path, ws.Agent.As(ws), map[string]any{"body_html": "<p>Second take</p>"}).Want(t, 200)
+	_, seq = e.Events(ws.ID, seq)
 	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/messages", ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>Second take, edited</p>"}).Want(t, 201)
 	e.Do("GET", path, ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &got)
 	if got.Draft != nil {

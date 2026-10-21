@@ -409,6 +409,12 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	if _, err := events.Publish(ctx, tx, ev); err != nil {
 		return Message{}, err
 	}
+	// A reply going out ends the ticket's shared draft, whoever or whatever sends it.
+	if nm.Kind == "reply" && nm.Direction == "outbound" {
+		if err := ClearTicketDraft(ctx, tx, nm.WorkspaceID, nm.TicketID); err != nil {
+			return Message{}, err
+		}
+	}
 	if nm.ThreadID != nil {
 		if _, err := PublishThread(ctx, tx, nm.WorkspaceID, nm.TicketID, *nm.ThreadID, "thread.updated"); err != nil {
 			return Message{}, err
@@ -521,5 +527,17 @@ func PublishMessageUpdated(ctx context.Context, tx pgx.Tx, wid, messageID uuid.U
 		ev.Data = map[string]any{"ticket_id": msg.TicketID, "message": PublicMessage(msg)}
 	}
 	_, err = events.Publish(ctx, tx, ev)
+	return err
+}
+
+// ClearTicketDraft removes the ticket's shared draft (contracts/api.md "Drafts"), if any, and
+// tells everyone it is gone.
+func ClearTicketDraft(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) error {
+	tag, err := tx.Exec(ctx, `DELETE FROM ticket_drafts WHERE workspace_id = $1 AND ticket_id = $2`, wid, tid)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ticket_draft.updated", TicketID: &tid,
+		Data: map[string]any{"ticket_id": tid, "draft": nil}})
 	return err
 }

@@ -535,8 +535,9 @@ type Draft = { ticket_id: string; body_html: string; body_text: string;
 
 - Whoever sends it edits it in the composer and sends it as their own reply through
   `POST /v1/tickets/{id}/messages`, like any reply. Nothing is attributed to who staged it.
-- A reply going out on the ticket (any `kind: "reply"` through that route, whoever sends it)
-  clears the draft. `PUT` replaces it; `DELETE` discards it without sending.
+- A reply going out on the ticket clears the draft, whoever or whatever sends it: the composer,
+  a support channel thread, Ollie. A customer's message or a note leaves it. `PUT` replaces it;
+  `DELETE` discards it without sending.
 - This is not Ollie's suggested reply (contracts/agent.md "Email"), which answers one customer
   message and is sent as written, attributed to the agent.
 - Event: `ticket_draft.updated` (contracts/events.md) with the draft, or `null` once it is gone.
