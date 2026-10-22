@@ -798,6 +798,8 @@ export type Mailbox = {
   status: "active" | "error" | "disabled";
   last_error: string;
   last_synced_at: string | null;
+  /** When mail last arrived, by any route; null before the first. */
+  last_received_at?: string | null;
   created_at: string;
 };
 /** draft: a suggested reply a teammate sends; send: Ollie replies by email. */

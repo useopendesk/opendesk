@@ -159,7 +159,9 @@ type Mailbox struct {
 	Status       string     `json:"status" enum:"active,error,disabled"`
 	LastError    string     `json:"last_error"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	// LastReceivedAt is when mail last arrived, by any route; nil before the first.
+	LastReceivedAt *time.Time `json:"last_received_at"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // mailboxRow is the stored mailbox, including fields the API never returns.
@@ -199,7 +201,8 @@ const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kin
 	config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html,
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
 	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
-	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams`
+	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams,
+	last_received_at`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
@@ -207,7 +210,7 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 		&m.OutboundKind, &m.Config, &m.CredentialsEnc, &m.TeamID, &m.SignatureHTML, &m.AutoReplyEnabled,
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
 		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
-		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams)
+		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams, &m.LastReceivedAt)
 	if err != nil {
 		return nil, err
 	}

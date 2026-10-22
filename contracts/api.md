@@ -176,7 +176,8 @@ type Mailbox = {
   ai_answers: boolean /* Ollie answers emails to this mailbox, default false (contracts/agent.md "Email") */; ai_answers_mode: "draft" | "send" /* default "draft" */;
   ai_answers_outside_hours: boolean /* only outside business hours, while business hours are on; default false */;
   bot_id: string | null /* the bot the AI agent answers as (contracts/bots.md); null = the default bot; PATCH checks it is a bot of the workspace */;
-  status: "active" | "error" | "disabled"; last_error: string; last_synced_at: string | null; created_at: string;
+  status: "active" | "error" | "disabled"; last_error: string; last_synced_at: string | null;
+  last_received_at: string | null /* when mail last arrived by any route (forwarding, IMAP, the Gmail and Microsoft APIs), filtered mail included; the app warns when an active, receiving address had none for 7 days, or none a day after it was added */; created_at: string;
   receiving: "ok" | "imap_off" /* read-only: imap_off while the mailbox receives over IMAP and that is off for its workspace: inbound_kind imap while neither the instance has MAILBOX_IMAP on nor the workspace has Collab, or a google or microsoft sync connection while MAILBOX_IMAP is off; it is kept, not polled, until PATCHed to forwarding. A mailbox that reads through the provider's API (oauth_grant api) is ok; while its workspace lacks Collab it is kept with status error and a last_error that says so */;
   sending: "ok" | "system_off" /* read-only: system_off while the mailbox sends through the platform mailer (outbound_kind system) and the instance has MAILBOX_SYSTEM_SEND off; it sends nothing until PATCHed to smtp or connected to Google or Microsoft */;
   brand_id: string /* contracts/teams.md */; aliases: string[] /* up to 20 addresses that deliver into this mailbox */;
@@ -357,8 +358,8 @@ notifications from the desktop app, or from a browser that allowed them). A chan
 | type | group | email | push | desktop |
 | --- | --- | --- | --- | --- |
 | `assigned`, `mentioned`, `sla_breached` | tickets | on | on | on |
-| `new_ticket` (a new ticket nobody is assigned to; who gets it: "Assignment") | tickets | off | on | on |
-| `customer_replied` (tickets assigned to you) | tickets | on | on | on |
+| `new_ticket` (a new ticket nobody is assigned to; who gets it: "Assignment") | tickets | on | on | on |
+| `customer_replied` (tickets assigned to you; on a ticket nobody has, the people `new_ticket` tells) | tickets | on | on | on |
 | `thread_replied` (an answer in a side conversation on a ticket assigned to you) | tickets | on | on | on |
 | `ai_handoff` | tickets | on | on | on |
 | `team_joined` | team | off | off | on |
@@ -632,6 +633,9 @@ automation is saved and skipped at run time if the field was archived or deleted
   - `off`: nobody.
   A team with nobody to work it falls back to its leads, else the owners and admins. `hd.Notify` still skips anyone who
   may not see a private team's ticket.
+- A customer's reply on a ticket nobody is assigned to (`customer_replied` trigger, after auto-assignment) goes, as
+  `customer_replied`, to the same people under the same rules (not spam, solved, closed or with the answer bot); on an
+  assigned ticket it goes to the assignee.
 - While the answer bot takes a new ticket on, nobody hears until it hands over (the `ai_handoff` notification): a chat
   when the instance has AI and the workspace's `ai.enabled` and `ai.widget_answers` are on; an email to an address with
   `ai_answers` on and `ai_answers_mode` `send` (Ollie replies itself; with `draft` people hear at once), within the

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { InBrowserNote } from "@/components/desktop/InBrowser";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
-import { Braces, Forward, RefreshCw, TriangleAlert, Zap } from "lucide-react";
+import { Braces, Forward, MailWarning, RefreshCw, TriangleAlert, Zap } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,7 @@ import {
 } from "@/components/mailboxes/connect";
 import { SmtpPresets } from "@/components/mailboxes/smtpPresets";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
+import { quietFor } from "@/components/mailboxes/quiet";
 import {
   AliasesField,
   aliasTeamsFor,
@@ -56,7 +57,9 @@ import { ContactFormsField } from "@/components/settings/ContactFormsField";
 import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Mailbox, MailboxConfig, MailboxTest, TemplatePreviewBody, TemplateProblem, TlsMode } from "@/lib/api/types";
+import { cn } from "@/lib/cn";
 import { relLong } from "@/lib/format";
+import { tone } from "@/lib/tones";
 import { isMicrosoftHost, mailboxHost, offersNoTls, readsDirectly, receivesOverImap, sendOnly, signedInProvider } from "@/lib/mailHost";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -401,6 +404,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   };
 
   const off = notReceiving(mailbox);
+  const quiet = quietFor(mailbox);
   const sendingOnly = sendOnly(mailbox);
   // A forwarding mailbox sending through opendesk or SMTP can connect its provider to send as itself.
   const connectable = forwarding && !sendingOnly ? sendProviders(detection, opts) : [];
@@ -456,11 +460,25 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             </div>
           </div>
         )}
+        {!off && quiet && (
+          <div className={cn("-mx-4 border-b px-4 py-3", tone.amber.soft, tone.amber.line)} role="status">
+            <div className="flex items-start gap-2.5 text-[12.5px]">
+              <MailWarning className={cn("mt-0.5 size-3.5 shrink-0", tone.amber.text)} aria-hidden />
+              <div className="min-w-0">
+                <div className="font-medium">{quiet.never ? t("detail.quietNeverTitle") : t("detail.quietTitle", { count: quiet.days })}</div>
+                <p className="mt-0.5 leading-5 text-fg-2">{t(forwarding ? "detail.quietForwarding" : "detail.quietConnected", { email: mailbox.email })}</p>
+              </div>
+            </div>
+          </div>
+        )}
         {test && (
           <div className="border-b border-line-soft py-3.5">
             <TestResults result={test} />
           </div>
         )}
+        <Row label={t("detail.lastReceived")} description={t("detail.lastReceivedHint")}>
+          <span className="mono text-xs text-fg-3">{mailbox.last_received_at ? relLong(mailbox.last_received_at) : t("detail.noMail")}</span>
+        </Row>
         <Row label={t("detail.lastSynced")} description={forwarding ? t("detail.forwardingInstant") : undefined}>
           <span className="mono text-xs text-fg-3">{mailbox.last_synced_at ? relLong(mailbox.last_synced_at) : t("detail.never")}</span>
         </Row>

@@ -412,6 +412,7 @@ function seedMargin(): WsData {
     ai_answers: true,
     status: "active",
     last_synced_at: ago(40 * 1000),
+    last_received_at: ago(3 * MIN),
     created_at: ago(300 * DAY),
   };
   const billing: Mailbox = {
@@ -429,6 +430,7 @@ function seedMargin(): WsData {
     aliases: ["invoices@margin.app"],
     status: "active",
     last_synced_at: ago(12 * MIN),
+    last_received_at: ago(11 * DAY),
     created_at: ago(260 * DAY),
   };
   const partners: Mailbox = {
@@ -444,6 +446,7 @@ function seedMargin(): WsData {
     status: "error",
     last_error: "IMAP login failed: [AUTHENTICATIONFAILED] Invalid credentials",
     last_synced_at: ago(2 * DAY),
+    last_received_at: ago(2 * DAY),
     created_at: ago(90 * DAY),
   };
   const legal: Mailbox = {
@@ -466,6 +469,7 @@ function seedMargin(): WsData {
     auto_reply_html: "<p>Thanks for writing to our legal team. We answer within two working days, and within 30 days for GDPR requests.</p>",
     status: "active",
     last_synced_at: ago(25 * MIN),
+    last_received_at: ago(5 * 60 * MIN),
     created_at: ago(160 * DAY),
   };
   const security: Mailbox = {
@@ -484,6 +488,7 @@ function seedMargin(): WsData {
     from_name_format: "{agent} at {mailbox}",
     status: "active",
     last_synced_at: ago(2 * MIN),
+    last_received_at: ago(40 * MIN),
     created_at: ago(120 * DAY),
   };
   const pressroom: Mailbox = {
@@ -503,6 +508,7 @@ function seedMargin(): WsData {
     signature_html: "<p>{{agent.first_name}}, Pressroom<br>pressroom.app</p>",
     status: "active",
     last_synced_at: ago(4 * MIN),
+    last_received_at: ago(2 * 60 * MIN),
     created_at: ago(70 * DAY),
   };
   ws.mailboxes = [support, billing, legal, security, partners, pressroom];
