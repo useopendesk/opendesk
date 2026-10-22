@@ -45,24 +45,25 @@ test("choose who hears about new unassigned tickets", async ({ page, proof }) =>
   await proof.shot("preferences", { caption: "New tickets: phone and desktop on, email off by default" });
 });
 
-test.describe("before notifications are allowed", () => {
-  test.use({ permissions: [] });
-
-  test("the app asks to allow notifications, so new tickets reach you in the background", async ({ page, context, proof }) => {
-    await proof.open("/inbox/unassigned");
-    const strip = page.getByRole("status").filter({ hasText: "Get told about new tickets and replies." });
-    await expect(strip).toBeVisible();
-    await expect(page.getByRole("listbox", { name: "Tickets" }).getByRole("option").first()).toBeVisible();
-    await proof.chapter("Allow notifications", "Until then, new tickets and replies only show under the bell");
-    await proof.dwell();
-    await proof.shot("ask", { caption: "A strip above the inbox asks to allow notifications" });
-
-    await context.grantPermissions(["notifications"]);
-    await strip.getByRole("button", { name: "Allow notifications" }).click();
-    await expect(strip).toBeHidden();
-    await proof.dwell();
-    await proof.shot("allowed", { caption: "Allowed: the strip goes away and notifications reach this browser" });
+test("the app asks to allow notifications, so new tickets reach you in the background", async ({ page, proof }) => {
+  // The browser's own prompt: not asked yet, then allowed when the person agrees.
+  await page.addInitScript(() => {
+    let state: NotificationPermission = "default";
+    Object.defineProperty(Notification, "permission", { get: () => state });
+    Notification.requestPermission = async () => (state = "granted");
   });
+  await proof.open("/inbox/unassigned");
+  const strip = page.getByRole("status").filter({ hasText: "Get told about new tickets and replies." });
+  await expect(strip).toBeVisible();
+  await expect(page.getByRole("listbox", { name: "Tickets" }).getByRole("option").first()).toBeVisible();
+  await proof.chapter("Allow notifications", "Until then, new tickets and replies only show under the bell");
+  await proof.dwell();
+  await proof.shot("ask", { caption: "A strip above the inbox asks to allow notifications" });
+
+  await strip.getByRole("button", { name: "Allow notifications" }).click();
+  await expect(strip).toBeHidden();
+  await proof.dwell();
+  await proof.shot("allowed", { caption: "Allowed: the strip goes away and notifications reach this browser" });
 });
 
 test("new tickets are emailed by default, and replies on unassigned tickets reach the team", async ({ page, proof }) => {
