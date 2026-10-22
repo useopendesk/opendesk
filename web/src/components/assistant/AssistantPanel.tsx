@@ -196,7 +196,7 @@ function Conversation({ composer }: { composer: React.RefObject<ComposerHandle |
             initial={reduce ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: EASE }}
-            className="ml-8 min-w-0 max-w-full self-end rounded-2xl rounded-br-md bg-sunken px-3 py-2 text-[13px] leading-5 text-fg"
+            className="ml-8 min-w-0 max-w-full shrink-0 self-end rounded-2xl rounded-br-md bg-sunken px-3 py-2 text-[13px] leading-5 text-fg"
             data-ph-mask
             data-entry="user"
           >

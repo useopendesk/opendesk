@@ -171,7 +171,7 @@ export function ApprovalCard({ approval, busy, onDecide }: { approval: Approval;
       initial={reduce ? false : { opacity: 0, y: 6, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 420, damping: 32 }}
-      className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--tone-amber-solid)_40%,var(--line))] bg-surface shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]"
+      className="shrink-0 overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--tone-amber-solid)_40%,var(--line))] bg-surface shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]"
       data-approval={approval.action_id}
     >
       <div className="flex items-start gap-2.5 px-3 pb-2 pt-3">
