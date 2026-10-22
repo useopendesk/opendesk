@@ -70,7 +70,7 @@ test("new tickets are emailed by default, and replies on unassigned tickets reac
   await proof.open("/settings/notifications");
   const row = page.getByText("New tickets nobody is assigned to. Who gets them is set in Assignment");
   await expect(row).toBeVisible();
-  await expect(page.getByText("On tickets assigned to you, and on new tickets' replies while nobody has them")).toBeVisible();
+  await expect(page.getByText("On tickets assigned to you, and on tickets nobody has yet")).toBeVisible();
   await row.scrollIntoViewIfNeeded();
   await proof.chapter("Notification settings", "New tickets now reach you by email, phone and desktop unless you turn them off");
   await proof.dwell();
