@@ -194,11 +194,11 @@ async function signature(ctx: Ctx, s: Sess, text: string, emit: Emit, item: Tran
   await say(
     emit,
     item,
-    `A signature for everyone goes on the address, so every reply from **${box.email}** carries it. Before you approve:\n\n- The placeholders like \`{%user.fullName%}\` are another tool's. I switched them to opendesk's, such as \`{{ agent.name }}\`.\n- The phone link has no number after \`tel:\`, so I left it out.`,
+    `A signature for everyone goes on the address, so every reply from **${box.email}** carries it. The placeholders like \`{%user.fullName%}\` are another tool's, so I switched them to opendesk's, such as \`{{ agent.name }}\`.`,
   );
   const value = html.replace(/\{%\s*user\.fullName\s*%\}/g, "{{ agent.name }}").replace(/\{%\s*user\.jobTitle[^%]*%\}/g, "{{ agent.title }}").replace(/\{%\s*mailbox\.email\s*%\}/g, "{{ mailbox.email }}");
   const pid = uuid();
-  const st: AssistantStep = { id: id(), tool: "api_change", label: "Preparing the change", status: "awaiting_approval", action_id: pid };
+  const st: AssistantStep = { id: id(), tool: "api_change", label: "Update a mailbox", status: "awaiting_approval", action_id: pid };
   await emit("tool", st);
   item.steps.push(st);
   const preview: Preview = { title: "Update a mailbox", summary: box.name || box.email, changes: [{ field: "signature_html", from: box.signature_html || "", to: value }] };

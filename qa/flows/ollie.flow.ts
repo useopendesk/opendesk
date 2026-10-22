@@ -32,7 +32,7 @@ test("Ollie sets a pasted signature on the address, and long text stays inside t
   await proof.dwell();
   await mine.getByRole("button", { name: "Show less" }).click();
 
-  await approval.scrollIntoViewIfNeeded();
+  await approval.evaluate((el) => el.scrollIntoView({ block: "end" }));
   await expect(panel.getByText("Looked up how to do it")).toBeVisible();
   await proof.chapter("Approve it", "Ollie found the address signature through the API and shows the exact value");
   await proof.dwell();
