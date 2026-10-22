@@ -525,7 +525,7 @@
       },
       "customer_replied": {
         "label": "Customer replies",
-        "hint": "On tickets assigned to you"
+        "hint": "On tickets assigned to you, and on new tickets' replies while nobody has them"
       },
       "thread_replied": {
         "label": "Side conversation answers",
