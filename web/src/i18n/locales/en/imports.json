@@ -36,6 +36,10 @@
       "with": "API key",
       "blurb": "Tickets with replies and notes, contacts, companies and solution articles."
     },
+    "front": {
+      "with": "API token",
+      "blurb": "Conversations from shared inboxes, with replies, internal comments and files."
+    },
     "intercom": {
       "with": "Access token",
       "blurb": "Conversations with notes and files, contacts, companies and articles."

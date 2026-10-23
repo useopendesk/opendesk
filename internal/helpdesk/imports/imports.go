@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/freshdesk"
+	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/front"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/helpscout"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/intercom"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/zendesk"
@@ -36,6 +37,7 @@ const (
 	Zendesk   = "zendesk"
 	HelpScout = "helpscout"
 	Freshdesk = "freshdesk"
+	Front     = "front"
 	Intercom  = "intercom"
 	CSV       = "csv"
 )
@@ -59,13 +61,14 @@ const (
 )
 
 // sourceNames are how people know the products.
-var sourceNames = map[string]string{Zendesk: "Zendesk", HelpScout: "Help Scout", Freshdesk: "Freshdesk", Intercom: "Intercom", CSV: "CSV"}
+var sourceNames = map[string]string{Zendesk: "Zendesk", HelpScout: "Help Scout", Freshdesk: "Freshdesk", Front: "Front", Intercom: "Intercom", CSV: "CSV"}
 
 // factories build the API sources; CSV is read from its stored file (csv.go).
 var factories = map[string]source.Factory{
 	Zendesk:   zendesk.New,
 	HelpScout: helpscout.New,
 	Freshdesk: freshdesk.New,
+	Front:     front.New,
 	Intercom:  intercom.New,
 }
 
@@ -205,7 +208,7 @@ const maxProblems = 50
 // Import is the API shape (contracts/imports.md). Credentials never appear in it.
 type Import struct {
 	ID               uuid.UUID       `json:"id"`
-	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
+	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,front,intercom,csv"`
 	Account          ImportAccount   `json:"account"`
 	Status           string          `json:"status" enum:"running,paused,completed,failed,canceled,undoing,undone"`
 	Phase            string          `json:"phase" enum:"articles,tickets,done"`

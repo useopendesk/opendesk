@@ -1,6 +1,6 @@
 ---
 title: Import your history
-description: Bring your tickets, customers and help center articles over from Zendesk, Help Scout, Freshdesk, Intercom or a CSV file, then keep them in step while your team switches.
+description: Bring your tickets, customers and help center articles over from Zendesk, Help Scout, Freshdesk, Front, Intercom or a CSV file, then keep them in step while your team switches.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
@@ -9,7 +9,7 @@ import Step from '../../../components/Step.astro';
 import Callout from '../../../components/Callout.astro';
 import Fold from '../../../components/Fold.astro';
 
-Moving to opendesk does not mean starting from an empty inbox. An import brings your history over from **Zendesk**, **Help Scout**, **Freshdesk** or **Intercom**, read through their own APIs, or from a **CSV file** exported from anything else. Every ticket arrives with its whole conversation, so your team can look up what a customer said last year on their first day here.
+Moving to opendesk does not mean starting from an empty inbox. An import brings your history over from **Zendesk**, **Help Scout**, **Freshdesk**, **Front** or **Intercom**, read through their own APIs, or from a **CSV file** exported from anything else. Every ticket arrives with its whole conversation, so your team can look up what a customer said last year on their first day here.
 
 Imports run in the background. You can close the page, and an import that is interrupted goes on where it stopped. Running one again never makes duplicates. Imports work the same on opendesk Cloud and on a self-host, on every plan, and imported tickets count toward no limit.
 
@@ -21,7 +21,7 @@ Imports run in the background. You can close the page, and an import that is int
 - **Companies**, from Zendesk organizations, Freshdesk companies and Intercom companies, matched to existing companies by domain or name.
 - **Labels**, from the source's tags, plus one label on every imported ticket (`zendesk-import`, for example) so you can find them all.
 - **Agents**, mapped to your members: each agent is matched to the member with the same email, and you can change any match. A message by an unmatched agent keeps their name and address.
-- **Groups**, mapped to your teams by name (in Help Scout, its mailboxes).
+- **Groups**, mapped to your teams by name (in Help Scout, its mailboxes; in Front, its shared inboxes).
 - **Status, priority and dates**: each ticket keeps when it was created, last answered and solved. It gets a new opendesk number, and its page says where it came from ("Imported from Zendesk #1234") with a link back.
 - **Satisfaction ratings**, as [CSAT](/guides/csat/) scores, from Zendesk, Help Scout and Intercom.
 - **Help center articles and collections**, from Zendesk Guide, Help Scout Docs, Freshdesk solutions and Intercom articles. Published articles are published here too, unless you choose to import them as drafts to review first.
@@ -31,9 +31,9 @@ Imports run in the background. You can close the page, and an import that is int
 - **Automations, triggers and workflows**, **macros and saved replies**, **SLA policies**, **views**, **business hours** and the source's other settings. Set these up in opendesk: see [Automations](/guides/automations/), [SLA policies](/guides/sla-policies/) and [Saved replies and views](/guides/saved-replies-and-views/).
 - **Custom fields** and their values on tickets, contacts and companies.
 - **People and teams** themselves: agents are not invited and teams are not created. [Invite your team](/guides/teams-and-roles/) and create teams before you import, so the import can match them.
-- Help Scout companies, Freshdesk satisfaction ratings, and Zendesk side conversations.
+- Help Scout companies, Freshdesk and Front satisfaction ratings, and Zendesk side conversations.
 - **Images inside articles** stay where the source hosts them. Before you close the old account, upload them again in the article editor.
-- Deleted and spam tickets, Help Scout drafts, and tickets created before the day you choose, if you choose one.
+- Deleted, spam and merged tickets, Help Scout drafts, and tickets created before the day you choose, if you choose one.
 
 <Callout title="History is quiet">
 
@@ -55,7 +55,7 @@ Open **Settings**, then **Import**.
 <Steps>
 <Step title="Choose where your history is">
 
-Pick Zendesk, Help Scout, Freshdesk, Intercom or a CSV file. For a CSV file, see [Import a CSV file](#import-a-csv-file).
+Pick Zendesk, Help Scout, Freshdesk, Front, Intercom or a CSV file. For a CSV file, see [Import a CSV file](#import-a-csv-file).
 
 </Step>
 <Step title="Paste the credentials">
@@ -134,6 +134,16 @@ Intercom needs an **access token** and your workspace's **region**.
 3. **Region**: where your Intercom workspace is hosted. If your Intercom address starts with `app.eu.intercom.com`, choose Europe; `app.au.intercom.com`, Australia; otherwise the United States.
 
 Intercom conversations come over with their contacts (users and leads), each contact's company, and team assignments. Replies by Fin and workflows come over as the team's, named Fin. Intercom's API gives at most 500 parts of one conversation, so the longest conversations may be cut short; the import lists them.
+
+</TabItem>
+<TabItem label="Front">
+
+Front needs a **read-only API token**.
+
+1. In Front, open **Settings**, then **Developers**, then **API Tokens**. Create a token with read access to shared inboxes, teammates, conversations, messages and comments. Do not grant write access.
+2. Copy the token when Front shows it. It cannot be viewed again later.
+
+The token's shared inboxes become groups, and teammates become agents. Conversation comments come over as internal notes. Event read access is optional; without it, sync checks the shared inboxes for recent activity.
 
 </TabItem>
 </Tabs>
@@ -287,7 +297,7 @@ A ticket your team has written on since the import stays, with everything on it,
 
 ## Self-hosting
 
-Imports work the same on a self-host, with nothing to configure. Your server reads the source over https, so it needs outbound access to the product's API: `<subdomain>.zendesk.com`, `api.helpscout.net` and `docsapi.helpscout.net`, `<domain>.freshdesk.com`, or `api.intercom.io` (`api.eu.intercom.io`, `api.au.intercom.io`), and to the hosts their attachments are stored on. Imported attachments go to your [storage](/self-hosting/storage/) like any other, with no limit on how many files or how much comes over, only the 25 MB of any one file.
+Imports work the same on a self-host, with nothing to configure. Your server reads the source over https, so it needs outbound access to the product's API: `<subdomain>.zendesk.com`, `api.helpscout.net` and `docsapi.helpscout.net`, `<domain>.freshdesk.com`, `api2.frontapp.com`, or `api.intercom.io` (`api.eu.intercom.io`, `api.au.intercom.io`), and to the hosts their attachments are stored on. Imported attachments go to your [storage](/self-hosting/storage/) like any other, with no limit on how many files or how much comes over, only the 25 MB of any one file.
 
 The API for imports is in [the contract](https://github.com/useopendesk/opendesk/blob/main/contracts/imports.md), and its progress arrives as [`import.updated` events](/api/events/).
 

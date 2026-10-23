@@ -21,11 +21,12 @@ import { HttpError, del, forbidden, get, invalid, notFound, post, respond, type 
 import { ensureTags, newTicket } from "../tickets";
 import { nowIso, pick, uuid } from "../util";
 
-const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", intercom: "Intercom", csv: "CSV" };
+const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", front: "Front", intercom: "Intercom", csv: "CSV" };
 const required: Record<Exclude<ImportSource, "csv">, string[]> = {
   zendesk: ["subdomain", "email", "token"],
   helpscout: ["app_id", "app_secret"],
   freshdesk: ["domain", "api_key"],
+  front: ["token"],
   intercom: ["token"],
 };
 
@@ -58,6 +59,8 @@ function account(src: ImportSource, creds: Record<string, string>) {
       return { name: "Acme Inc.", url: "https://secure.helpscout.net" };
     case "intercom":
       return { name: "Acme", url: "https://app.intercom.com" };
+    case "front":
+      return { name: "Acme", url: "https://app.frontapp.com" };
     default:
       return { name: "tickets.csv", url: "" };
   }
