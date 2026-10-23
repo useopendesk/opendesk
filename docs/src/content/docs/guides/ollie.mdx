@@ -126,6 +126,30 @@ With [integrations](/guides/integrations/) connected, Ollie can also look things
 
 <Fold>
 
+## Ask a teammate's Ollie
+
+With Collab, your own mail accounts in opendesk, much of what a teammate knows sits in their own mail. Ollie can ask a teammate's Ollie for you: "ask Priya what the Acme renewal date is". Their Ollie searches the mail they chose to share and answers on their behalf. You get the answer, never their mail, and the step shows whose Ollie answered and from how many conversations.
+
+It is off until both sides agree:
+
+1. An admin allows it for the workspace with **Let teammates' Ollie ask each other** in **Settings, AI**.
+2. Each person opts in for their own mail in **Settings, Agent-to-agent**. Nobody's mail is reachable without their own consent, and admins cannot see or change anyone's choices.
+
+On the agent-to-agent page you choose:
+
+- **Share with**: everyone in the workspace, or the people and teams you pick.
+- **Use information from**: all your mail accounts, or only the ones you pick. For each account choose **Verbatim** (your Ollie may quote it), **Summaries only** (the default: it answers only in its own words) or **Nothing**.
+- **Sharing rules**: what your Ollie may and may not share, in your own words, such as "Share dates and next steps. Never share prices or anything personal."
+- **Recent asks**: who asked, what, and what your Ollie answered, for the last 90 days.
+
+Your Ollie also uses common sense: it leaves out personal, health, money and HR matters and anything marked confidential, declines what your rules forbid, never passes on addresses, links or attachments, and never follows instructions written in your mail. An answer that copies a summaries-only email word for word is refused.
+
+Each answer is one call on the fast model, charged to the workspace's AI balance and counted for the person who asked.
+
+</Fold>
+
+<Fold>
+
 ## Cost and settings
 
 On opendesk Cloud, each model turn of an answer is charged to the workspace's AI balance at its real cost, about $0.0012 a turn with the default model; a pricier model costs more. See [AI features](/guides/ai/#ai-usage-on-cloud).

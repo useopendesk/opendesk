@@ -274,6 +274,8 @@ type NotificationPreferences = {
 | POST | `/v1/me/passkeys/register/finish` | `{passkey_token, credential: RegistrationResponseJSON, name?}` → 201 `Passkey`. `name` defaults to `"Passkey"`. `400 invalid_passkey` when the token is spent, expired or from another session, or the credential does not verify; `409 passkey_exists` |
 | PATCH | `/v1/me/passkeys/{id}` | `{name}` → `Passkey` |
 | DELETE | `/v1/me/passkeys/{id}` | → 204. Needs the second factor (when on) and a sign-in within 12 hours, like adding one (`403 mfa_required` / `reauth_required`) |
+| GET / PUT | `/v1/me/assistant-peer` | workspace-scoped, Collab only → the caller's own agent-to-agent sharing: whether teammates' Ollie may ask theirs, who, from which of their own mail accounts and how, and their rules (contracts/ai.md "Asking a teammate"). Users only; Ollie, API keys and AI clients get `403`. `409 assistant_peer_off` to turn it on while the workspace does not allow it |
+| GET | `/v1/me/assistant-peer/asks` | paginated asks made to the caller's Ollie, newest first, kept 90 days |
 | DELETE | `/v1/me` | `{password?, code?}` → 204. `password` when the account has one, `code` when 2FA is on. Deletes the account and every workspace it solely owns (`409 sole_owner` while owner of a workspace with other members) |
 
 ### Workspace (owner: backend-core)

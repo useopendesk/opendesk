@@ -287,6 +287,15 @@ a reply in its conversation, a new message or a forward in a conversation of its
   are deleted with their mail (the job `collab.cleanup`), shared ones are kept with `owner: null`
   for admins to manage or disconnect.
 - API keys and AI clients over MCP have no access to Collab: every route needs a user session.
+  Ollie has none either: every request it makes for a user carries `ViaAssistant` (reads
+  included), and Collab refuses it.
+- The one exception is the owner's own consent: a member may let teammates' Ollie ask theirs
+  about their **own** accounts (contracts/ai.md "Asking a teammate"). It is off until the
+  workspace allows it and the member opts in, account by account (verbatim, summaries only or
+  nothing), for the people and teams they choose. The asker gets an answer written by the
+  owner's Ollie under the owner's rules, never mail, ids, addresses, links or attachments. Mail
+  the owner sees only through someone else's share is never used. Admins cannot read or change
+  anyone's choices.
 
 ## Shapes
 
