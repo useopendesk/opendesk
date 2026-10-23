@@ -53,7 +53,7 @@ export function checkSendAs(m: Mailbox, now: string) {
   normalizeAliases(m);
 }
 
-/** PATCH alias_settings: replaces names, signatures and brands; send_as only where it changes. */
+/** PATCH alias_settings: replaces names and brands; a signature where given; send_as only where it changes. */
 export function writeAliasSettings(ws: WsData, m: Mailbox, raw: unknown) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid("alias_settings must map aliases to their settings");
   const cur = m.alias_settings ?? {};
@@ -67,7 +67,7 @@ export function writeAliasSettings(ws: WsData, m: Mailbox, raw: unknown) {
     let brand = typeof v.brand_id === "string" && v.brand_id ? v.brand_id : null;
     if (brand && !ws.brands.some((b) => b.id === brand)) throw invalid("alias_settings names a brand that does not exist in this workspace");
     if (brand === m.brand_id) brand = null;
-    const st: AliasSettings = { ...next[a], display_name: name, signature_html: typeof v.signature_html === "string" ? v.signature_html : "", brand_id: brand };
+    const st: AliasSettings = { ...next[a], display_name: name, signature_html: typeof v.signature_html === "string" ? v.signature_html : (cur[a]?.signature_html ?? ""), brand_id: brand };
     if (typeof v.send_as === "string" && v.send_as !== st.send_as) {
       if (!SEND_AS.includes(v.send_as as AliasSendAs)) throw invalid('send_as must be "verified", "unverified" or "unknown"');
       if (readsSendAs(m)) throw invalid("Gmail's own send-as list decides which aliases this mailbox sends as. Add the address in Gmail, then check again.");

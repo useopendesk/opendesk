@@ -105,7 +105,7 @@ type updateMailboxInput struct {
 		BrandID        *string                        `json:"brand_id,omitempty" doc:"Move the address to another brand of the workspace"`
 		Aliases        *[]string                      `json:"aliases,omitempty" maxItems:"20" doc:"Replaces the aliases"`
 		AliasTeams     *map[string]uuid.UUID          `json:"alias_teams,omitempty" doc:"Replaces them: an alias to the team its new tickets go to. Removing an alias drops its entry"`
-		AliasSettings  *map[string]aliasSettingsInput `json:"alias_settings,omitempty" doc:"Replaces each alias's From name, signature and brand (an alias left out has none of its own); send_as left out is kept. Removing an alias drops its entry"`
+		AliasSettings  *map[string]aliasSettingsInput `json:"alias_settings,omitempty" doc:"Replaces each alias's From name, signature and brand (an alias left out has none of its own); signature_html and send_as left out are kept. Removing an alias drops its entry"`
 		FromNameFormat *string                        `json:"from_name_format,omitempty" maxLength:"200" doc:"\"\" resets to \"{agent} at {mailbox}\""`
 		// Website contact forms whose authenticated mail is from the visitor in Reply-To.
 		TrustedFormSenders *[]string `json:"trusted_form_senders,omitempty" maxItems:"50" doc:"Replaces the list: email addresses or @domain entries"`

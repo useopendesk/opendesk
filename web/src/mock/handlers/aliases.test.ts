@@ -39,6 +39,9 @@ describe("mock alias identities", () => {
     });
     expect(next.status).toBe(200);
     expect(next.body.alias_settings["sales@margin.app"]).toMatchObject({ display_name: "Margin Sales", signature_html: "<p>Sales</p>", send_as: "verified" });
+    // A signature left out is kept.
+    const kept = await call("PATCH", url, { alias_settings: { "sales@margin.app": { display_name: "Margin Sales" } } });
+    expect(kept.body.alias_settings["sales@margin.app"].signature_html).toBe("<p>Sales</p>");
     // Left out of the map, an alias keeps no name of its own.
     expect(next.body.alias_settings["hello@lumen.studio"].display_name).toBe("");
     expect((await call("PATCH", url, { alias_settings: { "hello@margin.app": { send_as: "verified" } } })).status).toBe(422);

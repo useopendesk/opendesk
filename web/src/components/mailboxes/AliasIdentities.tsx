@@ -5,18 +5,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown, Plus, RefreshCw } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { BrandPick, Note, TeamPick, useBrands, useTeams } from "@/components/settings2/teams";
-import { EmailPreview } from "@/components/templates/EmailPreview";
-import { TemplateEditor } from "@/components/templates/TemplateEditor";
+import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api/endpoints";
-import type { AliasSendAs, AliasSettingsInput, Mailbox, TemplateProblem } from "@/lib/api/types";
+import type { AliasSendAs, AliasSettingsInput, Mailbox, TemplatePreviewBody, TemplateProblem } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { relLong } from "@/lib/format";
 import { qk, upsertInList } from "@/lib/queries";
@@ -36,8 +35,9 @@ export function aliasDraftsFor(m: Mailbox): Record<string, AliasDraft> {
 const emptyDraft: AliasDraft = { display_name: "", signature_html: "", brand_id: null, send_as: "unknown" };
 
 /**
- * The alias_settings to save for the aliases kept, or null when nothing changed. send_as goes
- * only where the admin changed it: Gmail's list or Microsoft's refusal decide otherwise.
+ * The alias_settings to save for the aliases kept, or null when nothing changed. A signature
+ * goes only where it was edited (the server keeps the stored one), send_as only where the
+ * admin changed it: Gmail's list or Microsoft's refusal decide otherwise.
  */
 export function aliasSettingsPatch(drafts: Record<string, AliasDraft>, aliases: string[], base: Record<string, AliasDraft>): Record<string, AliasSettingsInput> | null {
   let changed = aliases.some((a) => !base[a]) || Object.keys(base).some((a) => !aliases.includes(a));
@@ -46,7 +46,12 @@ export function aliasSettingsPatch(drafts: Record<string, AliasDraft>, aliases: 
     const d = drafts[a] ?? emptyDraft;
     const b = base[a] ?? emptyDraft;
     if (d.display_name !== b.display_name || d.signature_html !== b.signature_html || d.brand_id !== b.brand_id || d.send_as !== b.send_as) changed = true;
-    out[a] = { display_name: d.display_name.trim(), signature_html: d.signature_html, brand_id: d.brand_id, ...(d.send_as !== b.send_as ? { send_as: d.send_as } : {}) };
+    out[a] = {
+      display_name: d.display_name.trim(),
+      brand_id: d.brand_id,
+      ...(d.signature_html !== b.signature_html ? { signature_html: d.signature_html } : {}),
+      ...(d.send_as !== b.send_as ? { send_as: d.send_as } : {}),
+    };
   }
   return changed ? out : null;
 }
@@ -146,6 +151,12 @@ function AliasRow({
   const listed = mailbox.provider_send_as?.readable && !saved ? mailbox.provider_send_as.addresses.find((x) => x.email === alias) : undefined;
   const self = sendsAs(mailbox, listed?.verified ? "verified" : value.send_as);
   const set = (p: Partial<AliasDraft>) => onChange({ ...value, ...p });
+  // What the preview's check found wrong with the alias's own signature, before a save refuses it.
+  const [checked, setChecked] = useState<TemplateProblem[]>([]);
+  const own = value.signature_html.trim() ? checked : [];
+  // As a reply to the alias carries it: the alias's own, else the address's.
+  const signatureHtml = value.signature_html || mailbox.signature_html;
+  const previewBody = useMemo<TemplatePreviewBody>(() => ({ kind: "signature", mailbox_id: mailbox.id, alias, body_html: signatureHtml }), [mailbox.id, alias, signatureHtml]);
   const id = `alias-${alias.replace(/[^a-z0-9]/g, "-")}`;
   return (
     <li>
@@ -206,28 +217,24 @@ function AliasRow({
           </div>
           <SendAsRow mailbox={mailbox} value={value.send_as} onChange={(send_as) => set({ send_as })} systemSender={systemSender} />
           <div className="flex flex-col gap-1.5">
-            <span className="text-[12.5px] font-medium">{t("aliases.signature")}</span>
-            <TemplateEditor
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[12.5px] font-medium">{t("aliases.signature")}</span>
+              <span className="text-[11.5px] leading-4 text-fg-4">{t("aliases.signatureHint")}</span>
+            </div>
+            <SignatureEditor
               kind="signature"
-              html
               value={value.signature_html}
               onChange={(v) => set({ signature_html: v })}
               placeholder={t("aliases.signaturePlaceholder")}
               ariaLabel={t("aliases.signatureLabel", { alias })}
               minHeight={72}
-              problems={problems}
+              problems={own.length ? own : problems}
+              onProblems={setChecked}
+              previewTitle={t("detail.preview")}
+              previewHeight={380}
+              previewBody={saved ? previewBody : undefined}
             />
-            <span className="text-[11.5px] leading-4 text-fg-4">{t("aliases.signatureHint")}</span>
           </div>
-          {saved && (
-            <EmailPreview
-              collapsible
-              defaultOpen={false}
-              height={380}
-              title={t("detail.preview")}
-              body={{ kind: "signature", mailbox_id: mailbox.id, alias, body_html: value.signature_html || mailbox.signature_html }}
-            />
-          )}
         </div>
       )}
     </li>

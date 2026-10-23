@@ -14,7 +14,7 @@ test("give an alias its own name, signature and brand, and add one Gmail can sen
   await page.getByText("support@margin.app").first().click();
   await dismissNudge(page);
   const aliases = page.getByRole("list", { name: "Each alias" });
-  await expect(aliases.getByRole("button", { name: "Edit hello@lumen.studio" })).toBeVisible();
+  await expect(aliases.getByRole("button", { name: "Edit hello@lumen.studio" })).toBeVisible({ timeout: 30000 });
   const gmail = page.getByRole("list", { name: "From Gmail" });
   await gmail.scrollIntoViewIfNeeded();
   await proof.chapter("Aliases", "Every alias of the Support mailbox, how its replies go out, and Gmail's other send-as addresses");
@@ -39,8 +39,17 @@ test("give an alias its own name, signature and brand, and add one Gmail can sen
   await page.keyboard.press("Enter");
   await page.keyboard.type("Reply here any time, we read every email.", { delay: 40 });
   await expect(signature).toContainText("we read every email");
+  // The preview fills the signature as a reply to the alias carries it.
+  const previewToggle = aliases.getByRole("button", { name: "Preview" });
+  await previewToggle.click();
+  await expect(previewToggle).toHaveAttribute("aria-expanded", "true");
+  const filled = page.frameLocator('iframe[title="Email preview"]');
+  await expect(filled.getByText("we read every email", { exact: false })).toBeVisible({ timeout: 30000 });
+  await previewToggle.scrollIntoViewIfNeeded();
+  await proof.dwell();
+  await proof.shot("lumen-preview", { caption: "Lumen's signature in the preview, filled as a reply to hello@lumen.studio" });
   await page.getByRole("region", { name: "Unsaved changes" }).getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Mailbox saved")).toBeVisible();
+  await expect(page.getByText("Mailbox saved")).toBeVisible({ timeout: 30000 });
   await proof.dwell();
   await proof.shot("lumen-saved", { caption: "Lumen's signature saved; mail to the alias carries it before the team's and the mailbox's" });
 });

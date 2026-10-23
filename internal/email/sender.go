@@ -78,15 +78,15 @@ func (s *service) cleanAliases(own string, list []string) ([]string, error) {
 // aliasSettingsInput is one alias's settings in a create or PATCH body.
 type aliasSettingsInput struct {
 	DisplayName   string     `json:"display_name,omitempty" maxLength:"64" doc:"The From name's {mailbox} for mail to this alias; \"\" = the mailbox's"`
-	SignatureHTML string     `json:"signature_html,omitempty" doc:"Design allowlist, template variables, up to 64 KB; \"\" = none of its own"`
+	SignatureHTML *string    `json:"signature_html,omitempty" doc:"Design allowlist, template variables, up to 64 KB; \"\" = none of its own; left out keeps it"`
 	BrandID       *uuid.UUID `json:"brand_id,omitempty" doc:"A brand of the workspace for new tickets written to this alias; null = the mailbox's"`
 	SendAs        string     `json:"send_as,omitempty" enum:"verified,unverified,unknown" doc:"Left out keeps it. Where the connection cannot read Gmail's send-as list: verified = the provider sends as this address"`
 }
 
-// mergeAliasSettings is cur after a body replaced it with in: display names, signatures and
-// brands as given (an alias left out has none of its own), send_as as given where it
-// changes (the admin said so), else as it was. It also returns the aliases whose send_as
-// the body changed.
+// mergeAliasSettings is cur after a body replaced it with in: display names and brands as
+// given (an alias left out has none of its own), a signature as given or, left out, as it
+// was, send_as as given where it changes (the admin said so), else as it was. It also
+// returns the aliases whose send_as the body changed.
 func mergeAliasSettings(cur map[string]AliasSettings, in map[string]aliasSettingsInput) (map[string]AliasSettings, []string) {
 	out := map[string]AliasSettings{}
 	for a, st := range cur {
@@ -98,7 +98,12 @@ func mergeAliasSettings(cur map[string]AliasSettings, in map[string]aliasSetting
 	for a, v := range in {
 		a = strings.ToLower(strings.TrimSpace(a))
 		st := out[a]
-		st.DisplayName, st.SignatureHTML, st.BrandID = v.DisplayName, v.SignatureHTML, v.BrandID
+		st.DisplayName, st.BrandID = v.DisplayName, v.BrandID
+		if v.SignatureHTML != nil {
+			st.SignatureHTML = *v.SignatureHTML
+		} else {
+			st.SignatureHTML = cur[a].SignatureHTML
+		}
 		if v.SendAs != "" && v.SendAs != firstNonEmpty(st.SendAs, SendAsUnknown) {
 			st.SendAs, st.SendAsBy = v.SendAs, SendAsByAdmin
 			claimed = append(claimed, a)

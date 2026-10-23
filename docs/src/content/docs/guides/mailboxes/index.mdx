@@ -187,17 +187,18 @@ The **Last mail** column shows when mail last arrived at each address. It turns 
 
 ## Choose how replies look
 
-Open a mailbox from the list to change how it works. The **Sending** section sets where new tickets go and what customers see.
+Open a mailbox from the list to change how it works. The **Name and addresses** section sets where new tickets go and what customers see.
 
-<Screenshot src="/guides/mailboxes/sending" alt="A mailbox's Sending settings: the team for new tickets ringed as 1, the From name with its preview ringed as 2, and the aliases ringed as 3" />
+<Screenshot src="/guides/mailboxes/sending" alt="A mailbox's Name and addresses settings: the team for new tickets ringed as 1, and the From name with its preview ringed as 2" />
 
 <Legend>
 
 1. **New tickets to this address go to** a team. [Routing](/guides/routing/) rules can still send a ticket elsewhere.
 2. **From name**: what customers see as the sender. Click a variable to add it: `{agent}`, `{agent_first}`, `{team}`, `{brand}` or `{mailbox}`. The mailbox's **sender name**, just above, fills `{mailbox}`. The preview shows a reply and an auto-reply as customers will see them.
-3. **Aliases**: up to 20 other addresses that deliver into this mailbox, like `help@`. They have a section of their own, described in [Aliases](#aliases) below.
 
 </Legend>
+
+Other addresses that deliver into the mailbox, like `help@`, have a section of their own, described in [Aliases](#aliases) below.
 
 ## Aliases
 
@@ -208,7 +209,18 @@ Open an alias in the mailbox's **Aliases** section to give it:
 - **A sender name**: what `{mailbox}` reads in the From name, and `{{ mailbox.name }}` in templates, for mail to the alias.
 - **A team**: new tickets written to it go to that team instead of the mailbox's. A mailbox of a private team sends every alias to that team.
 - **A brand**, once the workspace has a second one: new tickets written to it take that brand's email design, help center links, logo and satisfaction survey.
-- **A signature**: mail to the alias carries it before the team's and the mailbox's. See [Signatures](/guides/email-templates/#signatures).
+- **A signature**: mail to the alias carries it before the team's and the mailbox's. It takes the same variables as the mailbox's, and its preview fills them as a reply to the alias. See [Signatures](/guides/email-templates/#signatures).
+
+<Screenshot src="/guides/mailboxes/aliases" alt="A mailbox's Aliases section: the list of aliases with 3 of 20 used ringed as 1, Gmail's other send-as addresses with Check again and Add ringed as 2, the open alias hello@lumen.studio with its sender name, team, brand and how replies go out ringed as 3, and its signature editor with a preview ringed as 4" />
+
+<Legend>
+
+1. **Aliases**: type an address and click **Add**. Up to 20 per mailbox.
+2. **From Gmail**: the account's other send-as addresses, when the mailbox reads its Gmail inbox. Click **Add** to take one in.
+3. **An alias, opened**: its sender name, the team and brand for new tickets written to it, and how its replies go out.
+4. **Signature**: the alias's own, with a preview of a reply to it. Empty uses the team's or the mailbox's.
+
+</Legend>
 
 **How replies go out.** Replies to a ticket written to an alias go out as that alias wherever the mailbox can send as it, and otherwise from the mailbox's own address with the alias as the reply-to address, so the customer's answer still comes back to the alias. Each alias says which applies:
 

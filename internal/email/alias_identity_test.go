@@ -80,11 +80,17 @@ func TestAliasSettingsAPI(t *testing.T) {
 		AND data -> 'alias_settings' -> 'side@acme.test' ->> 'signature' = 'true' AND NOT data::text LIKE '%team</p>%'`, w.wid); n != 1 {
 		t.Fatalf("audit %d", n)
 	}
-	// The mailbox's own brand is stored as none: the alias follows the mailbox.
+	// The mailbox's own brand is stored as none: the alias follows the mailbox. A signature
+	// left out is kept; "" clears it.
 	if code := doJSON(t, http.MethodPatch, url, map[string]any{"alias_settings": map[string]any{
 		"side@acme.test": map[string]any{"display_name": "Side Project", "brand_id": w.brand.String()}}}, &got); code != 200 ||
-		got.AliasSettings["side@acme.test"].BrandID != nil {
+		got.AliasSettings["side@acme.test"].BrandID != nil || !strings.Contains(got.AliasSettings["side@acme.test"].SignatureHTML, "team</p>") {
 		t.Fatalf("own brand %d %+v", code, got.AliasSettings)
+	}
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"alias_settings": map[string]any{
+		"side@acme.test": map[string]any{"display_name": "Side Project", "signature_html": ""}}}, &got); code != 200 ||
+		got.AliasSettings["side@acme.test"].SignatureHTML != "" {
+		t.Fatalf("cleared signature %d %+v", code, got.AliasSettings)
 	}
 	for name, body := range map[string]map[string]any{
 		"not an alias":      {"other@acme.test": map[string]any{"display_name": "X"}},
