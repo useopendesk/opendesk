@@ -97,7 +97,7 @@ export async function deliver(temp: Message, body: SendMessageBody, me: string, 
     const m = await api.tickets.send(tid, body, {
       keepalive: !!opts.keepalive,
       as: origin.account ?? undefined,
-      workspaceId: origin.workspace ?? undefined,
+      workspace: origin.workspace ?? undefined,
     });
     qc.setQueryData<Message[]>(qk.messages(tid), (old) => {
       if (!old) return old;
