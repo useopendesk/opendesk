@@ -143,8 +143,9 @@ cmd_logs() {
 # backup writes three things, and all three are needed to restore:
 #   db.dump       pg_dump custom format of the whole database
 #   data.tar.gz   the opendesk data volume (local attachments, NATS store)
-#   env           the .env, which holds CREDENTIALS_KEY. Without it every
-#                 stored mailbox credential in db.dump is unreadable.
+#   env           the .env, which holds CREDENTIALS_KEY. Without it (or that key
+#                 in CREDENTIALS_KEY_PREVIOUS) every stored mailbox credential in
+#                 db.dump is unreadable.
 cmd_backup() {
     backup_to "${1:-$DIR/backups}/$(stamp)"
     say "    It contains the instance's secrets (env). Copy it off this machine and keep it private."
@@ -193,10 +194,15 @@ cmd_restore() {
         [ "$answer" = "restore" ] || die "nothing was changed"
     fi
     if [ -f "$src/env" ]; then
-        if [ "$(sed -n 's/^CREDENTIALS_KEY=//p' "$src/env" | tail -1)" != "$(env_get CREDENTIALS_KEY)" ]; then
-            warn "The backup was taken with a different CREDENTIALS_KEY than this .env has."
-            say "    Mailbox credentials will not decrypt unless you restore its env too:"
+        backup_key=$(sed -n 's/^CREDENTIALS_KEY=//p' "$src/env" | tail -1)
+        if [ "$backup_key" != "$(env_get CREDENTIALS_KEY)" ] &&
+            ! printf '%s\n' "$(env_get CREDENTIALS_KEY_PREVIOUS)" | tr ',' '\n' | tr -d ' ' | grep -qxF -- "$backup_key"; then
+            warn "The backup was taken with a CREDENTIALS_KEY that this .env has in neither"
+            say "    CREDENTIALS_KEY nor CREDENTIALS_KEY_PREVIOUS. Stored credentials will not"
+            say "    decrypt until you either restore its env too:"
             say "    cp $src/env $DIR/.env"
+            say "    or add the backup's CREDENTIALS_KEY to CREDENTIALS_KEY_PREVIOUS in $DIR/.env"
+            say "    and run opendesk-ctl start (docs: self-hosting/hardening)."
         fi
     fi
     info "Stopping the app"

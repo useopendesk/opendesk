@@ -9,7 +9,7 @@ description: Back up and restore a self-hosted opendesk, move between releases, 
 | --- | --- |
 | The Postgres database | Everything except files. |
 | The data volume (`/data`) | Attachments and raw email with the `local` storage driver. |
-| `.env` | Secrets. **`CREDENTIALS_KEY` cannot be recovered**, and without it stored mailbox credentials cannot be decrypted. |
+| `.env` | Secrets. **`CREDENTIALS_KEY` cannot be recovered**, and without it stored mailbox credentials cannot be decrypted. After [replacing the key](/self-hosting/hardening/#replace-credentials_key), keep the old one with the backups taken before. |
 
 ## Back up
 
@@ -86,7 +86,7 @@ Restore a backup on a separate, disposable machine every few months, so you know
 /opt/opendesk/opendesk-ctl restore /path/to/backups/20261011T030000Z
 ```
 
-It checks the files against `SHA256SUMS`, stops the app, replaces the database and the data volume, and asks you to type `restore` first (`OPENDESK_YES=1` skips the prompt). A file that does not match its checksum stops the restore before anything changes. Keep the same `CREDENTIALS_KEY` and `AUTH_SECRET` as the backup.
+It checks the files against `SHA256SUMS`, stops the app, replaces the database and the data volume, and asks you to type `restore` first (`OPENDESK_YES=1` skips the prompt). A file that does not match its checksum stops the restore before anything changes. Keep the same `CREDENTIALS_KEY` and `AUTH_SECRET` as the backup. If you have replaced `CREDENTIALS_KEY` since, you can instead keep the current one and add the backup's to `CREDENTIALS_KEY_PREVIOUS`; see [Backups and older keys](/self-hosting/hardening/#backups-and-older-keys), which also covers restoring a backup from before a leak.
 
 ## Upgrade
 
