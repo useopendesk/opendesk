@@ -12,7 +12,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/displayname"
-	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
@@ -45,7 +44,7 @@ type updateAccountInput struct {
 	ID   string `path:"id"`
 	Body struct {
 		Name          *string    `json:"name,omitempty" maxLength:"254" doc:"How the sidebar names it; \"\" resets to the address"`
-		DisplayName   *string    `json:"display_name,omitempty" maxLength:"64" doc:"The From name of its mail"`
+		DisplayName   *string    `json:"display_name,omitempty" maxLength:"200" doc:"The From name of its mail; may name the sender: {agent}, {agent_first}, {mailbox}, {workspace}"`
 		Color         *string    `json:"color,omitempty" enum:"gray,red,orange,amber,green,teal,blue,indigo,violet,pink"`
 		SignatureHTML *string    `json:"signature_html,omitempty"`
 		Visibility    *string    `json:"visibility,omitempty" enum:"private,shared"`
@@ -116,9 +115,9 @@ func (s *service) registerAccountRoutes(api huma.API) {
 				}
 			}
 			if b.DisplayName != nil {
-				dn, err := displayname.Validate("Display name", *b.DisplayName, displayname.Workspace, true)
+				dn, err := cleanFromName("display_name", *b.DisplayName)
 				if err != nil {
-					return nil, httpx.Wrap(err)
+					return nil, err
 				}
 				if dn != a.DisplayName {
 					a.DisplayName, changed = dn, append(changed, "display_name")
@@ -131,10 +130,10 @@ func (s *service) registerAccountRoutes(api huma.API) {
 				a.Color, changed = *b.Color, append(changed, "color")
 			}
 			if b.SignatureHTML != nil {
-				if len(*b.SignatureHTML) > maxSignatureHTML {
-					return nil, httpx.Validation("The signature is too long.")
+				sig, err := cleanSignature(*b.SignatureHTML)
+				if err != nil {
+					return nil, err
 				}
-				sig := email.SanitizeSettingsHTML(*b.SignatureHTML)
 				if sig != a.SignatureHTML {
 					a.SignatureHTML, changed = sig, append(changed, "signature_html")
 				}

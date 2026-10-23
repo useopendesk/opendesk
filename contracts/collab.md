@@ -214,7 +214,7 @@ interface MailAccount {
   provider: "google" | "microsoft" | "imap"
   email: string
   name: string                 // how the sidebar names it; the address by default
-  display_name: string         // the From name of its mail
+  display_name: string         // the From name of its mail, as written: plain words or a format naming the sender ("Addresses")
   color: string                // a tone key: gray, red, orange, amber, green, teal, blue, indigo, violet, pink
   owner: UserRef | null        // who connected it; null after they left (shared accounts only)
   visibility: "private" | "shared"
@@ -253,6 +253,10 @@ interface MailIdentity {
   signature_sync: SettingSync | "pull"  // account: the account's; provider: pull; manual: none
   display_name_sync: SettingSync | "pull"
   signature_synced_at: string | null
+  display_name_local: boolean  // Gmail: the From name has variables, so it is kept in opendesk and Gmail keeps its own
+  signature_local: boolean     // Gmail: the signature has variables, the same
+  from_name: string            // the From name (its own, else the account's) filled for the caller
+  filled_signature_html: string | null  // the signature filled for the caller; null when it has no variables
 }
 
 type SettingSync = "two_way" | "read_only" | "none"
@@ -427,13 +431,16 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/oauth/{provider}/start` | agent+ | `{visibility, shared_with? (at most 40 teams and people: it travels in the signed state; add more afterwards), name?, email? (login hint), account_id? (reconnect, manage)}` → `{url}`; sets the flow cookie (send with credentials). `422 provider_not_configured` |
 | GET | `/v1/collab/accounts/oauth/{provider}/callback` | provider | redirects to `APP_URL/settings/mail-accounts?connected=<id>` or `?error=<code>`: `oauth_state`, `access_denied`, `provider_error`, `account_conflict` (the address is already connected in this workspace by someone else), `collab_required`, `forbidden`, `internal` |
 | POST | `/v1/collab/accounts/imap` | agent+ | `{email, name?, display_name?, imap_host, imap_port, imap_tls, imap_username?, password, smtp_host, smtp_port, smtp_tls, smtp_username?, smtp_password?, visibility, shared_with?}` → `MailAccount`. Both servers are tried first: `422 connection_failed` with `detail`. `409 account_conflict`. `422 imap_unavailable` with `COLLAB_IMAP` off |
-| PATCH | `/v1/collab/accounts/{id}` | manage | `{name?, display_name?, color?, signature_html?, visibility?, shared_with?, imap? {…same fields, password?, smtp_password?}, default_from?}` → `MailAccount`; `default_from` must be one of its addresses that can send (`422 validation_failed`) and is kept in opendesk (Gmail's own change of its default still comes in, "Addresses"); new IMAP settings are tried first. A changed `signature_html` or `display_name` that syncs `two_way` is made at Gmail first (sanitized): a refusal is `502 provider_error` and nothing of the change is saved. `read_only` and `none` save in opendesk only. A changed `display_name` stops a Microsoft account following its profile name |
+| PATCH | `/v1/collab/accounts/{id}` | manage | `{name?, display_name?, color?, signature_html?, visibility?, shared_with?, imap? {…same fields, password?, smtp_password?}, default_from?}` → `MailAccount`; `default_from` must be one of its addresses that can send (`422 validation_failed`) and is kept in opendesk (Gmail's own change of its default still comes in, "Addresses"); new IMAP settings are tried first. A changed `signature_html` or `display_name` that syncs `two_way` is made at Gmail first (sanitized): a refusal is `502 provider_error` and nothing of the change is saved. `read_only` and `none` save in opendesk only. A changed `display_name` stops a Microsoft account following its profile name. A `display_name` or `signature_html` with variables ("Who sends") is checked (`422 validation_failed`) and saved in opendesk only, never at Gmail |
 | POST | `/v1/collab/accounts/{id}/identities` | manage | Add an address ("Addresses"): `{email, display_name?, signature_html?, reply_to?}` → `MailAccount`. Microsoft and IMAP only (`422 identities_from_provider` for Gmail); `409 identity_conflict` for the account's own or an existing address; at most 50 |
 | PATCH | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | `{display_name?, signature_html?, reply_to? (hand-added only)}` → `MailAccount`. Saved in opendesk; a Gmail address's From name and signature are replaced by Gmail's when they next change there (`pull`) |
+| POST | `/v1/collab/accounts/{id}/identities/preview` | manage | `{email?, display_name, signature_html?}` → `{from_name, from, signature_html, from_name_problem, problems: TemplateProblem[]}`: what is typed, filled for the caller and checked, nothing saved ("Who sends"). `email` is the address (default the account's own); an empty `display_name` uses the account's |
+| POST | `/v1/collab/accounts/{id}/identities/{identity_id}/display-name/pull` | manage | → `MailAccount` with the address's From name replaced by Gmail's now (empty uses the account's). `422 display_name_sync_unsupported` for a hand-added address |
 | POST | `/v1/collab/accounts/{id}/identities/{identity_id}/signature/pull` | manage | → `MailAccount` with the address's signature replaced by Gmail's now (`GET sendAs/{email}`). `422 signature_sync_unsupported` for a hand-added address; `502 provider_error` when Gmail refuses |
 | DELETE | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | → `MailAccount`. Hand-added only (`422 identities_from_provider` for Gmail's); the default for new mail goes back to the account's own address when it was this one |
 | GET | `/v1/collab/accounts/{id}/identities/suggestions` | manage | `{addresses: string[]}`: Microsoft's `proxyAddresses` aliases not added yet, when Graph answers; empty otherwise (and for other providers) |
 | POST | `/v1/collab/accounts/{id}/signature/pull` | manage | → `MailAccount` with the signature replaced by Gmail's now. `422 signature_sync_unsupported` for Microsoft and IMAP; `502 provider_error` when Gmail refuses |
+| POST | `/v1/collab/accounts/{id}/display-name/pull` | manage | → `MailAccount` with the From name replaced by Gmail's now ("Get from Gmail", in place of one with variables). `422 display_name_sync_unsupported` for Microsoft and IMAP; `422 validation_failed` when Gmail has no name of its own; `502 provider_error` |
 | PUT | `/v1/collab/accounts/{id}/out-of-office` | manage | `OutOfOffice` → `MailAccount`. Written to the provider first (`502 provider_error`, nothing saved, when it refuses), then stored as the provider answered it. `422 out_of_office_read_only` (`read_only`), `422 out_of_office_unsupported` (`none`), `422` when the end is not after the start, or (Microsoft) when enabled with only one of start and end |
 | DELETE | `/v1/collab/accounts/{id}` | manage | → 204. Removes the account and its mail from opendesk; nothing is deleted at the provider |
 | POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now |
@@ -454,7 +461,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/drafts` | act on the account | Save a new draft ("Drafts"): the body of `POST /v1/collab/messages`, recipients optional → `MailMessage` (`draft: true`, `draft_id`). Saved at the provider first (`502 provider_error` with detail, nothing stored). At most 120 saves a minute per person (`429 rate_limited`) |
 | PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[], from_email?}` (left out keeps the draft's From when it can still send) → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute |
 | DELETE | `/v1/collab/drafts/{id}` | act on its conversation | Discard → 204: deleted at the provider, then here (a new-mail draft's conversation with it) |
-| POST | `/v1/collab/drafts/{id}/send` | act on its conversation | Send it; the body (as for `PUT`) is optional: when given the draft is saved with it first, else it goes as saved. Needs a recipient. → `MailMessage`, the sent message, stored like `POST /v1/collab/messages` does (in the draft's conversation and in Sent) with the draft removed. `502 send_failed`; counts toward the 60 sends a minute |
+| POST | `/v1/collab/drafts/{id}/send` | act on its conversation | Send it; the body (as for `PUT`) is optional: when given the draft is saved with it first, else it goes as saved (composed again from what was saved when its From name names the sender, so it goes out with the sender's name). Needs a recipient. → `MailMessage`, the sent message, stored like `POST /v1/collab/messages` does (in the draft's conversation and in Sent) with the draft removed. `502 send_failed`; counts toward the 60 sends a minute |
 | GET | `/v1/collab/messages/{id}/details` | see | `MessageDetails` ("Message details"), read from the message's source (stored, else the provider: `502 provider_error`) |
 | GET | `/v1/collab/attachments/{message_id}/{index}` | signed (`exp`, `sig`) | the file, `Content-Disposition: attachment` unless an image; `?inline=1` for images. `404` when the signature is wrong or expired |
 | GET | `/v1/collab/sidebar` | member | `SidebarPrefs` (defaults when never saved) |
@@ -463,7 +470,8 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 Errors: `402 collab_required`, `404 not_found`, `422 labels_unsupported`, `422 connection_failed`,
 `409 account_conflict`, `502 provider_error`, `502 send_failed`, `422 provider_not_configured`,
 `422 imap_unavailable`, `422 rename_unsupported`, `422 drafts_unsupported`, `422 signature_sync_unsupported`,
-`422 out_of_office_read_only`, `422 out_of_office_unsupported`, `422 identities_from_provider`, `409 identity_conflict`.
+`422 out_of_office_read_only`, `422 out_of_office_unsupported`, `422 identities_from_provider`, `409 identity_conflict`,
+`422 display_name_sync_unsupported`.
 
 ## Account settings
 
@@ -493,6 +501,15 @@ provider's answer, so what opendesk wrote (in the provider's own form) is never 
 change. The first read keeps a signature written in opendesk when Gmail has none. A failed read is
 logged with its reason only and never fails the sync. A reconnect reads the settings again on the
 next sync.
+
+**A value with variables stays in opendesk.** A From name or signature that names the sender
+("Who sends") means nothing to Gmail, so it is never written there: saving one for a `two_way`
+account changes it in opendesk only, and Gmail keeps its own (`MailIdentity.display_name_local`,
+`signature_local`; the app says "Uses variables, so it is kept in opendesk; Gmail keeps its own"). A
+plain field saved with it still goes to Gmail. It is the person's choice, so Gmail's later changes do
+not replace it (the sync still stores their hash), for the account's own address and for Gmail's other
+addresses alike; "Get from Gmail" (`…/signature/pull`, `…/display-name/pull`) brings Gmail's back, and
+from then on the setting syncs as before. A literal `{agent}` or `{{ … }}` never reaches Gmail.
 
 A signature is never changed by being opened: the settings page edits one the rich editor cannot
 hold (tables, inline styles, sized images, divs) as HTML with a live preview, and sends
@@ -561,6 +578,32 @@ composer's signature block, swapped for the new address's on a change of From (l
 person removed it). Reply all leaves out every one of the account's addresses. A `collab.accounts`
 event refreshes the account's open conversations too, so an open reply picks up a changed address
 or signature.
+
+### Who sends
+
+A From name and a signature can name the member who sends the mail, so a shared support@ reads
+"Maya Chen at Margin Support" with Maya's own title and phone, and her teammate's mail their own.
+Both are stored as written and filled for the member writing (`internal/collab/personal.go`):
+
+- **From names** are plain words or a format with the helpdesk's vocabulary (`internal/fromname`,
+  contracts/teams.md "What the customer sees"): `{agent}` the sender's full name, `{agent_first}` its
+  first word, `{mailbox}` the account's `name` (the address when unnamed), `{workspace}` the workspace's
+  name. The same checks as a mailbox's `from_name_format`: up to 80 characters, only those variables, no
+  `<`, `>` or control characters (`422 validation_failed`), and the same rule without a sender: the
+  agent variable and the words up to the next variable are dropped, a format left with no variable
+  reads `{mailbox}`. An address's empty From name uses the account's, format included.
+- **Signatures** take the template variables that mean something without a ticket (contracts/templates.md,
+  kind `collab_signature`): `agent.*` (the sender's name, first and last name, title, phone, pronouns,
+  picture, and `agent.signature`, their personal signature), `mailbox.email` (the address it goes out
+  from), `mailbox.name` (its From name, filled), `workspace.name` and `date.today`. Others are refused
+  (`422 validation_failed`, "…has nothing to read here"). Tags are kept through the signature allowlist.
+- **Filled for the caller**: `MailIdentity.from_name` and `filled_signature_html` in every account and
+  conversation response, which the composer shows and puts in its signature block; the settings page
+  previews what is typed with `POST …/identities/preview`.
+- **The sender at send time**: the From name is filled again when the mail goes out, for the member
+  sending it, whoever saved the draft; a draft sent as saved is composed again for its sender when its
+  From name has variables. The signature is the one in the message: a composer that opens a saved draft
+  whose address's signature has variables puts the opener's own in its signature block.
 
 Reading: `MailThread.to_address` names the alias a conversation was written to or sent from (a small
 chip in the list and the conversation), and `GET /v1/collab/threads?to=` shows one address's mail

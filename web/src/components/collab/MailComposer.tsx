@@ -17,7 +17,7 @@ import { create } from "zustand";
 import { api, type CollabDraftBody, type CollabSendBody } from "@/lib/api/endpoints";
 import { isApiError } from "@/lib/api/client";
 import type { Attachment, MailAccount, MailAddress, MailAttachment, MailIdentity, MailMessage, MailThreadDetail } from "@/lib/api/types";
-import { defaultIdentity, findIdentity, fromLabel, sendableIdentities } from "@/lib/collab/identities";
+import { defaultIdentity, findIdentity, fromLabel, identitySignature, sendableIdentities } from "@/lib/collab/identities";
 import { escapeHtml, isBlankHtml } from "@/lib/collab/html";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { forwardHeader, replyRecipients, replySubject, type ComposeMode } from "@/lib/collab/recipients";
@@ -143,7 +143,8 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
   // The address it goes out from, and the signature that comes with it.
   const identity = account ? (findIdentity(account, draft.from) ?? defaultIdentity(account)) : undefined;
   const fromEmail = identity?.email;
-  const signature = identity?.signature_html ?? account?.signature_html ?? "";
+  // Filled for you: a shared address's signature carries the name and details of whoever writes.
+  const signature = identity ? identitySignature(identity) : (account?.signature_html ?? "");
 
   const setDraft = (patch: Partial<ComposerDraft>) =>
     setDraftState((d) => {
@@ -292,6 +293,16 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       if (touched.current) changed();
     }
   }, [accountId, changed]);
+
+  // A saved draft whose signature takes variables carries the filled one of whoever wrote it
+  // (a teammate, on a shared account): opened here, its block takes yours, as the From name does.
+  useEffect(() => {
+    if (!initial.draftId || identity?.filled_signature_html == null) return;
+    const html = replaceSignature(draft.html, signature);
+    if (html && html !== draft.html) setDraft({ html });
+    // Once, when it opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Switching the From address (or account) swaps the signature block for the new one's (unless it was taken out).
   const prevSignature = useRef(signature);

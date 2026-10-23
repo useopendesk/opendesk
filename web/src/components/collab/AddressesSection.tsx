@@ -19,6 +19,7 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SignatureEditor } from "@/components/templates/SignatureEditor";
+import { CollabFromNameField, KeptInOpendesk, SenderPreview, useSenderPreview } from "./SenderPreview";
 import { api, type CollabIdentityBody } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { MailAccount, MailIdentity } from "@/lib/api/types";
@@ -26,6 +27,7 @@ import { storeAccount } from "@/lib/collab/hooks";
 import { identitiesOf } from "@/lib/collab/identities";
 import { isEmail } from "@/lib/collab/recipients";
 import { relLong } from "@/lib/format";
+import { COLLAB_FROM_VARS, fromNameProblem } from "@/lib/fromname";
 import { SyncLine } from "./AccountSettings";
 
 type Editing = { mode: "add" } | { mode: "edit"; identity: MailIdentity };
@@ -90,7 +92,7 @@ export function AddressesSection({ account, manage }: { account: MailAccount; ma
                 )}
               </span>
               <span className="mt-0.5 block truncate text-[11.5px] text-fg-3">
-                {i.primary ? t("addresses.primaryHint") : `${i.display_name || t("addresses.usesAccountName")} · ${t(i.source === "provider" ? "addresses.sync_pull" : "addresses.sync_none")}`}
+                {i.primary ? t("addresses.primaryHint") : `${i.display_name ? i.from_name || i.display_name : t("addresses.usesAccountName")} · ${t(i.source === "provider" ? "addresses.sync_pull" : "addresses.sync_none")}`}
               </span>
               {i.verification === "pending" && <span className="mt-0.5 block text-[11.5px] text-tone-amber">{t("addresses.pendingHint")}</span>}
             </span>
@@ -173,7 +175,9 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
     return b;
   };
   const dirty = !current || Object.keys(body()).length > 0;
-  const valid = (current || isEmail(email)) && (!replyTo.trim() || isEmail(replyTo));
+  const valid = (current || isEmail(email)) && (!replyTo.trim() || isEmail(replyTo)) && !fromNameProblem(name, COLLAB_FROM_VARS);
+  // Its From name and signature as your mail would carry them, while they are typed.
+  const preview = useSenderPreview(account.id, { email: current?.email ?? (isEmail(email) ? email.trim() : undefined), display_name: name, signature_html: signature });
 
   const save = useMutation({
     mutationFn: () => (current ? api.collab.accounts.updateIdentity(account.id, current.id!, body()) : api.collab.accounts.addIdentity(account.id, { email: email.trim(), ...body() })),
@@ -197,6 +201,21 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
         setSigVersion((v) => v + 1);
       }
       toast.success(t("detail.signaturePulled"));
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+
+  // Gmail's From name for this address now, in place of one with variables.
+  const pullName = useMutation({
+    mutationFn: () => api.collab.accounts.pullIdentityDisplayName(account.id, current!.id!),
+    onSuccess: (a) => {
+      storeAccount(qc, a);
+      const next = a.identities.find((i) => i.email === current?.email);
+      if (next) {
+        setCurrent(next);
+        setName(next.display_name);
+      }
+      toast.success(t("sender.namePulled"));
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -254,11 +273,31 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
               )}
             </label>
           )}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[12.5px] font-medium">{t("addresses.fromName")}</span>
-            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={account.display_name} data-autofocus={current ? true : undefined} />
-            <span className="text-[11.5px] text-fg-4">{t("addresses.fromNameHint", { name: account.display_name || account.email })}</span>
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="address-from" className="text-[12.5px] font-medium">
+              {t("addresses.fromName")}
+            </label>
+            <CollabFromNameField
+              id="address-from"
+              account={account}
+              email={current?.email ?? (email.trim().toLowerCase() || "sales@example.com")}
+              value={name}
+              onChange={setName}
+              inherit={account.display_name}
+              autoFocus={!!current}
+              gmail={
+                fromGmail &&
+                current?.display_name_local && (
+                  <Button size="sm" loading={pullName.isPending} onClick={() => pullName.mutate()}>
+                    {t("detail.getFromGmail")}
+                  </Button>
+                )
+              }
+            />
+            <span className="text-[11.5px] text-fg-4">
+              {t("addresses.fromNameHint", { name: account.display_name || account.email })} {t("sender.varsHint")}
+            </span>
+          </div>
           {manual ? (
             <label className="flex flex-col gap-1.5">
               <span className="text-[12.5px] font-medium">{t("addresses.replyTo")}</span>
@@ -272,6 +311,7 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
             <span className="text-[12.5px] font-medium">{t("addresses.signature")}</span>
             <SignatureEditor
               key={sigVersion}
+              kind="collab_signature"
               value={signature}
               onChange={(html) => {
                 setSigEdited(true);
@@ -279,8 +319,13 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
               }}
               ariaLabel={t("addresses.signature")}
               minHeight={120}
+              problems={preview?.problems}
+              preview={<SenderPreview preview={preview} />}
             />
-            <span className="text-[11.5px] text-fg-4">{t("addresses.signatureHint")}</span>
+            {fromGmail && /\{\{|\{%/.test(signature) && <KeptInOpendesk />}
+            <span className="text-[11.5px] text-fg-4">
+              {t("addresses.signatureHint")} {t("sender.signatureVars")}
+            </span>
           </div>
         </div>
         <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line bg-sunken px-5 py-3">

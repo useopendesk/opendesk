@@ -59,7 +59,10 @@ Text: `default`, `upcase`, `downcase`, `capitalize`, `titlecase`, `strip`, `trun
 
 `GET /v1/templates/variables` lists them, with the workspace's custom fields, so clients never
 keep their own list. Every template takes every variable; a value that does not apply is empty
-(use `default` or `{% if %}`).
+(use `default` or `{% if %}`). The one exception is a Collab signature (`collab_signature`, a mail
+account's or address's, contracts/collab.md "Who sends"): mail from an account has no ticket,
+customer, team or brand, so it takes the `agent`, `mailbox`, `workspace` and `date` groups only
+(`kind_groups`), and a save that uses another is refused; editors offer only those.
 
 | group | variables |
 | --- | --- |
@@ -92,9 +95,10 @@ type TemplateVariable = {
 type TemplateFilter = { name: string; group: "text" | "list" | "number" | "date"; args: string; description: string; example: string };
 type TemplateTag = { name: string; syntax: string; description: string };
 type TemplateSlot = { key: "content" | "signature" | "history" | "survey"; label: string; description: string; required_in: TemplateKind[] };
-type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject";
+type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject" | "collab_signature";
 // GET /v1/templates/variables (viewer+)
-type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags: TemplateTag[] };
+type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags: TemplateTag[];
+  kind_groups: Partial<Record<TemplateKind, TemplateVariable["group"][]>> };  // the groups of kinds that take only some
 ```
 
 ## Where templates are filled
@@ -106,6 +110,7 @@ type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; f
 | third-party thread messages (contracts/api.md "Threads") | the message is created, and saved replies when inserted (`render` with `thread`) | without a ticket: the customer's and the ticket's variables stay empty |
 | automation `send_reply` | the action runs | no agent |
 | team, address and personal signatures | each email is sent | |
+| Collab account and address signatures | for the member writing: in the accounts response (`filled_signature_html`) and the composer | stored as written; `agent.*` is the writer, `mailbox.*` the address and its filled From name |
 | mailbox auto-reply (subject and body) | it is sent | no agent |
 | CSAT email (subject and body) | it is sent | per brand, below |
 | email layout | each email is sent | per brand, below |

@@ -38,6 +38,8 @@ type TemplateCatalog struct {
 	Slots     []templates.Slot       `json:"slots"`
 	Filters   []templates.FilterSpec `json:"filters"`
 	Tags      []templates.TagSpec    `json:"tags"`
+	// KindGroups are the variable groups of the kinds that take only some.
+	KindGroups map[string][]string `json:"kind_groups"`
 }
 
 // EmailTemplates are a brand's templates.
@@ -103,7 +105,8 @@ func (s *service) registerTemplateRoutes(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			vars = append(vars, fields...)
-			return &struct{ Body TemplateCatalog }{TemplateCatalog{Variables: vars, Slots: templates.Slots, Filters: templates.Filters, Tags: templates.Tags}}, nil
+			return &struct{ Body TemplateCatalog }{TemplateCatalog{Variables: vars, Slots: templates.Slots, Filters: templates.Filters, Tags: templates.Tags,
+				KindGroups: templates.KindGroups}}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "get-email-templates", Method: http.MethodGet, Path: "/v1/email-templates/{brand_id}",

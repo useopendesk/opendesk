@@ -550,7 +550,9 @@ func (s *service) threadDetail(ctx context.Context, q db.Querier, p *auth.Princi
 	}
 	account := ThreadAccount{ID: a.ID, Email: a.Email, Name: name, DisplayName: a.DisplayName, Color: a.Color, Provider: a.Provider,
 		SignatureHTML: a.SignatureHTML}
-	account.Identities, account.DefaultFrom = identitiesOut(a, idents)
+	if account.Identities, account.DefaultFrom, err = identitiesOut(ctx, s.fillerFor(q, p.WorkspaceID, p.UserID), a, idents); err != nil {
+		return out, err
+	}
 	return MailThreadDetail{Thread: threads[0], Messages: messages, Comments: comments, Shares: shares, CanAct: canAct(p),
 		Account: account}, nil
 }

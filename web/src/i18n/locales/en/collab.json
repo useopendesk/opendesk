@@ -668,5 +668,20 @@
     "emptyTitle": "No other addresses yet",
     "emptyHint": "Add an alias to send from it and give it its own signature.",
     "actions": "Actions for {{email}}"
+  },
+  "sender": {
+    "asYou": "Filled in for you",
+    "from": "From",
+    "yourMail": "Your mail",
+    "kept": "Uses variables, so it is kept in opendesk; Gmail keeps its own.",
+    "namePulled": "From name updated from Gmail",
+    "varsHint": "Click a variable to name whoever sends: on a shared account, each person's mail carries their own name.",
+    "vars": {
+      "agent": "The full name of whoever sends",
+      "agent_first": "The first name of whoever sends",
+      "mailbox": "The account's name, {{name}}",
+      "workspace": "The workspace's name"
+    },
+    "signatureVars": "Type a variable to add the sender's name, title or phone: each person's mail carries their own."
   }
 }

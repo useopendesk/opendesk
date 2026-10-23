@@ -1917,8 +1917,9 @@ export type TemplateFilter = { name: string; group: "text" | "list" | "number" |
 export type TemplateTag = { name: string; syntax: string; description: string };
 export type TemplateSlotKey = "content" | "signature" | "history" | "survey";
 export type TemplateSlot = { key: TemplateSlotKey; label: string; description: string; required_in: TemplateKind[] | null };
-export type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject";
-export type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags?: TemplateTag[] };
+export type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject" | "collab_signature";
+/** kind_groups: the variable groups of the kinds that take only some (a Collab signature). */
+export type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags?: TemplateTag[]; kind_groups?: Partial<Record<TemplateKind, TemplateGroup[]>> };
 export type TemplateProblem = { message: string; token: string };
 
 export type EmailLayoutOptions = {
@@ -2044,7 +2045,19 @@ export type MailIdentity = {
   signature_sync: MailIdentitySync;
   display_name_sync: MailIdentitySync;
   signature_synced_at: string | null;
+  /** The From name has variables, so it is kept in opendesk and Gmail keeps its own. */
+  display_name_local?: boolean;
+  /** The signature has variables, so it is kept in opendesk and Gmail keeps its own. */
+  signature_local?: boolean;
+  /** The From name (its own, else the account's) filled for you. */
+  from_name?: string;
+  /** The signature filled for you; null when it has no variables. */
+  filled_signature_html?: string | null;
 };
+
+/** An address's From name and signature as typed, filled for you (POST .../identities/preview). */
+export type MailIdentityPreview = { from_name: string; from: string; signature_html: string; from_name_problem: string; problems: TemplateProblem[] };
+export type MailIdentityPreviewBody = { email?: string; display_name: string; signature_html?: string };
 
 /** two_way: read from the provider and changed there too; read_only: read only; none: opendesk only (or not available). */
 export type MailSettingSync = "two_way" | "read_only" | "none";

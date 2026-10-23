@@ -238,6 +238,8 @@ What the customer sees on every email (replies, auto-replies, CSAT):
   `"{agent} at {mailbox}"` reads `"<mailbox>"`, `"{agent_first} from {team}"` reads `"<team>"`. A
   format with no other variable falls back to `{mailbox}`; separators left at either end are trimmed
   (`"{brand} - {agent}"` reads `"<brand>"`). The AI agent's replies use its bot's name (the mailbox's bot, contracts/bots.md) as the agent.
+  Formats are checked and filled by `internal/fromname`, whose vocabulary Collab's From names share
+  (contracts/collab.md "Who sends": `{agent}`, `{agent_first}`, `{mailbox}`, `{workspace}`).
 - **Signature**: the team's `signature_html`, else the address's, else the author's personal signature
   (contracts/templates.md "Signatures"). Signatures, auto-replies and CSAT emails take every template
   variable (`{{ agent.name }}`, `{{ contact.first_name | default: "there" }}`, `{% if agent.phone %}`…,

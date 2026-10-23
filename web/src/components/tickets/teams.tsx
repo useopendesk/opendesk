@@ -20,6 +20,7 @@ import { isTone, tone } from "@/lib/tones";
 import { floatingPanel } from "@/components/ui/popover";
 import { pickerSearch } from "@/components/ui/picker";
 import { Button } from "@/components/ui/button";
+import { fillFromName as fillFormat, HELPDESK_FROM_VARS } from "@/lib/fromname";
 import { useAssistantName } from "./ollie";
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -162,26 +163,11 @@ export function firstName(name: string) {
 
 /**
  * The From name customers see (contracts/teams.md "Reply address"): the address's
- * format with {agent} {agent_first} {team} {brand} {mailbox} filled in. Without an
- * author the agent variable and the words up to the next variable are dropped.
+ * format with {agent} {agent_first} {team} {brand} {mailbox} filled in (lib/fromname).
+ * Without an author the agent variable and the words up to the next variable are dropped.
  */
 export function fillFromName(format: string, v: { agent?: string | null; team?: string | null; brand?: string | null; mailbox: string }) {
-  const f = format.trim() || "{agent} at {mailbox}";
-  const vars = {
-    agent: v.agent ?? "",
-    agent_first: v.agent ? firstName(v.agent) : "",
-    team: v.team || v.brand || "",
-    brand: v.brand ?? "",
-    mailbox: v.mailbox,
-  } as Record<string, string>;
-  if (!/\{(team|brand|mailbox|agent|agent_first)\}/.test(f)) return v.mailbox;
-  let out = f;
-  if (!v.agent) {
-    out = out.replace(/\{agent(_first)?\}[^{]*/g, "");
-    if (!/\{(team|brand|mailbox)\}/.test(out)) return v.mailbox;
-  }
-  out = out.replace(/\{(agent_first|agent|team|brand|mailbox)\}/g, (_, k: string) => vars[k] ?? "");
-  return out.replace(/\s+/g, " ").trim() || v.mailbox;
+  return fillFormat(format.trim() || "{agent} at {mailbox}", { agent: v.agent ?? "", team: v.team ?? "", brand: v.brand ?? "", mailbox: v.mailbox }, HELPDESK_FROM_VARS);
 }
 
 /** The address replies go out as: the alias the customer wrote to when it belongs to the reply mailbox. */

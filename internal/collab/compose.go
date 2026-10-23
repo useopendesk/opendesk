@@ -162,6 +162,11 @@ func (s *service) compose(ctx context.Context, p *auth.Principal, t target, in c
 	if err != nil {
 		return nil, err
 	}
+	// A From name with variables names the member sending it (personal.go), whoever wrote
+	// the draft.
+	if from.Name, err = s.fillerFor(s.d.DB.Pool, p.WorkspaceID, p.UserID).fromName(ctx, a, from.Name); err != nil {
+		return nil, httpx.Wrap(err)
+	}
 	to, err := cleanRecipients(in.To)
 	if err != nil {
 		return nil, err

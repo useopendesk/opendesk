@@ -103,6 +103,7 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 	if err != nil {
 		return nil, err
 	}
+	fill := s.fillerFor(q, p.WorkspaceID, p.UserID)
 	for _, a := range list {
 		m := MailAccount{ID: a.ID, Provider: a.Provider, Email: a.Email, Name: a.Name, DisplayName: a.DisplayName, Color: a.Color,
 			Owner: refOf(refs, a.OwnerID), Visibility: a.Visibility, SharedWith: Audience{TeamIDs: []uuid.UUID{}, UserIDs: []uuid.UUID{}},
@@ -112,7 +113,9 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 			m.Name = a.Email
 		}
 		applySettings(&m, a)
-		m.Identities, m.DefaultFrom = identitiesOut(a, identities[a.ID])
+		if m.Identities, m.DefaultFrom, err = identitiesOut(ctx, fill, a, identities[a.ID]); err != nil {
+			return nil, err
+		}
 		if a.Visibility == VisibilityShared {
 			id := a.ID
 			if m.SharedWith, err = loadAudience(ctx, q, p.WorkspaceID, &id, nil); err != nil {

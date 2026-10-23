@@ -146,6 +146,14 @@ type MailIdentity struct {
 	SignatureSync     string     `json:"signature_sync" enum:"two_way,read_only,pull,none"`
 	DisplayNameSync   string     `json:"display_name_sync" enum:"two_way,read_only,pull,none"`
 	SignatureSyncedAt *time.Time `json:"signature_synced_at"`
+	// A From name or signature with variables is kept in opendesk: never written to Gmail,
+	// and Gmail's changes do not replace it ("Get from Gmail" does).
+	DisplayNameLocal bool `json:"display_name_local" doc:"The From name has variables, so Gmail keeps its own"`
+	SignatureLocal   bool `json:"signature_local" doc:"The signature has variables, so Gmail keeps its own"`
+	// FromName and FilledSignatureHTML are the From name and the signature filled for the
+	// caller, as the composer shows them (contracts/collab.md "Addresses").
+	FromName            string  `json:"from_name" doc:"The From name (its own, else the account's) filled for the caller"`
+	FilledSignatureHTML *string `json:"filled_signature_html" doc:"The signature filled for the caller; null when it has no variables"`
 }
 
 // OutOfOffice is an account's automatic reply as its provider keeps it (Gmail's vacation

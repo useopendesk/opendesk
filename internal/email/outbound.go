@@ -102,12 +102,12 @@ func loadTicketInfo(ctx context.Context, q db.Querier, wid, id uuid.UUID) (*tick
 		LEFT JOIN brands b ON b.id = t.brand_id AND b.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2 AND t.deleted_at IS NULL`, wid, id).
 		Scan(&t.id, &t.number, &t.subject, &t.mailboxID, &t.contactEmail, &blocked, &contactName, &t.brandID, &t.teamID,
-			&t.receivedAt, &t.names.team, &t.names.brand)
+			&t.receivedAt, &t.names.Team, &t.names.Brand)
 	t.contactBlocked = blocked != nil && *blocked
 	if contactName != nil {
 		t.contactName = displayname.Displayable(*contactName)
 	}
-	t.names.team, t.names.brand = displayname.Displayable(t.names.team), displayname.Displayable(t.names.brand)
+	t.names.Team, t.names.Brand = displayname.Displayable(t.names.Team), displayname.Displayable(t.names.Brand)
 	return &t, err
 }
 
@@ -383,13 +383,13 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 		return "", nil, err
 	}
 	names := t.names
-	names.mailbox = m.displayName()
+	names.Mailbox = m.displayName()
 	if authorID != nil {
 		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
-			names.agent = agentName(u.Name)
+			names.Agent = agentName(u.Name)
 		}
 	} else if bot.ai {
-		names.agent = agentName(bot.name)
+		names.Agent = agentName(bot.name)
 	}
 	alias := m.alias(t.receivedAt)
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), alias)
@@ -485,10 +485,10 @@ func (s *service) composeAndSendThread(ctx context.Context, wid, mid, ticketID, 
 		return "", nil, permanent("The thread has no recipient.")
 	}
 	names := t.names
-	names.mailbox = m.displayName()
+	names.Mailbox = m.displayName()
 	if authorID != nil {
 		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
-			names.agent = agentName(u.Name)
+			names.Agent = agentName(u.Name)
 		}
 	}
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), "")
@@ -757,7 +757,7 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 		return nil
 	}
 	names := t.names
-	names.mailbox = m.displayName()
+	names.Mailbox = m.displayName()
 	alias := m.alias(t.receivedAt)
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), alias)
 	inReplyTo, refs, err := threadHeaders(ctx, s.d.DB.Pool, a.WorkspaceID, t.id, uuid.Nil)

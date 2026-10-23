@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailIdentity, MailMessage } from "../api/types";
-import { defaultIdentity, fromLabel, identitiesOf, ownEmails, replyIdentity, sendableIdentities } from "./identities";
+import { collabFromName, defaultIdentity, fromLabel, identitiesOf, identitySignature, ownEmails, replyIdentity, sendableIdentities } from "./identities";
 
 const id = (p: Partial<MailIdentity>): MailIdentity => ({
   id: "x",
@@ -79,5 +79,13 @@ describe("identities", () => {
   it("names an address with the account's From name when it has none", () => {
     expect(fromLabel(account.identities[1], account)).toBe("Ours Sales <sales@ours.com>");
     expect(fromLabel(id({ email: "help@ours.com" }), account)).toBe("Mia <help@ours.com>");
+  });
+
+  it("shows the From name and signature filled for you", () => {
+    const shared = id({ email: "support@ours.com", display_name: "{agent} at Ours Support", from_name: "Maya Chen at Ours Support", signature_html: "<p>{{ agent.name }}</p>", filled_signature_html: "<p>Maya Chen</p>" });
+    expect(fromLabel(shared, account)).toBe("Maya Chen at Ours Support <support@ours.com>");
+    expect(identitySignature(shared)).toBe("<p>Maya Chen</p>");
+    expect(identitySignature(id({ signature_html: "<p>Plain</p>", filled_signature_html: null }))).toBe("<p>Plain</p>");
+    expect(collabFromName("{agent} at {mailbox}", { agent: "Maya Chen", account: "Support", workspace: "Ours" })).toBe("Maya Chen at Support");
   });
 });

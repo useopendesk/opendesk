@@ -175,8 +175,20 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			var raw []byte
 			var recipients []string
 			from := a.Email
-			if in.Body != nil {
-				id, out, err := s.saveDraft(ctx, p, target{a: a}, m, t.RemoteID, &t.ID, draftCompose(m, in.Body, true))
+			content := in.Body
+			if content == nil {
+				// Sent as saved, unless its From name has variables: then it is composed again
+				// from what was saved, so the name is the sender's (personal.go).
+				idents, err := accountIdentities(ctx, s.d.DB.Pool, a)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if snd, ok := usableSender(a, idents, m.From.Email); ok && nameTemplated(snd.Name) {
+					content = savedContent(m)
+				}
+			}
+			if content != nil {
+				id, out, err := s.saveDraft(ctx, p, target{a: a}, m, t.RemoteID, &t.ID, draftCompose(m, content, true))
 				if err != nil {
 					return nil, err
 				}
@@ -231,6 +243,19 @@ func (s *service) registerDraftRoutes(api huma.API) {
 
 // draftCompose is the compose input of a draft saved again: its Message-ID, its replies'
 // headers and the files it keeps.
+// savedContent is a draft's content as saved, for composing it again.
+func savedContent(m *messageRow) *draftContent {
+	emails := func(list []Address) []string {
+		out := make([]string, 0, len(list))
+		for _, x := range list {
+			out = append(out, x.Email)
+		}
+		return out
+	}
+	return &draftContent{To: emails(m.To), Cc: emails(m.Cc), Bcc: emails(m.Bcc), Subject: m.Subject, BodyHTML: m.BodyHTML,
+		FromEmail: m.From.Email}
+}
+
 func draftCompose(m *messageRow, c *draftContent, send bool) composeIn {
 	keep := []int{}
 	if c.KeepAttachments == nil {

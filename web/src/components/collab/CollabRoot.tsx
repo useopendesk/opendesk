@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMailAccounts } from "@/lib/collab/hooks";
 import { compose, useCompose } from "@/lib/collab/compose";
-import { defaultIdentity } from "@/lib/collab/identities";
+import { defaultIdentity, identitySignature } from "@/lib/collab/identities";
 import { springs } from "@/lib/motion";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CustomizeSidebar } from "./CustomizeSidebar";
@@ -65,7 +65,7 @@ function ComposeDock() {
                 initial={
                   draft.fromDraft
                     ? { ...draftFromMessage(draft.fromDraft), mode: "new" }
-                    : { ...startDraft("new", { ownEmail: account.email, signature: from.signature_html, subject: draft.subject, from: from.email }), to: draft.to ?? [], html: draft.html ?? startDraft("new", { ownEmail: account.email, signature: from.signature_html }).html }
+                    : { ...startDraft("new", { ownEmail: account.email, signature: identitySignature(from), subject: draft.subject, from: from.email }), to: draft.to ?? [], html: draft.html ?? startDraft("new", { ownEmail: account.email, signature: identitySignature(from) }).html }
                 }
                 autoFocus
                 onSent={() => compose.close()}

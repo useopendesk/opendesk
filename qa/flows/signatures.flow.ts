@@ -42,10 +42,10 @@ test("new mail carries the account's signature intact, and changing From swaps i
 
   await composer.getByRole("combobox", { name: "From" }).click();
   await page.getByRole("option", { name: /sales@margin\.app/ }).click();
-  await expect(signature.getByText("The Margin sales team")).toBeVisible();
+  await expect(signature.getByText(/Head of support, Margin Sales/)).toBeVisible();
   await expect(composer.getByText("Hi Nora, the seat count is confirmed for Friday.")).toBeVisible();
   await proof.dwell();
-  await proof.shot("composer-from-sales", { caption: "From Sales: its signature takes the block's place, the text stays" });
+  await proof.shot("composer-from-sales", { caption: "From Sales: its signature, with your name and title, takes the block's place; the text stays" });
 
   await composer.getByRole("combobox", { name: "From" }).click();
   await page.getByRole("option", { name: /maya@margin\.app/ }).click();

@@ -631,12 +631,15 @@ export const api = {
       sync: (id: string) => http.post<void>(`/v1/collab/accounts/${id}/sync`),
       /** Gmail only: replaces the signature with Gmail's now. */
       pullSignature: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/signature/pull`),
+      pullDisplayName: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/display-name/pull`),
       /** Written to the provider first: 502 provider_error, nothing saved, when it refuses. */
       setOutOfOffice: (id: string, b: T.MailOutOfOffice) => http.put<T.MailAccount>(`/v1/collab/accounts/${id}/out-of-office`, b),
       /** Addresses it sends from (contracts/collab.md "Addresses"): hand-added ones for Microsoft and IMAP. */
       addIdentity: (id: string, b: CollabIdentityBody & { email: string }) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities`, b),
       updateIdentity: (id: string, identityId: string, b: CollabIdentityBody) => http.patch<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`, b),
       pullIdentitySignature: (id: string, identityId: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}/signature/pull`),
+      pullIdentityDisplayName: (id: string, identityId: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}/display-name/pull`),
+      previewIdentity: (id: string, b: T.MailIdentityPreviewBody) => http.post<T.MailIdentityPreview>(`/v1/collab/accounts/${id}/identities/preview`, b),
       removeIdentity: (id: string, identityId: string) => http.del<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`),
       /** Microsoft: the account's other addresses, when Microsoft shares them. */
       identitySuggestions: (id: string) => http.get<{ addresses: string[] }>(`/v1/collab/accounts/${id}/identities/suggestions`),

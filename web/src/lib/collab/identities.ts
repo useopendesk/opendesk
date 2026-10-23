@@ -4,6 +4,7 @@
 // written to, new mail to the account's default. The server checks the choice again.
 
 import type { MailIdentity, MailMessage } from "../api/types";
+import { COLLAB_FROM_VARS, fillFromName } from "../fromname";
 import { formatAddress, normEmail } from "./recipients";
 
 /** What the helpers need of an account (MailAccount or a conversation's MailThreadAccount). */
@@ -65,9 +66,19 @@ export function replyIdentity(a: IdentityAccount, m?: MailMessage): MailIdentity
   return hit ?? defaultIdentity(a);
 }
 
-/** Its From name: its own, else the account's. */
+/** Its From name as your mail carries it: its own, else the account's, filled for you (a name may be "{agent} at Margin Support"). */
 export function identityName(i: MailIdentity, a: IdentityAccount): string {
-  return i.display_name || a.display_name;
+  return i.from_name ?? (i.display_name || a.display_name);
+}
+
+/** Its signature as your mail carries it: filled for you when it takes variables. */
+export function identitySignature(i: MailIdentity | undefined): string {
+  return i ? (i.filled_signature_html ?? i.signature_html) : "";
+}
+
+/** A Collab From name as typed, filled for the person writing (lib/fromname): {mailbox} reads the account's name. */
+export function collabFromName(format: string, v: { agent: string; account: string; workspace: string }): string {
+  return fillFromName(format, { agent: v.agent, mailbox: v.account, workspace: v.workspace }, COLLAB_FROM_VARS);
 }
 
 /** "Name <email>", the way the From picker shows it. */

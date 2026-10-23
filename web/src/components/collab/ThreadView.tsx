@@ -42,7 +42,7 @@ import { patchThreads } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
 import { useMailAccounts } from "@/lib/collab/hooks";
 import { hasReplyAll, replyTarget, type ComposeMode } from "@/lib/collab/recipients";
-import { ownEmails, replyIdentity } from "@/lib/collab/identities";
+import { identitySignature, ownEmails, replyIdentity } from "@/lib/collab/identities";
 import { cn } from "@/lib/cn";
 import { springs } from "@/lib/motion";
 import { qk, q } from "@/lib/queries";
@@ -644,7 +644,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
                   accounts={composerAccounts}
                   accountId={detail.account.id}
                   message={target}
-                  initial={startDraft(composer, { message: target, ownEmail, signature: replyFrom?.signature_html ?? detail.account.signature_html, from: replyFrom?.email, forwardBlock })}
+                  initial={startDraft(composer, { message: target, ownEmail, signature: replyFrom ? identitySignature(replyFrom) : detail.account.signature_html, from: replyFrom?.email, forwardBlock })}
                   suggestions={participants}
                   autoFocus
                   onDraftId={setComposerDraftId}

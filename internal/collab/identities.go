@@ -214,10 +214,12 @@ func replySender(a *accountRow, list []*identityRow, m *messageRow) sender {
 	return defaultSender(a, list)
 }
 
-// identitiesOut is the account's addresses for the API: its own first.
-func identitiesOut(a *accountRow, list []*identityRow) ([]MailIdentity, string) {
+// identitiesOut is the account's addresses for the API, its own first, with each one's
+// From name and signature filled for f's member.
+func identitiesOut(ctx context.Context, f *filler, a *accountRow, list []*identityRow) ([]MailIdentity, string, error) {
 	def := defaultSender(a, list).Email
 	st := a.settings()
+	google := a.Provider == ProviderGoogle
 	out := []MailIdentity{{Email: strings.ToLower(a.Email), DisplayName: a.DisplayName, SignatureHTML: a.SignatureHTML, ReplyTo: st.ReplyTo,
 		Primary: true, Default: strings.EqualFold(def, a.Email), Source: SourceAccount, Verification: VerificationAccepted, CanSend: true,
 		SignatureSync: signatureSync(a), DisplayNameSync: displayNameSync(a), SignatureSyncedAt: st.SignatureSyncedAt}}
@@ -231,7 +233,27 @@ func identitiesOut(a *accountRow, list []*identityRow) ([]MailIdentity, string) 
 			Default: x.Email == strings.ToLower(def), Source: x.Source, Verification: x.Verification, CanSend: x.usable(),
 			SignatureSync: mode, DisplayNameSync: mode, SignatureSyncedAt: x.Sync.SignatureSyncedAt})
 	}
-	return out, strings.ToLower(def)
+	for i := range out {
+		m := &out[i]
+		m.DisplayNameLocal = google && nameTemplated(m.DisplayName)
+		m.SignatureLocal = google && signatureTemplated(m.SignatureHTML)
+		format := m.DisplayName
+		if format == "" {
+			format = a.DisplayName
+		}
+		var err error
+		if m.FromName, err = f.fromName(ctx, a, format); err != nil {
+			return nil, "", err
+		}
+		if signatureTemplated(m.SignatureHTML) {
+			sig, err := f.signature(ctx, m.SignatureHTML, m.Email, m.FromName)
+			if err != nil {
+				return nil, "", err
+			}
+			m.FilledSignatureHTML = &sig
+		}
+	}
+	return out, strings.ToLower(def), nil
 }
 
 // cleanAddress reads one address ("Ada <ada@x.test>" or bare), lower case; "" when invalid.
@@ -293,16 +315,20 @@ func (s *service) applyGmailIdentities(ctx context.Context, tx pgx.Tx, a *accoun
 		}
 		before := *x
 		x.Source, x.Verification, x.ReplyTo, x.Position = SourceProvider, verification, replyTo, i
+		// A value with variables stays as the person wrote it (personal.go): Gmail's change
+		// is seen (the hash) but does not replace it.
 		if h := settingHash(sa.Signature); h != x.Sync.SignatureHash {
 			sig := email.SanitizeSettingsHTML(sa.Signature)
-			if x.Sync.SignatureHash != "" || sig != "" || x.SignatureHTML == "" {
+			if (x.Sync.SignatureHash != "" || sig != "" || x.SignatureHTML == "") && !signatureTemplated(x.SignatureHTML) {
 				x.SignatureHTML = sig
 			}
 			x.Sync.SignatureHash, x.Sync.SignatureSyncedAt = h, &now
 		}
 		if h := settingHash(sa.DisplayName); h != x.Sync.DisplayNameHash {
 			// Gmail leaves an address's name empty to use the account's: so does opendesk.
-			x.DisplayName = displayname.Clean(sa.DisplayName, displayname.Workspace)
+			if !nameTemplated(x.DisplayName) {
+				x.DisplayName = displayname.Clean(sa.DisplayName, displayname.Workspace)
+			}
 			x.Sync.DisplayNameHash = h
 		}
 		if byEmail[addr] == nil {

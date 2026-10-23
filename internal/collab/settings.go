@@ -204,8 +204,9 @@ func applyRemote(a *accountRow, st *settingsState, r remoteSettings, now time.Ti
 	if r.signature != nil {
 		if h := settingHash(*r.signature); h != st.SignatureHash {
 			sig := email.SanitizeSettingsHTML(*r.signature)
-			// The first read keeps a signature written in opendesk when the provider has none.
-			if st.SignatureHash != "" || sig != "" || a.SignatureHTML == "" {
+			// The first read keeps a signature written in opendesk when the provider has none,
+			// and one with variables stays as the person wrote it (personal.go).
+			if (st.SignatureHash != "" || sig != "" || a.SignatureHTML == "") && !signatureTemplated(a.SignatureHTML) {
 				a.SignatureHTML = sig
 			}
 			st.SignatureHash, st.SignatureSyncedAt, changed = h, &now, true
@@ -216,8 +217,9 @@ func applyRemote(a *accountRow, st *settingsState, r remoteSettings, now time.Ti
 		switch a.Provider {
 		case ProviderGoogle:
 			if h := settingHash(*r.displayName); h != st.DisplayNameHash {
-				// Gmail leaves the name empty to use the Google account's own.
-				if name != "" {
+				// Gmail leaves the name empty to use the Google account's own; a name with
+				// variables stays as the person wrote it.
+				if name != "" && !nameTemplated(a.DisplayName) {
 					a.DisplayName = name
 				}
 				st.DisplayNameHash, changed = h, true

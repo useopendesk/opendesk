@@ -320,6 +320,17 @@ func (c *Context) Signature() string {
 	return ""
 }
 
+// SetMailbox sets the sending address's variables (mailbox.name, mailbox.email) after Load,
+// and fills the personal signature again with them: one Load serves each of a Collab
+// account's addresses.
+func (c *Context) SetMailbox(name, email string) {
+	c.Values.Text["mailbox.name"], c.Values.Text["mailbox.email"] = Inert(name), Inert(email)
+	delete(c.Values.HTML, "agent.signature")
+	if strings.TrimSpace(c.PersonalSignature) != "" {
+		c.Values.HTML["agent.signature"] = SanitizeForSend(Render(c.PersonalSignature, c.Values, HTML))
+	}
+}
+
 // Fill renders src (design HTML) with the context's values, ready to send.
 func (c *Context) Fill(src string) string { return SanitizeForSend(Render(src, c.Values, HTML)) }
 

@@ -285,12 +285,39 @@ function preview(ws: WsData, b: Record<string, unknown>): TemplatePreview {
   return { subject: textOf(subject), html, text: [textOf(content), signature ? `-- \n${textOf(signature)}` : "", textOf(footer)].filter(Boolean).join("\n\n") + "\n", problems: probs };
 }
 
+/** The groups a kind reads when it takes only some (a Collab signature: the sender, the address, the workspace and the date). */
+const KIND_GROUPS = (defaults as TemplateCatalog).kind_groups ?? {};
+const groupOf = new Map(defaults.variables.map((v) => [v.key, v.group]));
+
+/**
+ * A Collab signature filled for the person writing (contracts/collab.md "Addresses"):
+ * agent.* is you, mailbox.* the address and its From name, and nothing of a ticket.
+ */
+export function fillForSender(ws: WsData, src: string, mailbox: { name: string; email: string }): string {
+  const vals = valuesFor(ws, {});
+  vals.text["mailbox.name"] = mailbox.name;
+  vals.text["mailbox.email"] = mailbox.email;
+  vals.html["agent.signature"] = fill(profileOf(ws, me().id).signature_html, { text: vals.text, html: {} });
+  return fill(src, vals);
+}
+
+/** What is wrong with a Collab signature: unknown variables, and ones it has nothing to read for. */
+export function collabSignatureProblems(src: string): TemplateProblem[] {
+  const out = problems(src, "signature");
+  const groups = KIND_GROUPS.collab_signature ?? [];
+  for (const m of src.matchAll(/\{\{\s*([\w.]+)[^}]*\}\}/g)) {
+    const g = groupOf.get(m[1]) ?? (m[1].includes(".fields.") ? "contact" : undefined);
+    if (g && !groups.includes(g)) out.push({ message: `{{ ${m[1]} }} has nothing to read here: mail from an account has no ticket, customer, team or brand.`, token: m[0] });
+  }
+  return out;
+}
+
 export function registerTemplates() {
   get("/v1/templates/variables", (ctx) => {
     const fields = ctx.ws.customFields
       .filter((f) => !f.archived)
       .map((f) => ({ key: `${f.entity}.fields.${f.key}`, group: f.entity, label: f.name, description: f.description || "A custom field.", example: "", html: false, list: f.type === "multi_select" }));
-    return { variables: [...defaults.variables, ...fields], slots: defaults.slots, filters: defaults.filters, tags: defaults.tags };
+    return { variables: [...defaults.variables, ...fields], slots: defaults.slots, filters: defaults.filters, tags: defaults.tags, kind_groups: KIND_GROUPS };
   });
 
   post("/v1/templates/preview", (ctx) => preview(ctx.ws, ctx.body));

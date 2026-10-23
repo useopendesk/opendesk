@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 // Routes of an account's addresses (identities.go, contracts/collab.md "Addresses"):
@@ -32,7 +34,7 @@ var (
 
 type identityInput struct {
 	Email         string  `json:"email" maxLength:"254"`
-	DisplayName   *string `json:"display_name,omitempty" maxLength:"64" doc:"The From name; empty uses the account's"`
+	DisplayName   *string `json:"display_name,omitempty" maxLength:"200" doc:"The From name; empty uses the account's. May name the sender: {agent}, {agent_first}, {mailbox}, {workspace}"`
 	SignatureHTML *string `json:"signature_html,omitempty"`
 	ReplyTo       *string `json:"reply_to,omitempty" maxLength:"254" doc:"Replies go here; empty: to the address itself"`
 }
@@ -41,10 +43,26 @@ type identityPatchInput struct {
 	ID         string `path:"id"`
 	IdentityID string `path:"identity_id"`
 	Body       struct {
-		DisplayName   *string `json:"display_name,omitempty" maxLength:"64" doc:"The From name; empty uses the account's"`
+		DisplayName   *string `json:"display_name,omitempty" maxLength:"200" doc:"The From name; empty uses the account's. May name the sender: {agent}, {agent_first}, {mailbox}, {workspace}"`
 		SignatureHTML *string `json:"signature_html,omitempty"`
 		ReplyTo       *string `json:"reply_to,omitempty" maxLength:"254" doc:"Hand-added addresses only"`
 	}
+}
+
+type identityPreviewInput struct {
+	Email         string `json:"email,omitempty" maxLength:"254" doc:"The address; empty is the account's own"`
+	DisplayName   string `json:"display_name" maxLength:"200" doc:"The From name as typed; empty uses the account's"`
+	SignatureHTML string `json:"signature_html,omitempty"`
+}
+
+// IdentityPreview is an address's From name and signature filled for the caller.
+type IdentityPreview struct {
+	FromName      string `json:"from_name"`
+	From          string `json:"from" doc:"The From header: \"Name <address>\""`
+	SignatureHTML string `json:"signature_html"`
+	// FromNameProblem says what is wrong with the From name; "" when nothing.
+	FromNameProblem string              `json:"from_name_problem"`
+	Problems        []templates.Problem `json:"problems" doc:"What is wrong with the signature"`
 }
 
 type identityPathInput struct {
@@ -192,6 +210,64 @@ func (s *service) registerIdentityRoutes(api huma.API) {
 			return s.accountReply(ctx, p, a.ID)
 		})
 
+	collabOp(api, huma.Operation{OperationID: "pull-collab-identity-display-name", Method: http.MethodPost,
+		Path:    "/v1/collab/accounts/{id}/identities/{identity_id}/display-name/pull",
+		Summary: "Replace an address's From name with its Gmail one"},
+		func(ctx context.Context, in *identityPathInput) (*accountBody, error) {
+			p, a, x, err := s.manageableIdentity(ctx, in.ID, in.IdentityID)
+			if err != nil {
+				return nil, err
+			}
+			if x.Source != SourceProvider {
+				return nil, errNameUnsupported
+			}
+			sa, err := (&gmailProvider{s: s, a: a}).sendAsOf(ctx, x.Email)
+			if err != nil {
+				return nil, errSettingsProvider(err)
+			}
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if _, err := loadAccountForUpdate(ctx, tx, a.ID); err != nil {
+					return err
+				}
+				x, err := scanIdentity(tx.QueryRow(ctx, `SELECT `+identityColumns+` FROM collab_identities WHERE id = $1 AND account_id = $2`, x.ID, a.ID))
+				if err != nil {
+					return notFound(err, "Address")
+				}
+				// Gmail's empty name uses the account's, as in the sync.
+				x.DisplayName = displayname.Clean(sa.DisplayName, displayname.Workspace)
+				x.Sync.DisplayNameHash = settingHash(sa.DisplayName)
+				if err := saveIdentity(ctx, tx, x); err != nil {
+					return err
+				}
+				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "collab.account_updated", "collab_account", &a.ID,
+					map[string]any{"fields": []string{"identities"}, "identity_id": x.ID, "identity_fields": []string{"display_name"}, "from_provider": true}); err != nil {
+					return err
+				}
+				return s.publishAccounts(ctx, tx, p.WorkspaceID, a.ID, nil)
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return s.accountReply(ctx, p, a.ID)
+		})
+
+	collabOp(api, huma.Operation{OperationID: "preview-collab-identity", Method: http.MethodPost, Path: "/v1/collab/accounts/{id}/identities/preview",
+		Summary: "Fill an address's From name and signature for you", Description: "Without saving: what your mail from the address would carry, and what is wrong with them."},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body identityPreviewInput
+		}) (*struct{ Body IdentityPreview }, error) {
+			p, a, err := s.manageable(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			out, err := s.previewIdentity(ctx, p, a, in.Body)
+			if err != nil {
+				return nil, err
+			}
+			return &struct{ Body IdentityPreview }{out}, nil
+		})
+
 	collabOp(api, huma.Operation{OperationID: "remove-collab-identity", Method: http.MethodDelete, Path: "/v1/collab/accounts/{id}/identities/{identity_id}",
 		Summary: "Remove an address a mail account sends from", Description: "Hand-added addresses; Gmail's go when Gmail no longer lists them."},
 		func(ctx context.Context, in *identityPathInput) (*accountBody, error) {
@@ -268,6 +344,46 @@ func (s *service) registerIdentityRoutes(api huma.API) {
 		})
 }
 
+// previewIdentity fills a From name and signature as typed, for the caller.
+func (s *service) previewIdentity(ctx context.Context, p *auth.Principal, a *accountRow, b identityPreviewInput) (IdentityPreview, error) {
+	out := IdentityPreview{Problems: []templates.Problem{}}
+	if len(b.SignatureHTML) > maxSignatureHTML {
+		return out, httpx.Validation("The signature is too long.")
+	}
+	addr := cleanAddress(b.Email)
+	if addr == "" {
+		addr = strings.ToLower(a.Email)
+	}
+	format := strings.TrimSpace(b.DisplayName)
+	if format == "" {
+		format = a.DisplayName
+	}
+	if _, err := cleanFromName("display_name", format); err != nil {
+		var e *httpx.Error
+		if !errors.As(err, &e) {
+			return out, httpx.Wrap(err)
+		}
+		out.FromNameProblem = e.Detail
+		format = ""
+	}
+	f := s.fillerFor(s.d.DB.Pool, p.WorkspaceID, p.UserID)
+	name, err := f.fromName(ctx, a, format)
+	if err != nil {
+		return out, httpx.Wrap(err)
+	}
+	sig := templates.Protect(b.SignatureHTML, email.SanitizeSettingsHTML)
+	out.Problems = append(out.Problems, templates.Check(sig, templates.KindCollabSignature, nil)...)
+	if out.SignatureHTML, err = f.signature(ctx, sig, addr, name); err != nil {
+		return out, httpx.Wrap(err)
+	}
+	out.FromName = name
+	out.From = addr
+	if name != "" {
+		out.From = name + " <" + addr + ">"
+	}
+	return out, nil
+}
+
 // manageableIdentity reads the path ids: the account the caller manages and its address.
 func (s *service) manageableIdentity(ctx context.Context, rawAccount, rawIdentity string) (*auth.Principal, *accountRow, *identityRow, error) {
 	p, a, err := s.manageable(ctx, rawAccount)
@@ -291,19 +407,20 @@ func (s *service) manageableIdentity(ctx context.Context, rawAccount, rawIdentit
 func applyIdentityFields(x *identityRow, name, signature, replyTo *string) ([]string, error) {
 	var changed []string
 	if name != nil {
-		dn, err := displayname.Validate("From name", *name, displayname.Workspace, true)
+		dn, err := cleanFromName("display_name", *name)
 		if err != nil {
-			return nil, httpx.Wrap(err)
+			return nil, err
 		}
 		if dn != x.DisplayName {
 			x.DisplayName, changed = dn, append(changed, "display_name")
 		}
 	}
 	if signature != nil {
-		if len(*signature) > maxSignatureHTML {
-			return nil, httpx.Validation("The signature is too long.")
+		sig, err := cleanSignature(*signature)
+		if err != nil {
+			return nil, err
 		}
-		if sig := email.SanitizeSettingsHTML(*signature); sig != x.SignatureHTML {
+		if sig != x.SignatureHTML {
 			x.SignatureHTML, changed = sig, append(changed, "signature_html")
 		}
 	}

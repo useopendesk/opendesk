@@ -82,6 +82,34 @@ describe("mock Collab", () => {
     expect(added.identities.map((i: { email: string }) => i.email)).toContain("deals@margin.app");
   });
 
+  it("fills a From name and signature that name whoever sends, and keeps them from Gmail", async () => {
+    type Ident = { id: string | null; email: string; display_name: string; from_name: string; signature_html: string; filled_signature_html: string | null; display_name_local: boolean; signature_local: boolean };
+    const accounts = (await call("GET", "/v1/collab/accounts")).body as { id: string; provider: string; email: string; identities: Ident[] }[];
+    const sales = accounts.find((a) => a.provider === "microsoft")!;
+    const own = sales.identities[0];
+    expect(own.display_name).toBe("{agent} at Margin Sales");
+    expect(own.from_name).toMatch(/ at Margin Sales$/);
+    expect(own.from_name).not.toContain("{");
+    expect(own.filled_signature_html).toContain("Head of support, Margin Sales");
+    const sent = (await call("POST", "/v1/collab/messages", { account_id: sales.id, mode: "new", to: ["x@example.com"], subject: "s", body_html: "<p>b</p>" })).body;
+    expect(sent.from.name).toBe(own.from_name);
+
+    const gmail = accounts.find((a) => a.provider === "google")!;
+    const support = gmail.identities.find((i) => i.email === "support@margin.app")!;
+    const edited = (await call("PATCH", `/v1/collab/accounts/${gmail.id}/identities/${support.id}`, { display_name: "{agent} at Margin Support" })).body;
+    const now = edited.identities.find((i: Ident) => i.email === "support@margin.app") as Ident;
+    expect(now).toMatchObject({ display_name: "{agent} at Margin Support", display_name_local: true });
+    expect(now.from_name).toMatch(/ at Margin Support$/);
+    expect((await call("PATCH", `/v1/collab/accounts/${gmail.id}/identities/${support.id}`, { display_name: "{agent} for {team}" })).status).toBe(422);
+    expect((await call("PATCH", `/v1/collab/accounts/${gmail.id}`, { signature_html: "<p>{{ ticket.subject }}</p>" })).status).toBe(422);
+    const pulled = (await call("POST", `/v1/collab/accounts/${gmail.id}/identities/${support.id}/display-name/pull`)).body;
+    expect(pulled.identities.find((i: Ident) => i.email === "support@margin.app").display_name).toBe("Margin Support");
+
+    const preview = (await call("POST", `/v1/collab/accounts/${gmail.id}/identities/preview`, { email: "support@margin.app", display_name: "{agent_first} from {workspace}", signature_html: "<p>{{ mailbox.name }}</p>" })).body;
+    expect(preview.from).toMatch(/^\S+ from .+ <support@margin\.app>$/);
+    expect(preview.signature_html).toContain(preview.from_name);
+  });
+
   it("saves, sends and discards drafts", async () => {
     const drafts = (await call("GET", "/v1/collab/threads?box=drafts")).body.data as { id: string }[];
     expect(drafts.length).toBeGreaterThanOrEqual(2);
