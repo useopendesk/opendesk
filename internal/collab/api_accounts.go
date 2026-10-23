@@ -51,6 +51,7 @@ type updateAccountInput struct {
 		Visibility    *string    `json:"visibility,omitempty" enum:"private,shared"`
 		SharedWith    *Audience  `json:"shared_with,omitempty"`
 		IMAP          *imapPatch `json:"imap,omitempty"`
+		DefaultFrom   *string    `json:"default_from,omitempty" maxLength:"254" doc:"The address new mail goes out from: the account's own or one of its usable addresses"`
 	}
 }
 
@@ -194,11 +195,27 @@ func (s *service) registerAccountRoutes(api huma.API) {
 				changed = append(changed, "imap")
 			}
 
+			// The default address for new mail: checked before anything is written.
+			if b.DefaultFrom != nil {
+				if _, ok := usableSenderOf(ctx, s, a, *b.DefaultFrom); !ok {
+					return nil, httpx.Validation("Choose one of the account's addresses that can send.")
+				}
+			}
+
 			// A signature or From name that syncs two-way is made at Gmail first: a refusal
 			// saves nothing (502 provider_error).
 			pushed, err := s.pushAccountSettings(ctx, a, changed)
 			if err != nil {
 				return nil, err
+			}
+			newDefault := ""
+			if b.DefaultFrom != nil {
+				if newDefault, err = s.chooseDefault(ctx, s.d.DB.Pool, a, *b.DefaultFrom); err != nil {
+					return nil, err
+				}
+				if newDefault != "" {
+					changed = append(changed, "default_from")
+				}
 			}
 
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -213,6 +230,11 @@ func (s *service) registerAccountRoutes(api huma.API) {
 				}
 				if err := s.recordAccountPatch(ctx, tx, a.ID, pushed, changed); err != nil {
 					return err
+				}
+				if newDefault != "" {
+					if err := s.recordDefault(ctx, tx, a, newDefault); err != nil {
+						return err
+					}
 				}
 				if sealed != nil {
 					// Working settings end a refused connection; a sync starts now. The new

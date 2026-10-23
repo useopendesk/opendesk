@@ -1,5 +1,5 @@
-// One mail account: its name, From name and colour, the signature its mail carries, its
-// automatic reply (each synced with the provider where it can be: AccountSettings), who it
+// One mail account: its name, From name and colour, the signature its mail carries, the
+// addresses it sends from (AddressesSection), its automatic reply (each synced with the provider where it can be: AccountSettings), who it
 // is shared with, its server settings (IMAP), its sync, and disconnecting it.
 // Only whoever connected it (and workspace admins, for a shared one) can change it.
 
@@ -18,6 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { ACCOUNT_TONES, ProviderMark } from "@/components/collab/bits";
 import { FromNameHint, OutOfOfficeSection, SignatureSync } from "@/components/collab/AccountSettings";
+import { AddressesSection } from "@/components/collab/AddressesSection";
 import { ImapFields, imapValid, type ImapForm } from "@/components/collab/ConnectAccount";
 import { audienceIsEmpty, ChoiceCard, SharedAudience } from "@/components/collab/pickers";
 import { api, type CollabAccountPatch } from "@/lib/api/endpoints";
@@ -256,6 +257,8 @@ export default function MailAccountDetail() {
           />
         </div>
       </Section>
+
+      <AddressesSection account={account} manage={manage} />
 
       <OutOfOfficeSection account={account} manage={manage} onReconnect={() => void reconnect(account)} />
 

@@ -138,14 +138,15 @@ export const MailMessageItem = memo(function MailMessageItem({
   onToggle,
 }: {
   m: MailMessage;
-  ownEmail: string;
+  /** The account's addresses: its own and its aliases. */
+  ownEmail: string | readonly string[];
   open: boolean;
   onToggle: () => void;
 }) {
   const { t } = useTranslation("collab");
   const [remote, setRemote] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
-  const external = normEmail(m.from.email) !== normEmail(ownEmail);
+  const external = !(typeof ownEmail === "string" ? [ownEmail] : ownEmail).some((e) => normEmail(e) === normEmail(m.from.email));
   const name = m.from.name || m.from.email;
   const { body, quoted } = useMailBody(m, external, remote);
   const held = body.held + (showQuoted && quoted ? quoted.held : 0);

@@ -55,6 +55,33 @@ describe("mock Collab", () => {
     expect(kept.mail_tabs).toEqual(["inbox", "spam"]);
   });
 
+  it("lists a Gmail account's send-as addresses and sends from the one a message was written to", async () => {
+    const accounts = (await call("GET", "/v1/collab/accounts")).body as { id: string; provider: string; email: string; identities: { id: string | null; email: string; can_send: boolean; primary: boolean }[] }[];
+    const gmail = accounts.find((a) => a.provider === "google")!;
+    expect(gmail.identities[0].primary).toBe(true);
+    expect(gmail.identities.map((i) => i.email)).toContain("support@margin.app");
+    expect(gmail.identities.find((i) => i.email === "press@margin.app")?.can_send).toBe(false);
+    const toAlias = (await call("GET", `/v1/collab/threads?box=inbox&account_id=${gmail.id}&to=support@margin.app`)).body.data as { id: string; to_address: string | null }[];
+    expect(toAlias.length).toBe(1);
+    expect(toAlias[0].to_address).toBe("support@margin.app");
+    const detail = (await call("GET", `/v1/collab/threads/${toAlias[0].id}`)).body;
+    expect(detail.messages[0].own_address).toBe("support@margin.app");
+    const sent = (await call("POST", "/v1/collab/messages", { account_id: gmail.id, mode: "reply", message_id: detail.messages[0].id, to: ["priya@cobalt.dev"], subject: "", body_html: "<p>On it</p>" })).body;
+    expect(sent.from.email).toBe("support@margin.app");
+    expect((await call("POST", "/v1/collab/messages", { account_id: gmail.id, mode: "new", to: ["x@example.com"], subject: "s", body_html: "b", from_email: "press@margin.app" })).status).toBe(422);
+    expect((await call("POST", `/v1/collab/accounts/${gmail.id}/identities`, { email: "new@margin.app" })).body.code).toBe("identities_from_provider");
+    // An address's signature is kept in opendesk; Get from Gmail brings Gmail's back.
+    const support = gmail.identities.find((i) => i.email === "support@margin.app")!;
+    const gmailSig = (support as unknown as { signature_html: string }).signature_html;
+    const edited = (await call("PATCH", `/v1/collab/accounts/${gmail.id}/identities/${support.id}`, { signature_html: "<p>Ours</p>" })).body;
+    expect(edited.identities.find((i: { email: string }) => i.email === "support@margin.app")).toMatchObject({ signature_html: "<p>Ours</p>", signature_sync: "pull" });
+    const pulled = (await call("POST", `/v1/collab/accounts/${gmail.id}/identities/${support.id}/signature/pull`)).body;
+    expect(pulled.identities.find((i: { email: string }) => i.email === "support@margin.app").signature_html).toBe(gmailSig);
+    const ms = accounts.find((a) => a.provider === "microsoft")!;
+    const added = (await call("POST", `/v1/collab/accounts/${ms.id}/identities`, { email: "deals@margin.app", display_name: "Deals" })).body;
+    expect(added.identities.map((i: { email: string }) => i.email)).toContain("deals@margin.app");
+  });
+
   it("saves, sends and discards drafts", async () => {
     const drafts = (await call("GET", "/v1/collab/threads?box=drafts")).body.data as { id: string }[];
     expect(drafts.length).toBeGreaterThanOrEqual(2);

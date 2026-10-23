@@ -235,9 +235,29 @@ interface MailAccount {
   display_name_sync: SettingSync       // google: like the signature; microsoft: read_only until a person changes it here, then none; imap: none
   out_of_office: OutOfOffice | null    // null for IMAP, without MailboxSettings, and until first read
   out_of_office_sync: SettingSync      // google: like the signature; microsoft: two_way with MailboxSettings.ReadWrite, else none; imap: none
+  identities: MailIdentity[]   // the addresses it sends from, its own first ("Addresses")
+  default_from: string         // the address new mail goes out from, lower case
+}
+
+interface MailIdentity {
+  id: string | null            // null for the account's own address
+  email: string                // lower case
+  display_name: string         // the From name; "" uses the account's display_name
+  signature_html: string       // sanitized with the signature allowlist
+  reply_to: string             // replies go here when set ("" none)
+  primary: boolean             // the account's own address: its From name and signature are the account's
+  default: boolean             // new mail goes out from it (exactly one)
+  source: "account" | "provider" | "manual"   // provider: Gmail's send-as list; manual: added by hand (Microsoft, IMAP)
+  verification: "accepted" | "pending"         // pending: Gmail waits for the address's owner to confirm it
+  can_send: boolean            // false while pending
+  signature_sync: SettingSync | "pull"  // account: the account's; provider: pull; manual: none
+  display_name_sync: SettingSync | "pull"
+  signature_synced_at: string | null
 }
 
 type SettingSync = "two_way" | "read_only" | "none"
+// An address's settings can also be "pull": read from the provider when they change there, a
+// change made in opendesk kept in opendesk (Gmail's send-as addresses other than the primary).
 
 interface OutOfOffice {        // the automatic reply as the provider keeps it
   enabled: boolean
@@ -277,6 +297,7 @@ interface MailThread {
   shared: boolean              // shared on its own beyond its account's audience
   assignees: UserRef[]
   comment_count: number
+  to_address: string | null    // the account's address other than its own the conversation was written to or sent from (an alias), newest first
 }
 
 interface MailMessage {
@@ -302,6 +323,7 @@ interface MailMessage {
   sent_by: UserRef | null      // the teammate who sent it from opendesk (for a draft, who saved it)
   draft_id: string | null      // drafts: the id the /v1/collab/drafts routes take (the message's id)
   in_reply_to_id: string | null  // the message of the conversation it answers (its In-Reply-To), when stored
+  own_address: string | null   // the account's address (its own or an alias) it was sent from, else the first in its To, Cc, then Delivered-To / X-Original-To
 }
 
 interface MailAttachment {
@@ -326,7 +348,8 @@ interface MailComment {
 
 interface MailThreadDetail {
   thread: MailThread
-  account: { id: string; email: string; name: string; display_name: string; color: string; provider: string; signature_html: string }
+  account: { id: string; email: string; name: string; display_name: string; color: string; provider: string; signature_html: string;
+             identities: MailIdentity[]; default_from: string }
   messages: MailMessage[]      // oldest first
   comments: MailComment[]      // oldest first
   shares: Audience             // the conversation's own shares
@@ -404,7 +427,12 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/oauth/{provider}/start` | agent+ | `{visibility, shared_with? (at most 40 teams and people: it travels in the signed state; add more afterwards), name?, email? (login hint), account_id? (reconnect, manage)}` → `{url}`; sets the flow cookie (send with credentials). `422 provider_not_configured` |
 | GET | `/v1/collab/accounts/oauth/{provider}/callback` | provider | redirects to `APP_URL/settings/mail-accounts?connected=<id>` or `?error=<code>`: `oauth_state`, `access_denied`, `provider_error`, `account_conflict` (the address is already connected in this workspace by someone else), `collab_required`, `forbidden`, `internal` |
 | POST | `/v1/collab/accounts/imap` | agent+ | `{email, name?, display_name?, imap_host, imap_port, imap_tls, imap_username?, password, smtp_host, smtp_port, smtp_tls, smtp_username?, smtp_password?, visibility, shared_with?}` → `MailAccount`. Both servers are tried first: `422 connection_failed` with `detail`. `409 account_conflict`. `422 imap_unavailable` with `COLLAB_IMAP` off |
-| PATCH | `/v1/collab/accounts/{id}` | manage | `{name?, display_name?, color?, signature_html?, visibility?, shared_with?, imap? {…same fields, password?, smtp_password?}}` → `MailAccount`; new IMAP settings are tried first. A changed `signature_html` or `display_name` that syncs `two_way` is made at Gmail first (sanitized): a refusal is `502 provider_error` and nothing of the change is saved. `read_only` and `none` save in opendesk only. A changed `display_name` stops a Microsoft account following its profile name |
+| PATCH | `/v1/collab/accounts/{id}` | manage | `{name?, display_name?, color?, signature_html?, visibility?, shared_with?, imap? {…same fields, password?, smtp_password?}, default_from?}` → `MailAccount`; `default_from` must be one of its addresses that can send (`422 validation_failed`) and is kept in opendesk (Gmail's own change of its default still comes in, "Addresses"); new IMAP settings are tried first. A changed `signature_html` or `display_name` that syncs `two_way` is made at Gmail first (sanitized): a refusal is `502 provider_error` and nothing of the change is saved. `read_only` and `none` save in opendesk only. A changed `display_name` stops a Microsoft account following its profile name |
+| POST | `/v1/collab/accounts/{id}/identities` | manage | Add an address ("Addresses"): `{email, display_name?, signature_html?, reply_to?}` → `MailAccount`. Microsoft and IMAP only (`422 identities_from_provider` for Gmail); `409 identity_conflict` for the account's own or an existing address; at most 50 |
+| PATCH | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | `{display_name?, signature_html?, reply_to? (hand-added only)}` → `MailAccount`. Saved in opendesk; a Gmail address's From name and signature are replaced by Gmail's when they next change there (`pull`) |
+| POST | `/v1/collab/accounts/{id}/identities/{identity_id}/signature/pull` | manage | → `MailAccount` with the address's signature replaced by Gmail's now (`GET sendAs/{email}`). `422 signature_sync_unsupported` for a hand-added address; `502 provider_error` when Gmail refuses |
+| DELETE | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | → `MailAccount`. Hand-added only (`422 identities_from_provider` for Gmail's); the default for new mail goes back to the account's own address when it was this one |
+| GET | `/v1/collab/accounts/{id}/identities/suggestions` | manage | `{addresses: string[]}`: Microsoft's `proxyAddresses` aliases not added yet, when Graph answers; empty otherwise (and for other providers) |
 | POST | `/v1/collab/accounts/{id}/signature/pull` | manage | → `MailAccount` with the signature replaced by Gmail's now. `422 signature_sync_unsupported` for Microsoft and IMAP; `502 provider_error` when Gmail refuses |
 | PUT | `/v1/collab/accounts/{id}/out-of-office` | manage | `OutOfOffice` → `MailAccount`. Written to the provider first (`502 provider_error`, nothing saved, when it refuses), then stored as the provider answered it. `422 out_of_office_read_only` (`read_only`), `422 out_of_office_unsupported` (`none`), `422` when the end is not after the start, or (Microsoft) when enabled with only one of start and end |
 | DELETE | `/v1/collab/accounts/{id}` | manage | → 204. Removes the account and its mail from opendesk; nothing is deleted at the provider |
@@ -413,7 +441,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
-| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches subject, participants, snippet and body text |
+| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches subject, participants, snippet and body text |
 | GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts}: number, accounts: Record<id, number>, folders: Record<id, number>}`: unread conversations; `shared` and `assigned` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?}` → `{threads: MailThread[]}`. Threads the caller cannot act on are `404` (all or nothing) |
@@ -422,9 +450,9 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/threads/{id}/comments` | act | `{body_html: 1..20000, mentions?: string[]}` → `MailComment`; each mentioned member who can see it gets a `collab_mention` notification; a mention of someone who cannot see it shares the conversation with them |
 | PATCH | `/v1/collab/comments/{id}` | its author | `{body_html}` → `MailComment` |
 | DELETE | `/v1/collab/comments/{id}` | its author, or an admin | → 204 |
-| POST | `/v1/collab/messages` | act on the account | Send: `{account_id, mode: "new" \| "reply" \| "reply_all" \| "forward", message_id? (the `MailMessage.id` replied to or forwarded; required unless new), to: string[], cc?: string[], bcc?: string[], subject, body_html, attachment_ids?: string[] (POST /v1/attachments uploads of the caller), forward_attachments?: boolean}` → `MailMessage`. At most 100 recipients, 25 MB of files. Sent through the provider within the request (`502 send_failed` with the provider's reason, nothing stored); then stored in the conversation (a reply stays in its conversation) and in Sent. The server sends `body_html` as written: the composer adds the signature and, for a forward, the original. Someone who sees only one conversation (shared or assigned) may reply to it or forward it; new mail needs sight of the account. At most 60 a minute per person (`429 rate_limited`) |
+| POST | `/v1/collab/messages` | act on the account | Send: `{account_id, mode: "new" \| "reply" \| "reply_all" \| "forward", message_id? (the `MailMessage.id` replied to or forwarded; required unless new), to: string[], cc?: string[], bcc?: string[], subject, body_html, attachment_ids?: string[] (POST /v1/attachments uploads of the caller), forward_attachments?: boolean, from_email?}` → `MailMessage`. `from_email` is the address it goes out from and must be one of the account's addresses that can send (`422 validation_failed`); left out, a reply or forward goes from the address the original was written to, new mail from the default ("Addresses"). At most 100 recipients, 25 MB of files. Sent through the provider within the request (`502 send_failed` with the provider's reason, nothing stored); then stored in the conversation (a reply stays in its conversation) and in Sent. The server sends `body_html` as written: the composer adds the signature and, for a forward, the original. Someone who sees only one conversation (shared or assigned) may reply to it or forward it; new mail needs sight of the account. At most 60 a minute per person (`429 rate_limited`) |
 | POST | `/v1/collab/drafts` | act on the account | Save a new draft ("Drafts"): the body of `POST /v1/collab/messages`, recipients optional → `MailMessage` (`draft: true`, `draft_id`). Saved at the provider first (`502 provider_error` with detail, nothing stored). At most 120 saves a minute per person (`429 rate_limited`) |
-| PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[]}` → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute |
+| PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[], from_email?}` (left out keeps the draft's From when it can still send) → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute |
 | DELETE | `/v1/collab/drafts/{id}` | act on its conversation | Discard → 204: deleted at the provider, then here (a new-mail draft's conversation with it) |
 | POST | `/v1/collab/drafts/{id}/send` | act on its conversation | Send it; the body (as for `PUT`) is optional: when given the draft is saved with it first, else it goes as saved. Needs a recipient. → `MailMessage`, the sent message, stored like `POST /v1/collab/messages` does (in the draft's conversation and in Sent) with the draft removed. `502 send_failed`; counts toward the 60 sends a minute |
 | GET | `/v1/collab/messages/{id}/details` | see | `MessageDetails` ("Message details"), read from the message's source (stored, else the provider: `502 provider_error`) |
@@ -435,7 +463,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 Errors: `402 collab_required`, `404 not_found`, `422 labels_unsupported`, `422 connection_failed`,
 `409 account_conflict`, `502 provider_error`, `502 send_failed`, `422 provider_not_configured`,
 `422 imap_unavailable`, `422 rename_unsupported`, `422 drafts_unsupported`, `422 signature_sync_unsupported`,
-`422 out_of_office_read_only`, `422 out_of_office_unsupported`.
+`422 out_of_office_read_only`, `422 out_of_office_unsupported`, `422 identities_from_provider`, `409 identity_conflict`.
 
 ## Account settings
 
@@ -447,12 +475,16 @@ the From name and the automatic reply (out of office). `MailAccount.*_sync` says
 | signature | two-way with Gmail's sendAs `signature` (read only without `gmail.settings.basic`) | opendesk only: Graph has no signature API | opendesk only |
 | From name | two-way with sendAs `displayName` (read only without the scope; an empty Gmail name changes nothing) | read from the profile (`/me` `displayName`) at connect and on each read, until a person changes it in opendesk | opendesk only |
 | automatic reply | two-way with `users/me/settings/vacation` (read only without the scope) | two-way with `/me/mailboxSettings` `automaticRepliesSetting` (needs `MailboxSettings.ReadWrite`; none without it) | none |
+| other addresses ("Addresses") | Gmail's send-as list; each one's From name and signature `pull`: Gmail's changes come in, edits stay in opendesk | added by hand, opendesk only | added by hand, opendesk only |
+| default address for new mail | Gmail's `isDefault` read when it changes there; a choice here stays in opendesk | opendesk only | opendesk only |
 
-The sendAs entry is the account address's (`sendAs/{address}`); when Gmail does not know the address
-as one, the matching entry of the list, else the primary one.
+The account's settings are read from the send-as list (`users.settings.sendAs`, one call): its own entry
+is the account address's, else the primary one; the others are its other addresses. A write of the
+account's own goes to `sendAs/{address}` (when Gmail does not know the address as one, the matching
+entry of the list, else the primary one).
 
 **The provider wins.** The account sync reads the settings on its first pass and then at most every
-15 minutes (one sendAs and one vacation read for Gmail; the profile and the automatic replies for
+15 minutes (one sendAs list and one vacation read for Gmail; the profile and the automatic replies for
 Microsoft), after the mail. Each value is compared with a hash of the value last seen at the provider:
 a different hash replaces opendesk's copy (the signature and the automatic reply's message sanitized
 with the signature allowlist, the name through `displayname.Clean`), stores the hash and publishes
@@ -483,6 +515,57 @@ so the shared restriction is the other way round: `internal_only` replies only i
 The web app shows a small Away pill beside an account in the sidebar while its automatic reply is
 on (enabled, and inside its dates when it has them).
 
+## Addresses
+
+An account sends from its own address and its other addresses (aliases), `MailAccount.identities`.
+Its own address (`primary`) is the account's: its From name and signature are `display_name` and
+`signature_html`. The others are stored per account (`collab_identities`):
+
+- **Gmail**: every send-as address Gmail lists for the account, read with its settings ("Account
+  settings", the same send-as list call, at most every 15 minutes). An address Gmail no longer lists
+  goes; a new one appears. Each one's From name and signature are `pull` (`signature_sync`,
+  `display_name_sync`): read from Gmail when they change there (the hashes of Gmail's values as last
+  seen decide, so Gmail's change wins over an edit made here), and a change made in opendesk is kept
+  in opendesk and used by its composer. Gmail lets addresses other than the primary one be changed
+  only by service accounts with domain-wide authority, so opendesk never writes them to Gmail (no
+  `sendAs/{email}` PATCH, nothing refused). `POST …/identities/{identity_id}/signature/pull` puts
+  Gmail's signature back now ("Get from Gmail"). Signatures are sanitized with the signature allowlist
+  and names through `displayname.Clean`; an empty Gmail name uses the account's From name. Its
+  reply-to (`replyToAddress`) is read only. The default for new mail is the same: Gmail's default
+  (`isDefault`) is read when it changes there, and one chosen here is kept in opendesk (`isDefault`
+  is a setting of the address made default, so Gmail would refuse it for any but the primary). An
+  address whose `verificationStatus` is `pending` shows but cannot send until its owner confirms it
+  from the link Gmail emailed. Addresses are added and removed in Gmail only.
+- **Microsoft**: Graph lists no send-as addresses on the Collab scopes, so aliases are added by hand
+  (address, From name, reply-to, signature; opendesk only). Sending from one sets the MIME `From`;
+  Exchange sends it only where the organization allows sending from aliases (SendFromAlias) and the
+  address is the mailbox's, else it refuses (`502 send_failed`, "…has to allow sending from aliases…",
+  `ErrorSendAsDenied`) or may send from the primary address instead. The add form suggests the
+  mailbox's `proxyAddresses` (`/me?$select=proxyAddresses`) when Graph shares them (work and school
+  accounts; personal accounts have none; a refusal means no suggestions).
+- **IMAP**: aliases added by hand; the SMTP envelope and `From` use the alias, and the SMTP server
+  decides whether it accepts it (`502 send_failed` with its reason).
+
+Sending (`POST /v1/collab/messages`, drafts): the message goes out from `from_email`, which must be
+one of the account's addresses that can send (`422 validation_failed` otherwise). Left out: a draft
+saved again keeps its own From, a reply or forward goes from the address the original was sent from
+or written to (`MailMessage.own_address`: its From, else To, Cc, then `Delivered-To`, `X-Original-To`,
+`X-Forwarded-To`), else from the default. The From name is the address's (else the account's), its
+reply-to becomes the `Reply-To` header, and the Message-ID takes the address's domain. Gmail's
+`threadId` is set exactly as before.
+
+The composer: From lists every account the person can send from with each of its addresses that can
+send (`Name <email>`). New mail starts from the default, a reply, reply all or forward from the
+address the answered message was written to. The signature follows the chosen address: it is the
+composer's signature block, swapped for the new address's on a change of From (left out when the
+person removed it). Reply all leaves out every one of the account's addresses. A `collab.accounts`
+event refreshes the account's open conversations too, so an open reply picks up a changed address
+or signature.
+
+Reading: `MailThread.to_address` names the alias a conversation was written to or sent from (a small
+chip in the list and the conversation), and `GET /v1/collab/threads?to=` shows one address's mail
+(the mail page offers it for an account with more than one address).
+
 ## Events
 
 Collab events carry ids only and reach only the members who see what changed: they are
@@ -498,7 +581,9 @@ webhooks.
 ## Audit
 
 `collab.account_connected` (`{provider, visibility}`), `collab.account_updated` (the changed field
-names; `signature_html` with `from_provider` for a pull, `out_of_office` for the automatic reply),
+names; `signature_html` with `from_provider` for a pull, `out_of_office` for the automatic reply,
+`default_from` for the default address; an address added, changed or removed is `fields: ["identities"]`
+with its `identity_id` and `added`, `removed` or the changed `identity_fields`),
 `collab.account_disconnected`, `collab.thread_shared` (`{thread_id, everyone, team_ids,
 user_ids}`), `collab.thread_assigned` (`{thread_id, user_ids}`). Never an address book entry,
 subject, body or credential.
@@ -513,9 +598,13 @@ in-app and push like other notifications, emailed by the member's notification p
 
 - `collab_accounts`, `collab_folders`, `collab_threads`, `collab_messages`, `collab_message_folders`,
   `collab_shares`, `collab_assignees`, `collab_comments`, `collab_sidebar_prefs`
-  (`migrations/000636_collab.up.sql`). Everything is the workspace's and is deleted with it.
+  (`migrations/000636_collab.up.sql`), `collab_identities` (`migrations/000654_collab_identities.up.sql`,
+  with `collab_threads.addresses`: every address on its messages, lower case, newest first, at most 100,
+  and `collab_messages.delivered_to`). Everything is the workspace's and is deleted with it.
 - `collab_accounts.config` (not secret) holds the granted `scopes` and, under `settings`, the settings
   sync state: the hashes last seen at the provider, when they were read, whether a person chose the
-  From name, and the automatic reply. It is written with `jsonb_set` under the row lock.
+  From name, the automatic reply, the default address for new mail (and the hash of Gmail's) and the
+  account address's reply-to. Each `collab_identities` row keeps the hashes of its own address's
+  Gmail values (`sync_state`). It is written with `jsonb_set` under the row lock.
 - Deleting an account deletes its folders, conversations, messages, comments, shares and stored raw
   messages (`collab.cleanup` removes the storage objects).

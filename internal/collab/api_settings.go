@@ -36,6 +36,7 @@ type outOfOfficeInput struct {
 }
 
 func (s *service) registerSettingsRoutes(api huma.API) {
+	s.registerIdentityRoutes(api)
 	collabOp(api, huma.Operation{OperationID: "pull-collab-signature", Method: http.MethodPost, Path: "/v1/collab/accounts/{id}/signature/pull",
 		Summary: "Replace a mail account's signature with its Gmail one"},
 		func(ctx context.Context, in *accountIDInput) (*accountBody, error) {
@@ -181,7 +182,7 @@ func (s *service) pushAccountSettings(ctx context.Context, a *accountRow, change
 	if a.Provider != ProviderGoogle || signatureSync(a) != SyncTwoWay {
 		return out, nil
 	}
-	body := map[string]string{}
+	body := map[string]any{}
 	if slices.Contains(changed, "signature_html") {
 		body["signature"] = a.SignatureHTML // sanitized
 	}
