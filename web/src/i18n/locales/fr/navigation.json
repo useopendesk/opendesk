@@ -1,5 +1,6 @@
 {
   "titles": {
+    "everywhere": "Partout",
     "helpCenter": "Centre d’aide",
     "rateYourConversation": "Évaluez votre conversation",
     "logIn": "Connexion",
@@ -42,6 +43,7 @@
     "security": "Sécurité",
     "notifications": "Notifications",
     "agentToAgent": "Agent à agent",
+    "workspaces": "Espaces de travail",
     "general": "Général",
     "members": "Membres",
     "teams": "Équipes",
@@ -94,6 +96,7 @@
     "security": "Sécurité",
     "notifications": "Notifications",
     "agentToAgent": "Agent à agent",
+    "workspaces": "Espaces de travail",
     "general": "Général",
     "members": "Membres",
     "teams": "Équipes",

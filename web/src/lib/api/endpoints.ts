@@ -202,6 +202,11 @@ export const api = {
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
     revokeSession: (id: string) => http.del(`/v1/me/sessions/${id}`, undefined, { workspace: false }),
     delete: (b: { password?: string; code?: string }) => http.del("/v1/me", b, { workspace: false }),
+    /** How this person's workspaces show together (contracts/api.md "Workspaces together"). */
+    workspacePrefs: () => http.get<T.WorkspacePrefs>("/v1/me/workspace-prefs", { workspace: false }),
+    putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
+    /** Every workspace's sidebar numbers, each as that workspace answers this person. */
+    overview: () => http.get<{ workspaces: T.WorkspaceOverview[] }>("/v1/me/overview", { workspace: false }),
   },
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),
@@ -396,7 +401,9 @@ export const api = {
   },
   auditLogs: (q?: ListQuery & { action?: string; entity_type?: string }) => http.get<T.Page<T.AuditLog>>("/v1/audit-logs", { query: q }),
   events: (since: number, limit = 500) => http.get<T.EventsPage>("/v1/events", { query: { since, limit } }),
-  realtimeToken: () => http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token"),
+  /** With allWorkspaces, the token also covers the person's other workspaces (contracts/tokens.md). */
+  realtimeToken: (allWorkspaces = false) =>
+    http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token", undefined, { query: { all_workspaces: allWorkspaces || undefined } }),
   notifications: {
     list: (q?: ListQuery & { unread?: boolean }) => http.get<T.Page<T.Notification>>("/v1/notifications", { query: q }),
     read: (b: { ids?: string[]; all?: boolean }) => http.post<void>("/v1/notifications/read", b),
@@ -442,7 +449,7 @@ export const api = {
     purgeMessage: (id: string, messageId: string) => http.post<T.Message>(`/v1/tickets/${id}/messages/${messageId}/purge`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
     /** A teammate is writing a reply: the chat's visitor sees them typing. */
-    typing: (id: string) => http.post<void>(`/v1/tickets/${id}/typing`),
+    typing: (id: string, opts?: { workspace?: string }) => http.post<void>(`/v1/tickets/${id}/typing`, undefined, opts),
     /** The ticket's shared draft (contracts/api.md "Drafts"): staged for the team, sent by whoever picks it up. */
     draft: {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
