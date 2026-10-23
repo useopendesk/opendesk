@@ -28,7 +28,10 @@ type AISettings struct {
 	AutoSummarize bool `json:"auto_summarize"`
 	WidgetAnswers bool `json:"widget_answers"`
 	// Assistant offers the assistant panel (Ollie) to the workspace's members.
-	Assistant     bool   `json:"assistant"`
+	Assistant bool `json:"assistant"`
+	// AssistantPeer lets members' Ollie ask a teammate's Ollie, for the members who opt in
+	// (contracts/ai.md "Asking a teammate"). Off by default.
+	AssistantPeer bool   `json:"assistant_peer"`
 	Tone          string `json:"tone"`
 	ReplyLanguage string `json:"reply_language" enum:"customer,workspace"`
 	Instructions  string `json:"instructions"`
@@ -66,6 +69,7 @@ func (s Settings) AI() AISettings {
 			field("auto_summarize", &a.AutoSummarize)
 			field("widget_answers", &a.WidgetAnswers)
 			field("assistant", &a.Assistant)
+			field("assistant_peer", &a.AssistantPeer)
 			field("tone", &a.Tone)
 			field("reply_language", &a.ReplyLanguage)
 			field("instructions", &a.Instructions)
@@ -101,6 +105,7 @@ type AISettingsPatch struct {
 	AutoSummarize *bool   `json:"auto_summarize,omitempty"`
 	WidgetAnswers *bool   `json:"widget_answers,omitempty"`
 	Assistant     *bool   `json:"assistant,omitempty"`
+	AssistantPeer *bool   `json:"assistant_peer,omitempty"`
 	Tone          *string `json:"tone,omitempty" maxLength:"200" doc:"friendly, professional, concise, or free text up to 200 characters"`
 	ReplyLanguage *string `json:"reply_language,omitempty" enum:"customer,workspace"`
 	Instructions  *string `json:"instructions,omitempty" maxLength:"2000"`
@@ -139,6 +144,9 @@ func ValidateAIPatch(p AISettingsPatch, allowedModel func(string) bool) (map[str
 	}
 	if p.Assistant != nil {
 		out["assistant"] = *p.Assistant
+	}
+	if p.AssistantPeer != nil {
+		out["assistant_peer"] = *p.AssistantPeer
 	}
 	if p.Tone != nil {
 		t := strings.Join(strings.Fields(*p.Tone), " ")

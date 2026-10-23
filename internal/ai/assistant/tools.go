@@ -23,6 +23,9 @@ type output struct {
 	Content string
 	Summary string
 	Refs    []Ref
+	// Label replaces the tool's Done label; Peer is an ask of a teammate's Ollie.
+	Label string
+	Peer  *PeerStep
 }
 
 // Preview is exactly what an approval card shows before a write runs.
@@ -72,7 +75,10 @@ type tool struct {
 	MinRole auth.Role
 	// Labels for the panel while running and when done.
 	Active, Done string
-	Read         func(ctx context.Context, rc *runCtx, in json.RawMessage) (output, error)
+	// Labels, when set, names the panel labels from the call's arguments ("" keeps the
+	// fixed ones).
+	Labels func(ctx context.Context, rc *runCtx, in json.RawMessage) (active, done string)
+	Read   func(ctx context.Context, rc *runCtx, in json.RawMessage) (output, error)
 	// Propose validates and resolves a write's arguments and describes it. It reads
 	// only; the stored args are what Apply later runs.
 	Propose func(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Preview, error)

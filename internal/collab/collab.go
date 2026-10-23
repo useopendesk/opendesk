@@ -119,7 +119,7 @@ func (s *service) require(ctx context.Context, min auth.Role) (*auth.Principal, 
 	if err != nil {
 		return nil, err
 	}
-	if p.Kind != auth.KindUser || p.Assistant || p.GrantID != uuid.Nil {
+	if p.Kind != auth.KindUser || p.Assistant || p.ViaAssistant || p.GrantID != uuid.Nil {
 		return nil, auth.ErrForbidden
 	}
 	if err := s.d.Plan.RequireCollab(ctx, s.d.DB.Pool, p.WorkspaceID); err != nil {

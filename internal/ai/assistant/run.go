@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -366,6 +367,10 @@ func (s *Service) loop(ctx context.Context, rc *runCtx, sid uuid.UUID, emit emit
 	p := rc.p
 	system := s.system(ctx, p)
 	specs := s.specs(p.Role)
+	if !s.peerAvailable(ctx, p.WorkspaceID) {
+		// The tool checks again on every call; this keeps it out of sight while it is off.
+		specs = slices.DeleteFunc(specs, func(t ai.ToolSpec) bool { return t.Name == "ask_teammate" })
+	}
 	ext := rc.external(ctx)
 	for _, name := range rc.extOrder {
 		t := ext[name]
@@ -399,6 +404,12 @@ func (s *Service) loop(ctx context.Context, rc *runCtx, sid uuid.UUID, emit emit
 				continue
 			}
 			st := Step{ID: c.ID, Tool: c.Name, Label: t.Active, Status: "running"}
+			doneLabel := t.Done
+			if t.Labels != nil {
+				if a, d := t.Labels(ctx, rc, c.Input); a != "" {
+					st.Label, doneLabel = a, d
+				}
+			}
 			emit("tool", st)
 			if t.Write && prop != nil {
 				st.Status, st.Summary = "error", "Waits for the change before it"
@@ -410,12 +421,15 @@ func (s *Service) loop(ctx context.Context, rc *runCtx, sid uuid.UUID, emit emit
 			}
 			if !t.Write {
 				out, err := t.Read(ctx, rc, c.Input)
-				st.Label = t.Done
+				st.Label = doneLabel
 				if err != nil {
 					st.Status, st.Summary = "error", toolErrorText(err)
 					results = append(results, storedResult{ToolResult: ai.ToolResult{CallID: c.ID, Content: "Error: " + toolErrorContent(err), IsError: true}})
 				} else {
-					st.Status, st.Summary, st.Refs = "done", out.Summary, out.Refs
+					st.Status, st.Summary, st.Refs, st.Peer = "done", out.Summary, out.Refs, out.Peer
+					if out.Label != "" {
+						st.Label = out.Label
+					}
 					results = append(results, storedResult{ToolResult: ai.ToolResult{CallID: c.ID, Content: out.Content}})
 				}
 				steps[c.ID] = st

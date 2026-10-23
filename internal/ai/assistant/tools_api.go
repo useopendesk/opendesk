@@ -236,9 +236,10 @@ func (s *Service) catalog() string {
 	return strings.Join(tags, ", ")
 }
 
-// Prefixes the tools never reach: sign-in, the operator's panel, Ollie itself, and the
-// routes visitors, devices and other servers call.
-var apiClosed = []string{"/v1/admin", "/v1/auth", "/v1/assistant", "/v1/public", "/v1/push", "/v1/oauth", "/v1/realtime",
+// Prefixes the tools never reach: sign-in, the operator's panel, Ollie itself and what a
+// person shares with teammates' Ollie, and the routes visitors, devices and other servers
+// call.
+var apiClosed = []string{"/v1/admin", "/v1/auth", "/v1/assistant", "/v1/me/assistant-peer", "/v1/public", "/v1/push", "/v1/oauth", "/v1/realtime",
 	"/v1/inbound", "/v1/widget/session", "/v1/widget/conversations", "/v1/widget/attachments", "/v1/widget/config"}
 
 // Writes that stay with the person: credentials, sessions and devices, money, owner-only

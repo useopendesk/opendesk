@@ -65,6 +65,14 @@ func newModel(t *testing.T) *model {
 			st, m.script = m.script[0], m.script[1:]
 		}
 		m.mu.Unlock()
+		if body["stream"] != true {
+			// A call without tools (a teammate's Ollie): one JSON completion.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
+				"message": map[string]any{"role": "assistant", "content": st.text}, "finish_reason": "stop"}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5}})
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		send := func(v any) {
 			raw, _ := json.Marshal(v)

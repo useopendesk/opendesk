@@ -70,6 +70,10 @@ type Principal struct {
 	// it: it runs with the user's own role and checks, and is attributed to ai on
 	// behalf of the user.
 	Assistant bool
+	// ViaAssistant marks every request the assistant makes for this user, reads included.
+	// It changes no attribution; routes that are the person's alone (Collab mail, what they
+	// share with teammates' assistant) refuse it.
+	ViaAssistant bool
 	// GrantID is set when a user acts through an AI client connected to the MCP server
 	// with OAuth (contracts/agent.md). Scopes then bound the request like an API key's,
 	// on top of the user's role, and account routes are refused.

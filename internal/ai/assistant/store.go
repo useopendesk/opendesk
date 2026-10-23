@@ -60,6 +60,8 @@ type Step struct {
 	Summary  string     `json:"summary,omitempty"`
 	Refs     []Ref      `json:"refs,omitempty"`
 	ActionID *uuid.UUID `json:"action_id,omitempty"`
+	// Peer is set on an ask of a teammate's Ollie: whose, and how it went.
+	Peer *PeerStep `json:"peer,omitempty"`
 }
 
 // Ref is a clickable reference to something in the workspace.
