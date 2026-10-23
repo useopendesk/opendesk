@@ -81,7 +81,7 @@ type AdminLimits struct {
 	MaxMembers   *int     `json:"max_members" minimum:"0" maximum:"100000"`
 	MonthlyAIUSD *float64 `json:"monthly_ai_usd" minimum:"0" maximum:"100000"`
 	// CollabStorageGB replaces the Collab storage allowance, in GB; 0 is unlimited.
-	CollabStorageGB *float64 `json:"collab_storage_gb" minimum:"0" maximum:"1000000"`
+	CollabStorageGB *float64 `json:"collab_storage_gb" required:"false" nullable:"true" minimum:"0" maximum:"1000000"`
 }
 
 type AdminSubscription struct {

@@ -149,7 +149,7 @@ type AdminWorkspace = AdminWorkspaceRow & {
   recent_audit: AuditLog[];                  // the workspace's own audit log, last 20 (contracts/api.md)
 };
 type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null;
-  collab_storage_gb: number | null }; // null = the plan's
+  collab_storage_gb?: number | null }; // null = the plan's; collab_storage_gb left out is null
 type AdminCollab = { access: "none" | "offered" | "complimentary"; until: string | null /* complimentary ends then; null = until changed */;
   note: string; enabled: boolean /* the workspace has Collab now (plan.Entitlements.Collab) */; accounts: number /* mail accounts connected */;
   storage_used_bytes: number /* the mail they store (contracts/collab.md "Storage") */ };
