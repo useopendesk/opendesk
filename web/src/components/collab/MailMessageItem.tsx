@@ -3,7 +3,7 @@
 // renderer: sanitized again here, a designed email in its sandboxed frame without
 // scripts, and images from other sites (CSS url() too) held back until asked for.
 
-import { ChevronDown, Download, FileText, ImageOff, Paperclip } from "lucide-react";
+import { ChevronDown, Download, FileText, ImageOff, MoreHorizontal, Paperclip } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MailAddress, MailAttachment, MailMessage } from "@/lib/api/types";
@@ -12,6 +12,7 @@ import { bytes, clock, fullDate, relShort } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { isDesignedEmail, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
 import { escapeHtml } from "@/lib/collab/html";
+import { isForward, splitQuotedHtml, splitQuotedText } from "@/lib/collab/quote";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -20,14 +21,34 @@ import { EmailFrame } from "@/components/tickets/detail/EmailFrame";
 
 type Body = { designed: boolean; html: string; held: number };
 
-/** A message body, sanitized once; mail from others holds back remote images until loaded. */
-function useMailBody(m: MailMessage, external: boolean, remote: boolean): Body {
+const textHtml = (text: string) => `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+
+function sanitizeBody(html: string, external: boolean, remote: boolean): Body {
+  const opts = { blockRemoteImages: external && !remote };
+  if (isDesignedEmail(html)) return { designed: true, ...sanitizeEmailHtml(html, opts) };
+  return { designed: false, ...sanitizeProse(html, opts) };
+}
+
+/**
+ * A message body, sanitized once, and the quoted history under it (the earlier mail the
+ * sender's client copied in), shown when asked. Mail from others holds back remote images
+ * until loaded. A forward keeps what it carries in the body.
+ */
+function useMailBody(m: MailMessage, external: boolean, remote: boolean): { body: Body; quoted: Body | null } {
   return useMemo(() => {
-    const html = m.body_html || `<p>${escapeHtml(m.body_text).replace(/\n/g, "<br>")}</p>`;
-    const opts = { blockRemoteImages: external && !remote };
-    if (isDesignedEmail(html)) return { designed: true, ...sanitizeEmailHtml(html, opts) };
-    return { designed: false, ...sanitizeProse(html, opts) };
-  }, [m.body_html, m.body_text, external, remote]);
+    const split = isForward(m.subject) ? null : m.body_html ? splitQuotedHtml(m.body_html) : splitQuotedText(m.body_text);
+    const raw = (s: string) => (m.body_html ? s : textHtml(s));
+    if (!split) return { body: sanitizeBody(m.body_html || textHtml(m.body_text), external, remote), quoted: null };
+    return { body: sanitizeBody(raw(split.body), external, remote), quoted: sanitizeBody(raw(split.quoted), external, remote) };
+  }, [m.body_html, m.body_text, m.subject, external, remote]);
+}
+
+function MailBody({ body, title }: { body: Body; title: string }) {
+  return body.designed ? (
+    <EmailFrame html={body.html} title={title} />
+  ) : (
+    <div className="prose-od ph-no-capture text-[13px]" data-ph-mask dangerouslySetInnerHTML={{ __html: body.html }} />
+  );
 }
 
 function HeldImages({ onLoad }: { onLoad: () => void }) {
@@ -122,9 +143,11 @@ export const MailMessageItem = memo(function MailMessageItem({
 }) {
   const { t } = useTranslation("collab");
   const [remote, setRemote] = useState(false);
+  const [showQuoted, setShowQuoted] = useState(false);
   const external = normEmail(m.from.email) !== normEmail(ownEmail);
   const name = m.from.name || m.from.email;
-  const body = useMailBody(m, external, remote);
+  const { body, quoted } = useMailBody(m, external, remote);
+  const held = body.held + (showQuoted && quoted ? quoted.held : 0);
   const files = m.attachments.filter((a) => !a.inline).length;
 
   if (!open)
@@ -185,11 +208,27 @@ export const MailMessageItem = memo(function MailMessageItem({
         </Tooltip>
       </header>
       <div className="px-4 pb-3.5 pl-[50px] pt-2">
-        {body.held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
-        {body.designed ? (
-          <EmailFrame html={body.html} title={t("thread.emailContent")} />
-        ) : (
-          <div className="prose-od ph-no-capture text-[13px]" data-ph-mask dangerouslySetInnerHTML={{ __html: body.html }} />
+        {held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
+        <MailBody body={body} title={t("thread.emailContent")} />
+        {quoted && (
+          <div>
+            <Tooltip content={showQuoted ? t("thread.hideQuoted") : t("thread.showQuoted")}>
+              <button
+                type="button"
+                aria-expanded={showQuoted}
+                aria-label={showQuoted ? t("thread.hideQuoted") : t("thread.showQuoted")}
+                onClick={() => setShowQuoted((v) => !v)}
+                className="mt-2 inline-flex h-4 items-center rounded-sm bg-hover px-1.5 text-fg-3 outline-none transition-colors hover:bg-active hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </button>
+            </Tooltip>
+            {showQuoted && (
+              <div className="mt-2 border-l-2 border-line pl-3 text-fg-3">
+                <MailBody body={quoted} title={t("thread.quotedContent")} />
+              </div>
+            )}
+          </div>
         )}
         <MailAttachments items={m.attachments} />
       </div>

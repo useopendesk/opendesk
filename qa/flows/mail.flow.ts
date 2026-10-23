@@ -134,3 +134,25 @@ test.describe("dark", () => {
     await proof.shot("pinned-dark", { caption: "The pinned bar in the dark theme" });
   });
 });
+
+test("a reply shows what is new and keeps the quoted mail a click away", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your application to Fieldway/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your application to Fieldway" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const latest = page.getByRole("article", { name: "Show message from Jade Morrow" });
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await expect(latest.getByText("Growth @ Fieldway")).toBeVisible();
+  await expect(latest.getByText(/wrote:/)).toHaveCount(0);
+  await proof.chapter("Quoted text", "A reply shows what the sender wrote; the earlier mail their client copied in folds away");
+  await proof.shot("quoted-folded", { caption: "The newest reply: the message and its signature, the earlier mail folded into ..." });
+
+  await latest.getByRole("button", { name: "Show quoted text" }).click();
+  await expect(latest.getByText(/Jade Morrow <jade@fieldway.io> wrote:/)).toBeVisible();
+  await proof.dwell();
+  await proof.shot("quoted-open", { caption: "Asked for: the quoted mail opens under the reply, set off by a rule" });
+
+  await latest.getByRole("button", { name: "Hide quoted text" }).click();
+  await expect(latest.getByText(/wrote:/)).toHaveCount(0);
+  await proof.dwell();
+});

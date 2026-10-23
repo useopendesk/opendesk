@@ -79,6 +79,16 @@ const STORIES: { subject: string; body: string; designed?: boolean; attach?: boo
 const designed = (title: string, text: string) =>
   `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6f9fc"><tr><td align="center" style="padding:24px"><table width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="border-radius:8px"><tr><td style="padding:28px;font-family:Helvetica,Arial,sans-serif;color:#1f2328"><h2 style="margin:0 0 12px">${escapeHtml(title)}</h2><p style="margin:0 0 16px;line-height:1.5">${escapeHtml(text).replace(/\n/g, "<br>")}</p><img src="https://images.example.com/track.gif" width="1" height="1" alt=""><p style="margin:0;color:#6a737d;font-size:12px">You are receiving this because you have an account.</p></td></tr></table></td></tr></table>`;
 
+type Quoted = { html: string; text: string; at: string; from: MailAddress };
+const attribution = (q: Quoted) => {
+  const d = new Date(q.at);
+  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  return `On ${day} at ${time}, ${q.from.name || q.from.email} <${q.from.email}> wrote:`;
+};
+const quoteOf = (q: Quoted) =>
+  `<br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">${escapeHtml(attribution(q))}<br></div><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">${q.html}</blockquote></div>`;
+
 const fileSvg = (label: string) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#eef2f7"/><text x="32" y="210" font-family="Helvetica" font-size="28" fill="#5b6472">${label}</text></svg>`)}`;
 
@@ -195,11 +205,17 @@ function seedState(ws: WsData): State {
     const start = now - (i * 5 + r() * 4) * HOUR - (i > 8 ? i * DAY * 0.4 : 0);
     const place = i % 9 === 7 ? "spam" : i % 11 === 10 ? "trash" : i % 5 === 4 ? "archive" : "inbox";
     const labels = a.provider === "google" && r() < 0.4 ? [pickR(userFolders(a.id)).id] : [];
+    let prev: Quoted | null = null;
     for (let k = 0; k < n; k++) {
       const fromUs = k % 2 === 1;
       const at = new Date(Math.min(start + k * 3 * HOUR, now - (n - k) * 7 * MIN)).toISOString();
-      const text = fromUs ? `Thanks, ${person.name.split(" ")[0]}. I'll get back to you shortly.\n\n${a.display_name}` : story.body;
-      const html = story.designed && !fromUs ? designed(story.subject, text) : `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+      const own = fromUs ? `Thanks, ${person.name.split(" ")[0]}. I'll get back to you shortly.\n\n${a.display_name}` : story.body;
+      const ownHtml = story.designed && !fromUs ? designed(story.subject, own) : `<p>${escapeHtml(own).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+      // A reply carries the mail before it, quoted the way Gmail does.
+      const html: string = prev ? `${ownHtml}${quoteOf(prev)}` : ownHtml;
+      const text: string = prev ? `${own}\n\n${attribution(prev)}\n${prev.text.replace(/^/gm, "> ")}` : own;
+      const from = fromUs ? { name: a.display_name, email: a.email } : person;
+      prev = { html, text, at, from };
       const attachments: MailAttachment[] =
         story.attach && !fromUs && k === 0
           ? [
@@ -213,13 +229,13 @@ function seedState(ws: WsData): State {
         thread_id: id,
         account_id: a.id,
         message_id: `${uuid()}@mail.example.com`,
-        from: fromUs ? { name: a.display_name, email: a.email } : person,
+        from,
         to: fromUs ? [person] : [{ name: a.display_name, email: a.email }],
         cc: !fromUs && k === 0 && r() < 0.3 ? [pickR(PEOPLE)] : [],
         bcc: [],
         reply_to: [],
         subject: k === 0 ? story.subject : `Re: ${story.subject}`,
-        snippet: text.replace(/\s+/g, " ").slice(0, 140),
+        snippet: own.replace(/\s+/g, " ").slice(0, 140),
         body_html: html,
         body_text: text,
         sent_at: at,
@@ -309,6 +325,43 @@ function seedState(ws: WsData): State {
       attachments: [],
       sent_by: userRef(me),
     });
+  }
+
+  // A follow-up that quotes the one before it under its signature, as most mail clients send it.
+  {
+    const tid = uuid();
+    const subject = "Your application to Fieldway";
+    const from = { name: "Jade Morrow", email: "jade@fieldway.io" };
+    const sig = `<div>Jade Morrow<br><b>Growth @ Fieldway</b><br>28 W 23rd St, New York, NY 10010</div><br><div>Not the right time for Fieldway? Reply and I'll stop reaching out.</div><br><br><br>`;
+    const first = { text: "Matthew,\n\nHaven't heard from you, are you still interested in Fieldway?\n\nFeel free to reply with a simple yes or no.\n\nBest,\nJade", at: new Date(now - 4 * DAY).toISOString(), from };
+    const second = "Hi Matthew,\n\nI was curious to ask: what's holding you back from completing your application? It looks like you started it a few days ago but haven't submitted it yet.\n\nIf you have any questions, send me a quick note. Happy to answer by email or jump on a quick call.\n\nBest,\nJade";
+    const html = (text: string) => `<div dir="ltr">${text.split("\n\n").map((p) => `<div>${escapeHtml(p).replace(/\n/g, "<br>")}</div><div><br></div>`).join("")}${sig}</div>`;
+    threads.set(tid, { id: tid, account_id: work.id, subject, shares: emptyAudience(), assignees: [], comments: [] });
+    const msg = (text: string, body_html: string, at: string, unread: boolean, sub: string): MailMessage => ({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@fieldway.io`,
+      from,
+      to: [{ name: work.display_name, email: work.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      subject: sub,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html,
+      body_text: text,
+      sent_at: at,
+      unread,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+    });
+    const firstHtml = html(first.text);
+    messages.push(msg(first.text, firstHtml, first.at, false, subject));
+    messages.push(msg(second, `${html(second)}${quoteOf({ ...first, html: firstHtml })}`, new Date(now - 12 * MIN).toISOString(), true, `Re: ${subject}`));
   }
 
   // A long newsletter in the shared inbox, with the team discussing it below.
