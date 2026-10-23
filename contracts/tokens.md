@@ -61,6 +61,16 @@ and a consumer accepts exactly one purpose. `exp` is required.
 // reads what the claims say. The gateway refuses a token whose sub or sid was revoked (od.control.disconnect)
 // at or after it (contracts/realtime.md "Connect"); without iat_ms it compares iat * 1000
 
+// ws for a person in several workspaces (POST /v1/realtime/token?all_workspaces=true, users only):
+// the token's own workspace as above, plus the others they are in that are not suspended, each with
+// their role and the private teams they may see there. One socket then follows them all.
+{ "purpose": "ws", "sub": "<user_id>", "kind": "user", "wid": "<focus workspace>", "role": "owner", "teams": [],
+  "workspaces": { "<other workspace id>": { "role": "viewer", "teams": ["<private team id>"] } }, "...": "..." }
+// workspaces: at most 25 others and 50 private teams in all (the gateway refuses more than 50 and 200);
+// past that a workspace is left out and the app refreshes it when it is opened instead of live.
+// An API key's, an OAuth grant's or the assistant's token never carries it. Gateways that predate
+// it read wid, role and teams alone, so the token still works as a one-workspace token.
+
 // widget_ws (end customer in the chat widget)
 { "purpose": "widget_ws", "sub": "<contact_id>", "wid": "<workspace_id>", "bid": "<brand_id>" /* the widget's brand: the socket receives only that brand's chats */, "jti": "<uuid>", "iat": 0, "exp": 0 }
 ```
@@ -109,7 +119,9 @@ rotates on use, reuse outside the 30 s grace window revokes it, 30-day cap wheth
   the upgrade. No answer sets `od_refresh` any more.
 - **The web app** keeps access tokens in memory, one per account, and persists only ids in `localStorage`: the active
   account (`od-account`) and each account's last workspace (`od-ws:<user id>`). Switching account clears the whole
-  query cache and restarts realtime, so no data of one account renders under another.
+  query cache and restarts realtime, so no data of one account renders under another. Switching workspace
+  within an account keeps the cache: every key of workspace data starts with its workspace, and a query
+  fetches from the workspace its key names (contracts/api.md "Workspaces together").
 
 ## Native apps (`contracts/native.md`)
 

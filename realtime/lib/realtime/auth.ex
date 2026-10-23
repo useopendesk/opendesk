@@ -15,6 +15,7 @@ defmodule Realtime.Auth do
   # request line Bandit accepts (the token travels in the query string).
   @max_token_bytes 8192
   @max_teams 200
+  @max_workspaces 50
   @roles ~w(owner admin agent viewer)
   @kinds %{"user" => :user, "api_key" => :api_key}
 
@@ -28,7 +29,8 @@ defmodule Realtime.Auth do
           teams: [String.t()],
           brand: String.t() | nil,
           sid: String.t() | nil,
-          issued_ms: integer()
+          issued_ms: integer(),
+          workspaces: %{String.t() => %{role: String.t(), teams: [String.t()]}}
         }
 
   @doc "The smallest `AUTH_SECRET` the gateway boots with."
@@ -105,7 +107,8 @@ defmodule Realtime.Auth do
          {:ok, kind} <- Map.fetch(@kinds, c["kind"]),
          role when role in @roles <- c["role"],
          {:ok, teams} <- teams(c["teams"]),
-         {:ok, sid} <- optional_uuid(c["sid"]) do
+         {:ok, sid} <- optional_uuid(c["sid"]),
+         {:ok, others} <- workspaces(kind, c["workspaces"]) do
       {:ok,
        %{
          kind: kind,
@@ -117,7 +120,10 @@ defmodule Realtime.Auth do
          teams: teams,
          brand: nil,
          sid: sid,
-         issued_ms: issued_ms(c)
+         issued_ms: issued_ms(c),
+         # Every workspace the socket may join: the token's own (`wid`, `role`,
+         # `teams`) and, for a person, the others the `workspaces` claim lists.
+         workspaces: Map.put(others, wid, %{role: role, teams: teams})
        }}
     else
       _ -> {:error, :invalid_claims}
@@ -141,7 +147,8 @@ defmodule Realtime.Auth do
          teams: [],
          brand: brand,
          sid: nil,
-         issued_ms: issued_ms(c)
+         issued_ms: issued_ms(c),
+         workspaces: %{}
        }}
     else
       _ -> {:error, :invalid_claims}
@@ -166,6 +173,43 @@ defmodule Realtime.Auth do
   end
 
   defp teams(_), do: :error
+
+  # The other workspaces of a person's token: `{wid => %{"role", "teams"}}`. Only users
+  # carry it; within @max_workspaces and @max_teams private teams in all.
+  defp workspaces(_kind, nil), do: {:ok, %{}}
+
+  defp workspaces(:user, map) when is_map(map) and map_size(map) <= @max_workspaces do
+    entries =
+      Enum.map(map, fn
+        {wid, %{"role" => role} = e} when role in @roles ->
+          with {:ok, wid} <- uuid(wid), {:ok, teams} <- teams(e["teams"]) do
+            {wid, %{role: role, teams: teams}}
+          end
+
+        _ ->
+          :error
+      end)
+
+    cond do
+      Enum.any?(entries, &(&1 == :error)) -> :error
+      entries |> Enum.map(&length(elem(&1, 1).teams)) |> Enum.sum() > @max_teams -> :error
+      true -> {:ok, Map.new(entries)}
+    end
+  end
+
+  defp workspaces(_kind, _), do: :error
+
+  @doc """
+  The role and private teams `identity` has in workspace `wid`, or `nil` when the
+  token does not cover it.
+  """
+  @spec workspace(map(), String.t()) :: %{role: String.t(), teams: [String.t()]} | nil
+  def workspace(%{workspaces: map}, wid) when is_map(map), do: Map.get(map, wid)
+
+  def workspace(%{wid: wid, role: role} = identity, wid),
+    do: %{role: role, teams: Map.get(identity, :teams, [])}
+
+  def workspace(_identity, _wid), do: nil
 
   defp optional_uuid(nil), do: {:ok, nil}
   defp optional_uuid(value), do: uuid(value)
