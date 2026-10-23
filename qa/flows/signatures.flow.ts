@@ -5,7 +5,7 @@ import { expect, test } from "../lib/proof.ts";
 
 test("a Gmail signature opens in settings as designed, and saving other settings leaves it alone", async ({ page, proof }) => {
   await proof.open("/settings/mail-accounts");
-  await page.getByRole("button", { name: /^Work/ }).click();
+  await page.getByRole("button", { name: /^Work Private/ }).click();
   await expect(page.getByRole("heading", { name: "Work" })).toBeVisible();
   const preview = page.getByRole("region", { name: "Preview" });
   await expect(preview.getByText("Customer success & onboarding")).toBeVisible();
