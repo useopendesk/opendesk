@@ -166,6 +166,8 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const [editing, setEditing] = useState<MailMessage | null>(null);
   const [composerDraftId, setComposerDraftId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // The newest message is open unless folded by hand.
+  const [foldedLast, setFoldedLast] = useState<string | null>(null);
   const [showOlder, setShowOlder] = useState(false);
   const [share, setShare] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -194,6 +196,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
     if (!detail || seeded.current === detail.thread.id) return;
     seeded.current = detail.thread.id;
     setExpanded(new Set(detail.messages.filter((m) => m.unread).map((m) => m.id)));
+    setFoldedLast(null);
   }, [detail]);
 
   // Opening shows it read, when the member wants that (and can act).
@@ -358,7 +361,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
 
   // The newest message is open; older ones are a line each. Past five, the middle folds into one row.
   const last = messages.length - 1;
-  const isOpen = (id: string, i: number) => i === last || expanded.has(id);
+  const isOpen = (id: string, i: number) => (i === last ? foldedLast !== id : expanded.has(id));
   const toggle = (id: string) => setExpanded((s) => {
     const n = new Set(s);
     if (n.has(id)) n.delete(id);
@@ -572,7 +575,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
                 </button>
               );
             }
-            return <MailMessageItem key={m.id} m={m} ownEmail={ownEmail} open={isOpen(m.id, i)} onToggle={() => (i === last ? undefined : toggle(m.id))} />;
+            return <MailMessageItem key={m.id} m={m} ownEmail={ownEmail} open={isOpen(m.id, i)} onToggle={() => (i === last ? setFoldedLast((f) => (f === m.id ? null : m.id)) : toggle(m.id))} />;
           })}
 
           {drafts.map((m) => (canAct ? <DraftRow key={m.id} m={m} onOpen={() => editDraft(m)} /> : <MailMessageItem key={m.id} m={m} ownEmail={ownEmail} open={false} onToggle={() => undefined} />))}

@@ -2119,6 +2119,25 @@ export type MailMessage = {
   in_reply_to_id?: string | null;
 };
 
+/** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */
+export type MailMessageDetails = {
+  /** The envelope sender's domain. */
+  mailed_by: string;
+  /** Domains whose DKIM signature the receiving server verified. */
+  signed_by: string[];
+  /** The domain it came through, when that is not the sender's own. */
+  via: string;
+  /** The receiving server's results ("pass", "fail", "softfail", "none", ...); empty when it reported none. */
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  /** How it reached the receiving server; empty when unknown. */
+  encryption: "tls" | "none" | "";
+  /** spoofed: DMARC failed; unverified: neither SPF nor DKIM passed. */
+  warning: "spoofed" | "unverified" | "";
+  headers: { name: string; value: string }[];
+};
+
 export type MailComment = {
   id: string;
   thread_id: string;

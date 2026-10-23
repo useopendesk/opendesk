@@ -14,6 +14,7 @@ import type {
   MailFolder,
   MailFolderRole,
   MailMessage,
+  MailMessageDetails,
   MailThread,
   MailThreadAction,
   MailThreadDetail,
@@ -362,6 +363,36 @@ function seedState(ws: WsData): State {
     const firstHtml = html(first.text);
     messages.push(msg(first.text, firstHtml, first.at, false, subject));
     messages.push(msg(second, `${html(second)}${quoteOf({ ...first, html: firstHtml })}`, new Date(now - 12 * MIN).toISOString(), true, `Re: ${subject}`));
+  }
+
+  // Mail that only claims to be from PayPal: it fails DMARC, so it carries a warning.
+  {
+    const tid = uuid();
+    const subject = "Your account access has been limited";
+    const text = "We noticed unusual activity on your account. To restore access, confirm your details within 24 hours.\n\nConfirm your account: https://paypal-review.example/confirm\n\nPayPal Security";
+    threads.set(tid, { id: tid, account_id: work.id, subject, shares: emptyAudience(), assignees: [], comments: [] });
+    messages.push({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@mail-relay.top`,
+      from: { name: "PayPal", email: "service@paypal.com" },
+      to: [{ name: work.display_name, email: work.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [{ name: "", email: "support-desk@mail-relay.top" }],
+      subject,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html: `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
+      body_text: text,
+      sent_at: new Date(now - 95 * MIN).toISOString(),
+      unread: true,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+    });
   }
 
   // A long newsletter in the shared inbox, with the team discussing it below.
@@ -987,6 +1018,16 @@ export function registerCollab() {
     return detailOut(ctx.ws, threadOr404(ctx.ws, ctx.params.id));
   });
 
+  get("/v1/collab/messages/:id/details", (ctx) => {
+    requireCollab(ctx.ws);
+    const s = state(ctx.ws);
+    const m = s.messages.find((x) => x.id === ctx.params.id);
+    if (!m) throw notFound("Message");
+    const t = threadOr404(ctx.ws, m.thread_id);
+    const a = s.accounts.find((x) => x.id === t.account_id)!;
+    return messageDetails(m, a.provider, m.sent_by !== null || m.from.email === a.email);
+  });
+
   post("/v1/collab/threads/actions", (ctx) => {
     requireCollab(ctx.ws);
     requireAct(ctx.ws);
@@ -1272,4 +1313,51 @@ export function registerCollab() {
     state(ctx.ws).prefs[db.meId] = p;
     return p;
   });
+}
+
+// How the mock's mail came: senders on their own domain pass every check; a few come
+// through a mailing service ("via"), and the PayPal look-alike fails DMARC.
+const MOCK_SOURCES: Record<string, Partial<MailMessageDetails>> = {
+  "service@paypal.com": { mailed_by: "mail-relay.top", signed_by: [], via: "mail-relay.top", spf: "softfail", dkim: "none", dmarc: "fail", encryption: "none", warning: "spoofed" },
+  "newsletter@webdrop.dev": { mailed_by: "mg.mailgun.org", signed_by: ["mailgun.org"], via: "mailgun.org" },
+};
+
+function messageDetails(m: MailMessage, provider: string, fromAccount: boolean): MailMessageDetails {
+  const domain = m.from.email.split("@")[1] ?? "";
+  const date = new Date(m.sent_at).toUTCString().replace("GMT", "+0000");
+  const addr = (xs: MailAddress[]) => xs.map((x) => (x.name ? `${x.name} <${x.email}>` : x.email)).join(", ");
+  const base: [string, string][] = [
+    ["From", addr([m.from])],
+    ["To", addr(m.to)],
+    ...(m.cc.length ? [["Cc", addr(m.cc)] as [string, string]] : []),
+    ...(m.reply_to.length ? [["Reply-To", addr(m.reply_to)] as [string, string]] : []),
+    ["Subject", m.subject],
+    ["Date", date],
+    ["Message-ID", `<${m.message_id}>`],
+    ["MIME-Version", "1.0"],
+    ["Content-Type", 'multipart/alternative; boundary="000000000000a1b2c3"'],
+  ];
+  if (fromAccount) {
+    const headers = [...base, ...(m.bcc.length ? [["Bcc", addr(m.bcc)] as [string, string]] : [])];
+    return { mailed_by: "", signed_by: [], via: "", spf: "", dkim: "", dmarc: "", encryption: "", warning: "", headers: headers.map(([name, value]) => ({ name, value })) };
+  }
+  const d: MailMessageDetails = { mailed_by: domain, signed_by: [domain], via: "", spf: "pass", dkim: "pass", dmarc: "pass", encryption: "tls", warning: "", headers: [], ...MOCK_SOURCES[m.from.email] };
+  const mx = provider === "google" ? "mx.google.com" : provider === "microsoft" ? "outlook.office365.com" : "mx.margin.app";
+  const signer = d.signed_by[0];
+  const results = [
+    signer ? `dkim=pass header.i=@${signer} header.s=s1 header.b=Xk3pQa9z` : "dkim=none (no signature)",
+    `spf=${d.spf} (${mx}: domain of bounce@${d.mailed_by} ${d.spf === "pass" ? "designates 203.0.113.24 as permitted sender" : "does not designate 198.51.100.7 as permitted sender"}) smtp.mailfrom=bounce@${d.mailed_by}`,
+    `dmarc=${d.dmarc} (p=${d.dmarc === "fail" ? "REJECT" : "NONE"} sp=NONE dis=${d.dmarc === "fail" ? "QUARANTINE" : "NONE"}) header.from=${domain}`,
+  ];
+  const sending = d.encryption === "tls" ? "with ESMTPS id 5b1f17b1804b1-43a8f" : "with ESMTP id 9c2a64e1f0a3d-12be4";
+  d.headers = [
+    { name: "Delivered-To", value: m.to[0]?.email ?? "" },
+    { name: "Received", value: `by 2002:a05:7300:5b8e:b0:1a4 with SMTP id k14csp; ${date}` },
+    { name: "Authentication-Results", value: `${mx}; ${results.join("; ")}` },
+    { name: "Return-Path", value: `<bounce@${d.mailed_by}>` },
+    { name: "Received", value: `from mta-24.${d.mailed_by} (mta-24.${d.mailed_by}. [203.0.113.24]) by ${mx} ${sending} for <${m.to[0]?.email ?? ""}>; ${date}` },
+    ...(signer ? [{ name: "DKIM-Signature", value: `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${signer}; s=s1; h=from:to:subject:date:message-id; bh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=; b=Xk3pQa9z` }] : []),
+    ...base.map(([name, value]) => ({ name, value })),
+  ];
+  return d;
 }

@@ -660,6 +660,8 @@ export const api = {
     counts: () => http.get<T.MailCounts>("/v1/collab/counts"),
     /** Sent through the provider within the request (502 send_failed, nothing stored). */
     send: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/messages", b),
+    /** Read from the message's source at the provider (502 provider_error). */
+    messageDetails: (id: string) => http.get<T.MailMessageDetails>(`/v1/collab/messages/${id}/details`),
     /** Drafts, kept at the provider (contracts/collab.md "Drafts"). */
     drafts: {
       create: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/drafts", b),

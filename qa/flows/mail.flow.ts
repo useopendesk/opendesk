@@ -156,3 +156,51 @@ test("a reply shows what is new and keeps the quoted mail a click away", async (
   await expect(latest.getByText(/wrote:/)).toHaveCount(0);
   await proof.dwell();
 });
+
+test("fold a message from its header and read how it came", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your application to Fieldway/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your application to Fieldway" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const latest = page.getByRole("article", { name: "Show message from Jade Morrow" });
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await proof.chapter("Message details", "Click the header to fold a message; the arrow beside its recipients shows how it came");
+
+  await latest.getByText("jade@fieldway.io").click();
+  await expect(latest).toHaveCount(0);
+  await proof.dwell();
+  await proof.shot("header-folded", { caption: "A click on the header folds the message, as in a mail app" });
+
+  await page.getByRole("button", { name: "Show message from Jade Morrow" }).last().click();
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await latest.getByRole("button", { name: "Show details" }).click();
+  const card = page.getByRole("dialog").filter({ hasText: "mailed by" });
+  await expect(card.getByText("fieldway.io", { exact: true }).first()).toBeVisible();
+  await expect(card.getByText("Standard encryption (TLS)")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("details", { caption: "Details: who it is from and to, mailed by, signed by, encryption and the sender checks" });
+
+  await card.getByRole("button", { name: "Show original headers" }).click();
+  const headers = page.getByRole("dialog", { name: "Original headers" });
+  await expect(headers.getByText("Authentication-Results:")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("headers", { caption: "The original headers, in order, ready to copy" });
+});
+
+test("mail that fails its sender's checks carries a warning", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your account access has been limited/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your account access has been limited" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const msg = page.getByRole("article", { name: "Show message from PayPal" });
+  await expect(msg.getByRole("alert")).toContainText("Be careful with this message");
+  await expect(msg.getByText("via mail-relay.top")).toBeVisible();
+  await proof.chapter("Sender warning", "A message that only claims to be from PayPal fails DMARC");
+  await proof.shot("spoofed", { caption: "The warning above a message that failed its sender's checks, and the domain it came through" });
+
+  await msg.getByRole("button", { name: "Show details" }).click();
+  const card = page.getByRole("dialog").filter({ hasText: "mailed by" });
+  await expect(card.getByText("DMARC fail")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("spoofed-details", { caption: "Its details: mailed by another domain, no signature, DMARC failed, not encrypted" });
+});

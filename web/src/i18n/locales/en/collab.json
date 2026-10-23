@@ -595,5 +595,30 @@
       "violet": "Violet",
       "pink": "Pink"
     }
+  },
+  "details": {
+    "show": "Show details",
+    "noRecipients": "No recipients",
+    "from": "from",
+    "replyTo": "reply to",
+    "to": "to",
+    "cc": "cc",
+    "bcc": "bcc",
+    "date": "date",
+    "subject": "subject",
+    "mailedBy": "mailed by",
+    "signedBy": "signed by",
+    "security": "security",
+    "tls": "Standard encryption (TLS)",
+    "noTls": "Not encrypted on the way in",
+    "checks": "sender checks",
+    "showHeaders": "Show original headers",
+    "headersTitle": "Original headers",
+    "copyHeaders": "Copy headers",
+    "via": "via {{domain}}",
+    "spoofedTitle": "Be careful with this message",
+    "spoofedBody": "It failed its sender's checks, so it may not really be from {{domain}}. Avoid its links and files, and don't reply with personal details.",
+    "unverifiedTitle": "This sender couldn't be verified",
+    "unverifiedBody": "Nothing confirms this message came from {{domain}}. Take care with its links and files."
   }
 }

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmailFrame } from "@/components/tickets/detail/EmailFrame";
+import { DetailsTrigger, SenderWarning, useMessageDetails, Via } from "./MailDetails";
 
 type Body = { designed: boolean; html: string; held: number };
 
@@ -149,6 +150,7 @@ export const MailMessageItem = memo(function MailMessageItem({
   const { body, quoted } = useMailBody(m, external, remote);
   const held = body.held + (showQuoted && quoted ? quoted.held : 0);
   const files = m.attachments.filter((a) => !a.inline).length;
+  const details = useMessageDetails(m, external, open);
 
   if (!open)
     return (
@@ -176,7 +178,15 @@ export const MailMessageItem = memo(function MailMessageItem({
 
   return (
     <article aria-label={t("thread.expand", { name })} className="rounded-lg border border-line bg-surface">
-      <header className="flex items-start gap-2.5 px-4 pt-3">
+      {/* A click on the header folds the message, as in a mail app; its buttons, links and selected text keep theirs. */}
+      <header
+        className="flex cursor-pointer items-start gap-2.5 px-4 pt-3"
+        onClick={(e) => {
+          const el = e.target as HTMLElement;
+          if (!e.currentTarget.contains(el) || el.closest("button, a, input, [role=dialog]") || window.getSelection()?.toString()) return;
+          onToggle();
+        }}
+      >
         <Avatar name={name} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -186,14 +196,13 @@ export const MailMessageItem = memo(function MailMessageItem({
             <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
               {m.from.email}
             </span>
+            <Via details={details.data} />
             {m.draft && <span className="shrink-0 text-[11px] font-medium text-tone-red">{t("thread.draft")}</span>}
           </div>
-          <div className="mt-0.5 flex flex-col text-[11.5px] leading-[17px] text-fg-3" data-ph-mask>
-            {m.to.length > 0 && <span className="truncate">{t("thread.to", { list: list(m.to) })}</span>}
-            {m.cc.length > 0 && <span className="truncate">{t("thread.cc", { list: list(m.cc) })}</span>}
-            {m.bcc.length > 0 && <span className="truncate">{t("thread.bcc", { list: list(m.bcc) })}</span>}
-            {m.reply_to.length > 0 && normEmail(m.reply_to[0].email) !== normEmail(m.from.email) && <span className="truncate">{t("thread.replyTo", { list: list(m.reply_to) })}</span>}
-            {m.sent_by && <span className="truncate text-fg-4">{t("thread.sentBy", { name: m.sent_by.name })}</span>}
+          <div className="mt-0.5 flex flex-col items-start text-[11.5px] leading-[17px] text-fg-3" data-ph-mask>
+            <DetailsTrigger m={m} details={details.data} loading={details.isLoading} />
+            {m.reply_to.length > 0 && normEmail(m.reply_to[0].email) !== normEmail(m.from.email) && <span className="max-w-full truncate">{t("thread.replyTo", { list: list(m.reply_to) })}</span>}
+            {m.sent_by && <span className="max-w-full truncate text-fg-4">{t("thread.sentBy", { name: m.sent_by.name })}</span>}
           </div>
         </div>
         <Tooltip content={fullDate(m.sent_at)}>
@@ -208,6 +217,7 @@ export const MailMessageItem = memo(function MailMessageItem({
         </Tooltip>
       </header>
       <div className="px-4 pb-3.5 pl-[50px] pt-2">
+        <SenderWarning m={m} details={details.data} />
         {held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
         <MailBody body={body} title={t("thread.emailContent")} />
         {quoted && (

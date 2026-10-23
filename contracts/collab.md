@@ -365,6 +365,28 @@ unread by default, every other tab no number.
 account whose provider lacks that folder; a `folder:<id>` tab shows while its account is in scope (that
 account, one of its folders open, or the only account). Everything else stays in More.
 
+## Message details
+
+`GET /v1/collab/messages/{id}/details` reads how a message came from its source, as a mail app's
+"show details" does:
+
+```ts
+interface MessageDetails {
+  mailed_by: string            // the envelope sender's domain (SPF's smtp.mailfrom, else Return-Path)
+  signed_by: string[]          // domains whose DKIM signature the receiving server verified
+  via: string                  // the domain it came through when neither of those is the sender's own
+  spf: string; dkim: string; dmarc: string   // the receiving server's results; "" when it reported none
+  encryption: "tls" | "none" | ""            // the hop into the receiving server (its Received line)
+  warning: "spoofed" | "unverified" | ""     // spoofed: DMARC failed; unverified: neither SPF nor DKIM passed
+  headers: { name: string; value: string }[] // in order, unfolded, decoded; at most 300
+}
+```
+
+Only the receiving server's own `Authentication-Results` counts: the topmost one above a `Received`
+line (a header the sender wrote sits below all of them), and on Gmail only one from `mx.google.com`.
+Without one, the checks and the warning are empty. Mail the account sent has no checks, and only it
+keeps its `Bcc` header. The app shows the warning above the message and `via` beside the sender.
+
 ## Endpoints
 
 Every route needs a user session (`auth.KindUser`) and membership. "see": the caller sees the
@@ -400,6 +422,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[]}` → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute |
 | DELETE | `/v1/collab/drafts/{id}` | act on its conversation | Discard → 204: deleted at the provider, then here (a new-mail draft's conversation with it) |
 | POST | `/v1/collab/drafts/{id}/send` | act on its conversation | Send it; the body (as for `PUT`) is optional: when given the draft is saved with it first, else it goes as saved. Needs a recipient. → `MailMessage`, the sent message, stored like `POST /v1/collab/messages` does (in the draft's conversation and in Sent) with the draft removed. `502 send_failed`; counts toward the 60 sends a minute |
+| GET | `/v1/collab/messages/{id}/details` | see | `MessageDetails` ("Message details"), read from the message's source (stored, else the provider: `502 provider_error`) |
 | GET | `/v1/collab/attachments/{message_id}/{index}` | signed (`exp`, `sig`) | the file, `Content-Disposition: attachment` unless an image; `?inline=1` for images. `404` when the signature is wrong or expired |
 | GET | `/v1/collab/sidebar` | member | `SidebarPrefs` (defaults when never saved) |
 | PUT | `/v1/collab/sidebar` | member | `SidebarPrefs` → `SidebarPrefs`; at most 16 KB; unknown ids are kept (an id of something gone is ignored by the app). `badges`: at most 300, keys of at most 100 characters with the prefixes above, values `unread`, `total`, `count`, `awaiting`, `urgent`, `overdue`, `open` or `none`; `mail_tabs`: at most 30, each a box above or `folder:<uuid>`, once. Leaving out `badges` or `mail_tabs` keeps the saved value; `422` otherwise |
