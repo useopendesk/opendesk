@@ -101,6 +101,8 @@ function PeerStepRow({ step, peer }: { step: AssistantStep; peer: StepPeer }) {
   const reduce = useReducedMotion();
   const working = step.status === "running";
   const name = peer.user.name || step.label;
+  // The first name keeps the row on one line in the panel; the full name is its title.
+  const first = name.split(/\s+/)[0] || name;
   const outcome = peerOutcome(peer.result, peer.sources);
   const summary = step.status === "error" ? step.summary : t(`peer.${outcome.key}`, { count: outcome.count });
   const shared = peer.result === "answered";
@@ -109,18 +111,19 @@ function PeerStepRow({ step, peer }: { step: AssistantStep; peer: StepPeer }) {
       initial={reduce ? false : { opacity: 0, y: 3 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: EASE }}
-      className="flex min-h-6 items-center gap-2 text-[12px]"
+      className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]"
       data-step={step.status}
       data-peer={peer.result}
+      title={name}
     >
       <StepIcon status={step.status} />
       <Avatar name={name} src={peer.user.avatar_url} size="xs" />
-      <span className={cn("min-w-0 truncate", working ? "text-fg-2" : "text-fg-3")}>
-        {t(working ? "peer.asking" : "peer.asked", { name, assistant })}
+      <span className={cn("min-w-0", working ? "text-fg-2" : "text-fg-3")}>
+        {t(working ? "peer.asking" : "peer.asked", { name: first, assistant })}
         {working && "…"}
       </span>
       {!working && summary && (
-        <span className={cn("min-w-0 truncate", step.status === "error" ? "text-danger-fg" : shared ? "text-fg-4" : tone.amber.text)}>· {summary}</span>
+        <span className={cn("min-w-0", step.status === "error" ? "text-danger-fg" : shared ? "text-fg-4" : tone.amber.text)}>· {summary}</span>
       )}
     </motion.div>
   );
