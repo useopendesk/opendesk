@@ -488,6 +488,15 @@ const sSecurity = settingsPage("/security", "security", () => import("./pages/se
 const sNotifications = settingsPage("/notifications", "notifications", () => import("./pages/settings/Notifications"), (qc) =>
   qc.ensureQueryData(q.notificationPreferences()),
 );
+// What teammates' Ollie may ask the member's (contracts/ai.md "Asking a teammate"); Collab's mail only.
+const sAgentToAgent = settingsPage("/agent-to-agent", "agentToAgent", () => import("./pages/settings/AgentToAgent"), async (qc) => {
+  const status = await qc.ensureQueryData(q.collabStatus());
+  if (!status?.enabled) throw redirect({ to: "/settings/profile" });
+  void qc.prefetchQuery(q.members());
+  void qc.prefetchQuery(q.teams());
+  void qc.prefetchInfiniteQuery(q.assistantPeerAsks());
+  return qc.ensureQueryData(q.assistantPeer()).catch(() => null);
+});
 const sWorkspace = settingsPage("/workspace", "general", () => import("./pages/settings/WorkspaceSettings"), (qc) =>
   Promise.all([qc.ensureQueryData(q.workspace()), qc.ensureQueryData(q.members())]),
 );
@@ -833,6 +842,7 @@ const routeTree = rootRoute.addChildren([
       sProfile,
       sSecurity,
       sNotifications,
+      sAgentToAgent,
       sWorkspace,
       sMembers,
       sTeams,

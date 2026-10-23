@@ -28,6 +28,7 @@ import {
   MessageCircle,
   MessageSquareShare,
   MessageSquareText,
+  MessagesSquare,
   Palette,
   Plug,
   Route,
@@ -53,6 +54,7 @@ type NavPath =
   | "/settings/profile"
   | "/settings/security"
   | "/settings/notifications"
+  | "/settings/agent-to-agent"
   | "/settings/workspace"
   | "/settings/members"
   | "/settings/teams"
@@ -96,6 +98,7 @@ const groups: { title: keyof typeof navigation.groups; items: { to: NavPath; lab
       { to: "/settings/profile", label: "profile", icon: <User /> },
       { to: "/settings/security", label: "security", icon: <Shield /> },
       { to: "/settings/notifications", label: "notifications", icon: <Bell /> },
+      { to: "/settings/agent-to-agent", label: "agentToAgent", icon: <MessagesSquare /> },
     ],
   },
   {
@@ -168,12 +171,14 @@ function useVisibleGroups() {
   const admin = atLeast(useRole(), "admin");
   const hideAi = isFetched && !ai?.enabled && !admin;
   const hideAgent = !admin || (isFetched && !ai?.enabled);
-  // Mail accounts are Collab's, listed only while the workspace has it.
+  // Mail accounts are Collab's, listed only while the workspace has it; agent-to-agent also needs AI.
   const collab = useCollab();
+  const peer = collab.enabled && !!ai?.enabled;
   return groups
     .filter((g) => !(hideAgent && g.title === AGENT_GROUP))
     .map((g) => (hideAi ? { ...g, items: g.items.filter((i) => i.to !== "/settings/ai") } : g))
-    .map((g) => (collab.enabled ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/mail-accounts") }));
+    .map((g) => (collab.enabled ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/mail-accounts") }))
+    .map((g) => (peer ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/agent-to-agent") }));
 }
 
 /** With a second brand, each brand is listed under Brands (contracts/teams.md). */

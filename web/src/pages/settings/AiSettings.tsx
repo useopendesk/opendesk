@@ -27,7 +27,7 @@ import { ProviderSection } from "@/components/ai/ProviderSection";
 const PRESET_TONES = ["friendly", "professional", "concise"] as const;
 type ToneChoice = (typeof PRESET_TONES)[number] | "custom";
 
-const FEATURE_ORDER: AIFeature[] = ["summarize", "rewrite", "translate", "triage", "copilot", "draft_reply", "answer", "kb_draft", "assistant"];
+const FEATURE_ORDER: AIFeature[] = ["summarize", "rewrite", "translate", "triage", "copilot", "draft_reply", "answer", "kb_draft", "assistant", "assistant_peer"];
 
 const DEFAULTS: AISettings = {
   enabled: true,
@@ -35,6 +35,7 @@ const DEFAULTS: AISettings = {
   auto_summarize: false,
   widget_answers: false,
   assistant: true,
+  assistant_peer: false,
   tone: "friendly",
   reply_language: "customer",
   instructions: "",
@@ -124,6 +125,14 @@ export default function AiSettings() {
             checked={draft.assistant}
             disabled={off}
             onChange={(assistant) => set({ assistant })}
+          />
+          <FeatureRow
+            label={t("settings.assistant_peer", { name: assistantName })}
+            description={t("settings.assistant_peer_hint", { name: assistantName })}
+            cost={config?.costs?.assistant_peer}
+            checked={draft.assistant && !!draft.assistant_peer}
+            disabled={off || !draft.assistant}
+            onChange={(assistant_peer) => set({ assistant_peer })}
           />
         </Section>
 

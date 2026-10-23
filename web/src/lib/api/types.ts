@@ -1425,7 +1425,7 @@ export type AutoRecharge = {
 };
 export type AutoRechargePatch = Partial<Pick<AutoRecharge, "enabled" | "threshold_usd" | "amount_usd" | "monthly_limit_usd">>;
 export type AIFeature =
-  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant";
+  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer";
 /**
  * GET /v1/billing/usage (contracts/billing.md). `from`/`to` are RFC 3339; `to` is exclusive.
  * Every usd value is US dollars, a number with up to 6 decimals.
@@ -1453,6 +1453,8 @@ export type AISettings = {
   widget_answers: boolean;
   /** The assistant panel (Ollie). Default true. */
   assistant: boolean;
+  /** Members may let teammates' Ollie ask theirs about their own mail (contracts/ai.md "Asking a teammate"). Default false. */
+  assistant_peer?: boolean;
   tone: string;
   reply_language: "customer" | "workspace";
   instructions: string;
@@ -1471,6 +1473,40 @@ export type AISettings = {
   /** Ask for an email before handing off when the visitor has none. Default true. */
   widget_collect_email?: boolean;
 };
+// Asking a teammate's Ollie (contracts/ai.md "Asking a teammate"): the caller's own sharing.
+export type PeerMode = "verbatim" | "summary" | "none";
+export type PeerResult = "answered" | "declined" | "not_shared" | "failed";
+export type PeerPerson = { id: string; name: string; email: string; avatar_url?: string | null };
+export type PeerAccount = { id: string; email: string; name: string; provider: "google" | "microsoft" | "imap"; mode: PeerMode; chosen: boolean };
+/** GET /v1/me/assistant-peer: the caller's own settings in this workspace. */
+export type PeerSettings = {
+  /** The workspace allows it (an admin's switch, AI, Ollie and Collab on). */
+  available: boolean;
+  enabled: boolean;
+  share_with: "everyone" | "chosen";
+  audience: { users: PeerPerson[]; teams: { id: string; name: string }[] };
+  /** Every own mail account, new ones at default_mode. */
+  all_accounts: boolean;
+  default_mode: PeerMode;
+  /** The caller's own Collab accounts; mode is the effective one, chosen marks an explicit choice. */
+  accounts: PeerAccount[];
+  /** Up to 2,000 characters, added to the instructions of the caller's answering Ollie. */
+  rules: string;
+  updated_at: string | null;
+};
+/** PUT /v1/me/assistant-peer (a full replace). */
+export type PeerSettingsInput = {
+  enabled: boolean;
+  share_with: "everyone" | "chosen";
+  audience: { user_ids: string[]; team_ids: string[] };
+  all_accounts: boolean;
+  default_mode: PeerMode;
+  accounts: { id: string; mode: PeerMode }[];
+  rules: string;
+};
+/** One ask made to the caller (GET /v1/me/assistant-peer/asks), kept 90 days. */
+export type PeerAsk = { id: string; asker: PeerPerson; question: string; answer: string; result: PeerResult; sources: number; created_at: string };
+
 /** A model the instance offers (GET /v1/ai/models). */
 export type AIModel = {
   id: string;

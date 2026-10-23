@@ -27,7 +27,11 @@ export type AssistantStep = {
   summary?: string;
   refs?: AssistantRef[];
   action_id?: string;
+  /** ask_teammate: whose Ollie answered, and how (contracts/ai.md "Asking a teammate"). */
+  peer?: StepPeer;
 };
+export type PeerResult = "answered" | "declined" | "not_shared" | "failed";
+export type StepPeer = { user: { id: string; name: string; avatar_url?: string | null }; result: PeerResult; sources: number };
 
 export type Change = { field: string; from: string; to: string };
 export type Preview = {

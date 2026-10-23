@@ -10,6 +10,7 @@ import { registerAi } from "./handlers/ai";
 import { registerAiClients } from "./handlers/aiClients";
 import { registerAiTicket } from "./handlers/aiTicket";
 import { registerAssistant } from "./handlers/assistant";
+import { registerAssistantPeer } from "./handlers/assistantPeer";
 import { registerAgent } from "./handlers/agent";
 import { registerAgentQuality } from "./handlers/agentQuality";
 import { registerEmailAnswers } from "./handlers/emailAnswers";
@@ -80,6 +81,7 @@ export function installMock(): void {
   registerAi();
   registerAiTicket();
   registerAssistant();
+  registerAssistantPeer();
   registerAgent();
   registerAgentQuality();
   registerEmailAnswers();

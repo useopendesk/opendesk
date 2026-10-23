@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
 import { tone } from "@/lib/tones";
-import type { Approval, AssistantRef, AssistantStep } from "./api";
+import { Avatar } from "@/components/ui/avatar";
+import { peerOutcome } from "@/lib/assistantPeer";
+import type { Approval, AssistantRef, AssistantStep, StepPeer } from "./api";
 import { OllieMark } from "./OllieMark";
 import { Markdown } from "./Markdown";
 import { openRef } from "./refs";
@@ -92,7 +94,44 @@ export function RefChip({ r }: { r: AssistantRef }) {
   );
 }
 
+/** ask_teammate: the teammate whose Ollie answered, and how ("Asked Priya's Ollie · answered from 3 conversations"). */
+function PeerStepRow({ step, peer }: { step: AssistantStep; peer: StepPeer }) {
+  const { t } = useTranslation("assistant");
+  const assistant = useAssistantName();
+  const reduce = useReducedMotion();
+  const working = step.status === "running";
+  const name = peer.user.name || step.label;
+  const outcome = peerOutcome(peer.result, peer.sources);
+  const summary = step.status === "error" ? step.summary : t(`peer.${outcome.key}`, { count: outcome.count });
+  const shared = peer.result === "answered";
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 3 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: EASE }}
+      className="flex min-h-6 items-center gap-2 text-[12px]"
+      data-step={step.status}
+      data-peer={peer.result}
+    >
+      <StepIcon status={step.status} />
+      <Avatar name={name} src={peer.user.avatar_url} size="xs" />
+      <span className={cn("min-w-0 truncate", working ? "text-fg-2" : "text-fg-3")}>
+        {t(working ? "peer.asking" : "peer.asked", { name, assistant })}
+        {working && "…"}
+      </span>
+      {!working && summary && (
+        <span className={cn("min-w-0 truncate", step.status === "error" ? "text-danger-fg" : shared ? "text-fg-4" : tone.amber.text)}>· {summary}</span>
+      )}
+    </motion.div>
+  );
+}
+
 export function StepRow({ step }: { step: AssistantStep }) {
+  if (step.peer) return <PeerStepRow step={step} peer={step.peer} />;
+  return <ToolStepRow step={step} />;
+}
+
+function ToolStepRow({ step }: { step: AssistantStep }) {
   const { t } = useTranslation("assistant");
   const reduce = useReducedMotion();
   const working = step.status === "running";

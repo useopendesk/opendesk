@@ -409,6 +409,12 @@ export const api = {
     unsubscribe: (token: string) =>
       http.post<{ workspace: { id: string; name: string }; email: string }>("/v1/notifications/unsubscribe", { token }, pub),
   },
+  /** What teammates' Ollie may ask the caller's (contracts/ai.md "Asking a teammate"): the caller's own settings and log. */
+  assistantPeer: {
+    get: () => http.get<T.PeerSettings>("/v1/me/assistant-peer"),
+    put: (b: T.PeerSettingsInput) => http.put<T.PeerSettings>("/v1/me/assistant-peer", b),
+    asks: (q?: ListQuery) => http.get<T.Page<T.PeerAsk>>("/v1/me/assistant-peer/asks", { query: q }),
+  },
 
   tickets: {
     list: (q: TicketListQuery) => http.get<T.Page<T.Ticket>>("/v1/tickets", { query: listQuery(q) }),

@@ -204,6 +204,7 @@ export function defaultAi(): AISettings {
     auto_summarize: false,
     widget_answers: false,
     assistant: true,
+    assistant_peer: false,
     tone: "friendly",
     reply_language: "customer",
     instructions: "",
@@ -291,6 +292,8 @@ function seedMargin(): WsData {
   ws.ai = {
     ...defaultAi(),
     widget_answers: true,
+    // Agent-to-agent is allowed here, so the members' own page and Ollie's ask_teammate show (handlers/assistantPeer.ts).
+    assistant_peer: true,
     widget_blocked_topics: ["legal advice", "competitor pricing", "medical advice"],
     widget_monthly_cap_usd: 25,
   };

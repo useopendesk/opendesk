@@ -13,7 +13,8 @@
     "answer_email": "Answer email",
     "playground": "Test the agent in the playground",
     "kb_draft": "Draft a help article",
-    "assistant": "Assistant messages"
+    "assistant": "Assistant messages",
+    "assistant_peer": "Ollie asking a teammate's Ollie"
   },
   "sentiment": {
     "positive": "Positive",
@@ -52,6 +53,8 @@
     "assistant_section_hint": "{{name}} is the assistant in the header. It works with each teammate's own permissions.",
     "assistant": "Let teammates ask {{name}}",
     "assistant_hint": "Answers questions about the queue, finds tickets and prepares changes. Nothing changes until the teammate approves it. Each message is charged to the AI balance.",
+    "assistant_peer": "Let teammates' {{name}} ask each other",
+    "assistant_peer_hint": "Members choose for themselves whether their {{name}} answers, who may ask, and what it shares from their mail. Off by default.",
     "automatic": "Automatic",
     "automatic_hint": "These run without anyone asking, and are charged to the AI balance each time.",
     "auto_triage": "Triage new tickets",

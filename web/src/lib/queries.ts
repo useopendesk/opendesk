@@ -64,6 +64,9 @@ export const qk = {
   notifications: ["notifications"] as const,
   /** The caller's notification preferences in the current workspace (the cache is cleared on a workspace switch). */
   notificationPreferences: ["me", "notification-preferences"] as const,
+  /** What teammates' Ollie may ask the caller's, and the asks made (contracts/ai.md "Asking a teammate"). */
+  assistantPeer: ["me", "assistant-peer"] as const,
+  assistantPeerAsks: ["me", "assistant-peer", "asks"] as const,
   kbCollections: ["kb", "collections"] as const,
   kbArticleLists: ["kb", "articles"] as const,
   kbArticles: (q: { collection_id?: string; status?: string; q?: string; for_brand_id?: string }) => ["kb", "articles", q] as const,
@@ -194,6 +197,14 @@ export const q = {
     }),
   notifications: () => list(qk.notifications, () => api.notifications.list({ limit: 50 })),
   notificationPreferences: () => queryOptions({ queryKey: qk.notificationPreferences, queryFn: api.notifications.preferences }),
+  assistantPeer: () => queryOptions({ queryKey: qk.assistantPeer, queryFn: api.assistantPeer.get, retry: false }),
+  assistantPeerAsks: () =>
+    infiniteQueryOptions({
+      queryKey: qk.assistantPeerAsks,
+      queryFn: ({ pageParam }) => api.assistantPeer.asks({ limit: 20, cursor: pageParam }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (last) => last.next_cursor,
+    }),
   kbCollections: () => list(qk.kbCollections, () => api.kb.collections.list({ limit: 100 })),
   kbArticles: (query: { collection_id?: string; status?: "draft" | "published"; q?: string; for_brand_id?: string }) =>
     list(qk.kbArticles(query), () => api.kb.articles.search({ ...query, limit: 100 })),

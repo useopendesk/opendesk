@@ -569,7 +569,29 @@ function seedState(ws: WsData): State {
     });
   }
 
+  // A teammate's own private account, which only she sees; her Ollie answers from it when asked
+  // (contracts/ai.md "Asking a teammate"; handlers/assistantPeer.ts).
+  const priya = db.users.find((u) => u.email === "priya@margin.app" && ws.members.some((m) => m.user_id === u.id));
+  if (priya) {
+    const pa = mk({ provider: "google", email: "priya@margin.app", name: "Work", color: "green", visibility: "private", ownerId: priya.id, display_name: priya.name });
+    accounts.push(pa);
+    for (const role of ["inbox", "sent", "archive"] as const) folders.push(folder(pa.id, role[0].toUpperCase() + role.slice(1), role, "label"));
+  }
+
   return { accounts, folders, threads, messages, prefs: {} };
+}
+
+/** A member's own mail accounts (never ones shared with them), for agent-to-agent; none while Collab is off. */
+export function ownMailAccounts(ws: WsData, uid: string): Pick<MailAccount, "id" | "email" | "name" | "provider">[] {
+  if (!status(ws).enabled) return [];
+  return state(ws)
+    .accounts.filter((a) => a.ownerId === uid)
+    .map((a) => ({ id: a.id, email: a.email, name: a.name, provider: a.provider }));
+}
+
+/** Whether the workspace has Collab in the mock (`?mock_collab=off` turns it off). */
+export function collabOn(ws: WsData): boolean {
+  return status(ws).enabled;
 }
 
 /** A long designed newsletter: the kind of mail that pushes everything under it out of sight. */

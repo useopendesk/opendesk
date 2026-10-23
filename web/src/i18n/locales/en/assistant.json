@@ -71,6 +71,16 @@
     "denied": "Declined",
     "expired": "Skipped"
   },
+  "peer": {
+    "asking": "Asking {{name}}'s {{assistant}}",
+    "asked": "Asked {{name}}'s {{assistant}}",
+    "answered_one": "answered from 1 conversation",
+    "answered_other": "answered from {{count}} conversations",
+    "answered_zero": "answered",
+    "declined": "declined",
+    "not_shared": "not shared with you",
+    "failed": "could not answer"
+  },
   "tip": {
     "act": "Ask {{name}}",
     "later": "Not now",

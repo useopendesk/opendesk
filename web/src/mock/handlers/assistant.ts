@@ -11,6 +11,7 @@ import { aiDecisions } from "@/lib/decisions";
 import { applyPatch, findTicket } from "../tickets";
 import { nowIso, uuid } from "../util";
 import { assertAi } from "./ai";
+import { askTeammate, peerAvailable } from "./assistantPeer";
 import { connected, linkTicket } from "./integrations";
 
 type Pending = {
@@ -104,6 +105,9 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
   const id = () => `call_${uuid().slice(0, 8)}`;
   const current = (ticketId && findTicket(ws, ticketId)) || open(ws).find((t) => !t.assignee) || open(ws)[0];
 
+  const teammate = askedTeammate(ws, lower);
+  if (teammate) return askTeammateScenario(ctx, text, teammate, emit, item, id);
+
   const tools = await connectedTools(ctx, s, lower, current, emit, item, id);
   if (tools) return tools;
 
@@ -175,6 +179,52 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
     .slice(0, 5);
   await step(emit, { id: id(), tool: "search_tickets", label: "Searching tickets", status: "running" }, () => ({ label: "Searched tickets", summary: `Found ${urgent.length} tickets`, refs: urgent.map(ref) }), item);
   await say(emit, item, urgent.length ? `These need a look first:\n\n${urgent.map((t) => `- ${line(t)}`).join("\n")}\n\nWant me to find owners for the unassigned ones?` : "Nothing urgent right now. The queue is in good shape.");
+  return "complete";
+}
+
+/** "Ask Priya …": a teammate named after "ask", while the workspace allows agent-to-agent. */
+function askedTeammate(ws: WsData, lower: string): UserRef | null {
+  if (!/\bask\b/.test(lower) || !peerAvailable(ws)) return null;
+  for (const m of ws.members) {
+    if (m.user_id === db.meId) continue;
+    const u = userRef(m.user_id);
+    const first = u?.name.split(" ")[0]?.toLowerCase();
+    if (u && first && new RegExp(`\\bask\\b.*\\b${first.replace(/[^a-z0-9]/g, "")}\\b`).test(lower)) return u;
+  }
+  return null;
+}
+
+/** ask_teammate (contracts/ai.md "Asking a teammate"): the teammate's Ollie answers from their own mail, or it is not shared with you. */
+async function askTeammateScenario(ctx: Ctx, text: string, who: UserRef, emit: Emit, item: TranscriptItem, id: () => string) {
+  const ws = ctx.ws;
+  const first = who.name.split(" ")[0];
+  const lower = text.toLowerCase();
+  const user = { id: who.id, name: who.name, avatar_url: who.avatar_url };
+  const st: AssistantStep = { id: id(), tool: "ask_teammate", label: `Asking ${who.name}'s Ollie`, status: "running", peer: { user, result: "answered", sources: 0 } };
+  await emit("tool", st);
+  await sleep(1100);
+  const acme = /\b(acme|renewal)\b/.test(lower);
+  const res = askTeammate(ws, db.meId, who.id, text, () =>
+    acme
+      ? { text: "The Acme renewal is on March 14. Their team asked for the new pricing a week before, and the renewal call is booked for March 7.", sources: 3 }
+      : { text: "Nothing in the mail it may use covers that yet.", sources: 0 },
+  );
+  if (res.result === "answered") spend(ws, "assistant_peer");
+  const summary = res.result === "answered" ? (res.sources === 1 ? "answered from 1 conversation" : `answered from ${res.sources} conversations`) : "not shared with you";
+  const done: AssistantStep = { ...st, status: "done", label: `Asked ${who.name}'s Ollie`, summary, peer: { user, result: res.result, sources: res.sources } };
+  await emit("tool", done);
+  item.steps.push(done);
+  if (res.result !== "answered") {
+    await say(emit, item, `${first} hasn't shared their mail with you through Ollie, so I couldn't ask. You could message ${first} directly.`);
+    return "complete";
+  }
+  await say(
+    emit,
+    item,
+    acme
+      ? `${first}'s Ollie says the Acme renewal is on **March 14**, and their team asked for the new pricing a week before. It answered from ${res.sources} of ${first}'s conversations.`
+      : `${first}'s Ollie found nothing about that in the mail ${first} shares. ${first} may know more.`,
+  );
   return "complete";
 }
 
