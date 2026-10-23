@@ -79,7 +79,8 @@ customer, team or brand, so it takes the `agent`, `mailbox`, `workspace` and `da
 - `agent.*` is the reply's author: the person sending it, the AI agent's bot name for Ollie's
   replies (no title or phone), and empty for automations, auto-replies and CSAT emails.
 - `team.name` reads the brand when the ticket has no team (as before). `mailbox.email` is the
-  alias when replies go out as one; `mailbox.name` is the address's `display_name`, else `name`.
+  alias when replies go out as one; `mailbox.name` is the alias's `display_name` for mail as an
+  alias that has one (contracts/teams.md "Aliases"), else the address's `display_name`, else `name`.
 - `ticket.status` and `ticket.priority` read as words ("On hold", "Urgent"); `ticket.created_date`
   and `date.today` are dates like "18 October 2026" in the workspace's timezone.
 - Custom fields read as shown: a select's label, a multi select a list of its labels, a checkbox
@@ -119,8 +120,9 @@ Internal notes are never filled (a thread's messages, stored as notes, go out as
 
 ## Signatures
 
-Which signature an email carries: the ticket team's `signature_html`, else the sending address's,
-else the author's personal signature. Team and address signatures can place the personal one with
+Which signature an email carries: for mail as an alias (a ticket written to it), the alias's
+`signature_html` (contracts/teams.md "Aliases"); else the ticket team's `signature_html`, else the
+sending address's, else the author's personal signature. Alias, team and address signatures can place the personal one with
 `{{ agent.signature }}`, so a company signature can wrap each person's own lines. Signatures take
 every variable; the personal signature cannot contain `{{ agent.signature }}`.
 

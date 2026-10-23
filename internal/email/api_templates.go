@@ -57,7 +57,9 @@ type previewBody struct {
 	TeamID   string                   `json:"team_id,omitempty"`
 	// MailboxID is the sending address whose signature and brand apply.
 	MailboxID string `json:"mailbox_id,omitempty"`
-	TicketID  string `json:"ticket_id,omitempty" doc:"Fill with this ticket's values instead of samples"`
+	// Alias is one of mailbox_id's aliases: its name, signature and brand apply.
+	Alias    string `json:"alias,omitempty" maxLength:"254" doc:"An alias of mailbox_id: preview mail written to it"`
+	TicketID string `json:"ticket_id,omitempty" doc:"Fill with this ticket's values instead of samples"`
 }
 
 // TemplatePreview is a rendered email.
@@ -357,6 +359,19 @@ func (s *service) preview(ctx context.Context, p *auth.Principal, b previewBody)
 	}
 	if ref.MailboxID, err = s.optionalRef(ctx, wid, b.MailboxID, "mailboxes", "Mailbox"); err != nil {
 		return nil, err
+	}
+	if alias := strings.ToLower(strings.TrimSpace(b.Alias)); alias != "" && ref.MailboxID != nil {
+		m, err := loadMailbox(ctx, s.d.DB.Pool, wid, *ref.MailboxID)
+		if err != nil {
+			return nil, httpx.Wrap(err)
+		}
+		if m.alias(alias) == "" {
+			return nil, httpx.Validation("alias is not an alias of this mailbox")
+		}
+		ref.MailboxEmail = alias
+		if ref.BrandID == nil {
+			ref.BrandID = m.aliasSettings(alias).BrandID
+		}
 	}
 	if ref.TeamID != nil {
 		hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)

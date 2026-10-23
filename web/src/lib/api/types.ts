@@ -751,6 +751,30 @@ export type MailboxConnectOptions = {
 };
 /** Why a connection check failed and what fixes it. */
 export type MailboxCause = { code: string; title: string; fix: string; retryable: boolean };
+/**
+ * Whether replies to an alias go out From the alias itself: verified when Gmail lists it as a
+ * send-as address or an admin said the provider sends as it; unverified when the provider does
+ * not list it or refused it; unknown until then.
+ */
+export type AliasSendAs = "verified" | "unverified" | "unknown";
+export type AliasSettings = {
+  /** The From name's {mailbox} for mail to this alias; "" = the mailbox's. */
+  display_name: string;
+  /** Comes before the team's and the address's signature; "" = none of its own. */
+  signature_html: string;
+  /** New tickets written to this alias take this brand; null = the mailbox's. */
+  brand_id: string | null;
+  send_as: AliasSendAs;
+  send_as_by: "provider" | "admin" | "";
+};
+export type ProviderSendAs = {
+  /** The connection may read Gmail's send-as list (a sync or api grant, not send-only). */
+  readable: boolean;
+  checked_at: string | null;
+  /** Gmail's send-as addresses other than the account's own. */
+  addresses: { email: string; display_name: string; verified: boolean }[];
+};
+export type AliasSettingsInput = { display_name?: string; signature_html?: string; brand_id?: string | null; send_as?: AliasSendAs };
 export type Mailbox = {
   id: string;
   name: string;
@@ -778,6 +802,10 @@ export type Mailbox = {
   aliases: string[];
   /** An alias to the team its new tickets go to instead of team_id. None on a private team's address. */
   alias_teams?: Record<string, string>;
+  /** Every alias's own identity, keyed by the alias (contracts/teams.md "Aliases"). */
+  alias_settings?: Record<string, AliasSettings>;
+  /** Gmail's send-as list for a Google mailbox; admins only, null otherwise. */
+  provider_send_as?: ProviderSendAs | null;
   /** {agent} {agent_first} {team} {brand} {mailbox}. */
   from_name_format: string;
   /** Its team is private: only that team's members send from it. */
@@ -1955,6 +1983,8 @@ export type TemplatePreviewBody = {
   brand_id?: string;
   team_id?: string;
   mailbox_id?: string;
+  /** One of mailbox_id's aliases: preview mail written to it. */
+  alias?: string;
   ticket_id?: string;
 };
 export type TemplatePreview = { subject: string; html: string; text: string; problems: TemplateProblem[] };
