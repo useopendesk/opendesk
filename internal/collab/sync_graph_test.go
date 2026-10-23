@@ -3,6 +3,7 @@ package collab
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,9 @@ type fakeGraph struct {
 	drafts   []string // MIME of created drafts
 	sentIDs  []string
 	nextID   int
+	// unfiltered lets a first delta come without the window (a history import of all
+	// mail, history_test.go).
+	unfiltered bool
 	// settings is the profile name and automatic replies (settings_test.go).
 	settings fakeGraphSettings
 	// cats are the master categories, message categories and deleted drafts (categories_test.go).
@@ -128,14 +132,30 @@ func (g *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		folder := parts[len(parts)-1]
 		if strings.HasSuffix(p, "/messages/delta") {
 			folder = parts[2]
-			if !strings.Contains(r.URL.Query().Get("$filter"), "receivedDateTime ge ") {
+			if !strings.Contains(r.URL.Query().Get("$filter"), "receivedDateTime ge ") && !g.unfiltered {
 				g.t.Errorf("first delta without the window: %s", r.URL.RawQuery)
 			}
 		}
+		// A round's window ("receivedDateTime ge"), carried in its links as ge (unix seconds).
+		q := r.URL.Query()
+		ge, _ := strconv.ParseInt(q.Get("ge"), 10, 64)
+		if f, ok := strings.CutPrefix(q.Get("$filter"), "receivedDateTime ge "); ok {
+			if at, err := time.Parse(time.RFC3339, f); err == nil {
+				ge = at.Unix()
+			}
+		}
+		window := "&ge=" + strconv.FormatInt(ge, 10)
 		// A round is the changes after since up to upto (where its first page found the end),
 		// in pages; its delta link goes on from upto.
-		q := r.URL.Query()
-		log := g.changes[folder]
+		log := []map[string]any{}
+		for _, c := range g.changes[folder] {
+			at, _ := time.Parse(time.RFC3339, fmt.Sprint(c["receivedDateTime"]))
+			if c["@removed"] != nil || ge == 0 || at.Unix() >= ge {
+				log = append(log, c)
+			} else {
+				log = append(log, map[string]any{"id": c["id"], "outside": true})
+			}
+		}
 		since, _ := strconv.Atoi(q.Get("since"))
 		upto, offset := len(log), 0
 		if strings.HasPrefix(p, "/next/") {
@@ -145,12 +165,26 @@ func (g *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		list := log[min(since, upto):upto]
 		offset = min(offset, len(list))
 		end := min(offset+g.pageSize, len(list))
+		value := []map[string]any{}
+		for _, c := range list[offset:end] {
+			if c["outside"] == nil {
+				value = append(value, c)
+			}
+		}
 		if end < len(list) {
-			reply(map[string]any{"value": list[offset:end], "@odata.nextLink": g.srv.URL + "/next/" + folder +
-				"?since=" + strconv.Itoa(since) + "&upto=" + strconv.Itoa(upto) + "&page=" + strconv.Itoa(end)})
+			reply(map[string]any{"value": value, "@odata.nextLink": g.srv.URL + "/next/" + folder +
+				"?since=" + strconv.Itoa(since) + "&upto=" + strconv.Itoa(upto) + "&page=" + strconv.Itoa(end) + window})
 			return
 		}
-		reply(map[string]any{"value": list[offset:end], "@odata.deltaLink": g.srv.URL + "/delta/" + folder + "?since=" + strconv.Itoa(upto)})
+		reply(map[string]any{"value": value, "@odata.deltaLink": g.srv.URL + "/delta/" + folder + "?since=" + strconv.Itoa(upto) + window})
+	case r.Method == "GET" && len(parts) == 3 && parts[1] == "mailFolders" && r.URL.Query().Get("$select") == "totalItemCount":
+		n := 0
+		for _, m := range g.msgs {
+			if m.folder == parts[2] {
+				n++
+			}
+		}
+		reply(map[string]any{"totalItemCount": n})
 	case r.Method == "GET" && len(parts) == 4 && parts[1] == "messages" && parts[3] == "$value":
 		m := g.msgs[parts[2]]
 		if m == nil {

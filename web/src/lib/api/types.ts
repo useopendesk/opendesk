@@ -2066,6 +2066,52 @@ export type MailAccount = {
   identities: MailIdentity[];
   /** The address new mail goes out from. */
   default_from: string;
+  /** The latest history import (contracts/collab.md "History"); null when none was started. */
+  history: MailHistory | null;
+  /** The oldest mail stored from it: its mail is here from then on. */
+  oldest_message_at: string | null;
+  /** IMAP: folders past the 30 the sync reads; 0 otherwise. */
+  folders_left_out: number;
+};
+
+/** limited: at the workspace's Collab storage allowance (contracts/collab.md "Storage"). */
+export type MailHistoryStatus = "running" | "paused" | "limited" | "done" | "canceled" | "error";
+
+/** A history import: older mail brought into opendesk (contracts/collab.md "History"). */
+export type MailHistory = {
+  status: MailHistoryStatus;
+  /** Mail received from then on; null = all mail. */
+  since: string | null;
+  include_spam_trash: boolean;
+  requested_by: UserRef | null;
+  started_at: string;
+  /** Done, canceled or error. */
+  finished_at: string | null;
+  /** The oldest mail it has read. */
+  reached: string | null;
+  /** Messages it stored. */
+  imported: number;
+  /** Already in opendesk. */
+  present: number;
+  /** Over 30 MB, left at the provider. */
+  too_large: number;
+  /** Could not be parsed. */
+  unreadable: number;
+  /** Messages in scope, when the provider says. */
+  total: number | null;
+  /** Safe to show; "" when the last pass went well. */
+  last_error: string;
+};
+
+/** The workspace's Collab storage (contracts/collab.md "Storage"). */
+export type CollabStorage = {
+  used_bytes: number;
+  /** 0 = unlimited. */
+  limit_bytes: number;
+  /** At the allowance: history imports wait. */
+  history_limited: boolean;
+  /** Past twice the allowance: new mail waits at the provider. */
+  full: boolean;
 };
 
 /**
@@ -2300,6 +2346,7 @@ export type CollabStatus = {
   providers: { google: boolean; microsoft: boolean; imap: boolean };
   /** Accounts the caller sees. */
   accounts: number;
+  storage: CollabStorage;
 };
 
 export type SidebarSectionId = "favorites" | "mail" | "inbox" | "teams" | "views" | "workspace";

@@ -601,6 +601,9 @@ func (s *service) applyGmailChanges(ctx context.Context, p *pass, g *gmailProvid
 	}
 	admit := map[string]bool{}
 	left := initialMax
+	if p.full {
+		left = 0 // the workspace's storage is full: new mail waits in the backlog
+	}
 	later := []string{} // this pass's new mail that does not fit, newest first
 	for i := len(changes) - 1; i >= 0; i-- {
 		c := changes[i]

@@ -69,6 +69,13 @@ func (s *service) publishAccounts(ctx context.Context, tx pgx.Tx, wid, accountID
 	return err
 }
 
+// publishAccountsTo tells only these people that an account changed, in tx.
+func (s *service) publishAccountsTo(ctx context.Context, tx pgx.Tx, wid, accountID uuid.UUID, users []uuid.UUID) error {
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: EventAccounts, Users: users,
+		Data: map[string]any{"account_id": accountID}})
+	return err
+}
+
 func appendNew(list []uuid.UUID, add ...uuid.UUID) []uuid.UUID {
 	for _, id := range add {
 		if id != uuid.Nil && !slices.Contains(list, id) {

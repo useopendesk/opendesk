@@ -115,7 +115,7 @@ export function registerTestWorkspaces() {
       suspended_at: null,
       suspended_reason: "",
       sub: { plan: "free", status: "none", interval: "month", seats: 1, current_period_end: null, cancel_at_period_end: false, stripe_customer_id: null, stripe_subscription_id: null },
-      limits: { max_mailboxes: null, max_members: null, monthly_ai_usd: null },
+      limits: { max_mailboxes: null, max_members: null, monthly_ai_usd: null, collab_storage_gb: null },
       collab: { access: "none", until: null, note: "" },
       collab_accounts: 0,
       counts: { tickets: 0, open_tickets: 0, contacts: 0, kb_articles: 0, api_keys: 0, webhooks: 0, brands: 1 },
@@ -135,7 +135,7 @@ export function registerTestWorkspaces() {
     db.members.push({ workspace_id: w.id, user_id: owner.id, role: "owner", created_at: nowIso() });
     // The plan without Stripe (billing is on in the mock).
     if (plan === "pro") {
-      w.limits = { max_mailboxes: 0, max_members: 0, monthly_ai_usd: 20 };
+      w.limits = { max_mailboxes: 0, max_members: 0, monthly_ai_usd: 20, collab_storage_gb: null };
       w.ai.purchased_usd = 50;
     } else if (plan === "collab") w.collab = { access: "complimentary", until: expires, note: "Test workspace" };
     if (sample) startBatch(w, sample.size, sample.kinds);

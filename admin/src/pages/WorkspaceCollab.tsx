@@ -19,7 +19,7 @@ import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { AdminWorkspace, CollabAccess } from "@/lib/api/types";
 import { UNTIL_CHOICES, untilFor, ymd, type UntilChoice } from "@/lib/collab";
-import { number, plural, shortDate } from "@/lib/format";
+import { bytes, number, plural, shortDate } from "@/lib/format";
 
 function AccessLabel({ access, until }: { access: CollabAccess; until: string | null }) {
   if (access === "offered") return <Badge tone="blue">Offered</Badge>;
@@ -92,6 +92,13 @@ export function CollabSection({ w, billing, onSaved }: { w: AdminWorkspace; bill
           ["Access", <AccessLabel access={c.access} until={c.until} />],
           ["Collab", <FlagPill on={c.enabled} yes="On" no="Off" />],
           ["Mail accounts", <span className="mono tabular-nums">{number(c.accounts)}</span>],
+          [
+            "Mail stored",
+            <span className="mono tabular-nums">
+              {bytes(c.storage_used_bytes)}
+              <span className="text-fg-3"> of {w.entitlements.collab_storage_gb === 0 ? "unlimited" : `${number(w.entitlements.collab_storage_gb)} GB`}</span>
+            </span>,
+          ],
           ...(c.note ? ([["Note", <span className="whitespace-pre-wrap text-fg-2">{c.note}</span>]] as [React.ReactNode, React.ReactNode][]) : []),
         ]}
       />

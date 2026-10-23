@@ -71,6 +71,8 @@ type AdminEntitlements struct {
 	MaxMembers   int     `json:"max_members"`
 	MonthlyAIUSD float64 `json:"monthly_ai_usd"`
 	UnlimitedAI  bool    `json:"unlimited_ai"`
+	// CollabStorageGB is the Collab storage allowance (contracts/collab.md "Storage"); 0 = unlimited.
+	CollabStorageGB float64 `json:"collab_storage_gb"`
 }
 
 // AdminLimits are the overrides; null keeps the plan's.
@@ -78,6 +80,8 @@ type AdminLimits struct {
 	MaxMailboxes *int     `json:"max_mailboxes" minimum:"0" maximum:"100000"`
 	MaxMembers   *int     `json:"max_members" minimum:"0" maximum:"100000"`
 	MonthlyAIUSD *float64 `json:"monthly_ai_usd" minimum:"0" maximum:"100000"`
+	// CollabStorageGB replaces the Collab storage allowance, in GB; 0 is unlimited.
+	CollabStorageGB *float64 `json:"collab_storage_gb" minimum:"0" maximum:"1000000"`
 }
 
 type AdminSubscription struct {
@@ -101,6 +105,8 @@ type AdminCollab struct {
 	Enabled bool `json:"enabled"`
 	// Accounts counts the mail accounts its members connected (collab_accounts).
 	Accounts int `json:"accounts"`
+	// StorageUsedBytes is the mail those accounts store (contracts/collab.md "Storage").
+	StorageUsedBytes int64 `json:"storage_used_bytes"`
 }
 
 type AdminAIFeature struct {
@@ -172,6 +178,9 @@ func (s *svc) scanWorkspaceRow(r pgx.Row, extra ...any) (AdminWorkspaceRow, erro
 
 func usd(m plan.Micro) float64 { return m.USD() }
 
+// gb reports bytes in GB, to two decimals.
+func gb(b int64) float64 { return math.Round(float64(b)/(1<<30)*100) / 100 }
+
 func (s *svc) loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (AdminWorkspace, error) {
 	var w AdminWorkspace
 	row, err := s.scanWorkspaceRow(q.QueryRow(ctx, `SELECT `+workspaceRowCols+`, w.suspended_reason FROM workspaces w
@@ -225,7 +234,8 @@ func (s *svc) loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (A
 	if err != nil {
 		return w, err
 	}
-	w.Entitlements = AdminEntitlements{MaxMailboxes: e.MaxMailboxes, MaxMembers: e.MaxMembers, MonthlyAIUSD: usd(e.MonthlyUSD), UnlimitedAI: e.UnlimitedAI}
+	w.Entitlements = AdminEntitlements{MaxMailboxes: e.MaxMailboxes, MaxMembers: e.MaxMembers, MonthlyAIUSD: usd(e.MonthlyUSD), UnlimitedAI: e.UnlimitedAI,
+		CollabStorageGB: gb(e.CollabStorageBytes)}
 	o, err := plan.LoadOverrides(ctx, q, wid)
 	if err != nil {
 		return w, err
@@ -234,6 +244,10 @@ func (s *svc) loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (A
 	if o.MonthlyUSD != nil {
 		v := usd(*o.MonthlyUSD)
 		w.Limits.MonthlyAIUSD = &v
+	}
+	if o.CollabStorageBytes != nil {
+		v := gb(*o.CollabStorageBytes)
+		w.Limits.CollabStorageGB = &v
 	}
 	if s.d.Cfg.BillingEnabled() {
 		sub := &AdminSubscription{}
@@ -252,7 +266,8 @@ func (s *svc) loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (A
 		return w, err
 	}
 	w.Collab = AdminCollab{Access: ca.Access, Until: ca.Until, Note: ca.Note, Enabled: e.Collab}
-	if err := q.QueryRow(ctx, `SELECT count(*) FROM collab_accounts WHERE workspace_id = $1`, wid).Scan(&w.Collab.Accounts); err != nil {
+	if err := q.QueryRow(ctx, `SELECT count(*), COALESCE(sum(stored_bytes), 0) FROM collab_accounts WHERE workspace_id = $1`, wid).
+		Scan(&w.Collab.Accounts, &w.Collab.StorageUsedBytes); err != nil {
 		return w, err
 	}
 	b, err := s.d.Plan.Balance(ctx, q, wid)
@@ -468,6 +483,10 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				m := plan.FromUSD(*v)
 				o.MonthlyUSD = &m
 			}
+			if v := in.Body.CollabStorageGB; v != nil {
+				b := int64(math.Round(*v * (1 << 30)))
+				o.CollabStorageBytes = &b
+			}
 			prices := s.billing.Prices(ctx)
 			var w AdminWorkspace
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -477,7 +496,8 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				if err := plan.SetOverrides(ctx, tx, wid, o); err != nil {
 					return err
 				}
-				data := map[string]any{"max_mailboxes": in.Body.MaxMailboxes, "max_members": in.Body.MaxMembers, "monthly_ai_usd": in.Body.MonthlyAIUSD}
+				data := map[string]any{"max_mailboxes": in.Body.MaxMailboxes, "max_members": in.Body.MaxMembers, "monthly_ai_usd": in.Body.MonthlyAIUSD,
+					"collab_storage_gb": in.Body.CollabStorageGB}
 				if err := s.ops.AuditWorkspace(ctx, tx, a.principal(), wid, "workspace.limits_changed", data); err != nil {
 					return err
 				}

@@ -66,6 +66,10 @@ const (
 	PaidImportBytesPerSeat    int64 = 50 << 30 // 50 GB per paid seat, pooled
 )
 
+// CollabStorageBytesPerSeat is the collab plan's fair-use allowance for the mail Collab
+// stores (contracts/collab.md "Storage"), per paid seat, pooled across the workspace.
+const CollabStorageBytesPerSeat int64 = 25 << 30 // 25 GB
+
 // Micro is an amount of US dollars in millionths of a dollar. Balances, allowances and
 // usage rows are kept in Micro; the API reports dollars as numbers with up to 6 decimals.
 type Micro int64
@@ -150,6 +154,9 @@ type Entitlements struct {
 	ImportFilesPerMessage int   `json:"import_files_per_message"`
 	ImportMessageBytes    int64 `json:"import_message_bytes"`
 	ImportBytes           int64 `json:"import_bytes"`
+	// CollabStorageBytes is the allowance for the mail Collab stores (contracts/collab.md
+	// "Storage"). Zero means unlimited.
+	CollabStorageBytes int64 `json:"collab_storage_bytes"`
 }
 
 // Service reads and enforces entitlements. A nil *Service behaves like a self-hosted
@@ -221,8 +228,8 @@ func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID)
 	var o Overrides
 	e := Entitlements{BillingEnabled: true}
 	if err := q.QueryRow(ctx, `SELECT plan, status, seats, max_mailboxes_override, max_members_override, monthly_micro_usd_override,
-		collab_access, collab_until FROM subscriptions WHERE workspace_id = $1`, wid).
-		Scan(&planName, &status, &seats, &o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD, &e.CollabAccess, &e.CollabUntil); err != nil {
+		collab_storage_override, collab_access, collab_until FROM subscriptions WHERE workspace_id = $1`, wid).
+		Scan(&planName, &status, &seats, &o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD, &o.CollabStorageBytes, &e.CollabAccess, &e.CollabUntil); err != nil {
 		return Entitlements{}, err
 	}
 	e.Plan, e.Status = Free, status
@@ -231,6 +238,7 @@ func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID)
 		e.Plan, e.Collab = Collab, true
 		e.MonthlyUSD = CollabUSDPerSeat * Micro(max(seats, 1))
 		e.paidImports(seats)
+		e.CollabStorageBytes = CollabStorageBytesPerSeat * int64(max(seats, 1))
 	case planName == Pro && Paid(status):
 		e.Plan = Pro
 		e.MonthlyUSD = ProUSDPerSeat * Micro(max(seats, 1))
@@ -249,6 +257,7 @@ func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID)
 		e.MaxMailboxes, e.MaxMembers = 0, 0
 		e.MonthlyUSD = CollabUSDPerSeat * Micro(billed)
 		e.paidImports(billed)
+		e.CollabStorageBytes = CollabStorageBytesPerSeat * int64(billed)
 	}
 	if s.CollabOff {
 		e.Collab = false
@@ -328,6 +337,8 @@ type Overrides struct {
 	MaxMembers   *int
 	// MonthlyUSD replaces the monthly AI usage allowance.
 	MonthlyUSD *Micro
+	// CollabStorageBytes replaces the Collab storage allowance; 0 is unlimited.
+	CollabStorageBytes *int64
 }
 
 func (o Overrides) apply(e *Entitlements) {
@@ -340,6 +351,9 @@ func (o Overrides) apply(e *Entitlements) {
 	if o.MonthlyUSD != nil {
 		e.MonthlyUSD = *o.MonthlyUSD
 	}
+	if o.CollabStorageBytes != nil {
+		e.CollabStorageBytes = *o.CollabStorageBytes
+	}
 }
 
 // LoadOverrides reads a workspace's limit overrides.
@@ -348,8 +362,8 @@ func LoadOverrides(ctx context.Context, q db.Querier, wid uuid.UUID) (Overrides,
 		return Overrides{}, err
 	}
 	var o Overrides
-	err := q.QueryRow(ctx, `SELECT max_mailboxes_override, max_members_override, monthly_micro_usd_override
-		FROM subscriptions WHERE workspace_id = $1`, wid).Scan(&o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD)
+	err := q.QueryRow(ctx, `SELECT max_mailboxes_override, max_members_override, monthly_micro_usd_override, collab_storage_override
+		FROM subscriptions WHERE workspace_id = $1`, wid).Scan(&o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD, &o.CollabStorageBytes)
 	return o, err
 }
 
@@ -359,7 +373,8 @@ func SetOverrides(ctx context.Context, q db.Querier, wid uuid.UUID, o Overrides)
 		return err
 	}
 	_, err := q.Exec(ctx, `UPDATE subscriptions SET max_mailboxes_override = $2, max_members_override = $3,
-		monthly_micro_usd_override = $4, updated_at = now() WHERE workspace_id = $1`, wid, o.MaxMailboxes, o.MaxMembers, o.MonthlyUSD)
+		monthly_micro_usd_override = $4, collab_storage_override = $5, updated_at = now() WHERE workspace_id = $1`,
+		wid, o.MaxMailboxes, o.MaxMembers, o.MonthlyUSD, o.CollabStorageBytes)
 	return err
 }
 

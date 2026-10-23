@@ -32,6 +32,8 @@ export const INSTANCE: AdminMe["instance"] = {
 const FREE = { mailboxes: 1, members: 1, ai: 0.5 };
 const PRO_AI_PER_SEAT = 10;
 const COLLAB_AI_PER_SEAT = 20;
+/** The Collab storage allowance per paid seat, pooled (contracts/collab.md "Storage"). */
+const COLLAB_STORAGE_GB_PER_SEAT = 25;
 
 export const paid = (status: string) => status === "active" || status === "trialing" || status === "past_due";
 
@@ -64,7 +66,10 @@ export function entitlements(w: WorkspaceRec) {
   if (w.limits.max_mailboxes !== null) e.max_mailboxes = w.limits.max_mailboxes;
   if (w.limits.max_members !== null) e.max_members = w.limits.max_members;
   if (w.limits.monthly_ai_usd !== null) e.monthly_ai_usd = w.limits.monthly_ai_usd;
-  return e;
+  // Only the collab plan stores Collab mail; without it there is nothing to bound.
+  const storageSeats = w.sub.plan === "collab" && paid(w.sub.status) ? seats : billedSeats(w);
+  const collab_storage_gb = w.limits.collab_storage_gb ?? (e.collab ? COLLAB_STORAGE_GB_PER_SEAT * storageSeats : 0);
+  return { ...e, collab_storage_gb };
 }
 
 // ─── Users ─────────────────────────────────────────────────────────────────
@@ -140,10 +145,11 @@ export function workspaceView(w: WorkspaceRec): AdminWorkspace {
     pending_invitations: w.pending_invitations,
     counts: { ...w.counts },
     mailboxes: w.mailboxes.map((m) => ({ ...m })),
-    entitlements: { max_mailboxes: e.max_mailboxes, max_members: e.max_members, monthly_ai_usd: e.monthly_ai_usd, unlimited_ai: e.unlimited_ai },
+    entitlements: { max_mailboxes: e.max_mailboxes, max_members: e.max_members, monthly_ai_usd: e.monthly_ai_usd, unlimited_ai: e.unlimited_ai, collab_storage_gb: e.collab_storage_gb },
     limits: { ...w.limits },
     subscription: { ...w.sub, billed_seats: billedSeats(w) },
-    collab: { ...w.collab, enabled: e.collab, accounts: w.collab_accounts },
+    // About 1.7 GB of mail text an account, enough to show the allowance in use.
+    collab: { ...w.collab, enabled: e.collab, accounts: w.collab_accounts, storage_used_bytes: Math.round(w.collab_accounts * 1.7 * 1024 ** 3) },
     ai: {
       remaining_usd: micro(Math.max(e.monthly_ai_usd - included, 0) + w.ai.purchased_usd),
       monthly_usd: e.monthly_ai_usd,

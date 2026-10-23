@@ -80,7 +80,8 @@ while any member with access was active in the last 30 minutes, else every 10 mi
 after a connect, a reconnect, `POST .../sync` or an action. One runs per account at a time.
 
 - **First sync**: the folders and labels (at most 200), then the newest mail: the last 30 days,
-  at most 500 messages per account, inbox and sent first. Older mail is not imported.
+  at most 500 messages per account, inbox and sent first. Older mail comes with a history import
+  ("History"), when the account's manager asks for it.
 - **Then**: changes only. Gmail: `history.list` from the stored history id (a history id older
   than Gmail keeps means a first sync again). Microsoft: a delta link per folder. IMAP: per folder,
   new UIDs above the stored one and the flags of known ones (`CHANGEDSINCE` with CONDSTORE), with
@@ -110,6 +111,76 @@ after a connect, a reconnect, `POST .../sync` or an action. One runs per account
   with remote images on request (`web/src/lib/sanitize.ts`). A message with attachments or inline
   images keeps its raw MIME in storage (`collab/<workspace>/<account>/<message>.eml`, deleted with
   the message) and its files are read from it. Messages over 30 MB are skipped.
+
+## History
+
+The first sync is quick and recent. A **history import** brings the rest: as far back as the person
+chooses, all mail included, without holding up the live sync. Whoever manages the account starts it
+from the account's settings (`PUT /v1/collab/accounts/{id}/history`); `MailAccount.history` follows it.
+
+- **Scope**: `since`, mail received from then on (`null`: all of it), in every folder the sync reads;
+  spam and trash only with `include_spam_trash`. It reads the mail that was there when it started
+  (`started_at`); newer mail is the live sync's.
+- **How it runs**: as a step of each sync pass, after the live changes, so new mail, flags and moves
+  never wait for it: at most about a minute and 1,000 messages a pass, and while an import runs the
+  account syncs every minute whether or not anyone is active.
+  - Gmail: `messages.list` (`after:` the start of `since`, never chats, `includeSpamTrash` as chosen),
+    newest first, from its saved page token; a token Gmail refuses lists again from the oldest date it
+    reached. Up to four messages are read at once.
+  - Microsoft: per mail folder, special ones first, a delta round of its own (`receivedDateTime ge`
+    `since`, or no filter for all mail) from its saved page, up to four messages read at once. When a
+    folder's round ends, its delta link becomes the folder's live one, so later changes to older mail
+    (read elsewhere, moved, deleted) arrive like any other.
+  - IMAP: per folder the sync reads (at most 30, "Sync"), `UID SEARCH SINCE` (or every UID), the newest
+    first below its saved UID; a changed UIDVALIDITY starts that folder over. Folders past the 30 are
+    not read (`MailAccount.folders_left_out`).
+- **Each message once**: mail already in opendesk counts as `present` and is not read again; an IMAP
+  message in several folders is one message with each location, as with the sync.
+- **Checkpoints**: every page of messages is stored in one transaction with the import's place, so an
+  import cut off (a deploy, a timeout, a provider failure) goes on where it stopped. A failure is kept
+  on the import (`last_error`, a safe message) and the next pass tries again; a refusal that asking
+  again will not fix ends it (`status: "error"`); a refused grant waits for the reconnect, as the sync
+  does, and the import goes on after it.
+- **Pause, resume, stop**: `PATCH … {paused}`; `DELETE` stops it (`canceled`) and keeps what it
+  imported. Starting again (another scope, or after it ended) reads from the start again, and what is
+  already here counts as `present`.
+- **Counts**: `imported`, `present`, `too_large` (over 30 MB, left at the provider), `unreadable` (could
+  not be parsed). `reached` is the oldest mail read so far; `total` what the provider says is in scope
+  when it says (Gmail's estimate, IMAP's search counts, Microsoft's folder totals for all mail).
+- **Files**: on an instance with a Collab storage allowance (opendesk Cloud, "Storage") imported history
+  keeps no raw copy: its text and sanitized HTML are stored, so it reads and searches like any mail,
+  and its files and inline images are read from the provider when opened. Everywhere else it is stored
+  like synced mail.
+- **Older mail stays current**: Gmail's history and IMAP's flags cover every stored message. Without
+  CONDSTORE an IMAP folder with more than 5,000 stored messages has its newest 5,000 read every pass
+  and all of them at most every 10 minutes.
+- Progress publishes `collab.accounts` once a pass to the account's managers; starting, ending, pausing
+  and reaching the allowance publish it to everyone who sees the account.
+
+### Storage
+
+Collab mail counts toward the workspace's Collab storage: each stored message's text, HTML and raw copy
+(`collab_messages.size`), summed per account at the end of every pass (`collab_accounts.stored_bytes`).
+`CollabStatus.storage` reports it.
+
+- Without billing (self-hosted) it is unlimited, and nothing below applies.
+- On opendesk Cloud the allowance is 25 GB per paid seat, pooled across the workspace
+  (contracts/billing.md "Collab"), which an instance admin may change for one workspace
+  (contracts/admin.md "Limit overrides"). Mail text is small: that is several hundred thousand messages
+  a seat, and imported history keeps its files at the provider.
+- A history import stops at the allowance (`status: "limited"`) and goes on by itself once there is room
+  (more seats, a raised allowance, mail removed).
+- Past twice the allowance no new mail is imported: it stays at the provider and comes in once there is
+  room (Gmail's backlog, Microsoft's resume, IMAP's UID cursor). Sending, drafts and actions still work.
+  `storage.full` is true and the mail page says so.
+
+### Search
+
+`GET /v1/collab/threads?q=` searches what is stored: each message's subject, sender and text (its first
+100,000 characters; `collab_messages.search`), and each conversation's subject and participants, so a
+term late in a long message or a long conversation is found. Mail not imported is not searched: while
+searching, the mail page says how far back the accounts in view go ("Searching mail since …", from
+`oldest_message_at`) and links to the history import of an account that has more at its provider.
 
 ## Conversations
 
@@ -251,6 +322,25 @@ interface MailAccount {
   out_of_office_sync: SettingSync      // google: like the signature; microsoft: two_way with MailboxSettings.ReadWrite, else none; imap: none
   identities: MailIdentity[]   // the addresses it sends from, its own first ("Addresses")
   default_from: string         // the address new mail goes out from, lower case
+  history: MailHistory | null  // the latest history import ("History"); null when none was started
+  oldest_message_at: string | null  // the oldest mail stored from it: its mail is here from then on
+  folders_left_out: number     // IMAP: folders past the 30 the sync reads; 0 otherwise
+}
+
+interface MailHistory {
+  status: "running" | "paused" | "limited" | "done" | "canceled" | "error"   // limited: at the storage allowance ("Storage")
+  since: string | null         // mail received from then on; null = all mail
+  include_spam_trash: boolean
+  requested_by: UserRef | null
+  started_at: string
+  finished_at: string | null   // done, canceled or error
+  reached: string | null       // the oldest mail it has read
+  imported: number             // messages it stored
+  present: number              // already in opendesk
+  too_large: number            // over 30 MB, left at the provider
+  unreadable: number           // could not be parsed
+  total: number | null         // messages in scope, when the provider says
+  last_error: string           // safe to show; "" when the last pass went well
 }
 
 interface MailIdentity {
@@ -379,6 +469,12 @@ interface CollabStatus {
   reason: "plan" | "disabled" | null   // why not: not on the plan, or off on this instance
   providers: { google: boolean; microsoft: boolean; imap: boolean }
   accounts: number             // accounts the caller sees
+  storage: {                   // the workspace's Collab storage ("Storage")
+    used_bytes: number
+    limit_bytes: number        // 0 = unlimited
+    history_limited: boolean   // at the allowance: history imports wait
+    full: boolean              // past twice the allowance: new mail waits at the provider
+  }
 }
 
 interface SidebarPrefs {
@@ -493,12 +589,15 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/display-name/pull` | manage | → `MailAccount` with the From name replaced by Gmail's now ("Get from Gmail", in place of one with variables). `422 display_name_sync_unsupported` for Microsoft and IMAP; `422 validation_failed` when Gmail has no name of its own; `502 provider_error` |
 | PUT | `/v1/collab/accounts/{id}/out-of-office` | manage | `OutOfOffice` → `MailAccount`. Written to the provider first (`502 provider_error`, nothing saved, when it refuses), then stored as the provider answered it. `422 out_of_office_read_only` (`read_only`), `422 out_of_office_unsupported` (`none`), `422` when the end is not after the start, or (Microsoft) when enabled with only one of start and end |
 | DELETE | `/v1/collab/accounts/{id}` | manage | → 204. Removes the account and its mail from opendesk; nothing is deleted at the provider |
+| PUT | `/v1/collab/accounts/{id}/history` | manage | `{since: string \| null, include_spam_trash?: boolean}` → `MailAccount`: starts a history import ("History"), or starts it again with this scope. `since` is RFC 3339, in the past (`422 validation_failed`); `null` imports all mail. `422 history_unavailable` for a sample account |
+| PATCH | `/v1/collab/accounts/{id}/history` | manage | `{paused: boolean}` → `MailAccount`. `404` without an import; `422 validation_failed` for one that ended |
+| DELETE | `/v1/collab/accounts/{id}/history` | manage | → `MailAccount`: stops the import (`canceled`); what it imported stays |
 | POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now |
 | GET | `/v1/collab/accounts/{id}/folders` | see | `MailFolder[]`, special ones first, then by path |
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
-| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches subject, participants, snippet and body text. `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
+| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
 | GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts}: number, accounts: Record<id, number>, folders: Record<id, number>}`: unread conversations; `shared` and `assigned` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
@@ -522,7 +621,7 @@ Errors: `402 collab_required`, `404 not_found`, `422 labels_unsupported`, `422 c
 `409 account_conflict`, `502 provider_error`, `502 send_failed`, `422 provider_not_configured`,
 `422 imap_unavailable`, `422 rename_unsupported`, `422 drafts_unsupported`, `422 signature_sync_unsupported`,
 `422 out_of_office_read_only`, `422 out_of_office_unsupported`, `422 identities_from_provider`, `409 identity_conflict`,
-`422 display_name_sync_unsupported`.
+`422 display_name_sync_unsupported`, `422 history_unavailable`.
 
 ## Account settings
 
@@ -678,7 +777,8 @@ webhooks.
 names; `signature_html` with `from_provider` for a pull, `out_of_office` for the automatic reply,
 `default_from` for the default address; an address added, changed or removed is `fields: ["identities"]`
 with its `identity_id` and `added`, `removed` or the changed `identity_fields`),
-`collab.account_disconnected`, `collab.thread_shared` (`{thread_id, everyone, team_ids,
+`collab.account_disconnected`, `collab.history_import` (`{action: "started" | "paused" | "resumed" | "canceled",
+since, include_spam_trash}`), `collab.thread_shared` (`{thread_id, everyone, team_ids,
 user_ids}`), `collab.thread_assigned` (`{thread_id, user_ids}`). Never an address book entry,
 subject, body or credential.
 
@@ -695,6 +795,9 @@ in-app and push like other notifications, emailed by the member's notification p
   (`migrations/000636_collab.up.sql`), `collab_identities` (`migrations/000654_collab_identities.up.sql`,
   with `collab_threads.addresses`: every address on its messages, lower case, newest first, at most 100,
   and `collab_messages.delivered_to`). Everything is the workspace's and is deleted with it.
+- `collab_history` (one row per account: the latest history import, its scope, place and counts;
+  `migrations/000662_collab_history.up.sql`, with `collab_messages.size`, the generated
+  `collab_messages.search`, `collab_accounts.stored_bytes` and `subscriptions.collab_storage_override`).
 - `collab_accounts.config` (not secret) holds the granted `scopes` and, under `settings`, the settings
   sync state: the hashes last seen at the provider, when they were read, whether a person chose the
   From name, the automatic reply, the default address for new mail (and the hash of Gmail's) and the

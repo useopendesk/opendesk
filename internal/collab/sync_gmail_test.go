@@ -74,6 +74,8 @@ type fakeGmail struct {
 	trashed         []string
 	sent            []string // multipart bodies
 	gets            int
+	// failRawAfter makes raw reads past this many answer 503 (history_test.go); 0 never.
+	failRawAfter int
 	// settings is the account's sendAs and vacation (settings_test.go).
 	settings fakeGmailSettings
 	// drafts are the drafts API and label colours (drafts_test.go).
@@ -147,21 +149,60 @@ func (g *fakeGmail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && path == "/labels":
 		reply(map[string]any{"labels": g.labels})
 	case r.Method == "GET" && path == "/profile":
-		reply(map[string]any{"historyId": strconv.Itoa(g.history)})
+		reply(map[string]any{"historyId": strconv.Itoa(g.history), "messagesTotal": len(g.msgs)})
 	case r.Method == "GET" && path == "/messages":
+		// Newest first, with the search's after: and before: (unix seconds), spam and trash
+		// only when asked for, in pages whose token is an offset.
+		var after, before int64
+		for _, term := range strings.Fields(q.Get("q")) {
+			if v, ok := strings.CutPrefix(term, "after:"); ok {
+				after, _ = strconv.ParseInt(v, 10, 64)
+			}
+			if v, ok := strings.CutPrefix(term, "before:"); ok {
+				before, _ = strconv.ParseInt(v, 10, 64)
+			}
+		}
 		list := []map[string]string{}
 		for i := len(g.order) - 1; i >= 0; i-- {
 			m := g.msgs[g.order[i]]
 			if m == nil || (q.Get("labelIds") != "" && !slices.Contains(m.labels, q.Get("labelIds"))) {
 				continue
 			}
+			if (after > 0 && m.date.Unix() <= after) || (before > 0 && m.date.Unix() >= before) {
+				continue
+			}
+			if q.Get("includeSpamTrash") != "true" && (slices.Contains(m.labels, "SPAM") || slices.Contains(m.labels, "TRASH")) {
+				continue
+			}
 			list = append(list, map[string]string{"id": m.id, "threadId": m.thread})
 		}
-		reply(map[string]any{"messages": list})
+		total := len(list)
+		offset, _ := strconv.Atoi(q.Get("pageToken"))
+		if q.Get("pageToken") == "refused" {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Invalid pageToken","errors":[{"reason":"invalidArgument"}]}}`))
+			return
+		}
+		offset = min(offset, len(list))
+		size, _ := strconv.Atoi(q.Get("maxResults"))
+		if size <= 0 {
+			size = 100
+		}
+		end := min(offset+size, len(list))
+		next := ""
+		if end < len(list) {
+			next = strconv.Itoa(end)
+		}
+		reply(map[string]any{"messages": list[offset:end], "nextPageToken": next, "resultSizeEstimate": total})
 	case r.Method == "GET" && strings.HasPrefix(path, "/messages/"):
 		m := g.msgs[strings.TrimPrefix(path, "/messages/")]
 		if q.Get("format") == "raw" {
 			g.gets++
+			if g.failRawAfter > 0 && g.gets > g.failRawAfter {
+				w.WriteHeader(503)
+				_, _ = w.Write([]byte(`{"error":{"code":503,"message":"Backend Error"}}`))
+				return
+			}
 		}
 		if m == nil {
 			w.WriteHeader(404)

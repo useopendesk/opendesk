@@ -72,6 +72,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s := newService(d)
 	s.registerStatusRoutes(api)
 	s.registerAccountRoutes(api)
+	s.registerHistoryRoutes(api)
 	s.registerSettingsRoutes(api)
 	s.registerConnectRoutes(api, r)
 	s.registerFolderRoutes(api)

@@ -35,6 +35,9 @@ func (s *service) registerStatusRoutes(api huma.API) {
 				}
 				out.Reason = &reason
 			}
+			if out.Storage, err = s.storageStatus(ctx, p.WorkspaceID, ent.CollabStorageBytes); err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM collab_accounts a WHERE a.workspace_id = $1 AND `+
 				accountVisibleSQL("a", "$2"), p.WorkspaceID, p.UserID).Scan(&out.Accounts); err != nil {
 				return nil, httpx.Wrap(err)

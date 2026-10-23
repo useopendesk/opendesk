@@ -644,6 +644,12 @@ export const api = {
       /** Removes the account and its mail from opendesk; nothing is deleted at the provider. */
       remove: (id: string) => http.del(`/v1/collab/accounts/${id}`),
       sync: (id: string) => http.post<void>(`/v1/collab/accounts/${id}/sync`),
+      /** Starts a history import, or starts it again with this scope (contracts/collab.md "History"). */
+      startHistory: (id: string, b: { since: string | null; include_spam_trash?: boolean }) =>
+        http.put<T.MailAccount>(`/v1/collab/accounts/${id}/history`, b),
+      pauseHistory: (id: string, paused: boolean) => http.patch<T.MailAccount>(`/v1/collab/accounts/${id}/history`, { paused }),
+      /** Stops it (canceled); what it imported stays. */
+      stopHistory: (id: string) => http.del<T.MailAccount>(`/v1/collab/accounts/${id}/history`),
       /** Gmail only: replaces the signature with Gmail's now. */
       pullSignature: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/signature/pull`),
       pullDisplayName: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/display-name/pull`),

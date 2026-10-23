@@ -44,7 +44,7 @@ type actionMessage struct {
 
 // actionMessages loads the account's messages of the conversations, oldest first.
 func actionMessages(ctx context.Context, q db.Querier, a *accountRow, threadIDs []uuid.UUID) ([]actionMessage, error) {
-	rows, err := q.Query(ctx, `SELECT `+storedColumns+`, t.remote_id, m.sent_at FROM collab_messages m
+	rows, err := q.Query(ctx, `SELECT `+storedColumns+`, t.remote_id FROM collab_messages m
 		JOIN collab_threads t ON t.id = m.thread_id
 		WHERE m.account_id = $1 AND m.workspace_id = $2 AND m.thread_id = ANY($3) ORDER BY m.thread_id, m.sent_at, m.id`,
 		a.ID, a.WorkspaceID, threadIDs)
@@ -55,10 +55,11 @@ func actionMessages(ctx context.Context, q db.Querier, a *accountRow, threadIDs 
 		var m storedMsg
 		var out actionMessage
 		err := r.Scan(&m.ID, &m.ThreadID, &m.RemoteID, &m.MessageID, &m.Unread, &m.Starred, &m.Draft, &m.RawKey, &m.Location,
-			&m.FolderIDs, &out.threadRemoteID, &out.sentAt)
+			&m.FolderIDs, &m.SentAt, &out.threadRemoteID)
 		if m.FolderIDs == nil {
 			m.FolderIDs = []uuid.UUID{}
 		}
+		out.sentAt = m.SentAt
 		out.storedMsg = &m
 		return out, err
 	})

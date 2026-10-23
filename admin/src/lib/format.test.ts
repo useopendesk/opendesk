@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, duration, humanize, number, plural, relative, shortDate, usd } from "./format";
+import { bytes, dayLabel, duration, humanize, number, plural, relative, shortDate, usd } from "./format";
 
 describe("usd", () => {
   it("shows cents for ordinary amounts", () => {
@@ -66,5 +66,14 @@ describe("numbers", () => {
   it("humanize codes", () => {
     expect(humanize("workspace.limits_changed")).toBe("Workspace limits changed");
     expect(humanize("self_hosted")).toBe("Self hosted");
+  });
+});
+
+describe("bytes", () => {
+  it("picks the unit that reads best", () => {
+    expect(bytes(512)).toBe("512 B");
+    expect(bytes(3.5 * 1024 * 1024)).toBe("3.5 MB");
+    expect(bytes(25 * 1024 ** 3)).toBe("25.0 GB");
+    expect(bytes(null)).toBe("–");
   });
 });

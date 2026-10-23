@@ -26,7 +26,7 @@ import (
 
 const (
 	maxBodyText   = 200_000 // runes of a message's text kept
-	maxSearchText = 60_000  // characters of a conversation fed to its search vector
+	maxSearchText = 60_000  // characters of a conversation's subject and participants fed to its search vector
 )
 
 // pass is one batch of synced changes to an account: its folders by remote id and the
@@ -44,6 +44,20 @@ type pass struct {
 	stored []string
 	// removedFolders are the provider ids of folders gone at the provider in this pass.
 	removedFolders []string
+	// full: the workspace is past twice its Collab storage allowance, so no new mail is
+	// imported (contracts/collab.md "Storage").
+	full bool
+	// noRaw: new messages keep no raw copy; their files are read from the provider (history
+	// on an instance with a storage allowance).
+	noRaw bool
+	// addedBytes is what the messages stored in this pass keep; unreadable counts the ones
+	// that could not be parsed; oldest is the earliest of them.
+	addedBytes int64
+	unreadable int
+	oldest     time.Time
+	// quiet: batches publish nothing; held records that one would have (a history import
+	// tells once a pass, not once a page).
+	quiet, held bool
 }
 
 func (s *service) newPass(ctx context.Context, q db.Querier, a *accountRow) (*pass, error) {
@@ -124,6 +138,10 @@ func (p *pass) commit(ctx context.Context, tx pgx.Tx) error {
 	if threads == nil {
 		threads = []uuid.UUID{}
 	}
+	if p.quiet {
+		p.touched, p.foldersChanged, p.held = nil, false, true
+		return nil
+	}
 	id := p.a.ID
 	if err := p.s.publishChanged(ctx, tx, p.a.WorkspaceID, &id, threads, p.foldersChanged || len(threads) > 0); err != nil {
 		return err
@@ -144,14 +162,16 @@ type storedMsg struct {
 	RawKey    string
 	Location  json.RawMessage
 	FolderIDs []uuid.UUID
+	SentAt    time.Time
 }
 
 const storedColumns = `m.id, m.thread_id, m.remote_id, m.message_id, m.unread, m.starred, m.draft, m.raw_key, m.location,
-	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id)`
+	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.sent_at`
 
 func scanStored(row pgx.Row) (*storedMsg, error) {
 	var m storedMsg
-	if err := row.Scan(&m.ID, &m.ThreadID, &m.RemoteID, &m.MessageID, &m.Unread, &m.Starred, &m.Draft, &m.RawKey, &m.Location, &m.FolderIDs); err != nil {
+	if err := row.Scan(&m.ID, &m.ThreadID, &m.RemoteID, &m.MessageID, &m.Unread, &m.Starred, &m.Draft, &m.RawKey, &m.Location, &m.FolderIDs,
+		&m.SentAt); err != nil {
 		return nil, err
 	}
 	if m.FolderIDs == nil {
@@ -321,6 +341,7 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	pm, err := email.ParseMail(in.Raw)
 	if err != nil {
 		p.s.log.Info("collab message not parsed", "account_id", p.a.ID)
+		p.unreadable++
 		return uuid.Nil, nil
 	}
 	if in.RemoteID == "" {
@@ -366,7 +387,9 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	}
 
 	rawKey := ""
-	if len(atts) > 0 {
+	size := int64(len(bodyHTML) + len(text))
+	if len(atts) > 0 && !p.noRaw {
+		size += int64(len(in.Raw))
 		rawKey = "collab/" + wid.String() + "/" + p.a.ID.String() + "/" + id.String() + ".eml"
 		if err := p.s.d.Storage.Put(ctx, rawKey, bytes.NewReader(in.Raw), int64(len(in.Raw)), "message/rfc822"); err != nil {
 			return uuid.Nil, err
@@ -396,12 +419,13 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	var inserted uuid.UUID
 	err = tx.QueryRow(ctx, `INSERT INTO collab_messages (id, workspace_id, account_id, thread_id, remote_id, message_id, in_reply_to, refs,
 		from_addr, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, snippet, body_html, body_text, sent_at, unread, starred, draft,
-		attachments, raw_key, location, sent_by, delivered_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+		attachments, raw_key, location, sent_by, delivered_to, size)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
 		ON CONFLICT (account_id, remote_id) DO NOTHING RETURNING id`,
 		id, wid, p.a.ID, threadID, in.RemoteID, msgID, inReplyTo, refs, from, addressList(pm, "To"), addressList(pm, "Cc"),
 		addressList(pm, "Bcc"), addressList(pm, "Reply-To"), truncateRunes(pm.Subject, 998), cleanLine(text, 200), bodyHTML, text,
-		sentAt, in.State.Unread, in.State.Starred, in.State.Draft, atts, rawKey, locationOrEmpty(in.State.Location), in.SentBy, deliveredTo(pm)).Scan(&inserted)
+		sentAt, in.State.Unread, in.State.Starred, in.State.Draft, atts, rawKey, locationOrEmpty(in.State.Location), in.SentBy, deliveredTo(pm),
+		size).Scan(&inserted)
 	if db.IsNotFound(err) {
 		// Stored meanwhile (a sync and a send racing): keep that row.
 		if rawKey != "" {
@@ -428,6 +452,10 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	p.touch(threadID)
 	p.foldersChanged = true
 	p.imported++
+	p.addedBytes += size
+	if p.oldest.IsZero() || sentAt.Before(p.oldest) {
+		p.oldest = sentAt
+	}
 	return id, nil
 }
 
@@ -488,13 +516,13 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 	own := ownAddresses(a, idents)
 	rows, err := tx.Query(ctx, `SELECT m.thread_id, m.subject, m.snippet, m.from_addr, m.to_addrs, m.cc_addrs, m.sent_at, m.unread, m.starred,
 		EXISTS (SELECT 1 FROM jsonb_array_elements(m.attachments) e WHERE NOT COALESCE((e->>'inline')::boolean, false)),
-		left(m.body_text, 4000), ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to
+		ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to
 		FROM collab_messages m WHERE m.account_id = $1 AND m.thread_id = ANY($2) ORDER BY m.thread_id, m.sent_at, m.id`, a.ID, threadIDs)
 	if err != nil {
 		return err
 	}
 	type msg struct {
-		subject, snippet, text string
+		subject, snippet       string
 		from                   Address
 		to, cc                 []Address
 		sentAt                 time.Time
@@ -506,7 +534,7 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 	for rows.Next() {
 		var tid uuid.UUID
 		var m msg
-		if err := rows.Scan(&tid, &m.subject, &m.snippet, &m.from, &m.to, &m.cc, &m.sentAt, &m.unread, &m.starred, &m.files, &m.text, &m.folders, &m.delivered); err != nil {
+		if err := rows.Scan(&tid, &m.subject, &m.snippet, &m.from, &m.to, &m.cc, &m.sentAt, &m.unread, &m.starred, &m.files, &m.folders, &m.delivered); err != nil {
 			rows.Close()
 			return err
 		}
@@ -554,15 +582,14 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 			}
 		}
 		participants := participantList(people, own)
+		// The conversation's own vector is its subject and the people in it; each message's
+		// text is searched on its own (collab_messages.search).
 		search.WriteString(subject)
-		for _, p := range participants {
-			search.WriteString(" " + p.Name + " " + p.Email)
+		for _, a := range addresses {
+			search.WriteString(" " + a)
 		}
-		for _, m := range list {
-			if search.Len() >= maxSearchText {
-				break
-			}
-			search.WriteString(" " + m.text)
+		for _, p := range participants {
+			search.WriteString(" " + p.Name)
 		}
 		doc := search.String()
 		if len(doc) > maxSearchText {

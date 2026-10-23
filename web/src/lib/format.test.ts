@@ -39,6 +39,7 @@ describe("format, English", () => {
     expect(bytes(512)).toBe("512 B");
     expect(bytes(2048)).toBe("2 KB");
     expect(bytes(3.5 * 1024 * 1024)).toBe("3.5 MB");
+    expect(bytes(25 * 1024 * 1024 * 1024)).toBe("25.0 GB");
     expect(compact(1234)).toBe("1.2K");
     expect(compact(999)).toBe("999");
     expect(percent(0.874)).toBe("87%");

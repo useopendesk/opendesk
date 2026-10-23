@@ -68,6 +68,30 @@ type imapFolderState struct {
 	Validity uint32 `json:"v,omitempty"`
 	LastUID  uint32 `json:"u,omitempty"`
 	ModSeq   uint64 `json:"m,omitempty"`
+	// FullRefresh is when the flags of all its known messages were last read (unix
+	// seconds), for a server without CONDSTORE.
+	FullRefresh int64 `json:"f,omitempty"`
+}
+
+// Without CONDSTORE a folder's newest imapRefreshNewest known messages have their flags
+// read every pass, and all of them at most every imapFullRefresh.
+const (
+	imapRefreshNewest = 5000
+	imapFullRefresh   = 10 * time.Minute
+)
+
+// newestKnown keeps the n highest UIDs of known.
+func newestKnown(known map[uint32]*storedMsg, n int) map[uint32]*storedMsg {
+	uids := make([]uint32, 0, len(known))
+	for u := range known {
+		uids = append(uids, u)
+	}
+	slices.Sort(uids)
+	out := make(map[uint32]*storedMsg, n)
+	for _, u := range uids[max(len(uids)-n, 0):] {
+		out[u] = known[u]
+	}
+	return out
 }
 
 // imapConn is one authenticated IMAP session.
@@ -628,6 +652,9 @@ func (s *service) syncIMAP(ctx context.Context, p *pass, ip *imapProvider) error
 		if first {
 			limit = budget
 		}
+		if p.full {
+			limit = 0 // the workspace's storage is full: new mail waits above the UID cursor
+		}
 		used, err := s.syncIMAPFolder(ctx, p, c, f, condstore, limit)
 		if err != nil {
 			return err
@@ -719,9 +746,14 @@ func (s *service) syncIMAPFolder(ctx context.Context, p *pass, c *imapclient.Cli
 			}
 			slices.Sort(uids)
 			uids = slices.Compact(uids)
-			// The oldest first, at most initialMax a pass; the cursor goes on from there.
-			if len(uids) > initialMax {
-				uids = uids[:initialMax]
+			// The oldest first, at most initialMax a pass (none while the storage is full);
+			// the cursor goes on from there.
+			n := initialMax
+			if p.full {
+				n = 0
+			}
+			if len(uids) > n {
+				uids = uids[:n]
 			}
 		}
 	}
@@ -741,9 +773,18 @@ func (s *service) syncIMAPFolder(ctx context.Context, p *pass, c *imapclient.Cli
 		st.LastUID = uint32(sel.UIDNext) - 1
 	}
 
-	// Flags of known messages, and the ones gone from the folder.
+	// Flags of known messages, and the ones gone from the folder. Without CONDSTORE a large
+	// folder has its newest messages read every pass and all of them now and then.
 	if !initial && len(known) > 0 && !(condstore && st.ModSeq != 0 && sel.HighestModSeq == st.ModSeq) {
-		if err := s.imapRefresh(ctx, p, c, f, sel.UIDValidity, known, condstore, st.ModSeq); err != nil {
+		refresh := known
+		if !condstore && len(known) > imapRefreshNewest {
+			if time.Since(time.Unix(st.FullRefresh, 0)) < imapFullRefresh {
+				refresh = newestKnown(known, imapRefreshNewest)
+			} else {
+				st.FullRefresh = time.Now().Unix()
+			}
+		}
+		if err := s.imapRefresh(ctx, p, c, f, sel.UIDValidity, refresh, condstore, st.ModSeq); err != nil {
 			return imported, err
 		}
 	}
@@ -761,75 +802,14 @@ func (s *service) syncIMAPFolder(ctx context.Context, p *pass, c *imapclient.Cli
 // same Message-ID in another folder) gains this location; others are fetched and stored.
 // The folder's cursor advances in the same transaction.
 func (s *service) imapImport(ctx context.Context, p *pass, c *imapclient.Client, f *folderRow, validity uint32, chunk []uint32, st *imapFolderState) (int, error) {
-	msgs, err := c.Fetch(uidSet(chunk), &imap.FetchOptions{UID: true, Flags: true, Envelope: true, RFC822Size: true, InternalDate: true}).Collect()
-	if err != nil {
-		return 0, opError("listing new messages", err)
-	}
-	metas := []imapMeta{}
-	for _, m := range msgs {
-		metas = append(metas, metaOf(m))
-	}
-	slices.SortFunc(metas, func(a, b imapMeta) int { return int(int64(a.uid) - int64(b.uid)) })
-	remoteIDs := []string{}
-	for _, m := range metas {
-		if id := imapRemoteID(m.messageID, nil); id != "" {
-			remoteIDs = append(remoteIDs, id)
-		}
-	}
-	stored, err := p.lookupMany(ctx, s.d.DB.Pool, remoteIDs)
+	ch, err := s.imapFetch(ctx, p, c, chunk)
 	if err != nil {
 		return 0, err
 	}
-	raws := map[uint32][]byte{}
-	for _, m := range metas {
-		if id := imapRemoteID(m.messageID, nil); id != "" && stored[id] != nil {
-			continue
-		}
-		if m.size > maxRawBytes {
-			s.log.Info("collab skipping oversized message", "account_id", p.a.ID)
-			continue
-		}
-		raw, err := fetchBody(c, m.uid)
-		if err != nil {
-			return 0, err
-		}
-		if raw != nil {
-			raws[m.uid] = raw
-		}
-	}
 	before := p.imported
 	err = p.batch(ctx, func(tx pgx.Tx) error {
-		for _, m := range metas {
-			loc := imapLoc{Folder: f.RemoteID, Validity: validity, UID: m.uid}
-			remote := imapRemoteID(m.messageID, raws[m.uid])
-			if remote == "" {
-				continue
-			}
-			if sm := stored[remote]; sm != nil {
-				locs := append(dropUID(parseLocation(sm.Location), loc), loc)
-				st := p.imapState(m.flags, locs)
-				if err := p.update(ctx, tx, sm, st); err != nil {
-					return err
-				}
-				continue
-			}
-			raw := raws[m.uid]
-			if raw == nil {
-				continue
-			}
-			locs := []imapLoc{loc}
-			in := &newMessage{RemoteID: remote, Raw: raw, Date: m.date, State: p.imapState(m.flags, locs)}
-			if _, err := p.insert(ctx, tx, in); err != nil {
-				return err
-			}
-			// A second copy in the same chunk merges into this one.
-			sm, err := p.lookup(ctx, tx, remote)
-			if err != nil {
-				return err
-			}
-			if sm != nil {
-				stored[remote] = sm
-			}
+		if err := p.imapStore(ctx, tx, f, validity, ch); err != nil {
+			return err
 		}
 		if len(chunk) > 0 && chunk[len(chunk)-1] > st.LastUID {
 			st.LastUID = chunk[len(chunk)-1]
@@ -839,6 +819,94 @@ func (s *service) imapImport(ctx context.Context, p *pass, c *imapclient.Client,
 		return err
 	})
 	return p.imported - before, err
+}
+
+// imapChunk is a chunk of a folder's UIDs as read from the server: each message's
+// envelope, the stored messages with the same Message-ID, and the others' raw sources.
+type imapChunk struct {
+	metas    []imapMeta
+	stored   map[string]*storedMsg
+	raws     map[uint32][]byte
+	present  int // already stored (another copy)
+	tooLarge int // over maxRawBytes, left at the server
+}
+
+// imapFetch reads a chunk of UIDs of the selected folder.
+func (s *service) imapFetch(ctx context.Context, p *pass, c *imapclient.Client, chunk []uint32) (*imapChunk, error) {
+	msgs, err := c.Fetch(uidSet(chunk), &imap.FetchOptions{UID: true, Flags: true, Envelope: true, RFC822Size: true, InternalDate: true}).Collect()
+	if err != nil {
+		return nil, opError("listing new messages", err)
+	}
+	ch := &imapChunk{raws: map[uint32][]byte{}}
+	for _, m := range msgs {
+		ch.metas = append(ch.metas, metaOf(m))
+	}
+	slices.SortFunc(ch.metas, func(a, b imapMeta) int { return int(int64(a.uid) - int64(b.uid)) })
+	remoteIDs := []string{}
+	for _, m := range ch.metas {
+		if id := imapRemoteID(m.messageID, nil); id != "" {
+			remoteIDs = append(remoteIDs, id)
+		}
+	}
+	if ch.stored, err = p.lookupMany(ctx, s.d.DB.Pool, remoteIDs); err != nil {
+		return nil, err
+	}
+	for _, m := range ch.metas {
+		if id := imapRemoteID(m.messageID, nil); id != "" && ch.stored[id] != nil {
+			ch.present++
+			continue
+		}
+		if m.size > maxRawBytes {
+			s.log.Info("collab skipping oversized message", "account_id", p.a.ID)
+			ch.tooLarge++
+			continue
+		}
+		raw, err := fetchBody(c, m.uid)
+		if err != nil {
+			return nil, err
+		}
+		if raw != nil {
+			ch.raws[m.uid] = raw
+		}
+	}
+	return ch, nil
+}
+
+// imapStore stores a chunk read by imapFetch, in tx.
+func (p *pass) imapStore(ctx context.Context, tx pgx.Tx, f *folderRow, validity uint32, ch *imapChunk) error {
+	for _, m := range ch.metas {
+		loc := imapLoc{Folder: f.RemoteID, Validity: validity, UID: m.uid}
+		remote := imapRemoteID(m.messageID, ch.raws[m.uid])
+		if remote == "" {
+			continue
+		}
+		if sm := ch.stored[remote]; sm != nil {
+			locs := append(dropUID(parseLocation(sm.Location), loc), loc)
+			st := p.imapState(m.flags, locs)
+			if err := p.update(ctx, tx, sm, st); err != nil {
+				return err
+			}
+			continue
+		}
+		raw := ch.raws[m.uid]
+		if raw == nil {
+			continue
+		}
+		locs := []imapLoc{loc}
+		in := &newMessage{RemoteID: remote, Raw: raw, Date: m.date, State: p.imapState(m.flags, locs)}
+		if _, err := p.insert(ctx, tx, in); err != nil {
+			return err
+		}
+		// A second copy in the same chunk merges into this one.
+		sm, err := p.lookup(ctx, tx, remote)
+		if err != nil {
+			return err
+		}
+		if sm != nil {
+			ch.stored[remote] = sm
+		}
+	}
+	return nil
 }
 
 // imapRefresh resyncs the flags of the folder's known messages (only those changed since

@@ -53,7 +53,7 @@ export type NamedWorkspace = {
   owner?: string;
   mailboxes: Mailbox[];
   collab?: { access: "offered" | "complimentary"; days?: number; note: string; accounts?: number };
-  limits?: { max_mailboxes?: number | null; max_members?: number | null; monthly_ai_usd?: number | null };
+  limits?: { max_mailboxes?: number | null; max_members?: number | null; monthly_ai_usd?: number | null; collab_storage_gb?: number | null };
   ai: number;
   purchased?: number;
   suspended?: { days: number; reason: string; by: OperatorKey };

@@ -372,6 +372,9 @@ func (s *service) syncGraph(ctx context.Context, p *pass, g *graphProvider) erro
 		case st.Initial && first:
 			limit = budget
 		}
+		if p.full {
+			limit = 0 // the workspace's storage is full: new mail waits (Resume)
+		}
 		used, more, err := s.graphFolderDelta(ctx, p, g, f, st, target, limit, newSince)
 		if isNotFound(err) || isSyncStateGone(err) {
 			// The folder is gone or its delta link expired: start it over next pass.

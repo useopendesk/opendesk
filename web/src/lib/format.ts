@@ -115,6 +115,12 @@ export function shortDate(iso: string | null | undefined): string {
   return sameYear(d) ? dtf({ month: "short", day: "numeric" }).format(d) : dtf({ month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
+/** "Jun 2021": how far back something goes. */
+export function monthYear(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return dtf({ month: "short", year: "numeric" }).format(new Date(iso));
+}
+
 /** 135 -> "2h 15m", 2880 -> "2d". */
 export function minutes(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "–";
@@ -131,7 +137,8 @@ export function minutes(n: number | null | undefined): string {
 export function bytes(n: number): string {
   if (n < 1024) return `${number(n)} B`;
   if (n < 1024 * 1024) return `${number(n / 1024, { maximumFractionDigits: n < 10 * 1024 ? 1 : 0 })} KB`;
-  return `${number(n / 1024 / 1024, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`;
+  if (n < 1024 * 1024 * 1024) return `${number(n / 1024 / 1024, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`;
+  return `${number(n / 1024 / 1024 / 1024, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} GB`;
 }
 
 /** English-only pluralizer for agent-app copy; customer pages use i18n plurals. */

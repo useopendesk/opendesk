@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, ProviderMark } from "@/components/collab/bits";
 import { ConnectAccountDialog, startOAuth } from "@/components/collab/ConnectAccount";
+import { HistoryPill } from "@/components/collab/HistorySection";
 import { useAudienceSummary } from "@/components/collab/pickers";
 import type { MailAccount } from "@/lib/api/types";
 import { errorMessage } from "@/lib/api/client";
@@ -140,6 +141,9 @@ export default function MailAccounts() {
           )}
         </div>
       </div>
+      <span className="hidden sm:flex">
+        <HistoryPill history={a.history} />
+      </span>
       <span className="hidden w-28 text-right text-[11.5px] text-fg-4 md:block">{a.last_synced_at ? t("accounts.lastSync", { when: relLong(a.last_synced_at) }) : t("accounts.neverSynced")}</span>
       {a.reconnect && a.can_manage ? (
         <Button

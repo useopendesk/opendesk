@@ -31,6 +31,7 @@ import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, boxIcon, FolderGlyph } from "@/components/collab/bits";
 import { FolderBar } from "@/components/collab/FolderBar";
+import { SearchCoverage, StorageFullBanner } from "@/components/collab/MailNotices";
 import { LabelsPicker, MovePicker, type MoveTarget } from "@/components/collab/pickers";
 import { ThreadRow } from "@/components/collab/ThreadRow";
 import { ThreadView, type ThreadViewHandle } from "@/components/collab/ThreadView";
@@ -424,6 +425,8 @@ export default function MailPage() {
             prefs={prefs}
           />
         )}
+        {!noAccounts && <StorageFullBanner />}
+        {search.q && !noAccounts && <SearchCoverage accounts={scopeAccount ? [scopeAccount] : (accounts ?? [])} />}
         {(addresses.length > 1 || search.to) && (
           <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line-soft px-4 text-[11.5px] text-fg-3">
             <AtSign className="size-3.5 shrink-0 text-fg-4" />

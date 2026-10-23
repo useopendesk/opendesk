@@ -106,10 +106,12 @@ export function registerWorkspaces() {
       max_mailboxes: numOrNull(ctx, "max_mailboxes") ?? null,
       max_members: numOrNull(ctx, "max_members") ?? null,
       monthly_ai_usd: numOrNull(ctx, "monthly_ai_usd") ?? null,
+      collab_storage_gb: numOrNull(ctx, "collab_storage_gb") ?? null,
     };
     for (const [k, v] of Object.entries(limits)) {
       if (v === null) continue;
-      if (v < 0 || v > 100_000) throw invalid(`${k} must be between 0 and 100000`);
+      const max = k === "collab_storage_gb" ? 1_000_000 : 100_000;
+      if (v < 0 || v > max) throw invalid(`${k} must be between 0 and ${max}`);
       if (k !== "monthly_ai_usd" && !Number.isInteger(v)) throw invalid(`${k} must be a whole number`);
     }
     if (limits.monthly_ai_usd !== null) limits.monthly_ai_usd = micro(limits.monthly_ai_usd);

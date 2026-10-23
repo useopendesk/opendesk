@@ -247,6 +247,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	s := w.s
 	s.registerStatusRoutes(api)
 	s.registerAccountRoutes(api)
+	s.registerHistoryRoutes(api)
 	s.registerSettingsRoutes(api)
 	s.registerConnectRoutes(api, r)
 	s.registerFolderRoutes(api)

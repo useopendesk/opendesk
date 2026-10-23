@@ -13,6 +13,7 @@ import type {
   MailComment,
   MailFolder,
   MailFolderRole,
+  MailHistory,
   MailIdentity,
   MailMessage,
   MailMessageDetails,
@@ -188,6 +189,9 @@ function seedState(ws: WsData): State {
     out_of_office_sync: "none",
     aliases: [],
     defaultFrom: "",
+    history: null,
+    oldest_message_at: new Date(now - 30 * DAY).toISOString(),
+    folders_left_out: 0,
     ...p,
   });
   const work = mk({
@@ -233,6 +237,23 @@ function seedState(ws: WsData): State {
       internal_only: false,
     },
     out_of_office_sync: "two_way",
+    // Its older mail coming in (contracts/collab.md "History").
+    oldest_message_at: new Date(now - 412 * DAY).toISOString(),
+    history: {
+      status: "running",
+      since: null,
+      include_spam_trash: false,
+      requested_by: userRef(other),
+      started_at: new Date(now - 3 * HOUR).toISOString(),
+      finished_at: null,
+      reached: new Date(now - 412 * DAY).toISOString(),
+      imported: 12_340,
+      present: 210,
+      too_large: 2,
+      unreadable: 0,
+      total: 38_600,
+      last_error: "",
+    },
   });
   const personal = mk({
     provider: "imap",
@@ -244,6 +265,7 @@ function seedState(ws: WsData): State {
     status: "error",
     reconnect: true,
     last_error: "The server refused the password. Connect the account again.",
+    folders_left_out: 4,
     imap: { imap_host: "imap.fastmail.com", imap_port: 993, imap_tls: "tls", imap_username: `${local}@fastmail.com`, smtp_host: "smtp.fastmail.com", smtp_port: 465, smtp_tls: "tls", smtp_username: `${local}@fastmail.com` },
   });
   const accounts = [work, sales, personal];
@@ -582,7 +604,56 @@ function state(ws: WsData): State {
 function status(ws: WsData): CollabStatus {
   const p = new URLSearchParams(location.search).get("mock_collab");
   const off = p === "off" || p === "plan";
-  return { enabled: !off, reason: off ? (p === "plan" ? "plan" : "disabled") : null, providers: { google: true, microsoft: true, imap: true }, accounts: off ? 0 : visibleAccounts(ws).length };
+  return { enabled: !off, reason: off ? (p === "plan" ? "plan" : "disabled") : null, providers: { google: true, microsoft: true, imap: true }, accounts: off ? 0 : visibleAccounts(ws).length, storage: storage() };
+}
+
+/**
+ * The workspace's Collab storage (contracts/collab.md "Storage"). Unlimited, as on a
+ * self-hosted instance, unless ?mock_storage= says otherwise: "cloud" (an allowance with
+ * room), "limited" (at it: history imports wait) or "full" (past twice it: new mail waits).
+ */
+function storage(): CollabStatus["storage"] {
+  const mode = new URLSearchParams(location.search).get("mock_storage");
+  const limit = 3 * 25 * 1024 ** 3;
+  if (mode === "limited") return { used_bytes: limit + 120 * 1024 ** 2, limit_bytes: limit, history_limited: true, full: false };
+  if (mode === "full") return { used_bytes: 2 * limit + 5 * 1024 ** 2, limit_bytes: limit, history_limited: true, full: true };
+  if (mode === "cloud") return { used_bytes: 9.4 * 1024 ** 3, limit_bytes: limit, history_limited: false, full: false };
+  return { used_bytes: 9.4 * 1024 ** 3, limit_bytes: 0, history_limited: false, full: false };
+}
+
+/** A history import moving on: a batch every couple of seconds while it runs, until its total. */
+const historyTimers = new Map<string, ReturnType<typeof setInterval>>();
+function runHistory(ws: WsData, a: Account) {
+  clearInterval(historyTimers.get(a.id));
+  historyTimers.delete(a.id);
+  const h = a.history;
+  if (!h || h.status !== "running") return;
+  if (storage().history_limited) {
+    h.status = "limited";
+    return;
+  }
+  historyTimers.set(
+    a.id,
+    setInterval(() => {
+      const cur = a.history;
+      if (!cur || cur.status !== "running") return void clearInterval(historyTimers.get(a.id));
+      const total = cur.total ?? 4_000;
+      const step = Math.min(Math.max(total - (cur.imported + cur.present + cur.too_large + cur.unreadable), 0), 640);
+      cur.imported += Math.round(step * 0.96);
+      cur.present += step - Math.round(step * 0.96);
+      const floor = cur.since ? new Date(cur.since).getTime() : Date.now() - 6 * 365 * DAY;
+      const reached = Math.max(floor, (cur.reached ? new Date(cur.reached).getTime() : Date.now()) - 21 * DAY);
+      cur.reached = new Date(reached).toISOString();
+      if (!a.oldest_message_at || cur.reached < a.oldest_message_at) a.oldest_message_at = cur.reached;
+      if (cur.imported + cur.present + cur.too_large + cur.unreadable >= total) {
+        cur.status = "done";
+        cur.finished_at = nowIso();
+        clearInterval(historyTimers.get(a.id));
+        historyTimers.delete(a.id);
+      }
+      emit(ws, "collab.accounts", { account_id: a.id }, audienceOf(ws, a.id, []));
+    }, 2_000),
+  );
 }
 
 function requireCollab(ws: WsData) {
@@ -1047,6 +1118,9 @@ export function registerCollab() {
       out_of_office_sync: "none",
       aliases: [],
       defaultFrom: "",
+      history: null,
+      oldest_message_at: null,
+      folders_left_out: 0,
       imap: {
         imap_host: String(b.imap_host),
         imap_port: Number(b.imap_port),
@@ -1288,6 +1362,67 @@ export function registerCollab() {
       emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     }, 1500);
     return respond(202);
+  });
+
+  // History imports (contracts/collab.md "History").
+  put("/v1/collab/accounts/:id/history", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const b = ctx.body;
+    let since: string | null = null;
+    if (b.since !== null && b.since !== undefined) {
+      const d = new Date(String(b.since));
+      if (Number.isNaN(d.getTime()) || d.getTime() > Date.now()) throw invalid("since must be a date in the past");
+      since = d.toISOString();
+    }
+    const history: MailHistory = {
+      status: "running",
+      since,
+      include_spam_trash: b.include_spam_trash === true,
+      requested_by: userRef(db.meId),
+      started_at: nowIso(),
+      finished_at: null,
+      reached: null,
+      imported: 0,
+      present: 0,
+      too_large: 0,
+      unreadable: 0,
+      total: a.provider === "microsoft" && since ? null : since ? 2_400 : 9_800,
+      last_error: "",
+    };
+    a.history = history;
+    runHistory(ctx.ws, a);
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+
+  patch("/v1/collab/accounts/:id/history", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const h = a.history;
+    if (!h) throw notFound("History import");
+    if (h.status === "done" || h.status === "canceled" || h.status === "error") throw invalid("This import has ended. Start a new one.");
+    h.status = ctx.body.paused === true ? "paused" : "running";
+    runHistory(ctx.ws, a);
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+
+  del("/v1/collab/accounts/:id/history", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const h = a.history;
+    if (!h) throw notFound("History import");
+    if (h.status !== "done" && h.status !== "canceled" && h.status !== "error") {
+      h.status = "canceled";
+      h.finished_at = nowIso();
+    }
+    runHistory(ctx.ws, a);
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
   });
 
   get("/v1/collab/accounts/:id/folders", (ctx) => {

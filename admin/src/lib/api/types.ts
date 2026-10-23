@@ -77,7 +77,13 @@ export type AdminWorkspaceRow = AdminWorkspaceRef & {
   test_expires_at: string | null;
   sample_data: AdminSampleData;
 };
-export type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null };
+export type AdminLimits = {
+  max_mailboxes: number | null;
+  max_members: number | null;
+  monthly_ai_usd: number | null;
+  /** The Collab storage allowance in GB (contracts/collab.md "Storage"); 0 = unlimited. */
+  collab_storage_gb: number | null;
+};
 export type AdminMailbox = {
   id: string;
   name: string;
@@ -111,6 +117,8 @@ export type AdminCollab = {
   enabled: boolean;
   /** Mail accounts its members connected. */
   accounts: number;
+  /** The mail they store (contracts/collab.md "Storage"). */
+  storage_used_bytes: number;
 };
 export type AdminCollabInput = { access: CollabAccess; until?: string | null; note?: string };
 
@@ -150,7 +158,8 @@ export type AdminWorkspace = AdminWorkspaceRow & {
   counts: { tickets: number; open_tickets: number; contacts: number; kb_articles: number; api_keys: number; webhooks: number; brands: number };
   mailboxes: AdminMailbox[];
   /** 0 = unlimited, after overrides. */
-  entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean };
+  /** 0 = unlimited, after overrides. */
+  entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean; collab_storage_gb: number };
   limits: AdminLimits;
   subscription: AdminSubscription | null;
   collab: AdminCollab;

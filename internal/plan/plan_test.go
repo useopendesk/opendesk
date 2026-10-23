@@ -15,6 +15,16 @@ func TestOverrides(t *testing.T) {
 	if e.MaxMailboxes != 0 || e.MonthlyUSD != ProUSDPerSeat {
 		t.Fatalf("no overrides: %+v", e)
 	}
+	var unlimited, more int64 = 0, 500 << 30
+	e = Entitlements{Plan: Collab, CollabStorageBytes: CollabStorageBytesPerSeat}
+	Overrides{CollabStorageBytes: &more}.apply(&e)
+	if e.CollabStorageBytes != more {
+		t.Fatalf("collab storage raised: %+v", e)
+	}
+	Overrides{CollabStorageBytes: &unlimited}.apply(&e)
+	if e.CollabStorageBytes != 0 {
+		t.Fatalf("collab storage lifted: %+v", e)
+	}
 }
 
 // TestImportLimits: a paid plan's import file limits grow with its seats; self-hosted has none.

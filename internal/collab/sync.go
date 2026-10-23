@@ -110,7 +110,8 @@ func (s *service) syncAccount(ctx context.Context, id uuid.UUID) error {
 	return s.recordSyncOK(ctx, a)
 }
 
-// runSync syncs the folders, then the mail.
+// runSync syncs the folders, then the mail, then a while of the history import when one
+// runs, and sums what the account stores.
 func (s *service) runSync(ctx context.Context, a *accountRow) error {
 	prov, err := s.provider(ctx, a)
 	if err != nil {
@@ -120,6 +121,19 @@ func (s *service) runSync(ctx context.Context, a *accountRow) error {
 	p, err := s.newPass(ctx, s.d.DB.Pool, a)
 	if err != nil {
 		return err
+	}
+	// Past twice the storage allowance new mail waits at the provider (contracts/collab.md
+	// "Storage"). Without an allowance nothing is counted.
+	var used int64
+	limit, err := s.storageLimit(ctx, a.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if limit > 0 {
+		if used, err = storageUsed(ctx, s.d.DB.Pool, a.WorkspaceID); err != nil {
+			return err
+		}
+		p.full = used >= 2*limit
 	}
 	remote, err := prov.Folders(ctx)
 	if err != nil {
@@ -139,9 +153,15 @@ func (s *service) runSync(ctx context.Context, a *accountRow) error {
 	if err != nil {
 		return err
 	}
+	if err := s.runHistory(ctx, p, prov, used+p.addedBytes, limit); err != nil {
+		return err
+	}
 	// The account's own settings, when due; they never fail the sync.
 	s.syncSettings(ctx, prov)
-	return p.batch(ctx, func(pgx.Tx) error { return nil }) // anything left to publish
+	if err := p.batch(ctx, func(pgx.Tx) error { return nil }); err != nil { // anything left to publish
+		return err
+	}
+	return recountStorage(ctx, s.d.DB.Pool, a.ID)
 }
 
 // saveAccountState stores the account's provider cursor.
@@ -220,17 +240,19 @@ func compareFolders(a, b RemoteFolder) int {
 func sortFolders(list []RemoteFolder) { slices.SortStableFunc(list, compareFolders) }
 
 // enqueueDue queues a sync for every account that is due: every minute while a member
-// who sees it was active in the last 30 minutes, else every 10 minutes, never before its
-// backoff ends, and not while it waits for a reconnect or its workspace lacks Collab.
+// who sees it was active in the last 30 minutes or its history import runs, else every 10
+// minutes, never before its backoff ends, and not while it waits for a reconnect or its
+// workspace lacks Collab.
 func (s *service) enqueueDue(ctx context.Context) error {
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT a.id, a.workspace_id FROM collab_accounts a
 		WHERE NOT a.reconnect AND NOT COALESCE((a.config->>'demo')::boolean, false)
 		AND (a.next_sync_at IS NULL OR a.next_sync_at <= now())
 		AND (a.last_synced_at IS NULL OR a.last_synced_at <= now() - make_interval(secs => $1)
-			OR (a.last_synced_at <= now() - make_interval(secs => $2) AND EXISTS (
+			OR (a.last_synced_at <= now() - make_interval(secs => $2) AND (EXISTS (
 				SELECT 1 FROM members m JOIN users u ON u.id = m.user_id
 				WHERE m.workspace_id = a.workspace_id AND u.last_seen_at > now() - make_interval(secs => $3)
-				AND `+accountVisibleSQL("a", "m.user_id")+`)))`,
+				AND `+accountVisibleSQL("a", "m.user_id")+`)
+				OR EXISTS (SELECT 1 FROM collab_history h WHERE h.account_id = a.id AND h.status = 'running'))))`,
 		idleInterval.Seconds(), (activeInterval - 10*time.Second).Seconds(), activeWindow.Seconds())
 	if err != nil {
 		return err

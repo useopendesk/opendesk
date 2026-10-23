@@ -71,6 +71,11 @@ that workspace (contracts/admin.md "Collab access"), as `subscriptions.collab_ac
 - Removing access does not cancel a subscription already on the collab plan; the workspace just
   cannot subscribe or switch to it again. Complimentary access that ends leaves the workspace on
   its own plan (free, or its Pro subscription).
+- **Collab storage**: the mail Collab stores (contracts/collab.md "Storage") is allowed 25 GB per paid
+  seat, pooled (`plan.CollabStorageBytesPerSeat`; complimentary Collab counts billed seats), as
+  `plan.Entitlements.CollabStorageBytes`. It is a fair-use bound, not a feature limit: history imports
+  bring any amount of older mail within it and wait at it, and past twice it new mail waits at the
+  provider. An instance admin's override replaces it (`0` = unlimited). Without billing it is unlimited.
 - `plan.Entitlements.Collab` decides whether a workspace has Collab: the collab plan (paid or
   complimentary) with billing on; every workspace with billing off, unless `COLLAB=false`.
   Collab access is stored with billing off too, and has no effect there.

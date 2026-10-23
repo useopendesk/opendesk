@@ -136,7 +136,8 @@ type AdminWorkspace = AdminWorkspaceRow & {
   counts: { tickets: number; open_tickets: number; contacts: number; kb_articles: number; api_keys: number; webhooks: number; brands: number };
   mailboxes: { id: string; name: string; email: string; inbound_kind: string; outbound_kind: string; status: "active" | "error" | "disabled";
     last_error: string; last_synced_at: string | null; created_at: string }[];
-  entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean }; // 0 = unlimited, after overrides
+  entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean;
+    collab_storage_gb: number }; // 0 = unlimited, after overrides
   limits: AdminLimits;                       // the overrides themselves
   subscription: { plan: "free" | "pro" | "collab"; status: string; interval: "month" | "year"; seats: number; billed_seats: number;
     current_period_end: string | null; cancel_at_period_end: boolean; stripe_customer_id: string | null; stripe_subscription_id: string | null } | null; // null without billing
@@ -147,9 +148,11 @@ type AdminWorkspace = AdminWorkspaceRow & {
       by_feature: { feature: string; charged_usd: number; provider_cost_usd: number; calls: number }[] } };
   recent_audit: AuditLog[];                  // the workspace's own audit log, last 20 (contracts/api.md)
 };
-type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null }; // null = the plan's
+type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null;
+  collab_storage_gb: number | null }; // null = the plan's
 type AdminCollab = { access: "none" | "offered" | "complimentary"; until: string | null /* complimentary ends then; null = until changed */;
-  note: string; enabled: boolean /* the workspace has Collab now (plan.Entitlements.Collab) */; accounts: number /* mail accounts connected */ };
+  note: string; enabled: boolean /* the workspace has Collab now (plan.Entitlements.Collab) */; accounts: number /* mail accounts connected */;
+  storage_used_bytes: number /* the mail they store (contracts/collab.md "Storage") */ };
 
 // Test workspaces (see "Test workspaces").
 type SampleSize = "small" | "realistic" | "large";
@@ -285,7 +288,8 @@ email jobs carry whole emails with their sign-in links. `last_error` is cut to 2
   Nothing is deleted, and an account can still be deleted. Restoring lets everything run again;
   mail ignored and replies canceled meanwhile are not replayed.
 - **Limit overrides** (billing on only): `max_mailboxes` and `max_members` replace the plan's
-  (`0` = unlimited), `monthly_ai_usd` replaces the monthly AI allowance. They apply on every plan and
+  (`0` = unlimited), `monthly_ai_usd` replaces the monthly AI allowance, `collab_storage_gb` the Collab
+  storage allowance (contracts/collab.md "Storage"; `0` = unlimited). They apply on every plan and
   survive plan changes; `null` returns to the plan's. Without billing every limit is already
   unlimited and the overrides are kept but have no effect.
 - **Collab access** (contracts/billing.md "Collab"): the collab plan ($38 per seat per month) is hidden

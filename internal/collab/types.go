@@ -124,6 +124,30 @@ type MailAccount struct {
 	Identities []MailIdentity `json:"identities"`
 	// DefaultFrom is the address new mail goes out from.
 	DefaultFrom string `json:"default_from"`
+
+	// History is its latest history import (contracts/collab.md "History"); nil when none was started.
+	History *MailHistory `json:"history"`
+	// OldestMessageAt is the oldest mail stored from it: its mail is here from then on.
+	OldestMessageAt *time.Time `json:"oldest_message_at"`
+	// FoldersLeftOut counts an IMAP account's folders past the ones the sync reads.
+	FoldersLeftOut int `json:"folders_left_out"`
+}
+
+// MailHistory is a history import: older mail brought in on request.
+type MailHistory struct {
+	Status           string          `json:"status" enum:"running,paused,limited,done,canceled,error"`
+	Since            *time.Time      `json:"since" doc:"Mail received from then on; null = all mail"`
+	IncludeSpamTrash bool            `json:"include_spam_trash"`
+	RequestedBy      *domain.UserRef `json:"requested_by"`
+	StartedAt        time.Time       `json:"started_at"`
+	FinishedAt       *time.Time      `json:"finished_at"`
+	Reached          *time.Time      `json:"reached" doc:"The oldest mail it has read"`
+	Imported         int             `json:"imported"`
+	Present          int             `json:"present" doc:"Already in opendesk"`
+	TooLarge         int             `json:"too_large" doc:"Over 30 MB, left at the provider"`
+	Unreadable       int             `json:"unreadable" doc:"Could not be parsed"`
+	Total            *int            `json:"total" doc:"Messages in scope, when the provider says"`
+	LastError        string          `json:"last_error"`
 }
 
 // MailIdentity is an address an account sends from: its own (primary, whose From name and
@@ -289,6 +313,15 @@ type CollabStatus struct {
 	Reason    *string         `json:"reason" enum:"plan,disabled"`
 	Providers CollabProviders `json:"providers"`
 	Accounts  int             `json:"accounts"`
+	Storage   CollabStorage   `json:"storage"`
+}
+
+// CollabStorage is the workspace's Collab storage (contracts/collab.md "Storage").
+type CollabStorage struct {
+	UsedBytes      int64 `json:"used_bytes"`
+	LimitBytes     int64 `json:"limit_bytes" doc:"0 = unlimited"`
+	HistoryLimited bool  `json:"history_limited" doc:"At the allowance: history imports wait"`
+	Full           bool  `json:"full" doc:"Past twice the allowance: new mail waits at the provider"`
 }
 
 // SidebarPin is one favorite in the sidebar.

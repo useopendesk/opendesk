@@ -84,7 +84,7 @@ type listThreadsInput struct {
 	Box       string `query:"box" enum:"inbox,unread,starred,sent,drafts,archive,trash,spam,all,shared,assigned" default:"inbox"`
 	AccountID string `query:"account_id" doc:"Only this account's conversations"`
 	FolderID  string `query:"folder_id" doc:"Only this folder's conversations; replaces box"`
-	Q         string `query:"q" maxLength:"200" doc:"Matches subject, participants, snippet and body text"`
+	Q         string `query:"q" maxLength:"200" doc:"Matches each message's subject, sender and text, and the conversation's subject and participants"`
 	To        string `query:"to" maxLength:"254" doc:"Only conversations with this address on them (one of the person's addresses)"`
 	With      string `query:"with" maxLength:"254" doc:"Only conversations with this person on them; without account_id, every conversation the caller sees"`
 	httpx.ListParams
@@ -195,7 +195,10 @@ func (s *service) registerThreadRoutes(api huma.API) {
 				where = append(where, boxSQL(box, u))
 			}
 			if q := strings.TrimSpace(in.Q); q != "" {
-				where = append(where, `(t.search @@ websearch_to_tsquery('simple', `+arg(q)+`) OR t.subject ILIKE `+arg("%"+escapeLike(q)+"%")+`)`)
+				// The conversation's subject and people, or any of its messages (contracts/collab.md "Search").
+				tq := `websearch_to_tsquery('simple', ` + arg(q) + `)`
+				where = append(where, `(t.search @@ `+tq+` OR t.subject ILIKE `+arg("%"+escapeLike(q)+"%")+`
+					OR t.id IN (SELECT m.thread_id FROM collab_messages m WHERE m.workspace_id = $1 AND m.search @@ `+tq+`))`)
 			}
 			if to := strings.ToLower(strings.TrimSpace(in.To)); to != "" {
 				where = append(where, arg(to)+` = ANY(t.addresses)`)

@@ -23,6 +23,19 @@ export function number(n: number | null | undefined, opts?: Intl.NumberFormatOpt
   return nf(opts).format(n);
 }
 
+/** 512 -> "512 B", 3.5 MB -> "3.5 MB", 25 GiB -> "25.0 GB". */
+export function bytes(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "–";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return i === 0 ? `${number(v)} B` : `${number(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${units[i]}`;
+}
+
 /** 1234 -> "1.2K". */
 export function compact(n: number): string {
   return nf({ notation: "compact", maximumFractionDigits: 1 }).format(n);

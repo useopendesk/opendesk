@@ -1,6 +1,6 @@
 // One mail account: its name, From name and colour, the signature its mail carries, the
 // addresses it sends from (AddressesSection), its automatic reply (each synced with the provider where it can be: AccountSettings), who it
-// is shared with, its server settings (IMAP), its sync, and disconnecting it.
+// is shared with, its server settings (IMAP), its sync and the import of older mail (HistorySection), and disconnecting it.
 // Only whoever connected it (and workspace admins, for a shared one) can change it.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,13 +19,14 @@ import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { ACCOUNT_TONES, ProviderMark } from "@/components/collab/bits";
 import { FromNameHint, OutOfOfficeSection, SignatureSync } from "@/components/collab/AccountSettings";
 import { AddressesSection } from "@/components/collab/AddressesSection";
+import { HistorySection } from "@/components/collab/HistorySection";
 import { CollabFromNameField, KeptInOpendesk, SenderPreview, useSenderPreview } from "@/components/collab/SenderPreview";
 import { ImapFields, imapValid, type ImapForm } from "@/components/collab/ConnectAccount";
 import { audienceIsEmpty, ChoiceCard, SharedAudience } from "@/components/collab/pickers";
 import { api, type CollabAccountPatch } from "@/lib/api/endpoints";
 import type { MailAccount, MailAudience, MailIdentityPreview } from "@/lib/api/types";
 import { errorMessage } from "@/lib/api/client";
-import { storeAccount, useSettingsAccounts } from "@/lib/collab/hooks";
+import { storeAccount, useCollab, useSettingsAccounts } from "@/lib/collab/hooks";
 import { identitySignature } from "@/lib/collab/identities";
 import { relLong } from "@/lib/format";
 import { COLLAB_FROM_VARS, fromNameProblem } from "@/lib/fromname";
@@ -70,6 +71,7 @@ export default function MailAccountDetail() {
   const confirm = useConfirm();
   const me = useSession((s) => s.user?.id);
   const reconnect = useReconnect();
+  const collab = useCollab();
   const { data: accounts, isLoading } = useSettingsAccounts();
   const account = accounts?.find((a) => a.id === accountId);
   const [form, setForm] = useState<Form | null>(null);
@@ -242,6 +244,8 @@ export default function MailAccountDetail() {
           </Row>
         )}
       </Section>
+
+      <HistorySection account={account} storage={collab.status?.storage ?? null} />
 
       <Section title={t("detail.general")}>
         <Row label={t("detail.name")} htmlFor="acc-name">

@@ -106,7 +106,7 @@ function emptyWorkspace(name: string, createdMs: number): WorkspaceRec {
     suspended_at: null,
     suspended_reason: "",
     sub: { plan: "free", status: "none", interval: "month", seats: 1, current_period_end: null, cancel_at_period_end: false, stripe_customer_id: null, stripe_subscription_id: null },
-    limits: { max_mailboxes: null, max_members: null, monthly_ai_usd: null },
+    limits: { max_mailboxes: null, max_members: null, monthly_ai_usd: null, collab_storage_gb: null },
     collab: { access: "none", until: null, note: "" },
     collab_accounts: 0,
     counts: { tickets: 0, open_tickets: 0, contacts: 0, kb_articles: 0, api_keys: 0, webhooks: 0, brands: 1 },
@@ -473,7 +473,7 @@ function seedTestWorkspaces() {
       }
     }
     if (d.plan === "pro") {
-      w.limits = { max_mailboxes: 0, max_members: 0, monthly_ai_usd: 20 };
+      w.limits = { max_mailboxes: 0, max_members: 0, monthly_ai_usd: 20, collab_storage_gb: null };
       aiUsage(w, w.test.sample.counts ? cents(3 + rand() * 6) : 0, 50);
     } else if (d.plan === "collab") {
       w.collab = { access: "complimentary", until: expires, note: "Test workspace" };

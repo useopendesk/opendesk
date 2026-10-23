@@ -361,6 +361,13 @@ function PlanLimits({ w, billing, onEdit }: { w: AdminWorkspace; billing: boolea
               {over(w.limits.monthly_ai_usd)}
             </span>,
           ],
+          [
+            "Collab storage",
+            <span className="flex items-center gap-2">
+              <span className="mono tabular-nums">{e.collab_storage_gb === 0 ? "Unlimited" : `${number(e.collab_storage_gb)} GB`}</span>
+              {over(w.limits.collab_storage_gb)}
+            </span>,
+          ],
         ]}
       />
       {!billing && <p className="mt-3 text-[11.5px] leading-4 text-fg-3">Billing is off on this instance, so every limit is unlimited. Overrides are kept but have no effect.</p>}
@@ -543,11 +550,12 @@ const LIMIT_FIELDS: { key: LimitKey; label: string; hint: string; decimal?: bool
   { key: "max_mailboxes", label: "Mailboxes", hint: "0 is unlimited.", max: 100_000 },
   { key: "max_members", label: "Members", hint: "0 is unlimited.", max: 100_000 },
   { key: "monthly_ai_usd", label: "Monthly AI allowance", hint: "US dollars of AI usage included each month.", decimal: true, suffix: "USD", max: 100_000 },
+  { key: "collab_storage_gb", label: "Collab storage", hint: "Mail Collab stores for the whole workspace. 0 is unlimited.", suffix: "GB", max: 1_000_000 },
 ];
 
 function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; billing: boolean; onClose: () => void; onSaved: (w: AdminWorkspace) => void }) {
   const [draft, setDraft] = useState<AdminLimits>({ ...w.limits });
-  const [valid, setValid] = useState<Record<LimitKey, boolean>>({ max_mailboxes: true, max_members: true, monthly_ai_usd: true });
+  const [valid, setValid] = useState<Record<LimitKey, boolean>>({ max_mailboxes: true, max_members: true, monthly_ai_usd: true, collab_storage_gb: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const planValue = (k: LimitKey) => (k === "monthly_ai_usd" ? w.entitlements.monthly_ai_usd : w.entitlements[k]);

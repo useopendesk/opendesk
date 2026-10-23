@@ -132,8 +132,16 @@
     "toAlias": "Written to {{email}}, one of your addresses",
     "writtenTo": "Written to",
     "anyAddress": "Every address",
+<<<<<<< HEAD
     "with": "With",
     "anyone": "Anyone"
+=======
+    "searchCoverage": "Searching mail since {{date}}",
+    "searchImport": "Import older mail",
+    "storageFull": "New mail is waiting at the provider: the workspace's Collab storage is full.",
+    "storageFullAdmin": "Add seats or ask for a larger allowance to make room.",
+    "billing": "Billing"
+>>>>>>> 90ebbdd (feat: import older Collab mail on request with resumable checkpoints, a fair-use storage allowance and search of every message)
   },
   "action": {
     "archive": "Archive",
@@ -687,6 +695,7 @@
     },
     "signatureVars": "Type a variable to add the sender's name, title or phone: each person's mail carries their own."
   },
+<<<<<<< HEAD
   "people": {
     "title": "People",
     "show": "Show people",
@@ -708,5 +717,80 @@
     "file": "File",
     "scope": "Counts the mail opendesk has synced that you can see. Trash and spam are left out.",
     "error": "Their conversations did not load."
+=======
+  "history": {
+    "title": "Mail history",
+    "description": "The first sync brings the last 30 days. Import older mail to read and search it here.",
+    "where": {
+      "google": "Gmail",
+      "microsoft": "Outlook",
+      "imap": "your mail server"
+    },
+    "coverage": "In opendesk",
+    "coverageSince": "Mail since {{date}} is in opendesk. Older mail stays at {{provider}}.",
+    "coverageAll": "All of this account's mail is in opendesk, back to {{date}}.",
+    "coverageNone": "No mail from this account is in opendesk yet.",
+    "scope": "How far back",
+    "scopeHint": "New mail keeps arriving while it runs.",
+    "scopes": {
+      "1y": "Last year",
+      "2y": "Last 2 years",
+      "5y": "Last 5 years",
+      "all": "All mail"
+    },
+    "spamTrash": "Include spam and trash",
+    "spamTrashHint": "Left out by default: old spam is rarely worth keeping.",
+    "start": "Import older mail",
+    "startAgain": "Import again",
+    "started": "Importing older mail from {{name}}",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "stopTitle": "Stop importing?",
+    "stopText": "Mail already imported stays.",
+    "stopped": "Import stopped",
+    "paused": "Import paused",
+    "resumed": "Import resumed",
+    "retry": "Try again",
+    "scopeOf": {
+      "all": "All mail",
+      "since": "Mail since {{date}}"
+    },
+    "status": {
+      "running": "Importing older mail",
+      "paused": "Import paused",
+      "limited": "Waiting for storage",
+      "done": "Import finished",
+      "canceled": "Import stopped",
+      "error": "Import stopped by an error"
+    },
+    "counts": {
+      "imported": "{{n}} imported",
+      "present": "{{n}} already here",
+      "tooLarge": "{{n}} too large",
+      "unreadable": "{{n}} unreadable"
+    },
+    "reached": "Reached {{date}}",
+    "progressLabel": "{{percent}} of the mail in scope",
+    "retrying": "Trying again with the next sync: {{error}}",
+    "doneSummary": "Finished {{when}}.",
+    "tooLarge_one": "{{n}} message over 30 MB stays at {{provider}}.",
+    "tooLarge_other": "{{n}} messages over 30 MB stay at {{provider}}.",
+    "unreadable_one": "{{n}} message could not be read and was left out.",
+    "unreadable_other": "{{n}} messages could not be read and were left out.",
+    "limited": "The workspace reached its Collab storage allowance ({{used}} of {{limit}}). The import goes on by itself once there is room.",
+    "limitedAdmin": "Add seats or ask for a larger allowance to make room.",
+    "billing": "Billing",
+    "foldersLeftOut_one": "{{n}} folder past the first 30 is not synced, so its mail is not imported.",
+    "foldersLeftOut_other": "{{n}} folders past the first 30 are not synced, so their mail is not imported.",
+    "filesHint": "Files and images in older mail stay at {{provider}} and open from there.",
+    "requestedBy": "Started by {{name}} {{when}}",
+    "pill": {
+      "running": "Importing history",
+      "runningPercent": "Importing history {{percent}}",
+      "paused": "History paused",
+      "limited": "History waiting for storage"
+    }
+>>>>>>> 90ebbdd (feat: import older Collab mail on request with resumable checkpoints, a fair-use storage allowance and search of every message)
   }
 }
