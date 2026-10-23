@@ -16,6 +16,7 @@ import type {
   MailIdentity,
   MailMessage,
   MailMessageDetails,
+  MailPerson,
   MailThread,
   MailThreadAction,
   MailThreadDetail,
@@ -772,7 +773,8 @@ function listThreads(ws: WsData, ctx: Ctx) {
   if (folderId) rows = rows.filter((t) => t.folder_ids.includes(folderId));
   else {
     if (accountId) rows = rows.filter((t) => t.account_id === accountId);
-    else if (box !== "shared" && box !== "assigned") rows = rows.filter((t) => seeAcc.has(t.account_id));
+    // A person's conversations (with) include those shared with you on their own.
+    else if (box !== "shared" && box !== "assigned" && !ctx.query.get("with")) rows = rows.filter((t) => seeAcc.has(t.account_id));
     rows = rows.filter((t) => {
       const junk = inRole(s, t, "trash") || inRole(s, t, "spam");
       switch (box) {
@@ -801,6 +803,8 @@ function listThreads(ws: WsData, ctx: Ctx) {
   }
   const to = (ctx.query.get("to") ?? "").trim().toLowerCase();
   if (to) rows = rows.filter((t) => msgsOf(s, t.id).some((m) => [m.from, ...m.to, ...m.cc].some((x) => x.email.toLowerCase() === to)));
+  const withAddr = (ctx.query.get("with") ?? "").trim().toLowerCase();
+  if (withAddr) rows = rows.filter((t) => hasAddress(s, t.id, withAddr));
   if (q)
     rows = rows.filter(
       (t) =>
@@ -813,6 +817,40 @@ function listThreads(ws: WsData, ctx: Ctx) {
   const limit = Math.min(Math.max(Number(ctx.query.get("limit") ?? 50) || 50, 1), 100);
   const offset = Number(ctx.query.get("cursor") ?? 0) || 0;
   return { data: rows.slice(offset, offset + limit), next_cursor: offset + limit < rows.length ? String(offset + limit) : null };
+}
+
+const hasAddress = (s: State, threadId: string, email: string) =>
+  msgsOf(s, threadId).some((m) => [m.from, ...m.to, ...m.cc, ...m.bcc].some((x) => x.email.toLowerCase() === email));
+
+/** One address across the conversations you see (contracts/collab.md "People"). */
+function personOut(ws: WsData, ctx: Ctx): MailPerson {
+  const s = state(ws);
+  const raw = (ctx.query.get("email") ?? "").trim();
+  const email = (raw.match(/<([^>]+)>/)?.[1] ?? raw).toLowerCase();
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) throw invalid("Enter an email address.");
+  const exclude = ctx.query.get("exclude");
+  const limit = Math.min(Math.max(Number(ctx.query.get("limit") ?? 8) || 8, 1), 20);
+  const rows = visibleThreads(ws)
+    .filter((t) => !inRole(s, t, "trash") && !inRole(s, t, "spam") && hasAddress(s, t.id, email))
+    .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
+  const msgs = rows.flatMap((t) => msgsOf(s, t.id)).filter((m) => !m.draft);
+  const name = rows.flatMap((t) => t.participants).find((p) => p.email.toLowerCase() === email && p.name)?.name ?? "";
+  const files = msgs
+    .filter((m) => m.from.email.toLowerCase() === email)
+    .sort((a, b) => b.sent_at.localeCompare(a.sent_at))
+    .flatMap((m) => m.attachments.filter((x) => !x.inline).map((x) => ({ thread_id: m.thread_id, message_id: m.id, sent_at: m.sent_at, attachment: x })))
+    .slice(0, 6);
+  const times = msgs.map((m) => m.sent_at).sort();
+  return {
+    email,
+    name,
+    conversations: rows.length,
+    others: rows.filter((t) => t.id !== exclude).length,
+    first_at: times[0] ?? null,
+    last_at: rows[0]?.last_message_at ?? null,
+    threads: rows.filter((t) => t.id !== exclude).slice(0, limit),
+    files,
+  };
 }
 
 function counts(ws: WsData) {
@@ -1327,6 +1365,11 @@ export function registerCollab() {
   get("/v1/collab/threads", (ctx) => {
     requireCollab(ctx.ws);
     return listThreads(ctx.ws, ctx);
+  });
+
+  get("/v1/collab/person", (ctx) => {
+    requireCollab(ctx.ws);
+    return personOut(ctx.ws, ctx);
   });
 
   get("/v1/collab/counts", (ctx) => {

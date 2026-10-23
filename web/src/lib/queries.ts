@@ -108,6 +108,8 @@ export const qk = {
   mailThreadLists: ["collab", "threads"] as const,
   mailThreads: (q: CollabThreadQuery) => ["collab", "threads", q] as const,
   mailThread: (id: string) => ["collab", "thread", id] as const,
+  mailPeople: ["collab", "person"] as const,
+  mailPerson: (email: string, exclude: string) => ["collab", "person", email, exclude] as const,
   // Outside "collab": a message's source never changes, and reading it is a call to the provider.
   mailMessageDetails: (id: string) => ["collabMessageDetails", id] as const,
 };
@@ -256,6 +258,8 @@ export const q = {
       staleTime: 15_000,
     }),
   mailThread: (id: string) => queryOptions({ queryKey: qk.mailThread(id), queryFn: () => api.collab.threads.get(id) }),
+  mailPerson: (email: string, exclude: string) =>
+    queryOptions({ queryKey: qk.mailPerson(email, exclude), queryFn: () => api.collab.person({ email, exclude }), staleTime: 60_000 }),
   mailMessageDetails: (id: string) =>
     queryOptions({ queryKey: qk.mailMessageDetails(id), queryFn: () => api.collab.messageDetails(id), staleTime: Infinity, gcTime: 30 * 60_000, retry: 1 }),
   csat: (token: string) => queryOptions({ queryKey: qk.csat(token), queryFn: () => api.public.csat(token), retry: false }),

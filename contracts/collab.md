@@ -433,6 +433,42 @@ line (a header the sender wrote sits below all of them), and on Gmail only one f
 Without one, the checks and the warning are empty. Mail the account sent has no checks, and only it
 keeps its `Bcc` header. The app shows the warning above the message and `via` beside the sender.
 
+## People
+
+Beside a conversation the web app shows who it is with: each address on it that is not one of the
+caller's own accounts' addresses, newest first, with the caller's other conversations with them and
+the files they sent. It reads only what the caller already sees, and only what opendesk has synced
+("Sync": older mail never imported is not counted).
+
+`GET /v1/collab/person?email=&exclude=&limit=` reads one address:
+
+```ts
+interface MailPerson {
+  email: string                // lower case
+  name: string                 // the newest name it has on those conversations ("" none)
+  conversations: number        // conversations the caller sees with it on a message, trash and spam left out
+  others: number               // the same without `exclude`
+  first_at: string | null      // their oldest message in the mail opendesk has, not the first ever
+  last_at: string | null
+  threads: MailThread[]        // the newest, without `exclude`; `limit` 1..20, 8 by default
+  files: MailPersonFile[]      // files of messages they sent (not inline images), newest first, at most 6
+}
+
+interface MailPersonFile { thread_id: string; message_id: string; sent_at: string; attachment: MailAttachment }
+```
+
+"The caller sees" is "Who sees what": the accounts they see and the conversations shared with or
+assigned to them on their own, so a private account never adds to anyone else's count, name or files.
+An address nobody the caller sees wrote with answers `conversations: 0` and nothing else, the same as
+one that exists only in mail they cannot see. Opening the panel reads nothing at the provider and
+changes nothing there. `GET /v1/collab/threads?with=` lists the same conversations.
+
+The panel is docked beside the conversation on screens at least 1280 px wide (`]` and the header
+button show and hide it, kept per browser), and opens over the conversation on narrower ones
+(Escape or a click away closes it). Each person on the conversation has a card: their name and
+address, Write (new mail to them), All mail (the list with `with`, the conversation kept open), the
+count and the oldest synced date, their other conversations (one opens in place) and their files.
+
 ## Endpoints
 
 Every route needs a user session (`auth.KindUser`) and membership. "see": the caller sees the
@@ -462,9 +498,10 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
-| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches subject, participants, snippet and body text |
+| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches subject, participants, snippet and body text. `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
 | GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts}: number, accounts: Record<id, number>, folders: Record<id, number>}`: unread conversations; `shared` and `assigned` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
+| GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?}` → `{threads: MailThread[]}`. Threads the caller cannot act on are `404` (all or nothing) |
 | PUT | `/v1/collab/threads/{id}/shares` | act | `{shares: Audience}` → `MailThreadDetail`. Empty unshares. Audit `collab.thread_shared` (ids only) |
 | PUT | `/v1/collab/threads/{id}/assignees` | act | `{user_ids: string[0..20]}` → `MailThreadDetail`; each must be a member (agent+); assigning lets them see it. Each new assignee gets a `collab_assigned` notification |

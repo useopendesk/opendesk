@@ -86,6 +86,7 @@ type listThreadsInput struct {
 	FolderID  string `query:"folder_id" doc:"Only this folder's conversations; replaces box"`
 	Q         string `query:"q" maxLength:"200" doc:"Matches subject, participants, snippet and body text"`
 	To        string `query:"to" maxLength:"254" doc:"Only conversations with this address on them (one of the person's addresses)"`
+	With      string `query:"with" maxLength:"254" doc:"Only conversations with this person on them; without account_id, every conversation the caller sees"`
 	httpx.ListParams
 }
 
@@ -181,7 +182,8 @@ func (s *service) registerThreadRoutes(api huma.API) {
 				switch {
 				case accountID != nil:
 					where = append(where, `t.account_id = `+arg(*accountID))
-				case box == BoxShared || box == BoxAssigned:
+				case box == BoxShared || box == BoxAssigned || in.With != "":
+					// A person's conversations include those shared with the caller on their own.
 					where = append(where, threadVisibleSQL("t", user()))
 				default:
 					where = append(where, `t.account_id IN `+visibleAccountsSQL(user()))
@@ -197,6 +199,10 @@ func (s *service) registerThreadRoutes(api huma.API) {
 			}
 			if to := strings.ToLower(strings.TrimSpace(in.To)); to != "" {
 				where = append(where, arg(to)+` = ANY(t.addresses)`)
+			}
+			if with := strings.ToLower(strings.TrimSpace(in.With)); with != "" {
+				// @> rather than = ANY, so the addresses index serves it.
+				where = append(where, `t.addresses @> ARRAY[`+arg(with)+`::text]`)
 			}
 			if in.Cursor != "" {
 				where = append(where, `(t.last_message_at, t.id) < (`+arg(cur.T)+`, `+arg(cur.I)+`)`)

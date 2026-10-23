@@ -5,7 +5,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
-import { Archive, AtSign, Folder, Mail, MailOpen, PenSquare, RefreshCw, ShieldAlert, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, AtSign, Folder, Mail, MailOpen, PenSquare, RefreshCw, ShieldAlert, Star, Tag, Trash2, UserRound, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MailFolder, MailThread, MailThreadAction } from "@/lib/api/types";
@@ -82,7 +82,7 @@ export default function MailPage() {
   const canAct = useCanAct();
   const box = params.box ?? "inbox";
   const openId = params.threadId;
-  const query = useMemo(() => mailListQuery(box, search), [box, search.account, search.folder, search.q, search.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  const query = useMemo(() => mailListQuery(box, search), [box, search.account, search.folder, search.q, search.to, search.with]); // eslint-disable-line react-hooks/exhaustive-deps
   const listKey = JSON.stringify(query);
   const list = useInfiniteQuery(q.mailThreads(query));
   const { data: accounts } = useMailAccounts();
@@ -298,6 +298,7 @@ export default function MailPage() {
     a: () => answer("reply_all"),
     f: () => answer("forward"),
     c: (e) => (e.shiftKey ? openId && threadRef.current?.comment() : compose.open({ accountId: account?.id ?? folderAccount?.id })),
+    "]": () => openId && threadRef.current?.people(),
     "/": () => searchRef.current?.focus(),
     escape: () => {
       if (selected.size) setSelected(new Set());
@@ -444,6 +445,18 @@ export default function MailPage() {
                 {t("list.anyAddress")}
               </Button>
             )}
+          </div>
+        )}
+        {search.with && (
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line-soft px-4 text-[11.5px] text-fg-3">
+            <UserRound className="size-3.5 shrink-0 text-fg-4" />
+            <span className="shrink-0">{t("list.with")}</span>
+            <span className="mono min-w-0 truncate text-fg-2" data-ph-mask>
+              {search.with}
+            </span>
+            <Button size="sm" variant="ghost" icon={<X />} onClick={() => go(undefined, { ...search, with: undefined }, true)} className="ml-auto">
+              {t("list.anyone")}
+            </Button>
           </div>
         )}
         {compact && (
@@ -596,6 +609,10 @@ export default function MailPage() {
             markReadOnOpen={prefs.mark_read_on_open}
             intent={intent?.id === openId ? intent.mode : null}
             openDraft={box === "drafts"}
+            onOpenThread={(id) => go(id)}
+            onShowPerson={(email) =>
+              void navigate({ to: "/mail/$box/{-$threadId}", params: { box: "all", threadId: openId }, search: { with: email } })
+            }
           />
         </section>
       )}

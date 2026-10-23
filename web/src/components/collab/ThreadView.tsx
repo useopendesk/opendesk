@@ -2,6 +2,7 @@
 // assigned to, the actions (each mirrored at the provider), the messages oldest
 // first with the older ones folded, the team's comments, and the reply composer.
 // Writing a comment and the reply buttons are pinned under it, whatever its length.
+// Beside it, who it is with: the people panel (] shows and hides it).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,6 +19,7 @@ import {
   MailOpen,
   MessageSquare,
   MoreHorizontal,
+  PanelRight,
   PencilLine,
   RefreshCw,
   Reply,
@@ -32,7 +34,7 @@ import {
   Users,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api/endpoints";
@@ -59,10 +61,11 @@ import { AccountDot, LabelPill } from "./bits";
 import { CommentBar, Comments, Count, type CommentBarHandle } from "./Comments";
 import { draftFromMessage, MailComposer, startDraft, useForwardBlock } from "./MailComposer";
 import { MailMessageItem } from "./MailMessageItem";
+import { PersonPanel } from "./PersonPanel";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "./pickers";
 import { ShareDialog } from "./ShareDialog";
 
-export type ThreadViewHandle = { reply: (mode: ComposeMode) => void; comment: () => void; move: () => void; labels: () => void };
+export type ThreadViewHandle = { reply: (mode: ComposeMode) => void; comment: () => void; move: () => void; labels: () => void; people: () => void };
 
 export type ThreadViewProps = {
   threadId: string;
@@ -77,7 +80,35 @@ export type ThreadViewProps = {
   intent?: ComposeMode | null;
   /** Opened from the Drafts box: its newest draft opens in the composer. */
   openDraft?: boolean;
+  /** Opens another conversation (from the people panel). */
+  onOpenThread?: (id: string) => void;
+  /** Lists every conversation with someone (from the people panel). */
+  onShowPerson?: (email: string) => void;
 };
+
+const PANEL_KEY = "od-mail-people";
+/** Wide enough for the people panel beside the list and the conversation. */
+const WIDE = "(min-width: 1280px)";
+
+function readPanel() {
+  try {
+    return localStorage.getItem(PANEL_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function useWide() {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(WIDE);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(WIDE).matches,
+    () => true,
+  );
+}
 
 /** A draft in the conversation: who it is to and how it starts; opening it continues it in the composer. */
 function DraftRow({ m, onOpen }: { m: MailMessage; onOpen: () => void }) {
@@ -106,18 +137,19 @@ function DraftRow({ m, onOpen }: { m: MailMessage; onOpen: () => void }) {
   );
 }
 
-function HeaderButton({ label, shortcut, onClick, children, pressed, disabled }: { label: string; shortcut?: string; onClick?: () => void; children: ReactNode; pressed?: boolean; disabled?: boolean }) {
+function HeaderButton({ label, shortcut, onClick, children, pressed, active, disabled }: { label: string; shortcut?: string; onClick?: () => void; children: ReactNode; pressed?: boolean; active?: boolean; disabled?: boolean }) {
   return (
     <Tooltip content={label} shortcut={shortcut}>
       <button
         type="button"
         aria-label={label}
-        aria-pressed={pressed}
+        aria-pressed={pressed ?? active}
         disabled={disabled}
         onClick={onClick}
         className={cn(
           "flex size-7 items-center justify-center rounded-md text-fg-3 outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)] disabled:pointer-events-none disabled:opacity-40 data-[state=open]:bg-hover data-[state=open]:text-fg [&_svg]:size-[15px]",
           pressed && "text-tone-amber hover:text-tone-amber",
+          active && "bg-hover text-fg",
         )}
       >
         {children}
@@ -152,7 +184,7 @@ function folderPills(detail: MailThreadDetail, folders: MailFolder[] | undefined
     .map((f) => ({ id: f.id, name: f.role ? box(f.role) : f.name, color: f.color }));
 }
 
-export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function ThreadView({ threadId, onClose, onPrev, onNext, position, onAction, markReadOnOpen, intent, openDraft }, ref) {
+export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function ThreadView({ threadId, onClose, onPrev, onNext, position, onAction, markReadOnOpen, intent, openDraft, onOpenThread, onShowPerson }, ref) {
   const { t } = useTranslation("collab");
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -187,6 +219,44 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const [below, setBelow] = useState(false);
   const [flash, setFlash] = useState(false);
   const marked = useRef<string | null>(null);
+  // The people panel: docked when there is room (and kept as the member left it), else a sheet.
+  const wide = useWide();
+  const [docked, setDocked] = useState(readPanel);
+  const [sheet, setSheet] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const panelOpen = wide ? docked : sheet;
+  const togglePanel = () => {
+    if (!wide) return setSheet((v) => !v);
+    setDocked((v) => {
+      try {
+        localStorage.setItem(PANEL_KEY, v ? "0" : "1");
+      } catch {
+        /* storage unavailable */
+      }
+      return !v;
+    });
+  };
+  // The sheet closes on Escape (before the page's Escape closes the conversation) and on a click away.
+  useEffect(() => {
+    if (!sheet || wide) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSheet(false);
+    };
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (sheetRef.current?.contains(el) || el?.closest?.("[data-people-toggle]")) return;
+      setSheet(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [sheet, wide]);
 
   const subject = detail?.thread.subject || t("list.noSubject");
   useDocumentTitle(detail ? subject : null);
@@ -254,6 +324,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
     comment: () => detail?.can_act && commentBar.current?.focus(),
     move: () => detail?.can_act && setMoveOpen(true),
     labels: () => detail?.can_act && hasLabels && setLabelOpen(true),
+    people: togglePanel,
   }));
 
   const commentCount = detail?.comments.length ?? 0;
@@ -452,7 +523,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
           </>
         )}
         <div className="ml-auto flex items-center gap-0.5">
-          {position && <span className="mono mr-1 hidden text-[11px] text-fg-4 sm:inline">{position.index} / {position.total}</span>}
+          {position && <span className="mono mr-1 hidden whitespace-nowrap text-[11px] text-fg-4 sm:inline">{position.index} / {position.total}</span>}
           <HeaderButton label={t("action.prev")} shortcut="k" onClick={onPrev} disabled={!onPrev}>
             <ChevronUp />
           </HeaderButton>
@@ -531,9 +602,17 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
               )}
             </MenuContent>
           </Menu>
+          <span aria-hidden className="mx-1 h-4 w-px bg-line" />
+          <span data-people-toggle className="flex">
+            <HeaderButton label={panelOpen ? t("people.hide") : t("people.show")} shortcut="]" active={panelOpen} onClick={togglePanel}>
+              <PanelRight />
+            </HeaderButton>
+          </span>
         </div>
       </header>
 
+      <div className="relative flex min-h-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[860px] flex-col gap-2.5 px-4 pb-10 pt-5 md:px-6">
           <div className="mb-1.5 flex flex-col gap-2">
@@ -708,6 +787,49 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
           )}
         </div>
       </footer>
+      </div>
+      <AnimatePresence initial={false}>
+        {panelOpen &&
+          (wide ? (
+            <motion.aside
+              key="docked"
+              aria-label={t("people.title")}
+              initial={reduce ? { opacity: 0 } : { width: 0, opacity: 0 }}
+              animate={reduce ? { opacity: 1 } : { width: 300, opacity: 1 }}
+              exit={reduce ? { opacity: 0 } : { width: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="shrink-0 overflow-hidden border-l border-line"
+            >
+              <div className="h-full w-[300px] overflow-y-auto">
+                <PersonPanel detail={detail} onOpenThread={(id) => onOpenThread?.(id)} onShowAll={(email) => onShowPerson?.(email)} />
+              </div>
+            </motion.aside>
+          ) : (
+            <motion.aside
+              key="sheet"
+              ref={sheetRef}
+              aria-label={t("people.title")}
+              initial={reduce ? { opacity: 0 } : { x: 24, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={reduce ? { opacity: 0 } : { x: 24, opacity: 0 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute inset-y-0 right-0 z-20 w-[300px] max-w-full overflow-y-auto border-l border-line bg-surface shadow-[-12px_0_32px_-16px_rgb(10_10_10/0.25)] dark:shadow-[-12px_0_32px_-16px_rgb(0_0_0/0.7)]"
+            >
+              <PersonPanel
+                detail={detail}
+                onOpenThread={(id) => {
+                  setSheet(false);
+                  onOpenThread?.(id);
+                }}
+                onShowAll={(email) => {
+                  setSheet(false);
+                  onShowPerson?.(email);
+                }}
+              />
+            </motion.aside>
+          ))}
+      </AnimatePresence>
+      </div>
       <ShareDialog detail={detail} open={share} onOpenChange={setShare} />
     </div>
   );

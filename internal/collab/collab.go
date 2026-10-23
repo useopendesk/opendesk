@@ -76,6 +76,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerConnectRoutes(api, r)
 	s.registerFolderRoutes(api)
 	s.registerThreadRoutes(api)
+	s.registerPeopleRoutes(api)
 	s.registerSendRoutes(api)
 	s.registerDraftRoutes(api)
 	s.registerCommentRoutes(api)

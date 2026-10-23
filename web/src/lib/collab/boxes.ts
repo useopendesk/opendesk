@@ -38,11 +38,11 @@ export function boxForRole(role: MailFolderRole | null): AccountBox | null {
 }
 
 /** `to`: only conversations with this one of the person's addresses on them (an alias). */
-export type MailSearch = { account?: string; folder?: string; q?: string; to?: string };
+export type MailSearch = { account?: string; folder?: string; q?: string; to?: string; with?: string };
 
 export function parseMailSearch(raw: Record<string, unknown>): MailSearch {
   const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
-  return { account: str(raw.account), folder: str(raw.folder), q: str(raw.q), to: str(raw.to) };
+  return { account: str(raw.account), folder: str(raw.folder), q: str(raw.q), to: str(raw.to), with: str(raw.with) };
 }
 
 /** The thread list query for a route: a folder replaces the box. */
@@ -55,6 +55,7 @@ export function mailListQuery(box: string, s: MailSearch): CollabThreadQuery {
   }
   if (s.q) q.q = s.q;
   if (s.to) q.to = s.to;
+  if (s.with) q.with = s.with;
   return q;
 }
 

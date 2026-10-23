@@ -131,7 +131,9 @@
     },
     "toAlias": "Written to {{email}}, one of your addresses",
     "writtenTo": "Written to",
-    "anyAddress": "Every address"
+    "anyAddress": "Every address",
+    "with": "With",
+    "anyone": "Anyone"
   },
   "action": {
     "archive": "Archive",
@@ -543,7 +545,8 @@
     "compose": "Compose",
     "select": "Select conversation",
     "search": "Search mail",
-    "inbox": "Go to inbox"
+    "inbox": "Go to inbox",
+    "people": "Show or hide people"
   },
   "bar": {
     "label": "Folders",
@@ -683,5 +686,27 @@
       "workspace": "The workspace's name"
     },
     "signatureVars": "Type a variable to add the sender's name, title or phone: each person's mail carries their own."
+  },
+  "people": {
+    "title": "People",
+    "show": "Show people",
+    "hide": "Hide people",
+    "onConversation_one": "{{count}} person on this conversation",
+    "onConversation_other": "{{count}} people on this conversation",
+    "onlyYou": "Only your own addresses are on this conversation.",
+    "copy": "Copy address",
+    "write": "Write",
+    "allMail": "All mail",
+    "conversations": "Conversations",
+    "since": "Since",
+    "sinceHint": "Their oldest message in the mail opendesk has synced",
+    "other": "Other conversations",
+    "noOther": "No other conversations with {{name}} in the mail you can see.",
+    "showAll_one": "Show {{count}} conversation in Mail",
+    "showAll_other": "Show all {{count}} in Mail",
+    "files": "Files from {{name}}",
+    "file": "File",
+    "scope": "Counts the mail opendesk has synced that you can see. Trash and spam are left out.",
+    "error": "Their conversations did not load."
   }
 }

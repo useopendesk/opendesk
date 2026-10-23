@@ -37,6 +37,7 @@ describe("list query", () => {
     expect(mailListQuery("folder", { folder: "f1", account: "a1", q: "x" })).toEqual({ folder_id: "f1", q: "x" });
     expect(mailListQuery("starred", { account: "a1" })).toEqual({ box: "starred", account_id: "a1" });
     expect(mailListQuery("nope", {})).toEqual({ box: "inbox" });
+    expect(mailListQuery("all", { with: "dana@client.test" })).toEqual({ box: "all", with: "dana@client.test" });
   });
 });
 

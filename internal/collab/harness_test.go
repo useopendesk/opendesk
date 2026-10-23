@@ -251,6 +251,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	s.registerConnectRoutes(api, r)
 	s.registerFolderRoutes(api)
 	s.registerThreadRoutes(api)
+	s.registerPeopleRoutes(api)
 	s.registerSendRoutes(api)
 	s.registerDraftRoutes(api)
 	s.registerCommentRoutes(api)

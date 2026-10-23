@@ -83,6 +83,8 @@ function flush(qc: QueryClient) {
   listTimer = null;
   void qc.invalidateQueries({ queryKey: qk.mailThreadLists });
   void qc.invalidateQueries({ queryKey: qk.mailCounts });
+  // A person's conversations may be any of them.
+  void qc.invalidateQueries({ queryKey: qk.mailPeople });
   for (const id of pendingThreads) void qc.invalidateQueries({ queryKey: qk.mailThread(id), exact: true });
   pendingThreads.clear();
   for (const acc of pendingFolders) void qc.invalidateQueries({ queryKey: acc ? qk.mailFolders(acc) : ["collab", "folders"] });

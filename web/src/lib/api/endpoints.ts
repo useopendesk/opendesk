@@ -669,6 +669,8 @@ export const api = {
       update: (id: string, body_html: string) => http.patch<T.MailComment>(`/v1/collab/comments/${id}`, { body_html }),
       remove: (id: string) => http.del(`/v1/collab/comments/${id}`),
     },
+    /** One address across the conversations you see; exclude: the open one, left out of threads. */
+    person: (q: { email: string; exclude?: string; limit?: number }) => http.get<T.MailPerson>("/v1/collab/person", { query: q }),
     counts: () => http.get<T.MailCounts>("/v1/collab/counts"),
     /** Sent through the provider within the request (502 send_failed, nothing stored). */
     send: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/messages", b),
@@ -722,6 +724,8 @@ export type CollabThreadQuery = {
   q?: string;
   /** Only conversations with this address on them (one of the person's addresses). */
   to?: string;
+  /** Only conversations with this person on them; without account_id, every conversation you see. */
+  with?: string;
   limit?: number;
   cursor?: string | null;
 };

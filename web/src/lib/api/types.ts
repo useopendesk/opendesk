@@ -2257,6 +2257,26 @@ export type MailThreadDetail = {
   can_act: boolean;
 };
 
+/** One address across the conversations you see (contracts/collab.md "People"). */
+export type MailPerson = {
+  email: string;
+  /** The newest name the address has on them; "" none. */
+  name: string;
+  /** Conversations with them, trash and spam left out, the open one included. */
+  conversations: number;
+  /** Them without `exclude`. */
+  others: number;
+  /** Their oldest message in the mail opendesk has synced, not the first ever. */
+  first_at: string | null;
+  last_at: string | null;
+  /** The newest of them, without `exclude`. */
+  threads: MailThread[];
+  /** Files from messages they sent, newest first. */
+  files: MailPersonFile[];
+};
+
+export type MailPersonFile = { thread_id: string; message_id: string; sent_at: string; attachment: MailAttachment };
+
 export type CollabStatus = {
   enabled: boolean;
   /** Why not: not on the plan, or off on this instance. */

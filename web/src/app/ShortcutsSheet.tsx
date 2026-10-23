@@ -43,6 +43,7 @@ export function ShortcutsSheet() {
         { keys: "a", label: tc("shortcuts.replyAll") },
         { keys: "f", label: tc("shortcuts.forward") },
         { keys: "shift c", label: tc("shortcuts.comment") },
+        { keys: "]", label: tc("shortcuts.people") },
         { keys: "c", label: tc("shortcuts.compose") },
         { keys: "x", label: tc("shortcuts.select") },
         { keys: "/", label: tc("shortcuts.search") },
