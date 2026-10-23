@@ -15,7 +15,7 @@ test("an account's addresses, each with its own signature", async ({ page, proof
   await quietShell(page);
   await proof.open("/settings/mail-accounts");
   // The Gmail account's row (a button): its name and address.
-  await page.getByRole("button").filter({ hasText: "Work" }).filter({ hasText: "@margin.app" }).first().click();
+  await page.getByRole("button", { name: /^Work Private/ }).click();
   const addresses = page.getByRole("list", { name: "Addresses" });
   await addresses.scrollIntoViewIfNeeded();
   await expect(addresses.getByText("support@margin.app")).toBeVisible();
