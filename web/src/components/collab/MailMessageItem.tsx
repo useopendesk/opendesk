@@ -4,7 +4,7 @@
 // scripts, and images from other sites (CSS url() too) held back until asked for.
 
 import { ChevronDown, Download, FileText, ImageOff, MoreHorizontal, Paperclip } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MailAddress, MailAttachment, MailMessage } from "@/lib/api/types";
 import { formatAddress, normEmail } from "@/lib/collab/recipients";
@@ -152,71 +152,98 @@ export const MailMessageItem = memo(function MailMessageItem({
   const files = m.attachments.filter((a) => !a.inline).length;
   const details = useMessageDetails(m, external, open);
 
+  // Folding keeps your place: the folded row stays in view and takes focus, so the next
+  // message is a keypress away. Open and folded share one first line (avatar, name, time
+  // in the same spots), so nothing moves but what opens below it.
+  const row = useRef<HTMLButtonElement>(null);
+  const folding = useRef(false);
+  const fold = () => {
+    folding.current = true;
+    onToggle();
+  };
+  useLayoutEffect(() => {
+    if (open || !folding.current) return;
+    folding.current = false;
+    row.current?.scrollIntoView({ block: "nearest" });
+    row.current?.focus({ preventScroll: true });
+  }, [open]);
+
   if (!open)
     return (
       <button
+        ref={row}
         type="button"
         onClick={onToggle}
         aria-expanded={false}
         aria-label={t("thread.expand", { name })}
-        className="group flex w-full items-center gap-2.5 rounded-lg border border-line bg-surface px-4 py-2.5 text-left transition-colors hover:bg-sunken/60 focus-visible:shadow-[0_0_0_2px_var(--focus)] outline-none"
+        className="group flex w-full items-start gap-2.5 rounded-lg border border-line bg-surface px-4 py-3 text-left outline-none hover:bg-sunken/60 focus-visible:shadow-[0_0_0_2px_var(--focus)]"
       >
-        <Avatar name={name} size="sm" />
-        <span className={cn("w-[160px] shrink-0 truncate text-[12.5px]", m.unread ? "font-semibold text-fg" : "text-fg-2")} data-ph-mask>
+        <Avatar name={name} size="md" />
+        <span className={cn("w-[160px] shrink-0 truncate text-[13px] leading-6", m.unread ? "font-semibold text-fg" : "font-medium text-fg-2")} data-ph-mask>
           {name}
         </span>
-        {m.draft && <span className="shrink-0 text-[11px] font-medium text-tone-red">{t("thread.draft")}</span>}
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-4" data-ph-mask>
+        {m.draft && <span className="shrink-0 text-[11px] font-medium leading-6 text-tone-red">{t("thread.draft")}</span>}
+        <span className="min-w-0 flex-1 truncate text-[12.5px] leading-6 text-fg-4" data-ph-mask>
           {m.snippet}
         </span>
-        {files > 0 && <Paperclip className="size-3 shrink-0 text-fg-4" />}
-        <time dateTime={m.sent_at} title={fullDate(m.sent_at)} className="mono shrink-0 text-[11px] text-fg-4">
-          {relShort(m.sent_at)}
+        {files > 0 && <Paperclip className="mt-1.5 size-3 shrink-0 text-fg-4" />}
+        <time dateTime={m.sent_at} title={fullDate(m.sent_at)} className="mono shrink-0 text-[11px] leading-6 text-fg-4">
+          {relShort(m.sent_at)} · {clock(m.sent_at)}
         </time>
+        {/* The open header's fold button sits here; the time stays put. */}
+        <span aria-hidden className="-mr-1.5 flex size-6 shrink-0 items-center justify-center text-fg-4 opacity-0 group-hover:opacity-100">
+          <ChevronDown className="size-3.5 -rotate-90" />
+        </span>
       </button>
     );
 
   return (
     <article aria-label={t("thread.expand", { name })} className="rounded-lg border border-line bg-surface">
-      {/* A click on the header folds the message, as in a mail app; its buttons, links and selected text keep theirs. */}
+      {/* A click on the header folds the message, as in a mail app. Only its text (data-text, the text cursor)
+          selects, and a click there never folds; buttons and links keep their own clicks. A double click is one
+          fold, never a selection. It stays at the top while a long message scrolls under it, so folding is
+          always one click away. */}
       <header
-        className="flex cursor-pointer items-start gap-2.5 px-4 pt-3"
+        className="sticky top-0 z-[2] flex cursor-pointer select-none items-start gap-2.5 rounded-t-lg bg-surface px-4 pb-1 pt-3"
+        onMouseDown={(e) => {
+          if (e.detail > 1 && !(e.target as HTMLElement).closest("[data-text]")) e.preventDefault();
+        }}
         onClick={(e) => {
           const el = e.target as HTMLElement;
-          if (!e.currentTarget.contains(el) || el.closest("button, a, input, [role=dialog]") || window.getSelection()?.toString()) return;
-          onToggle();
+          if (e.detail > 1 || !e.currentTarget.contains(el) || el.closest("button, a, input, [role=dialog], [data-text]")) return;
+          fold();
         }}
       >
         <Avatar name={name} size="md" />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <span className="max-w-[50%] shrink-0 truncate text-[13px] font-medium" data-ph-mask>
+          <div className="flex min-w-0 items-baseline gap-2 leading-6">
+            <span data-text className="max-w-[50%] shrink-0 cursor-text select-text truncate text-[13px] font-medium" data-ph-mask>
               {name}
             </span>
-            <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
+            <span data-text className="mono min-w-0 cursor-text select-text truncate text-[11.5px] text-fg-3" data-ph-mask>
               {m.from.email}
             </span>
             <Via details={details.data} />
             {m.draft && <span className="shrink-0 text-[11px] font-medium text-tone-red">{t("thread.draft")}</span>}
           </div>
-          <div className="mt-0.5 flex flex-col items-start text-[11.5px] leading-[17px] text-fg-3" data-ph-mask>
+          <div className="flex flex-col items-start text-[11.5px] leading-[17px] text-fg-3" data-ph-mask>
             <DetailsTrigger m={m} details={details.data} loading={details.isLoading} />
-            {m.reply_to.length > 0 && normEmail(m.reply_to[0].email) !== normEmail(m.from.email) && <span className="max-w-full truncate">{t("thread.replyTo", { list: list(m.reply_to) })}</span>}
-            {m.sent_by && <span className="max-w-full truncate text-fg-4">{t("thread.sentBy", { name: m.sent_by.name })}</span>}
+            {m.reply_to.length > 0 && normEmail(m.reply_to[0].email) !== normEmail(m.from.email) && <span data-text className="max-w-full cursor-text select-text truncate">{t("thread.replyTo", { list: list(m.reply_to) })}</span>}
+            {m.sent_by && <span data-text className="max-w-full cursor-text select-text truncate text-fg-4">{t("thread.sentBy", { name: m.sent_by.name })}</span>}
           </div>
         </div>
         <Tooltip content={fullDate(m.sent_at)}>
-          <time dateTime={m.sent_at} className="mono shrink-0 pt-0.5 text-[11px] text-fg-4">
+          <time dateTime={m.sent_at} className="mono shrink-0 text-[11px] leading-6 text-fg-4">
             {relShort(m.sent_at)} · {clock(m.sent_at)}
           </time>
         </Tooltip>
         <Tooltip content={t("thread.collapse")}>
-          <button type="button" onClick={onToggle} aria-label={t("thread.collapse")} aria-expanded className="-mr-1.5 flex size-6 shrink-0 items-center justify-center rounded-md text-fg-4 hover:bg-hover hover:text-fg">
+          <button type="button" onClick={fold} aria-label={t("thread.collapse")} aria-expanded className="-mr-1.5 flex size-6 shrink-0 items-center justify-center rounded-md text-fg-4 hover:bg-hover hover:text-fg">
             <ChevronDown className="size-3.5" />
           </button>
         </Tooltip>
       </header>
-      <div className="px-4 pb-3.5 pl-[50px] pt-2">
+      <div className="px-4 pb-3.5 pl-[50px] pt-1">
         <SenderWarning m={m} details={details.data} />
         {held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
         <MailBody body={body} title={t("thread.emailContent")} />

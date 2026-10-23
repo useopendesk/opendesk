@@ -166,10 +166,11 @@ test("fold a message from its header and read how it came", async ({ page, proof
   await expect(latest.getByText("what's holding you back")).toBeVisible();
   await proof.chapter("Message details", "Click the header to fold a message; the arrow beside its recipients shows how it came");
 
-  await latest.getByText("jade@fieldway.io").click();
+  await latest.locator("header time").click();
   await expect(latest).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show message from Jade Morrow" }).last()).toBeFocused();
   await proof.dwell();
-  await proof.shot("header-folded", { caption: "A click on the header folds the message, as in a mail app" });
+  await proof.shot("header-folded", { caption: "A click on the header folds the message: the row keeps the avatar, name and time where they were" });
 
   await page.getByRole("button", { name: "Show message from Jade Morrow" }).last().click();
   await expect(latest.getByText("what's holding you back")).toBeVisible();
@@ -203,4 +204,24 @@ test("mail that fails its sender's checks carries a warning", async ({ page, pro
   await expect(card.getByText("DMARC fail")).toBeVisible();
   await proof.dwell();
   await proof.shot("spoofed-details", { caption: "Its details: mailed by another domain, no signature, DMARC failed, not encrypted" });
+});
+
+test("fold a long email from its header while reading it", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await openNewsletter(page);
+  const mail = page.getByRole("article", { name: "Show message from Webdrop" });
+  const header = mail.locator("header");
+  await header.hover();
+  await page.mouse.wheel(0, 1400);
+  await expect(header.getByText("newsletter@webdrop.dev")).toBeInViewport();
+  await proof.chapter("Always in reach", "Deep in a long email, its header stays on top, one click from folding");
+  await proof.dwell();
+  await proof.shot("sticky-header", { caption: "Scrolled through a long newsletter: its header stays at the top" });
+
+  await header.locator("time").click();
+  const row = page.getByRole("button", { name: "Show message from Webdrop" });
+  await expect(row).toBeInViewport();
+  await expect(row).toBeFocused();
+  await proof.dwell();
+  await proof.shot("long-folded", { caption: "Folded: the row stays in view, ready to open again" });
 });

@@ -144,7 +144,11 @@ function HeadersDialog({ open, onOpenChange, details, subject }: { open: boolean
 export function Via({ details }: { details: MailMessageDetails | undefined }) {
   const { t } = useTranslation("collab");
   if (!details?.via) return null;
-  return <span className="shrink-0 text-[11.5px] text-fg-4">{t("details.via", { domain: details.via })}</span>;
+  return (
+    <span data-text className="shrink-0 cursor-text select-text text-[11.5px] text-fg-4">
+      {t("details.via", { domain: details.via })}
+    </span>
+  );
 }
 
 /** The warning a message carries when the receiving server could not confirm its sender. */
