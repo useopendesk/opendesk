@@ -132,16 +132,13 @@
     "toAlias": "Written to {{email}}, one of your addresses",
     "writtenTo": "Written to",
     "anyAddress": "Every address",
-<<<<<<< HEAD
     "with": "With",
-    "anyone": "Anyone"
-=======
+    "anyone": "Anyone",
     "searchCoverage": "Searching mail since {{date}}",
     "searchImport": "Import older mail",
     "storageFull": "New mail is waiting at the provider: the workspace's Collab storage is full.",
     "storageFullAdmin": "Add seats or ask for a larger allowance to make room.",
     "billing": "Billing"
->>>>>>> 90ebbdd (feat: import older Collab mail on request with resumable checkpoints, a fair-use storage allowance and search of every message)
   },
   "action": {
     "archive": "Archive",
@@ -695,7 +692,6 @@
     },
     "signatureVars": "Type a variable to add the sender's name, title or phone: each person's mail carries their own."
   },
-<<<<<<< HEAD
   "people": {
     "title": "People",
     "show": "Show people",
@@ -717,7 +713,7 @@
     "file": "File",
     "scope": "Counts the mail opendesk has synced that you can see. Trash and spam are left out.",
     "error": "Their conversations did not load."
-=======
+  },
   "history": {
     "title": "Mail history",
     "description": "The first sync brings the last 30 days. Import older mail to read and search it here.",
@@ -791,6 +787,5 @@
       "paused": "History paused",
       "limited": "History waiting for storage"
     }
->>>>>>> 90ebbdd (feat: import older Collab mail on request with resumable checkpoints, a fair-use storage allowance and search of every message)
   }
 }
