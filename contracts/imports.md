@@ -178,7 +178,9 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
 - Messages keep their author, time, recipients and HTML (sanitized like every email body). A message
   by an agent mapped to a member is that member's; an unmapped agent's keeps their name and address.
   Intercom bot replies (Fin, workflows) are the team's, named Fin. At most 2,000 messages per ticket
-  (Intercom answers at most 500 parts of a conversation); the rest is listed in `problems`.
+  (Intercom answers at most 500 parts of a conversation); the rest is listed in `problems`. An email
+  reply's quoted history and signature are cut the way an inbound email's are, with the whole original
+  kept behind it (`full_html`); notes, chats and forwards keep everything.
 - Attachments are copied here (25 MB per file, programs refused); inline images point at the copies.
   The plan bounds how many files one message brings, their size in all, and what imports bring into a
   workspace in all (contracts/billing.md "Imports"); a self-hosted instance has none of these limits.
