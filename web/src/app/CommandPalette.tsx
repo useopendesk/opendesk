@@ -171,7 +171,7 @@ export function CommandPalette() {
                   </Item>
                 </Command.Group>
               )}
-              {!(ai.enabled && query.trim().length > 2) && (
+              {!hasResults && !(ai.enabled && query.trim().length > 2) && (
                 <Command.Empty>
                   {deferred.length > 1 && search.isFetching ? (
                     <p className="py-10 text-center text-[13px] text-fg-3">{tNav("command.searching")}</p>
