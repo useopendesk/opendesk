@@ -187,7 +187,7 @@ export const api = {
   me: {
     get: () => http.get<T.Me>("/v1/me", { workspace: false }),
     /** `avatar_url` is an https picture to copy (processed in the background), or "" to remove it. */
-    update: (b: { name?: string; avatar_url?: string }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
+    update: (b: { name?: string; avatar_url?: string; time_format?: T.TimeFormat }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
     /** PNG, JPEG, GIF or WebP, at most 5 MB. */
     uploadAvatar: (file: File | Blob) => http.put<T.User>("/v1/me/avatar", imageForm(file), { workspace: false }),
     removeAvatar: () => http.del<T.User>("/v1/me/avatar", undefined, { workspace: false }),

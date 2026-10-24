@@ -17,8 +17,11 @@ export type User = {
   avatar_source: AvatarSource | null;
   email_verified: boolean;
   totp_enabled: boolean;
+  /** The clock for times in the app and notification emails; "auto" follows the browser's locale in the app and 24-hour in emails. */
+  time_format: TimeFormat;
   created_at: string;
 };
+export type TimeFormat = "auto" | "12h" | "24h";
 export type UserRef = { id: string; name: string; email: string; avatar_url: string | null };
 
 export type WorkspaceSettings = {

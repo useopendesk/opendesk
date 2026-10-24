@@ -35,7 +35,8 @@ it exists, and this file is the contract the parts are built against.
 ```ts
 // Pictures (see "Profile pictures and logos"). avatar_url is null when there is no picture: show initials.
 type AvatarSource = "upload" | "oauth" | "gravatar" | "domain" | "widget";
-type User = { id: string; email: string; name: string; avatar_url: string | null; avatar_source: AvatarSource | null; email_verified: boolean; totp_enabled: boolean; created_at: string };
+type User = { id: string; email: string; name: string; avatar_url: string | null; avatar_source: AvatarSource | null; email_verified: boolean; totp_enabled: boolean;
+  time_format: "auto" | "12h" | "24h" /* the clock times are shown in, in the app and in notification emails; "auto" (the default) follows the browser's language and region in the app and is 24-hour in emails */; created_at: string };
 type UserRef = { id: string; name: string; email: string; avatar_url: string | null };
 type Workspace = { id: string; name: string; slug: string; widget_key: string /* the default brand's first widget */; settings: WorkspaceSettings; avatar_url: string | null /* workspace logo */; avatar_source: "upload" | null;
   images: { help_center_logo: string | null; help_center_favicon: string | null /* the default brand's */; widget_avatar: string | null; widget_launcher: string | null /* the default brand's first widget's */; /* the AI agent's picture is its bot's (contracts/bots.md) */ }; created_at: string };
@@ -259,7 +260,7 @@ type NotificationPreferences = {
 | POST | `/v1/auth/totp/enable` | `{code}` → `{recovery_codes: string[]}` |
 | POST | `/v1/auth/totp/disable` | `{code}` → 204 |
 | GET | `/v1/me` | → `{user: User, memberships: Membership[]}` |
-| PATCH | `/v1/me` | `{name?, avatar_url?}` → `User`. `avatar_url` is a picture to copy: an https URL fetched and processed server-side (asynchronously; `member.updated` follows), `""` removes the picture |
+| PATCH | `/v1/me` | `{name?, avatar_url?, time_format?}` → `User`. `time_format` is account-wide, across workspaces; another value is `422`. `avatar_url` is a picture to copy: an https URL fetched and processed server-side (asynchronously; `member.updated` follows), `""` removes the picture |
 | PUT | `/v1/me/avatar` | multipart `file` (PNG, JPEG, GIF or WebP, at most 5 MB) → `User` with `avatar_source: "upload"`. Audit `user.avatar_updated` |
 | DELETE | `/v1/me/avatar` | → `User` with no picture; the next Google or GitHub sign-in brings the provider picture back. Audit `user.avatar_removed` |
 | POST | `/v1/me/heartbeat` | → 204. Marks the user seen (auto-away). The app sends it every 5 minutes while a tab is visible |
@@ -396,7 +397,7 @@ Delivery:
 - A worker job sweeps every minute. When pacing allows (below), everything still waiting for that user in that workspace
   goes into **one** email: one notification gets its own email ("Maya assigned you #1095: SAML with Okta"); several get
   one grouped email. Its subject names the most pressing notification and counts the rest ("Maya Chen mentioned you
-  #1095 and 4 more"); a summary line counts them by kind ("Since 14:05: 2 assigned, 1 mention, 3 replies"); urgent ones
+  #1095 and 4 more"); a summary line counts them by kind ("Since 14:05: 2 assigned, 1 mention, 3 replies", times in the recipient's `timezone` on their `User.time_format` clock); urgent ones
   lead under "Needs you now", then tickets, then the rest; a ticket's notifications are one line ("Dana Lee replied
   twice, Maya Chen mentioned you", with the newest excerpt); one person's assignments on 3 or more tickets are one line
   ("Maya Chen assigned you 37 tickets"). At most 20 lines, then "and N more". Digests use the same layout.
