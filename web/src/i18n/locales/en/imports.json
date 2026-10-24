@@ -40,6 +40,10 @@
       "with": "Access token",
       "blurb": "Conversations with notes and files, contacts, companies and articles."
     },
+    "front": {
+      "with": "API token",
+      "blurb": "Conversations from every shared inbox, with comments, files and contacts."
+    },
     "csv": {
       "with": "Any helpdesk",
       "blurb": "An export from any other helpdesk, one row per ticket or per message."
@@ -274,6 +278,7 @@
     "articles": "Bringing over help center articles",
     "tickets": "Bringing over tickets",
     "changes": "Bringing over what changed",
+    "threading": "Linking replies to their emails: {{done}} of {{total}}",
     "undoing": "Taking out what the import brought",
     "paused": "Paused. It goes on from here when you resume.",
     "waiting": "{{name}} asked us to slow down. Going on in {{seconds}}s.",

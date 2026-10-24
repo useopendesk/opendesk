@@ -24,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/freshdesk"
+	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/front"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/helpscout"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/intercom"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source/zendesk"
@@ -37,6 +38,7 @@ const (
 	HelpScout = "helpscout"
 	Freshdesk = "freshdesk"
 	Intercom  = "intercom"
+	Front     = "front"
 	CSV       = "csv"
 )
 
@@ -53,13 +55,14 @@ const (
 
 // Phases, in order.
 const (
-	PhaseArticles = "articles"
-	PhaseTickets  = "tickets"
-	PhaseDone     = "done"
+	PhaseArticles  = "articles"
+	PhaseTickets   = "tickets"
+	PhaseThreading = "threading"
+	PhaseDone      = "done"
 )
 
 // sourceNames are how people know the products.
-var sourceNames = map[string]string{Zendesk: "Zendesk", HelpScout: "Help Scout", Freshdesk: "Freshdesk", Intercom: "Intercom", CSV: "CSV"}
+var sourceNames = map[string]string{Zendesk: "Zendesk", HelpScout: "Help Scout", Freshdesk: "Freshdesk", Intercom: "Intercom", Front: "Front", CSV: "CSV"}
 
 // factories build the API sources; CSV is read from its stored file (csv.go).
 var factories = map[string]source.Factory{
@@ -67,6 +70,7 @@ var factories = map[string]source.Factory{
 	HelpScout: helpscout.New,
 	Freshdesk: freshdesk.New,
 	Intercom:  intercom.New,
+	Front:     front.New,
 }
 
 // Service is the imports area. Tests replace Factories and Options.
@@ -190,6 +194,9 @@ type ImportCounts struct {
 	Attachments int `json:"attachments"`
 	Skipped     int `json:"skipped"`
 	Failed      int `json:"failed"`
+	// Threaded is how many emails the threading phase has read, of ThreadTotal.
+	Threaded    int `json:"threaded"`
+	ThreadTotal int `json:"thread_total"`
 }
 
 // ImportProblem is something an import could not bring over.
@@ -205,10 +212,10 @@ const maxProblems = 50
 // Import is the API shape (contracts/imports.md). Credentials never appear in it.
 type Import struct {
 	ID               uuid.UUID       `json:"id"`
-	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
+	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,front,csv"`
 	Account          ImportAccount   `json:"account"`
 	Status           string          `json:"status" enum:"running,paused,completed,failed,canceled,undoing,undone"`
-	Phase            string          `json:"phase" enum:"articles,tickets,done"`
+	Phase            string          `json:"phase" enum:"articles,tickets,threading,done"`
 	Run              int             `json:"run"`
 	Options          ImportOptions   `json:"options"`
 	Mapping          ImportMapping   `json:"mapping"`
