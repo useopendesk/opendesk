@@ -275,6 +275,48 @@ type NotificationPreferences = {
 | PATCH | `/v1/me/passkeys/{id}` | `{name}` → `Passkey` |
 | DELETE | `/v1/me/passkeys/{id}` | → 204. Needs the second factor (when on) and a sign-in within 12 hours, like adding one (`403 mfa_required` / `reauth_required`) |
 | DELETE | `/v1/me` | `{password?, code?}` → 204. `password` when the account has one, `code` when 2FA is on. Deletes the account and every workspace it solely owns (`409 sole_owner` while owner of a workspace with other members) |
+| GET | `/v1/me/workspace-prefs` | `WorkspacePrefs` (below; the defaults until the person changes something). No `OD-Workspace` |
+| PUT | `/v1/me/workspace-prefs` | any of `{mode, layout, order, hidden, collapsed, items, everywhere}` → `WorkspacePrefs`. Fields left out keep their value; `mode: ""` goes back to the default. `422` for an unknown mode or layout, more than 100 workspace ids, or an item id not shaped `<workspace id>/<kind>[:<id>]` (or `everywhere/<list>`), at most 500 items |
+| GET | `/v1/me/overview` | `{workspaces: WorkspaceOverview[]}`: every workspace the person is in, in joining order (below). No `OD-Workspace` |
+
+#### Workspaces together
+
+A person in several workspaces can work them side by side in the web app ("Together"), or one at a
+time ("Separate"). Every request still targets exactly one workspace (`OD-Workspace`), with that
+workspace's role and private teams: a view across workspaces is made of one request per workspace.
+The app keeps each workspace's data under its own cache keys and opens anything of another workspace
+by moving its focus there, without reloading. Links to a workspace's pages carry `?ws=<id>` (above).
+
+`WorkspacePrefs` is the person's own, one per user, whatever the workspace, and deleted with them:
+
+```jsonc
+{
+  "mode": "together" | "separate",  // the default is together (it only shows with two or more workspaces)
+  "mode_set": false,                // read only: whether the person chose the mode
+  "layout": "grouped" | "mixed",    // grouped: a sidebar group per workspace; mixed: sections combined, rows badged
+  "order": ["<wid>"],               // sidebar order; workspaces not listed follow in joining order
+  "hidden": ["<wid>"],              // left out of the sidebar, the Everywhere lists and the bell
+  "collapsed": ["<wid>" | "everywhere"],
+  "items": { "hidden": ["<wid>/view:<id>"], "order": ["<wid>/team:<id>"] },
+  "everywhere": true,               // the Everywhere lists: assigned to me, and all mail
+  "updated_at": "..."
+}
+```
+
+Ids in it only arrange the sidebar. They are never checked against memberships and never grant
+anything: a workspace the person is not in is simply not shown.
+
+`WorkspaceOverview` is one workspace's sidebar numbers, each computed as that workspace's own route
+answers the person (a principal for that workspace alone: their role there, its private teams):
+
+```jsonc
+{ "id": "<wid>", "name": "Acme", "slug": "acme", "avatar_url": "", "role": "agent", "suspended": false,
+  "unread_notifications": 3,
+  "ticket_counts": TicketCounts | null,   // GET /v1/tickets/counts there; null while suspended
+  "mail_counts": CollabCounts | null }    // GET /v1/collab/counts there; null without Collab
+```
+
+A suspended workspace is listed with its name and nothing else.
 
 ### Workspace (owner: backend-core)
 | method | path | notes |
@@ -441,7 +483,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | method | path | notes |
 | --- | --- | --- |
 | GET | `/v1/tickets` | filters: `status` (csv), `priority` (csv), `severity` (csv of `sev1`..`sev4` and `none`), `assignee` (`me`/`none`/uuid), `team_id` (uuid, `mine` for the caller's teams, `none`), `brand_id`, `widget_id`, `mailbox_id`, `received_at` (the address a ticket was first written to: a mailbox's address or an alias, case-insensitive), `tag`, `channel`, `contact_id`, `view_id`, `q`, `spam`, `field.<key>` / `field.<key>[<op>]` (custom fields, below), `sort` (`last_message_at`/`created_at`/`priority`/`severity` (sev1 first, none last)/`due`/`field.<key>`), `order` |
-| GET | `/v1/tickets/counts` | → `{ unassigned, mine, open, pending, on_hold, solved, spam, views: {<view_id>: n}, teams: {<team_id>: {open, unassigned}}, my_teams: {open, unassigned}, stats: {<row id>: {awaiting, urgent, overdue}} }`. `teams` lists every team the caller can see (open and pending, spam excluded); `my_teams` sums the caller's teams; `views` counts only tickets the caller can see (contracts/teams.md "Visibility"). `stats` breaks a sidebar row's tickets down, over the same tickets as its count: `ticket_folder:unassigned`, `ticket_folder:mine`, `ticket_folder:open`, `ticket_folder:pending` (pending and on hold), `team:<id>` for each team in `teams`, `team:mine` (as `my_teams`) and `view:<id>` for each view in `views`. `awaiting`: open or pending, and the customer's last message is the last message (within a second); `urgent`: urgent priority; `overdue`: not solved or closed, and the due time that applies has passed (first response while unanswered, else resolution) or an SLA breach is recorded |
+| GET | `/v1/tickets/counts` | → `{ unassigned, mine, open, pending, on_hold, solved, spam, views: {<view_id>: n}, teams: {<team_id>: {open, unassigned}}, my_teams: {open, unassigned}, stats: {<row id>: {awaiting, urgent, overdue}} }`. `teams` lists every team the caller can see (open and pending, spam excluded); `my_teams` sums the caller's teams; Every count, the folders and `views` included, covers only tickets the caller can see (contracts/teams.md "Visibility"): a private team's tickets count for its members and for their assignee. `stats` breaks a sidebar row's tickets down, over the same tickets as its count: `ticket_folder:unassigned`, `ticket_folder:mine`, `ticket_folder:open`, `ticket_folder:pending` (pending and on hold), `team:<id>` for each team in `teams`, `team:mine` (as `my_teams`) and `view:<id>` for each view in `views`. `awaiting`: open or pending, and the customer's last message is the last message (within a second); `urgent`: urgent priority; `overdue`: not solved or closed, and the due time that applies has passed (first response while unanswered, else resolution) or an SLA breach is recorded |
 | POST | `/v1/tickets` | `{subject, contact_id? , contact?: {email,name}, channel?: "email"\|"api", mailbox_id?, brand_id?, body_html, kind?: "reply"\|"note", priority?, severity?, assignee_id?, team_id?, tags?: string[], fields?: FieldValues, status?}`; an email ticket with a reply is sent to the contact (`422 mailbox_cannot_send` when its mailbox has `sending: "system_off"`; nothing is created). Without `team_id` the team comes from routing (contracts/teams.md "Routing"); `brand_id` defaults to the mailbox's brand, else the default brand (`mailbox_id` of another brand: `422`; an address the caller may not send from: `403 forbidden`). An assignee who is not on a private team is `422 not_on_team` |
 | GET | `/v1/tickets/{id}` | id is uuid, or `#<number>` / numeric number |
 | PATCH | `/v1/tickets/{id}` | `{subject?, status?, priority?, severity? /* null clears */, contact_id? /* a contact in this workspace */, assignee_id?, team_id?, mailbox_id? /* the reply address */, brand_id?, snoozed_until?, spam?, tags?: string[] /* replaces */, add_tags?: string[], remove_tags?: string[], custom?, fields?: Record<string, FieldValue \| null> /* merged; null clears */}`. Changing `contact_id` changes the recipient of future replies; existing messages stay as sent. It logs `contact_changed` and publishes `ticket.updated` with `contact_id` in `changes`. A live chat stays with the visitor who started it (the widget lists their chats by contact): changing its contact is `422`, and so is `contact_id` in a bulk patch. A status of `solved` or `closed` with an empty `required_on_solve` field is `422 field_required`. Setting `snoozed_until` without a `status` moves the ticket to `on_hold`; a status change that is not `on_hold` clears the snooze. Changing `priority`, `severity`, `team_id`, `spam` or labels removes Ollie's pending suggestion for that field (`custom.ai_suggestions`, contracts/ai.md). `team_id`, `mailbox_id` and `brand_id` follow contracts/teams.md "Reply address": an address of another brand is `422`, one the caller may not send from `403 forbidden`, an assignee not on the ticket's private team `422 not_on_team` (a team change alone unassigns them) |
