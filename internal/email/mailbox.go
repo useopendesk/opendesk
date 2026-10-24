@@ -237,6 +237,12 @@ type mailboxRow struct {
 	sendAs *storedSendAs
 }
 
+// lockWorkspaceForMailboxWrite keeps mailbox writes in the same order as ticket imports.
+func lockWorkspaceForMailboxWrite(ctx context.Context, tx pgx.Tx, wid uuid.UUID) error {
+	var id uuid.UUID
+	return tx.QueryRow(ctx, `SELECT id FROM workspaces WHERE id = $1 FOR UPDATE`, wid).Scan(&id)
+}
+
 // credentials is the sealed secret blob in mailboxes.credentials_enc.
 type credentials struct {
 	Password     string `json:"password,omitempty"`
