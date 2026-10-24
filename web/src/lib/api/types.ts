@@ -651,7 +651,7 @@ export type AutomationTrigger = "ticket_created" | "customer_replied" | "agent_r
 export type ConditionField =
   | "subject" | "body" | "from_email" | "channel" | "mailbox_id" | "priority" | "severity" | "status" | "tag" | "sentiment" | "ai_decide"
   /** contracts/teams.md: equals/not_equals with an id (team and widget also "none"); received_at also contains. */
-  | "team_id" | "brand_id" | "widget_id" | "received_at"
+  | "assignee_id" | "team_id" | "brand_id" | "widget_id" | "received_at"
   /** A ticket custom field, or the ticket contact's. */
   | `field.${string}` | `contact.field.${string}`;
 /** `eq` is the AI sentiment condition's operator (contracts/ai.md). */
