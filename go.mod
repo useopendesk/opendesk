@@ -2,6 +2,8 @@ module github.com/useopendesk/opendesk
 
 go 1.27.1
 
+replace github.com/aymerick/douceur => ./internal/thirdparty/douceur
+
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/anthropics/anthropic-sdk-go v1.82.0
