@@ -353,7 +353,7 @@ export const api = {
       http.create<{ integration: T.Integration; authorize_url?: string }>("/v1/integrations", b),
     authorize: (id: string) => http.post<{ integration: T.Integration; authorize_url: string }>(`/v1/integrations/${id}/authorize`),
     sync: (id: string) => http.post<T.Integration>(`/v1/integrations/${id}/sync`),
-    update: (id: string, b: { name?: string; enabled?: boolean; disabled_tools?: string[]; token?: string }) =>
+    update: (id: string, b: { name?: string; enabled?: boolean; disabled_tools?: string[]; ask_tools?: string[]; auto_tools?: string[]; token?: string }) =>
       http.patch<T.Integration>(`/v1/integrations/${id}`, b),
     remove: (id: string) => http.del(`/v1/integrations/${id}`),
   },
@@ -441,6 +441,8 @@ export const api = {
     /** Admin: removes a deleted message's text, files and original email for good. */
     purgeMessage: (id: string, messageId: string) => http.post<T.Message>(`/v1/tickets/${id}/messages/${messageId}/purge`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    /** A teammate is writing a reply: the chat's visitor sees them typing. */
+    typing: (id: string) => http.post<void>(`/v1/tickets/${id}/typing`),
     /** The ticket's shared draft (contracts/api.md "Drafts"): staged for the team, sent by whoever picks it up. */
     draft: {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),

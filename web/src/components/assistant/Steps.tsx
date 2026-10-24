@@ -2,7 +2,8 @@
 // approval card that shows exactly what a change will do before it runs.
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowRight, ArrowUpRight, Ban, Check, Clock, Send, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Ban, Check, ChevronRight, Clock, Send, X } from "lucide-react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -10,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { tone } from "@/lib/tones";
 import { Avatar } from "@/components/ui/avatar";
 import { peerOutcome } from "@/lib/assistantPeer";
-import type { Approval, AssistantRef, AssistantStep, StepPeer } from "./api";
+import type { Approval, AssistantRef, AssistantStep, Preview, StepPeer } from "./api";
 import { OllieMark } from "./OllieMark";
 import { Markdown } from "./Markdown";
 import { openRef } from "./refs";
@@ -157,7 +158,13 @@ function ToolStepRow({ step }: { step: AssistantStep }) {
           <span className={cn("min-w-0 truncate text-fg-4", step.status === "error" && "text-danger-fg")}>· {step.summary}</span>
         )}
         {(step.status === "denied" || step.status === "expired") && <span className="shrink-0 text-fg-4">· {t(`status.${step.status}`)}</span>}
+        {step.auto && !working && (
+          <span className={cn("inline-flex h-[18px] shrink-0 items-center rounded-sm px-1.5 text-[10.5px] font-medium", tone.violet.chip)} data-auto>
+            {t("step.auto")}
+          </span>
+        )}
       </div>
+      {step.auto && step.preview && !working && <RanDetails preview={step.preview} />}
       {refs.length > 0 && step.status === "done" && (
         <div className="flex flex-wrap gap-1 pl-6">
           {refs.map((r) => (
@@ -166,6 +173,54 @@ function ToolStepRow({ step }: { step: AssistantStep }) {
         </div>
       )}
     </motion.div>
+  );
+}
+
+/** What a change that ran without asking ran: its fields, text and arguments, behind a disclosure. */
+function RanDetails({ preview: p }: { preview: Preview }) {
+  const { t } = useTranslation("assistant");
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="pl-6">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((v) => !v)}
+        className={cn("inline-flex h-5 items-center gap-1 rounded-[5px] px-1 text-[11px] text-fg-3 transition-colors hover:text-fg", focusRing)}
+      >
+        <ChevronRight className={cn("size-3 transition-transform duration-150 motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
+        {open ? t("step.hideRan") : t("step.showRan")}
+      </button>
+      {open && (
+        <div id={id} className="mt-1 flex flex-col gap-1.5">
+          <p className="text-[12px] font-medium text-fg-2 wrap-anywhere">{p.title}</p>
+          {p.changes && p.changes.length > 0 && (
+            <div className="overflow-hidden rounded-lg border border-line bg-canvas">
+              {p.changes.map((c, i) => (
+                <ChangeRow key={i} field={c.field} from={c.from} to={c.to} />
+              ))}
+            </div>
+          )}
+          {p.body && (
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-line bg-canvas px-3 py-2">
+              <Markdown text={p.body} className="text-fg" />
+            </div>
+          )}
+          {p.arguments && (
+            <pre
+              tabIndex={0}
+              aria-label={t("approval.arguments")}
+              className={cn("max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-[11.5px] leading-[17px] text-fg-2 wrap-anywhere", focusRing)}
+              data-ph-mask
+            >
+              {p.arguments}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -195,6 +250,51 @@ function ChangeRow({ field, from, to }: { field: string; from: string; to: strin
         )}
         <span className={cn("min-w-0 rounded-[4px] px-1 font-medium", tone.green.soft, tone.green.text)}>{to}</span>
       </span>
+    </div>
+  );
+}
+
+const focusRing = "outline-none focus-visible:shadow-[0_0_0_1px_var(--surface),0_0_0_3px_var(--focus)]";
+
+/**
+ * What the summary above leaves out, and every argument the change runs with, exactly
+ * as it will be sent, behind a disclosure.
+ */
+function Arguments({ preview: p }: { preview: Preview }) {
+  const { t } = useTranslation("assistant");
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const omitted = p.omitted ?? 0;
+  if (!p.arguments && !omitted && !p.clipped) return null;
+  return (
+    <div className="mx-3 mb-2">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        {omitted > 0 && <span className={cn("inline-flex h-5 items-center rounded-[5px] px-1.5 font-medium", tone.amber.chip)}>{t("approval.moreFields", { count: omitted })}</span>}
+        {p.clipped && <span className={cn("inline-flex h-5 items-center rounded-[5px] px-1.5 font-medium", tone.amber.chip)}>{t("approval.clipped")}</span>}
+        {p.arguments && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={id}
+            onClick={() => setOpen((v) => !v)}
+            className={cn("ml-auto inline-flex h-5 items-center gap-1 rounded-[5px] px-1 text-fg-3 transition-colors hover:text-fg", focusRing)}
+          >
+            <ChevronRight className={cn("size-3 transition-transform duration-150 motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
+            {open ? t("approval.hideArguments") : t("approval.showArguments")}
+          </button>
+        )}
+      </div>
+      {open && p.arguments && (
+        <pre
+          id={id}
+          tabIndex={0}
+          aria-label={t("approval.arguments")}
+          className={cn("mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-[11.5px] leading-[17px] text-fg-2 wrap-anywhere", focusRing)}
+          data-ph-mask
+        >
+          {p.arguments}
+        </pre>
+      )}
     </div>
   );
 }
@@ -246,6 +346,7 @@ export function ApprovalCard({ approval, busy, onDecide }: { approval: Approval;
           <Markdown text={p.body} className="text-fg" />
         </div>
       )}
+      <Arguments key={approval.action_id} preview={p} />
       {targets.length > 1 && (
         <div className="mx-3 mb-2 flex flex-wrap items-center gap-1">
           {shown.map((r) => (
