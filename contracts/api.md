@@ -956,7 +956,7 @@ at (`mailbox_id`).
   mailboxes and Microsoft's for Microsoft 365 ones; mail to a forwarding address, through
   `POST /v1/inbound/email` or from a relay in `INBOUND_SMTP_RELAYS` to the built-in SMTP receiver,
   believes `INBOUND_AUTHSERV_ID` alone; mail the built-in receiver takes straight from the sending
-  server believes none. The first such header from the top is the verdict. A DMARC `fail` opens a
+  server, and an answer read from a member's own Collab account, believe none. The first such header from the top is the verdict. A DMARC `fail` opens a
   new ticket as spam; on an existing conversation the message is stored with `auth_failed`, the
   ticket's status does not change (it is never reopened; a `status_changed` activity with
   `from` = `to`, `reason: "sender_unverified"` and the `message_id` records that it was kept), and no

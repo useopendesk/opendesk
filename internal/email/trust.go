@@ -97,6 +97,9 @@ const (
 	// viaDirect: the built-in SMTP receiver, straight from the sending server, which
 	// writes every header the message carries.
 	viaDirect = "direct"
+	// viaMember: read from a member's own Collab account, whose provider is neither the
+	// mailbox's nor one in INBOUND_AUTHSERV_ID.
+	viaMember = "member"
 )
 
 // trustedAuthserv lists the authserv-ids whose results are believed for mail that arrived
@@ -104,9 +107,9 @@ const (
 // a connected Google or Microsoft mailbox, which is the server that received the mail
 // (Microsoft writes its results without an authserv-id, ""). Forwarded mail believes
 // INBOUND_AUTHSERV_ID alone: the provider never saw it. Mail straight from a sender's
-// server believes none.
+// server, or read from a member's own account, believes none.
 func (s *service) trustedAuthserv(m *mailboxRow, via string) []string {
-	if via == viaDirect {
+	if via == viaDirect || via == viaMember {
 		return nil
 	}
 	var out []string

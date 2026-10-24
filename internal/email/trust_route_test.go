@@ -34,6 +34,7 @@ func TestAuthservFollowsRoute(t *testing.T) {
 		{viaForward, google, []string{"mx.in.test"}},
 		{viaDirect, google, nil},
 		{viaDirect, &mailboxRow{InboundKind: InboundForwarding}, nil},
+		{viaMember, google, nil},
 	}
 	for _, c := range cases {
 		if got := s.trustedAuthserv(c.box, c.via); !slices.Equal(got, c.want) {
