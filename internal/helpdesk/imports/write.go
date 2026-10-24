@@ -478,6 +478,11 @@ const (
 // Ticket writes share a transaction with the import's progress.
 func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, error) {
 	if t.Skip {
+		// A sync hears of a ticket the source has since trashed or merged away: the
+		// copy an earlier run made is closed, not left open.
+		if w.x.UpdatedSince != nil {
+			return outcomeSkipped, w.retire(ctx, t)
+		}
 		return outcomeSkipped, nil
 	}
 	prev, err := w.lookup(ctx, w.s.d.DB.Pool, "ticket", t.ID)
@@ -493,6 +498,9 @@ func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, er
 		}
 	}
 	if t.Skip {
+		if prev != nil {
+			return outcomeSkipped, w.retire(ctx, t)
+		}
 		return outcomeSkipped, nil
 	}
 	scrubTicket(t)
@@ -640,6 +648,16 @@ func (w *writer) writeTicketTx(ctx context.Context, tx pgx.Tx, t *source.Ticket,
 	}
 	w.x.Counts.Messages += added
 
+	if prev != nil {
+		// The source may have assigned the ticket since an earlier run; one it leaves
+		// unassigned keeps whoever has it here.
+		if a := w.agentUser(t.AssigneeID, ""); a != nil {
+			if _, err := tx.Exec(ctx, `UPDATE tickets SET assignee_id = $3 WHERE workspace_id = $1 AND id = $2 AND assignee_id IS DISTINCT FROM $3`,
+				wid, ticketID, *a); err != nil {
+				return 0, err
+			}
+		}
+	}
 	if err := w.settle(ctx, tx, ticketID, t); err != nil {
 		return 0, err
 	}
@@ -784,6 +802,21 @@ func recipients(in []string) []string {
 		}
 	}
 	return out
+}
+
+// retire closes the copy of a ticket the source has since left out (trashed, spam, or
+// merged into another). A ticket never imported, or already solved or closed, is left be.
+func (w *writer) retire(ctx context.Context, t *source.Ticket) error {
+	prev, err := w.lookup(ctx, w.s.d.DB.Pool, "ticket", t.ID)
+	if err != nil || prev == nil {
+		return err
+	}
+	_, err = w.s.d.DB.Pool.Exec(ctx, `UPDATE tickets SET status = 'closed',
+		solved_at = COALESCE(solved_at, now()), closed_at = COALESCE(closed_at, now()),
+		waiting_since = NULL, unanswered_count = 0, snoozed_until = NULL, updated_at = now()
+		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL AND status NOT IN ('solved', 'closed')`,
+		w.x.WorkspaceID, prev.localID)
+	return err
 }
 
 // settle sets what history says about a ticket once its messages are in: its status
