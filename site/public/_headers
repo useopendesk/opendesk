@@ -30,6 +30,11 @@
   Content-Type: application/json; charset=utf-8
   Cache-Control: public, max-age=300
 
+# The logos are linked from email signatures, which webmail loads from its own origin.
+/brand/*
+  ! Cross-Origin-Resource-Policy
+  Cache-Control: public, max-age=86400
+
 # The social card is fetched by other sites' link previews, some from the browser.
 /og.jpg
   ! Cross-Origin-Resource-Policy

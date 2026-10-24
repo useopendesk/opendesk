@@ -1,13 +1,19 @@
-// Generates the opendesk logo SVGs from a single source of truth.
-// Usage: node scripts/build-brand.mjs
-import { mkdirSync, writeFileSync } from "node:fs";
+// Generates the opendesk logo SVGs from a single source of truth, then the PNG logos for
+// places that take no SVG (email signatures), with sharp from site/.
+// Usage: pnpm install in site/ once, then node scripts/build-brand.mjs
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "brand");
+const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = join(repo, "brand");
 
 export const INK = "#0A0A0A";
 export const PAPER = "#FFFFFF";
+// For a background we cannot know, such as an email read in light or dark mode:
+// about 4:1 against both paper and ink.
+export const STEEL = "#737373";
 
 // Mark: "Module", a 2x2 grid with one piece reshaped, on a 64-unit grid.
 const MARK = "M11 4h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M47 4a13 13 0 1 1 0 26a13 13 0 1 1 0-26Z M11 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z M41 34h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7h-12a7 7 0 0 1-7-7v-12a7 7 0 0 1 7-7Z";
@@ -45,12 +51,16 @@ const tile = (size, bg, fg) =>
 const files = {
   "logo/mark.svg": svg(64, 64, mark(0, 0, 64, INK)),
   "logo/mark-white.svg": svg(64, 64, mark(0, 0, 64, PAPER)),
+  "logo/mark-steel.svg": svg(64, 64, mark(0, 0, 64, STEEL)),
   "logo/wordmark.svg": svg(WM_W, WM_H, wordmark(0, 0, 1, INK)),
   "logo/wordmark-white.svg": svg(WM_W, WM_H, wordmark(0, 0, 1, PAPER)),
+  "logo/wordmark-steel.svg": svg(WM_W, WM_H, wordmark(0, 0, 1, STEEL)),
   "logo/lockup.svg": svg(LOCKUP_W, 88, lockup(INK)),
   "logo/lockup-white.svg": svg(LOCKUP_W, 88, lockup(PAPER)),
+  "logo/lockup-steel.svg": svg(LOCKUP_W, 88, lockup(STEEL)),
   "logo/stacked.svg": svg(STACK_W, STACK_H, stacked(INK)),
   "logo/stacked-white.svg": svg(STACK_W, STACK_H, stacked(PAPER)),
+  "logo/stacked-steel.svg": svg(STACK_W, STACK_H, stacked(STEEL)),
   // Profile pictures: square and full bleed, the mark at half the width so a circle crop
   // keeps clear space around it. site/scripts/og.mjs renders them to PNG.
   "social/avatar.svg": svg(1024, 1024, `<rect width="1024" height="1024" fill="${INK}"/>` + mark(256, 256, 512, PAPER)),
@@ -68,4 +78,24 @@ for (const [rel, content] of Object.entries(files)) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, content);
   console.log("wrote", rel);
+}
+
+// PNG logos, transparent, the lockup at 2x of a 44px-tall logo, plus the mark at 256px.
+// The site serves copies under /brand so an email signature can link to them.
+const sharp = createRequire(join(repo, "site", "package.json"))("sharp");
+const site = join(repo, "site", "public", "brand");
+mkdirSync(site, { recursive: true });
+const pngs = [
+  ["logo/lockup.svg", "logo/lockup.png", "opendesk-logo.png"],
+  ["logo/lockup-white.svg", "logo/lockup-white.png", "opendesk-logo-white.png"],
+  ["logo/lockup-steel.svg", "logo/lockup-steel.png", "opendesk-logo-steel.png"],
+  ["logo/mark.svg", "logo/mark.png", "opendesk-mark.png"],
+  ["logo/mark-white.svg", "logo/mark-white.png", "opendesk-mark-white.png"],
+  ["logo/mark-steel.svg", "logo/mark-steel.png", "opendesk-mark-steel.png"],
+];
+for (const [from, to, published] of pngs) {
+  const size = from.includes("mark") ? { width: 256 } : { height: 88 };
+  await sharp(join(root, from), { density: 576 }).resize(size).png({ compressionLevel: 9 }).toFile(join(root, to));
+  copyFileSync(join(root, to), join(site, published));
+  console.log("wrote", to, "and site/public/brand/" + published);
 }
