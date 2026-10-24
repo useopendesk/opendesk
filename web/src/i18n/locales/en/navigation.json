@@ -155,7 +155,7 @@
     "aiKnowledge": "AI agent knowledge",
     "aiTools": "AI agent tools",
     "aiPlayground": "AI agent playground",
-    "importHistory": "Import history from Zendesk, Help Scout, Freshdesk, Intercom or CSV"
+    "importHistory": "Import history from Zendesk, Help Scout, Freshdesk, Intercom, Front or CSV"
   },
   "shortcuts": {
     "general": "General",

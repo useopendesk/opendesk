@@ -49,6 +49,8 @@ type fake struct {
 	// updatedSince is what each Tickets call was asked.
 	updatedSince []*time.Time
 	checkErr     error
+	// loaded counts Load calls by ticket id.
+	loaded map[string]int
 }
 
 func (f *fake) factory(c source.Credentials, _ source.Options) (source.Source, error) {
@@ -101,6 +103,10 @@ func (f *fake) Tickets(_ context.Context, cursor string, since, updatedSince *ti
 func (f *fake) Load(_ context.Context, t *source.Ticket) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.loaded == nil {
+		f.loaded = map[string]int{}
+	}
+	f.loaded[t.ID]++
 	t.Messages, t.Loaded = slices.Clone(f.loads[t.ID]), true
 	if f.skipOnLoad[t.ID] {
 		t.Skip = true
@@ -1222,6 +1228,34 @@ func TestOneBadTicketDoesNotStopTheRest(t *testing.T) {
 	}
 	if n := e.count(t, `SELECT count(*) FROM tickets WHERE workspace_id = $1 AND contact_id IS NOT NULL`, e.ws.ID); n != 1 {
 		t.Errorf("tickets with their contact %d", n)
+	}
+}
+
+// A source that lists one ticket twice (Front lists inbox by inbox, and a conversation
+// can sit in two) gets one ticket, loaded once.
+func TestTicketListedTwice(t *testing.T) {
+	e := newEnv(t)
+	bob := &source.Person{ID: "u1", Email: "bob@customer.test", Name: "Bob"}
+	e.f.articles = nil
+	e.f.pageSize = 1
+	twice := source.Ticket{ID: "7", Ref: "#7", Subject: "In two inboxes", Status: "open", Requester: bob, CreatedAt: base, UpdatedAt: base}
+	again := twice
+	again.GroupID = "g2"
+	e.f.tickets = []source.Ticket{twice, again}
+	e.f.loads = map[string][]source.Message{"7": {{ID: "7-1", Author: *bob, Text: "Hello", CreatedAt: base}}}
+	x := e.start(t, e.zendeskBody())
+	done := e.drive(t, x.ID)
+	if done.Status != StatusCompleted {
+		t.Fatalf("status %s %s", done.Status, done.LastError)
+	}
+	if done.Counts.Tickets != 1 || done.Counts.Messages != 1 || done.Counts.Failed != 0 {
+		t.Errorf("counts %+v problems %+v", done.Counts, done.Problems)
+	}
+	if n := e.count(t, `SELECT count(*) FROM tickets WHERE workspace_id = $1`, e.ws.ID); n != 1 {
+		t.Errorf("tickets %d", n)
+	}
+	if e.f.loaded["7"] != 1 {
+		t.Errorf("loaded %d times", e.f.loaded["7"])
 	}
 }
 
