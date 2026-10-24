@@ -3,6 +3,7 @@ package hd_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
@@ -135,5 +136,31 @@ func TestHarness(t *testing.T) {
 	s, _ = hd.LoadSettings(e.Ctx, e.D.DB.Pool, ws.ID)
 	if s.AutoClose() != 3 || !s.CSATEnabled {
 		t.Fatal(s)
+	}
+}
+
+// A sheet with a rule that ends at ";" with no block once never came back (the CSS
+// parser looped on it), so a real email hung its import. Such rules are dropped; the
+// rules around them are kept.
+func TestSanitizeEmailHTMLBlocklessRules(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"a, visited; color #003d80;text-decoration underline;\ntd collapse;", ""},
+		{"p; .x{color:red} b;", ".x{color:red}"},
+		{"@media only screen and (max-width:600px){.a b; .w{width:100% !important}}", "@media only screen and (max-width:600px){.w{width:100% !important}}"},
+		{`.q{font-family:"a;}b"} i; .k{color:red}`, ".k{color:red}"},
+		{"/* x; */ .y{color:blue}", ".y{color:blue}"},
+		{"@import url(https://e.example/x.css); .z{margin:0}", ".z{margin:0}"},
+	}
+	for _, c := range cases {
+		got := make(chan string, 1)
+		go func() { got <- hd.SanitizeEmailHTML("<style>" + c.in + "</style><p>Hi</p>") }()
+		select {
+		case g := <-got:
+			if c.want == "" && strings.Contains(g, "<style") || c.want != "" && !strings.Contains(g, c.want) {
+				t.Errorf("%q: got %s", c.in, g)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%q: sanitizing never finished", c.in)
+		}
 	}
 }

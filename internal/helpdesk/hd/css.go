@@ -146,7 +146,7 @@ const maxEmailCSS = 256 << 10
 // cleanStyleSheet rebuilds a style sheet from its allowed rules; anything it cannot
 // parse is dropped.
 func cleanStyleSheet(src string) string {
-	sheet, err := parser.Parse(src)
+	sheet, err := parser.Parse(dropBlocklessRules(src))
 	if err != nil {
 		return ""
 	}
@@ -154,6 +154,76 @@ func cleanStyleSheet(src string) string {
 	writeRules(&b, sheet.Rules)
 	return b.String()
 }
+
+// dropBlocklessRules removes each statement in a list of rules that ends at a ";" with
+// no block and is not an at-rule ("a, b; color red;"). The parser never gets past one:
+// it stops the rule's prelude at the ";" and loops there forever. A browser drops such a
+// statement too. Comments are kept; braces and semicolons inside strings are skipped.
+func dropBlocklessRules(src string) string {
+	if !strings.Contains(src, ";") {
+		return src
+	}
+	var b strings.Builder
+	lists := []bool{true} // per open block: does it hold rules (not declarations)?
+	start, at := 0, false // the current statement's start in b, and whether it is an at-rule
+	fresh := true         // no non-space byte of the current statement seen yet
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		switch {
+		case c == '/' && i+1 < len(src) && src[i+1] == '*':
+			end := strings.Index(src[i+2:], "*/")
+			if end < 0 {
+				end = len(src)
+			} else {
+				end += i + 4
+			}
+			b.WriteString(src[i:end])
+			i = end - 1
+			continue
+		case c == '"' || c == '\'':
+			j := i + 1
+			for j < len(src) && src[j] != c && src[j] != '\n' {
+				if src[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			end := min(j+1, len(src))
+			b.WriteString(src[i:end])
+			i = end - 1
+			fresh = false
+			continue
+		}
+		inList := lists[len(lists)-1]
+		if fresh && inList && !isCSSSpace(c) {
+			fresh, at = false, c == '@'
+		}
+		b.WriteByte(c)
+		switch c {
+		case '{':
+			lists = append(lists, inList && at)
+			start, at, fresh = b.Len(), false, true
+		case '}':
+			if len(lists) > 1 {
+				lists = lists[:len(lists)-1]
+			}
+			start, at, fresh = b.Len(), false, true
+		case ';':
+			if !inList {
+				continue
+			}
+			if !at {
+				s := b.String()[:start]
+				b.Reset()
+				b.WriteString(s)
+			}
+			start, at, fresh = b.Len(), false, true
+		}
+	}
+	return b.String()
+}
+
+func isCSSSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
 
 func writeRules(b *strings.Builder, rules []*css.Rule) {
 	for _, r := range rules {
