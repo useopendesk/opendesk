@@ -88,22 +88,22 @@ defmodule RealtimeWeb.WorkspacesTest do
     end
   end
 
-  test "acts with its role in the topic's workspace: a viewer there never types to the customer",
+  test "acts with its role in the topic's workspace, and no push reaches a visitor from either",
        c do
     {cid, tid} = {Tokens.uuid(), Tokens.uuid()}
     {:ok, _, in_b} = subscribe_and_join(c.socket, TicketChannel, "ticket:#{c.b}:#{tid}")
     assert_push "presence_state", _
-    :ok = Endpoint.subscribe("contact:#{c.b}:#{cid}")
-    push(in_b, "typing", %{"contact_id" => cid})
-    refute_receive %Broadcast{topic: "contact:" <> _, event: "typing"}, 100
-
-    # An agent in A does.
     {:ok, _, in_a} = subscribe_and_join(c.socket, TicketChannel, "ticket:#{c.a}:#{tid}")
     assert_push "presence_state", _
+    assert {in_a.assigns.role, in_a.assigns.teams} == {"agent", [c.team_a]}
+    assert {in_b.assigns.role, in_b.assigns.teams} == {"viewer", [c.team_b]}
+
+    # The visitor sees an agent typing through the API, which checks the ticket.
     :ok = Endpoint.subscribe("contact:#{c.a}:#{cid}")
+    :ok = Endpoint.subscribe("contact:#{c.b}:#{cid}")
     push(in_a, "typing", %{"contact_id" => cid})
-    assert_receive %Broadcast{topic: "contact:" <> rest, event: "typing"}, 500
-    assert rest == "#{c.a}:#{cid}"
+    push(in_b, "typing", %{"contact_id" => cid})
+    refute_receive %Broadcast{topic: "contact:" <> _}, 100
   end
 
   test "a private team's presence in B stays with B's team", c do
