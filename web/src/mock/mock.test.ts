@@ -95,6 +95,14 @@ describe("mock backend", () => {
     }
   });
 
+  it("updates every ticket matching a bulk query", async () => {
+    const open = (await call("GET", "/v1/tickets?status=open")).body.data as { id: string }[];
+    const result = await call("POST", "/v1/tickets/bulk", { query: { status: ["open"] }, patch: { priority: "high" } });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ data: [], updated: open.length, deleted: 0 });
+    for (const { id } of open) expect((await call("GET", `/v1/tickets/${id}`)).body.priority).toBe("high");
+  });
+
   it("serves every list endpoint the app reads", async () => {
     for (const path of [
       "/v1/me", "/v1/tickets", "/v1/tickets/counts", "/v1/contacts", "/v1/companies", "/v1/tags", "/v1/views",

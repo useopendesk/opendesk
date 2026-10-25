@@ -32,6 +32,8 @@ export type TicketListQuery = ListQuery & {
   fields?: T.FieldFilter[];
 };
 
+export type TicketBulkQuery = Omit<TicketListQuery, "limit" | "cursor" | "sort" | "order">;
+
 /** Flattens custom field filters into `field.<key>[<op>]` query parameters. */
 export function fieldQuery(fields?: T.FieldFilter[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -45,6 +47,10 @@ export function fieldQuery(fields?: T.FieldFilter[]): Record<string, string> {
 function listQuery<Q extends { fields?: T.FieldFilter[] }>(q: Q) {
   const { fields, ...rest } = q;
   return { ...(rest as Omit<Q, "fields">), ...fieldQuery(fields) } as Record<string, string | number | boolean | string[] | null | undefined>;
+}
+
+function bulkQuery(q: TicketBulkQuery) {
+	return { ...q, spam: q.spam === true ? "true" : q.spam === false ? "false" : q.spam };
 }
 
 export type ContactListQuery = ListQuery & { q?: string; company_id?: string; tag?: string; fields?: T.FieldFilter[] };
@@ -432,8 +438,8 @@ export const api = {
     get: (id: string) => http.get<T.Ticket>(`/v1/tickets/${encodeURIComponent(id)}`),
     update: (id: string, patch: T.TicketPatch) => http.patch<T.Ticket>(`/v1/tickets/${id}`, patch),
     delete: (id: string) => http.del(`/v1/tickets/${id}`),
-    bulk: (b: { ids: string[]; patch?: T.TicketPatch; delete?: true }) =>
-      http.post<{ data: T.Ticket[]; updated: number; deleted: number } | undefined>("/v1/tickets/bulk", b),
+    bulk: (b: ({ ids: string[] } | { query: TicketBulkQuery }) & { patch?: T.TicketPatch; delete?: true }) =>
+      http.post<{ data: T.Ticket[]; updated: number; deleted: number } | undefined>("/v1/tickets/bulk", "query" in b ? { ...b, query: bulkQuery(b.query) } : b),
     merge: (id: string, into_id: string) => http.post<T.Ticket>(`/v1/tickets/${id}/merge`, { into_id }),
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     /** `opts` pins the account and workspace a held reply started in, and lets it outlive the page. */

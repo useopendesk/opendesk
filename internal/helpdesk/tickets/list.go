@@ -43,6 +43,21 @@ func forCaller(ctx context.Context, qr db.Querier, p *auth.Principal, q listQuer
 	return q, nil
 }
 
+// prepareListQuery loads and normalizes custom field filters before they reach SQL.
+func prepareListQuery(ctx context.Context, q db.Querier, wid uuid.UUID, f listQuery, sort string) (listQuery, error) {
+	if f.Defs == nil && (len(f.Fields) > 0 || strings.HasPrefix(sort, "field.")) {
+		defs, err := domain.LoadFieldDefs(ctx, q, wid, domain.FieldEntityTicket)
+		if err != nil {
+			return f, err
+		}
+		f.Defs = defs
+		if f.Fields, err = hd.NormalizeFieldFilters(defs, f.Fields); err != nil {
+			return f, err
+		}
+	}
+	return f, nil
+}
+
 // sqlBuilder accumulates WHERE clauses and positional args.
 type sqlBuilder struct {
 	where []string
@@ -341,15 +356,9 @@ type ticketCursor struct {
 // listTickets runs a filtered, sorted, keyset-paginated ticket query.
 func listTickets(ctx context.Context, q db.Querier, wid uuid.UUID, me *uuid.UUID, f listQuery, sort, order string, limit int, cursor string) (httpx.Page[domain.Ticket], error) {
 	var page httpx.Page[domain.Ticket]
-	if f.Defs == nil && (len(f.Fields) > 0 || strings.HasPrefix(sort, "field.")) {
-		defs, err := domain.LoadFieldDefs(ctx, q, wid, domain.FieldEntityTicket)
-		if err != nil {
-			return page, err
-		}
-		f.Defs = defs
-		if f.Fields, err = hd.NormalizeFieldFilters(defs, f.Fields); err != nil {
-			return page, err
-		}
+	var err error
+	if f, err = prepareListQuery(ctx, q, wid, f, sort); err != nil {
+		return page, err
 	}
 	b := &sqlBuilder{}
 	if err := applyFilters(b, wid, me, f); err != nil {
@@ -404,6 +413,24 @@ func listTickets(ctx context.Context, q db.Querier, wid uuid.UUID, me *uuid.UUID
 		raw, _ := json.Marshal(s.key(t))
 		return ticketCursor{K: raw, ID: t.ID}
 	}), nil
+}
+
+// filteredTicketIDs finds every ticket that matches f for this caller. It is used by
+// bulk actions so the same filters and private-team visibility as the inbox apply.
+func filteredTicketIDs(ctx context.Context, q db.Querier, wid uuid.UUID, me *uuid.UUID, f listQuery) ([]uuid.UUID, error) {
+	var err error
+	if f, err = prepareListQuery(ctx, q, wid, f, ""); err != nil {
+		return nil, err
+	}
+	b := &sqlBuilder{}
+	if err := applyFilters(b, wid, me, f); err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, "SELECT t.id FROM tickets t"+b.sql()+" ORDER BY t.id", b.args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 }
 
 // loadView returns the filters of a view the caller can see.
