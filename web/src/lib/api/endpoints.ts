@@ -221,7 +221,7 @@ export const api = {
     removeImage: (slot: "logo" | T.WorkspaceImageSlot) => http.del<T.Workspace>(`/v1/workspace/images/${slot}`),
   },
   members: {
-    list: () => http.get<T.Page<T.Member>>("/v1/members"),
+    list: (q?: ListQuery) => http.get<T.Page<T.Member>>("/v1/members", { query: q }),
     update: (userId: string, role: T.Role) => http.patch<T.Member>(`/v1/members/${userId}`, { role }),
     remove: (userId: string) => http.del(`/v1/members/${userId}`),
     /** `userId` may be "me". Members set their own availability; admins anyone's, and the cap. */

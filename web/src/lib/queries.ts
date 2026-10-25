@@ -283,6 +283,17 @@ export const qk = {
 const list = <R>(key: readonly unknown[], fn: () => Promise<R[] | Page<R> | { data: R[] }>, opts: { staleTime?: number } = {}) =>
   queryOptions({ queryKey: key, queryFn: async () => rows(await fn()), ...opts });
 
+async function allPages<R>(fn: (q: { limit: number; cursor: string | null }) => Promise<Page<R>>) {
+  const all: R[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await fn({ limit: 100, cursor });
+    all.push(...page.data);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return all;
+}
+
 export const q = {
   authConfig: () => queryOptions({ queryKey: qk.authConfig, queryFn: api.auth.config, staleTime: 5 * 60_000 }),
   workspacePrefs: () => queryOptions({ queryKey: qk.workspacePrefs, queryFn: api.me.workspacePrefs, staleTime: 5 * 60_000 }),
@@ -334,7 +345,7 @@ export const q = {
   slaPolicies: () => list(qk.slaPolicies, () => api.slaPolicies.list({ limit: 100 })),
   automations: () => list(qk.automations, () => api.automations.list({ limit: 100 })),
   mailboxes: () => list(qk.mailboxes, () => api.mailboxes.list({ limit: 100 })),
-  members: () => list(qk.members, () => api.members.list()),
+  members: () => queryOptions({ queryKey: qk.members, queryFn: () => allPages(api.members.list) }),
   invitations: () => list(qk.invitations, () => api.invitations.list()),
   teams: () => list(qk.teams, () => api.teams.list({ limit: 100 })),
   brands: () => list(qk.brands, () => api.brands.list({ limit: 100 })),
