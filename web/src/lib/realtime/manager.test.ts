@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { typing } = vi.hoisted(() => ({ typing: vi.fn(() => Promise.resolve()) }));
 vi.mock("../api/endpoints", () => ({
   api: {
-    realtimeToken: () => Promise.resolve({ token: "x.e30.y", url: "", expires_at: "" }),
+    // A token for w1: the manager joins what its claims cover.
+    realtimeToken: () => Promise.resolve({ token: `x.${btoa(JSON.stringify({ wid: "w1" }))}.y`, url: "", expires_at: "" }),
     events: () => Promise.resolve({ data: [], latest_seq: 0, resync: false }),
     tickets: { typing },
   },
@@ -64,7 +65,7 @@ describe("RealtimeManager.typing", () => {
     m.typing("c1");
     expect(typingPushes()).toEqual([{ topic: "ticket:w1:t1", event: "typing", payload: {} }]);
     expect(typing).toHaveBeenCalledTimes(1);
-    expect(typing).toHaveBeenCalledWith("t1");
+    expect(typing).toHaveBeenCalledWith("t1", { workspace: "w1" });
 
     vi.advanceTimersByTime(2500);
     m.typing("c1");
