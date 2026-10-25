@@ -202,7 +202,7 @@ export const api = {
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
     revokeSession: (id: string) => http.del(`/v1/me/sessions/${id}`, undefined, { workspace: false }),
     delete: (b: { password?: string; code?: string }) => http.del("/v1/me", b, { workspace: false }),
-    /** How this person's workspaces show together (contracts/api.md "Workspaces together"). */
+    /** How this person arranges their workspaces (contracts/api.md "Several workspaces"). */
     workspacePrefs: () => http.get<T.WorkspacePrefs>("/v1/me/workspace-prefs", { workspace: false }),
     putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
     /** Every workspace's sidebar numbers, each as that workspace answers this person. */
@@ -216,25 +216,10 @@ export const api = {
   },
   /** The workspace's starter Space: members read it, admins publish and remove it. */
   starterSpace: {
-    get: (workspaceId?: string) => http.get<{ space: T.Space | null }>("/v1/sidebar/starter", { workspaceId }),
+    get: () => http.get<{ space: T.Space | null }>("/v1/sidebar/starter"),
     put: (space: T.Space) => http.put<{ space: T.Space }>("/v1/sidebar/starter", space),
     remove: () => http.del("/v1/sidebar/starter"),
   },
-  /**
-   * Reads of another workspace the caller is a member of, with OD-Workspace set to it:
-   * what a Space shows of that workspace's rows (contracts/spaces.md "Rows").
-   */
-  inWorkspace: (workspaceId: string) => ({
-    counts: () => http.get<T.TicketCounts>("/v1/tickets/counts", { workspaceId }),
-    teams: () => http.get<T.Page<T.Team>>("/v1/teams", { workspaceId, query: { limit: 100 } }),
-    views: () => http.get<T.Page<T.View>>("/v1/views", { workspaceId, query: { limit: 100 } }),
-    collabStatus: () => http.get<T.CollabStatus>("/v1/collab", { workspaceId }),
-    mailAccounts: () => http.get<T.MailAccount[] | T.Page<T.MailAccount>>("/v1/collab/accounts", { workspaceId }),
-    mailCounts: () => http.get<T.MailCounts>("/v1/collab/counts", { workspaceId }),
-    mailFolders: (accountId: string) => http.get<T.MailFolder[] | T.Page<T.MailFolder>>(`/v1/collab/accounts/${accountId}/folders`, { workspaceId }),
-    sidebar: () => http.get<T.SidebarPrefs>("/v1/collab/sidebar", { workspaceId }),
-    realtimeToken: () => http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token", undefined, { workspaceId }),
-  }),
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),
     current: () => http.get<T.Workspace>("/v1/workspace"),

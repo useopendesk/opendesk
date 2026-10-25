@@ -56,7 +56,7 @@ describe("mock Spaces", () => {
   it("saves the whole list with defaults for left-out fields, and keeps an empty list saved", async () => {
     const [margin, lumen] = mine().map((m) => m.workspace.id);
     const r = await call("PUT", "/v1/me/spaces", {
-      spaces: [{ id: uuid(1), name: "  Morning ", sections: [{ id: "s1", items: [{ workspace_id: margin, kind: "team", id: "x", name: "Mine" }, { workspace_id: lumen, kind: "view", id: "y", badge: "urgent" }] }] }],
+      spaces: [{ id: uuid(1), name: "  Morning ", sections: [{ id: "s1", items: [{ workspace_id: margin, kind: "team", id: "x", name: "Mine" }, { workspace_id: lumen, kind: "view", id: "y", badge: "urgent" }, { workspace_id: "", kind: "everywhere", id: "mail" }] }] }],
     });
     expect(r.status).toBe(200);
     const s = (r.body as SpacesResponse).spaces[0];
@@ -65,6 +65,7 @@ describe("mock Spaces", () => {
     expect("narrow" in s).toBe(false);
     expect(s.sections[0]).toMatchObject({ title: "", collapsed: false });
     expect(s.sections[0].items[1]).toEqual({ workspace_id: lumen, kind: "view", id: "y", badge: "urgent" });
+    expect(s.sections[0].items[2]).toEqual({ workspace_id: "", kind: "everywhere", id: "mail" });
     const empty = await call("PUT", "/v1/me/spaces", { spaces: [] });
     expect(empty.body).toEqual({ spaces: [], saved: true });
     expect((await call("GET", "/v1/me/spaces")).body).toEqual({ spaces: [], saved: true });
@@ -78,6 +79,8 @@ describe("mock Spaces", () => {
     expect(await code({ spaces: [{ ...ok, name: "x".repeat(41) }] })).toBe("invalid_name");
     expect(await code({ spaces: [{ ...ok, extra: true }] })).toBe("validation_failed");
     expect(await code({ spaces: [{ ...ok, narrow: true }] })).toBe("validation_failed");
+    expect(await code({ spaces: [{ ...ok, sections: [{ id: "s", items: [{ workspace_id: margin, kind: "everywhere", id: "mine" }] }] }] })).toBe("validation_failed");
+    expect(await code({ spaces: [{ ...ok, sections: [{ id: "s", items: [{ workspace_id: "", kind: "everywhere", id: "views" }] }] }] })).toBe("validation_failed");
     expect(await code({ spaces: [{ ...ok, icon: "dragon" }] })).toBe("validation_failed");
     expect(await code({ spaces: [{ ...ok, color: "orange" }] })).toBe("validation_failed");
     expect(await code({ spaces: [ok, ok] })).toBe("validation_failed");

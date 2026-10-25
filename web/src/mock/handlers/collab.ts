@@ -168,7 +168,7 @@ function seedState(ws: WsData): State {
   const other = memberIds.find((id) => id !== me) ?? me;
   const meUser = db.users.find((u) => u.id === me);
   const local = (meUser?.email ?? "me@margin.app").split("@")[0];
-  // Each workspace's accounts are at its own domain (Together shows them side by side).
+  // Each workspace's accounts are at its own domain (a Space shows them side by side).
   const domain = ws.mailboxes[0]?.email.split("@")[1] ?? "margin.app";
   const org = ws.workspace.name.split(" ")[0];
   const now = Date.now();
@@ -693,7 +693,7 @@ function runHistory(ws: WsData, a: Account) {
   );
 }
 
-/** GET /v1/collab/counts for a workspace, or null when it has no Collab (the overview, handlers/together.ts). */
+/** GET /v1/collab/counts for a workspace, or null when it has no Collab (the overview, handlers/workspaces.ts). */
 export function collabCountsFor(ws: WsData) {
   return status(ws).enabled ? counts(ws) : null;
 }

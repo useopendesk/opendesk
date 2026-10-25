@@ -184,7 +184,19 @@ describe("showing a Space", () => {
     expect(shown.marks).toBe(true);
     expect(otherWorkspaces(shown, A)).toEqual([B]);
     expect(showSpace({ ...mixed, marks: false }, ctx()).marks).toBe(false);
-    expect(showSpace(space([{ id: "s", items: [item(A, "view", "v")] }]), ctx()).marks).toBe(false);
+    // Badges follow the Space's switch; which rows carry one (another workspace's) is the sidebar's to say.
+    expect(showSpace(space([{ id: "s", items: [item(A, "view", "v")] }]), ctx()).marks).toBe(true);
+  });
+
+  it("shows everywhere rows whatever workspaces the person is in, and counts no workspace for them", () => {
+    const s = space([{ id: "s", items: [item("", "everywhere", "mine"), item(A, "view", "v")] }]);
+    const shown = showSpace(s, ctx({ members: [] }));
+    expect(shown.sections[0].items.map((i) => i.id)).toEqual(["mine"]);
+    expect(shown.workspaces).toEqual([]);
+    expect(spaceProblems(s, new Set([A]))).toEqual([]);
+    expect(spaceProblems(space([{ id: "s", items: [item(A, "everywhere", "mine")] }])).map((p) => p.code)).toContain("bad_item");
+    expect(spaceProblems(space([{ id: "s", items: [item("", "everywhere", "views")] }])).map((p) => p.code)).toContain("bad_item");
+    expect(spaceProblems(space([{ id: "s", items: [item("", "view", "v")] }])).map((p) => p.code)).toContain("bad_item");
   });
 
   it("skips workspaces the user left, and Collab rows where there is no Collab (or not yet known)", () => {

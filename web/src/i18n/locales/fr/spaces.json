@@ -30,8 +30,9 @@
     "untitledN": "Section {{n}}",
     "expand": "Afficher {{name}}",
     "collapse": "Replier {{name}}",
-    "empty": "Ce Space n’a encore aucune ligne.",
-    "emptyAdd": "Ajouter des lignes"
+    "empty": "Ce Space est vide",
+    "emptyHint": "Ajoutez des sections et des lignes de n’importe lequel de vos espaces de travail.",
+    "emptyEdit": "Modifier le Space"
   },
   "row": {
     "more": "Plus pour {{name}}",
@@ -120,15 +121,16 @@
       "teams": "Équipes",
       "views": "Vues",
       "mail": "Courrier",
-      "pages": "Pages"
+      "pages": "Pages",
+      "everywhere": "Dans tous vos espaces de travail"
     },
     "wholeHint": "Toujours à jour",
     "noCollab": "Collab est désactivé dans {{workspace}} : son courrier ne peut pas être ajouté.",
     "loading": "Chargement de ce que propose {{workspace}}",
     "noMatches": "Aucun résultat.",
     "options": "Options",
-    "marks": "Afficher les marques des espaces de travail",
-    "marksHint": "Chaque ligne porte la marque de son espace de travail quand le Space en affiche plusieurs.",
+    "marks": "Afficher les badges des espaces de travail",
+    "marksHint": "Les lignes d’un autre espace de travail que celui ouvert portent son petit badge.",
     "save": "Enregistrer",
     "create": "Créer le Space",
     "publish": "Publier",
@@ -156,7 +158,8 @@
       "too_large": "Ce Space est trop grand pour être enregistré. Retirez quelques lignes.",
       "duplicate_id": "Deux Spaces ont le même identifiant. Rechargez la page et réessayez.",
       "space": "Ce Space ne peut pas être enregistré tel quel."
-    }
+    },
+    "everyWorkspace": "Tous les espaces de travail"
   },
   "starter": {
     "title": "Space de départ",

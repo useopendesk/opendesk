@@ -28,7 +28,7 @@ function memberIds(uid: string): Set<string> {
 /** The saved list with items of workspaces the user left taken out (a section left empty stays). */
 function visible(uid: string, list: Space[]): Space[] {
   const ids = memberIds(uid);
-  return list.map((s) => ({ ...s, sections: s.sections.map((sec) => ({ ...sec, items: sec.items.filter((i) => ids.has(i.workspace_id)) })) }));
+  return list.map((s) => ({ ...s, sections: s.sections.map((sec) => ({ ...sec, items: sec.items.filter((i) => i.kind === "everywhere" || ids.has(i.workspace_id)) })) }));
 }
 
 export function spacesOf(uid: string): SpacesResponse {
@@ -168,6 +168,7 @@ export function registerSpaces() {
     const wid = ctx.ws.workspace.id;
     const s = readSpace(ctx.body);
     // Every item is of this workspace, whatever the body says.
+    if (s.sections.some((sec) => sec.items.some((i) => i.kind === "everywhere"))) throw invalid("A starter Space's rows are all of its workspace: an everywhere row can't be one.");
     s.sections = s.sections.map((sec) => ({ ...sec, items: sec.items.map((i) => ({ ...i, workspace_id: wid })) }));
     check(s, new Set([wid]));
     starters.set(wid, s);

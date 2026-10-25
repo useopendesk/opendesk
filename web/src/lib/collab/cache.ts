@@ -90,7 +90,7 @@ export function restore(qc: QueryClient, snap: Snapshot) {
 }
 
 // Pending work per workspace: events of several workspaces can arrive in one burst
-// (Together), and each flush runs in its own workspace's keys.
+// (several workspaces), and each flush runs in its own workspace's keys.
 type Pending = { timer: ReturnType<typeof setTimeout> | null; threads: Set<string>; folders: Set<string | null> };
 const pending = new Map<string, Pending>();
 

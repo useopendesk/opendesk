@@ -2484,27 +2484,15 @@ export type MailCounts = {
 /** `collab.changed` event data. */
 export type CollabChangedEvent = { account_id: string | null; thread_ids: string[]; folders: boolean };
 
-// Workspaces together (contracts/api.md "Workspaces together").
-export type TogetherMode = "together" | "separate";
-export type TogetherLayout = "grouped" | "mixed";
+// Several workspaces (contracts/api.md "Several workspaces").
 export type WorkspacePrefs = {
-  mode: TogetherMode;
-  /** Whether the person chose the mode (false: the default, together). */
-  mode_set: boolean;
-  layout: TogetherLayout;
-  /** Workspace ids in sidebar order; the rest follow in joining order. */
+  /** Workspace ids in switcher order; the rest follow in joining order. */
   order: string[];
-  /** Workspaces left out of the sidebar, the Everywhere lists and the bell. */
+  /** Workspaces folded away in the switcher and left out of the bell and the Everywhere lists. */
   hidden: string[];
-  /** Folded sidebar groups: workspace ids, or "everywhere". */
-  collapsed: string[];
-  /** Sidebar items by workspace-qualified id (<workspace id>/view:<id>). */
-  items: { hidden: string[]; order: string[] };
-  /** The Everywhere lists: assigned to me and all mail, across workspaces. */
-  everywhere: boolean;
   updated_at?: string;
 };
-export type WorkspacePrefsInput = Partial<Omit<WorkspacePrefs, "mode_set" | "updated_at" | "mode">> & { mode?: TogetherMode | "" };
+export type WorkspacePrefsInput = Partial<Pick<WorkspacePrefs, "order" | "hidden">>;
 export type WorkspaceOverview = {
   id: string;
   name: string;
@@ -2524,13 +2512,13 @@ export type WorkspaceOverview = {
 export type SpaceColor = "grey" | "blue" | "violet" | "teal" | "green" | "amber" | "red" | "pink";
 
 /** What a Space row names: a whole built-in section, or one row of a workspace. */
-export type SpaceItemKind = "section" | "ticket_folder" | "team" | "view" | "box" | "account" | "folder" | "page";
+export type SpaceItemKind = "section" | "ticket_folder" | "team" | "view" | "box" | "account" | "folder" | "page" | "everywhere";
 
 export type SpaceItem = {
-  /** A workspace the user is a member of. */
+  /** A workspace the user is a member of; "" for an everywhere row (it spans them all). */
   workspace_id: string;
   kind: SpaceItemKind;
-  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; else a uuid. */
+  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
   id: string;
   /** The person's own label for the row, 1..64 characters. */
   name?: string;

@@ -108,6 +108,7 @@ func TestSpacesRoundTrip(t *testing.T) {
 				map[string]any{"workspace_id": wid, "kind": "team", "id": team, "name": "Billing  crew", "badge": "awaiting"},
 				spaceItem(wid, "box", "inbox"),
 				spaceItem(wid, "page", "reports"),
+				spaceItem("", "everywhere", "mine"),
 			}}}},
 		spaceBody(uuid.NewString(), "Second"),
 	}}
@@ -134,6 +135,11 @@ func TestSpacesRoundTrip(t *testing.T) {
 		t.Fatalf("an unnamed item carries no name: %s", g.Raw)
 	}
 
+	// An everywhere row belongs to no workspace, and stays whatever workspaces the user leaves.
+	if got := sectionItems(spacesOf(t, g)[0], 0); !slices.Contains(got, "everywhere:mine") {
+		t.Fatalf("everywhere row: %v", got)
+	}
+
 	// A workspace the user is not a member of.
 	r = c.do("PUT", "/v1/me/spaces", map[string]any{"spaces": []any{
 		spaceBody(uuid.NewString(), "Sneaky", spaceSection("s", spaceItem(foreign, "section", "inbox")))}})
@@ -148,7 +154,7 @@ func TestSpacesRoundTrip(t *testing.T) {
 	r = c.do("PUT", "/v1/me/spaces", map[string]any{"spaces": []any{
 		spaceBody(uuid.NewString(), "Both",
 			spaceSection("a", spaceItem(wid, "section", "inbox"), spaceItem(foreign, "section", "views")),
-			spaceSection("b", spaceItem(foreign, "view", uuid.NewString())))}})
+			spaceSection("b", spaceItem(foreign, "view", uuid.NewString()), spaceItem("", "everywhere", "mail")))}})
 	if r.Status != 200 {
 		t.Fatalf("put with joined workspace: %d %s", r.Status, r.Raw)
 	}
@@ -158,8 +164,8 @@ func TestSpacesRoundTrip(t *testing.T) {
 	if got := sectionItems(sp, 0); !slices.Equal(got, []string{"section:inbox"}) {
 		t.Fatalf("left workspace items: %v", got)
 	}
-	if secs := sp["sections"].([]any); len(secs) != 2 || len(sectionItems(sp, 1)) != 0 {
-		t.Fatalf("emptied section is kept: %s", g.Raw)
+	if got := sectionItems(sp, 1); !slices.Equal(got, []string{"everywhere:mail"}) {
+		t.Fatalf("left workspace's row dropped, everywhere row kept: %v", got)
 	}
 
 	// An empty list is a saved choice.
@@ -251,6 +257,8 @@ func TestSpacesValidation(t *testing.T) {
 		{"folder id not a uuid", withItem(spaceItem(wid, "folder", "inbox"))},
 		{"row name with a link", withItem(map[string]any{"workspace_id": wid, "kind": "section", "id": "inbox", "name": "mail me@x.com"})},
 		{"row name 65 characters", withItem(map[string]any{"workspace_id": wid, "kind": "section", "id": "inbox", "name": strings.Repeat("r", 65)})},
+		{"unknown everywhere list", withItem(spaceItem("", "everywhere", "views"))},
+		{"everywhere row of a workspace", withItem(spaceItem(wid, "everywhere", "mine"))},
 		{"unknown badge", withItem(map[string]any{"workspace_id": wid, "kind": "section", "id": "inbox", "badge": "all"})},
 		{"over 64 KB", big()},
 	}
@@ -313,6 +321,9 @@ func TestStarterSpace(t *testing.T) {
 	g := viewer.do("GET", "/v1/sidebar/starter", nil)
 	if g.Status != 200 || string(mustJSON(g.Body["space"])) != string(mustJSON(r.Body["space"])) {
 		t.Fatalf("viewer get: %d %s", g.Status, g.Raw)
+	}
+	if r := owner.do("PUT", "/v1/sidebar/starter", spaceBody(uuid.NewString(), "Everywhere", spaceSection("main", spaceItem("", "everywhere", "mine")))); r.Status != 422 {
+		t.Fatalf("starter with an everywhere row: %d %s", r.Status, r.Raw)
 	}
 	if r := owner.do("PUT", "/v1/sidebar/starter", spaceBody(uuid.NewString(), "")); r.Status != 422 {
 		t.Fatalf("starter without a name: %d %s", r.Status, r.Raw)

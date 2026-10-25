@@ -4,11 +4,11 @@
 // workspace's starter Space. With no Spaces yet the group is just New Space, to be found.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Check, Copy, Ellipsis, LayoutPanelLeft, Pencil, Plus, Square, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Ellipsis, Pencil, Plus, Square, Trash2 } from "lucide-react";
 import { DropdownMenu as M } from "radix-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { WorkspaceGlyph } from "@/app/sidebarParts";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 import { useConfirm } from "@/components/ui/confirm";
 import { Kbd } from "@/components/ui/kbd";
 import { MenuItem, MenuLabel, MenuSeparator, MenuSub, menuItemCls } from "@/components/ui/menu";
@@ -16,6 +16,7 @@ import { floatingPanel } from "@/components/ui/popover";
 import type { Space } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
+import { useWorkspaces } from "@/lib/workspaces";
 import { useStarterSpaces } from "@/lib/spaces/hooks";
 import { LIMITS } from "@/lib/spaces/model";
 import { spaceKeys, useSpaceActions } from "./actions";
@@ -32,7 +33,7 @@ export function useSwitcherStarters() {
   );
   const list = memberships.flatMap((m) => {
     const s = starters.get(m.workspace.id);
-    return s ? [{ space: s, workspace: m.workspace.name }] : [];
+    return s ? [{ space: s, workspace: m.workspace.name, logo: m.workspace.avatar_url }] : [];
   });
   const onOpen = (open: boolean) => {
     if (!open) return;
@@ -87,10 +88,10 @@ function SpaceEntry({ space: s, n, picked, spaces, actions }: { space: Space; n:
 }
 
 /** The Spaces group of the switcher menu, above the workspaces. */
-export function SwitcherSpaces({ spaces, picked, starters }: { spaces: Space[]; picked: string | null; starters: { space: Space; workspace: string }[] }) {
+export function SwitcherSpaces({ spaces, picked, starters }: { spaces: Space[]; picked: string | null; starters: { space: Space; workspace: string; logo: string | null }[] }) {
   const { t } = useTranslation("spaces");
   const actions = useSpaceActions(spaces);
-  const memberships = useSession((s) => s.memberships);
+  const { ordered } = useWorkspaces();
   return (
     <>
       <MenuLabel>{t("switcher.spaces")}</MenuLabel>
@@ -106,8 +107,8 @@ export function SwitcherSpaces({ spaces, picked, starters }: { spaces: Space[]; 
           </MenuItem>
           <MenuSeparator />
           <MenuLabel>{t("newMenu.workspaces")}</MenuLabel>
-          {memberships.map((m) => (
-            <MenuItem key={m.workspace.id} icon={<LayoutPanelLeft />} onSelect={() => void actions.createFromWorkspace({ id: m.workspace.id, name: m.workspace.name })}>
+          {ordered.map((m) => (
+            <MenuItem key={m.workspace.id} icon={<WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative />} onSelect={() => void actions.createFromWorkspace({ id: m.workspace.id, name: m.workspace.name })}>
               {t("newMenu.copyOf", { workspace: m.workspace.name })}
             </MenuItem>
           ))}
@@ -115,12 +116,12 @@ export function SwitcherSpaces({ spaces, picked, starters }: { spaces: Space[]; 
             <>
               <MenuSeparator />
               <MenuLabel>{t("newMenu.starters")}</MenuLabel>
-              {starters.map(({ space: s, workspace }) => (
+              {starters.map(({ space: s, workspace, logo }) => (
                 <MenuItem key={`${workspace}:${s.id}`} icon={<SpaceGlyph icon={s.icon} name={s.name} color={s.color} size="sm" />} onSelect={() => actions.createFromStarter(s)}>
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 flex-1 truncate">{s.name}</span>
                     <span className="flex shrink-0 items-center gap-1 text-[11px] text-fg-4">
-                      <WorkspaceGlyph name={workspace} tiny />
+                      <WorkspaceBadge name={workspace} logo={logo} size="xs" decorative />
                       <span className="max-w-[90px] truncate">{workspace}</span>
                     </span>
                   </span>

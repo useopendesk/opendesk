@@ -51,7 +51,11 @@ var spaceItemIDs = map[string][]string{
 	"ticket_folder": {"unassigned", "mine", "open", "pending", "solved", "spam"},
 	"box":           {"inbox", "shared", "assigned"},
 	"page":          {"contacts", "knowledge", "reports"},
+	"everywhere":    {"mine", "mail"},
 }
+
+// spaceEverywhere is the kind of the Everywhere lists, the one kind of no workspace (workspace_id "").
+const spaceEverywhere = "everywhere"
 
 var spaceUUIDKinds = []string{"team", "view", "account", "folder"}
 
@@ -78,7 +82,7 @@ type CoreSpaceSection struct {
 // CoreSpaceItem is the contract shape SpaceItem.
 type CoreSpaceItem struct {
 	WorkspaceID string `json:"workspace_id"`
-	Kind        string `json:"kind" enum:"section,ticket_folder,team,view,box,account,folder,page"`
+	Kind        string `json:"kind" enum:"section,ticket_folder,team,view,box,account,folder,page,everywhere"`
 	ID          string `json:"id"`
 	Name        string `json:"name,omitempty"`
 	Badge       string `json:"badge,omitempty" enum:"unread,total,count,awaiting,urgent,overdue,open,none"`
@@ -102,7 +106,7 @@ type coreSpaceSectionIn struct {
 }
 
 type coreSpaceItemIn struct {
-	WorkspaceID string `json:"workspace_id,omitempty" maxLength:"36" doc:"Required in your Spaces; set to the workspace in its starter Space"`
+	WorkspaceID string `json:"workspace_id,omitempty" maxLength:"36" doc:"Required in your Spaces (\"\" for an everywhere row); set to the workspace in its starter Space"`
 	Kind        string `json:"kind" maxLength:"20"`
 	ID          string `json:"id" maxLength:"100"`
 	Name        string `json:"name,omitempty" maxLength:"300"`
@@ -115,7 +119,7 @@ type coreSpacesBody struct {
 
 type coreSpacesOut struct {
 	Spaces []CoreSpace `json:"spaces"`
-	Saved  bool        `json:"saved" doc:"false: nothing saved yet, the Spaces are generated"`
+	Saved  bool        `json:"saved" doc:"false: nothing saved yet (no Spaces)"`
 }
 
 type coreStarterOut struct {
@@ -203,7 +207,15 @@ func validateSpace(in coreSpaceIn, workspace *uuid.UUID) (CoreSpace, error) {
 
 func validateSpaceItem(in coreSpaceItemIn, workspace *uuid.UUID) (CoreSpaceItem, error) {
 	out := CoreSpaceItem{Kind: in.Kind, Badge: in.Badge}
-	if workspace != nil {
+	if in.Kind == spaceEverywhere {
+		// The Everywhere lists span every workspace: no workspace of their own, and none in a starter.
+		if workspace != nil {
+			return out, httpx.Validation("A starter Space's rows are all of its workspace: an everywhere row can't be one.")
+		}
+		if in.WorkspaceID != "" {
+			return out, httpx.Validation("An everywhere row belongs to no workspace: its workspace_id is \"\".")
+		}
+	} else if workspace != nil {
 		out.WorkspaceID = workspace.String()
 	} else {
 		wid, ok := validSpaceUUID(in.WorkspaceID)
@@ -227,7 +239,7 @@ func validateSpaceItem(in coreSpaceItemIn, workspace *uuid.UUID) (CoreSpaceItem,
 		}
 		out.ID = id
 	} else {
-		return out, httpx.Validation("Each row's kind is section, ticket_folder, team, view, box, account, folder or page.")
+		return out, httpx.Validation("Each row's kind is section, ticket_folder, team, view, box, account, folder, page or everywhere.")
 	}
 	if in.Name != "" {
 		if utf8.RuneCountInString(displayname.Normalize(in.Name)) > maxSpaceItemName {
@@ -255,6 +267,8 @@ func kindLabel(kind string) string {
 		return "mail account"
 	case "folder":
 		return "mail folder"
+	case spaceEverywhere:
+		return "everywhere"
 	}
 	return kind
 }
@@ -286,7 +300,7 @@ func withoutLeft(spaces []CoreSpace, member map[string]bool) []CoreSpace {
 			sec := &spaces[i].Sections[j]
 			kept := []CoreSpaceItem{}
 			for _, it := range sec.Items {
-				if member[it.WorkspaceID] {
+				if it.Kind == spaceEverywhere || member[it.WorkspaceID] {
 					kept = append(kept, it)
 				}
 			}
@@ -397,7 +411,7 @@ func (s *svc) registerSpaces(api huma.API) {
 				for _, sp := range spaces {
 					for _, sec := range sp.Sections {
 						for _, it := range sec.Items {
-							if !member[it.WorkspaceID] {
+							if it.Kind != spaceEverywhere && !member[it.WorkspaceID] {
 								return httpx.Validation("Each row must be of a workspace you are a member of.")
 							}
 						}

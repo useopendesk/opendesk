@@ -29,8 +29,9 @@
     "untitledN": "Section {{n}}",
     "expand": "Show {{name}}",
     "collapse": "Fold {{name}}",
-    "empty": "This Space has no rows yet.",
-    "emptyAdd": "Add rows"
+    "empty": "This Space is empty",
+    "emptyHint": "Add sections and rows from any of your workspaces.",
+    "emptyEdit": "Edit Space"
   },
   "row": {
     "more": "More for {{name}}",
@@ -118,15 +119,16 @@
       "teams": "Teams",
       "views": "Views",
       "mail": "Mail",
-      "pages": "Pages"
+      "pages": "Pages",
+      "everywhere": "Across your workspaces"
     },
     "wholeHint": "Kept up to date",
     "noCollab": "Collab is off in {{workspace}}, so its mail can't be added.",
     "loading": "Loading what {{workspace}} has",
     "noMatches": "Nothing matches.",
     "options": "Options",
-    "marks": "Show workspace marks",
-    "marksHint": "Rows carry their workspace's mark while the Space shows more than one workspace.",
+    "marks": "Show workspace badges",
+    "marksHint": "Rows of a workspace other than the one open carry its small badge.",
     "save": "Save",
     "create": "Create Space",
     "publish": "Publish",
@@ -154,7 +156,8 @@
       "too_large": "This Space is too large to save. Remove some rows.",
       "duplicate_id": "Two Spaces have the same id. Reload the page and try again.",
       "space": "This Space can't be saved as it is."
-    }
+    },
+    "everyWorkspace": "Every workspace"
   },
   "starter": {
     "title": "Starter Space",

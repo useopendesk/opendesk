@@ -7,7 +7,8 @@
 import { Building2, Check, ChevronsDownUp, Ellipsis, FolderInput, Inbox, Layers, Mail, Plus, Star, Trash2, Users, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { WorkspaceGlyph } from "@/app/sidebarParts";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
+import { useWorkspacePrefs, orderWorkspaces } from "@/lib/workspaces";
 import { AccountDot, boxIcon, FolderGlyph } from "@/components/collab/bits";
 import { SortableList } from "@/components/settings2/Sortable";
 import { TeamDot } from "@/components/tickets/teams";
@@ -27,7 +28,7 @@ import { cn } from "@/lib/cn";
 import { folders as ticketFolders } from "@/lib/folders";
 import { useCollab, useSidebarPrefs } from "@/lib/collab/hooks";
 import { atLeast, useRole, useSession } from "@/lib/session";
-import { canSeeTeam, useAllWorkspacesData, useRemoveStarter, useSaveSpaces, useSaveStarter, useSpaces, useStarterSpace, type WorkspaceData } from "@/lib/spaces/hooks";
+import { canSeeTeam, useWorkspacesData, useRemoveStarter, useSaveSpaces, useSaveStarter, useSpaces, useStarterSpace, type WorkspaceData } from "@/lib/spaces/hooks";
 import {
   addItems,
   addSection,
@@ -38,6 +39,9 @@ import {
   nextColor,
   hasItem,
   isCollabItem,
+  isEverywhere,
+  isEverywhereList,
+  EVERYWHERE_LISTS,
   isSectionId,
   itemKey,
   LIMITS,
@@ -58,7 +62,7 @@ import {
 } from "@/lib/spaces/model";
 import { spaceUi, useSpaceUi, type EditorTarget } from "@/lib/spaces/store";
 import { tone } from "@/lib/tones";
-import { buildRow, useRowLabels, type RowLabels } from "./rows";
+import { buildRow, everywhereIcons, InWorkspace, useRowLabels, type RowLabels } from "./rows";
 import { SpaceGlyph, spaceIcons, spaceTone } from "./icons";
 
 const sectionIcons: Record<SidebarSectionId, ReactNode> = { favorites: <Star />, inbox: <Inbox />, mail: <Mail />, teams: <Users />, views: <Layers />, workspace: <Building2 /> };
@@ -67,6 +71,8 @@ type Look = { label: string; icon: ReactNode; whole?: boolean; badgeKind?: "mail
 
 /** What a row in the editor reads as: its name and icon, "loading" while its workspace's data comes, or null when it is gone. */
 function lookOf(item: SpaceItem, d: WorkspaceData | undefined, labels: RowLabels): Look | "loading" | null {
+  if (isEverywhere(item))
+    return isEverywhereList(item.id) ? { label: labels.everywhere(item.id), icon: everywhereIcons[item.id], badgeKind: item.id === "mine" ? "ticket" : "mail" } : null;
   if (!d) return "loading";
   if (item.kind === "section") return isSectionId(item.id) ? { label: labels.section(item.id), icon: sectionIcons[item.id], whole: true } : null;
   const loading =
@@ -80,6 +86,13 @@ function lookOf(item: SpaceItem, d: WorkspaceData | undefined, labels: RowLabels
 }
 
 type Offer = { item: SpaceItem; label: string; icon: ReactNode; hint?: string; depth?: number };
+
+/** The "Every workspace" tab of Add from: the Everywhere lists, which span every workspace. */
+const EVERY = "*";
+
+function everywhereOffers(labels: RowLabels): Offer[] {
+  return EVERYWHERE_LISTS.map((id) => ({ item: { workspace_id: "", kind: "everywhere", id }, label: labels.everywhere(id), icon: everywhereIcons[id] }));
+}
 
 /** What a workspace offers a Space, in groups: whole sections, inbox folders, teams, views, mail (with Collab), pages. */
 function offersOf(d: WorkspaceData, labels: RowLabels, wholeHint: string): { id: "sections" | "inbox" | "teams" | "views" | "mail" | "pages"; offers: Offer[] }[] {
@@ -192,7 +205,6 @@ function EditorSection({
   problems: SpaceProblem[];
 }) {
   const { t } = useTranslation("spaces");
-  const nameOf = (w: string) => data.get(w)?.name ?? "";
   const rows = useMemo(() => section.items.map((item) => ({ id: itemKey(item), item })), [section.items]);
   const sectionName = (sec: SpaceSection, i: number) => sec.title.trim() || t("view.untitledN", { n: i + 1 });
   const mine = [...new Set(problems.filter((p) => "section" in p && p.section === section.id).map((p) => p.code))];
@@ -286,12 +298,8 @@ function EditorSection({
                       className="h-7 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-[12.5px] text-fg outline-none transition-colors placeholder:text-fg placeholder:opacity-100 hover:bg-hover/60 focus:bg-hover/60 focus:placeholder:text-fg-4"
                     />
                   )}
-                  {marks && (
-                    <Tooltip content={nameOf(item.workspace_id)}>
-                      <span className="flex shrink-0">
-                        <WorkspaceGlyph name={nameOf(item.workspace_id)} small />
-                      </span>
-                    </Tooltip>
+                  {marks && !isEverywhere(item) && data.get(item.workspace_id) && (
+                    <InWorkspace name={data.get(item.workspace_id)!.name} logo={data.get(item.workspace_id)!.logo} />
                   )}
                   {look && look !== "loading" && look.badgeKind && (
                     <NumberMenu item={item} kind={look.badgeKind} nums={look.nums} onPick={(v) => onChange(updateItem(space, key, { badge: v }))} />
@@ -336,13 +344,15 @@ function EditorSection({
 }
 
 /** "Add from": a tab per workspace, each listing what it offers with a checkbox. */
-function AddFrom({ space, workspaces, data, active, onActive, labels, onToggle }: { space: Space; workspaces: { id: string; name: string }[]; data: Map<string, WorkspaceData>; active: string; onActive: (w: string) => void; labels: RowLabels; onToggle: (item: SpaceItem, on: boolean) => void }) {
+function AddFrom({ space, workspaces, data, active, onActive, labels, onToggle }: { space: Space; workspaces: { id: string; name: string; logo: string | null }[]; data: Map<string, WorkspaceData>; active: string; onActive: (w: string) => void; labels: RowLabels; onToggle: (item: SpaceItem, on: boolean) => void }) {
   const { t } = useTranslation("spaces");
   const [query, setQuery] = useState("");
-  const d = data.get(active);
+  const every = active === EVERY;
+  const d = every ? undefined : data.get(active);
   const ws = workspaces.find((w) => w.id === active);
   const needle = query.trim().toLowerCase();
-  const groups = d ? offersOf(d, labels, t("editor.wholeHint")).map((g) => ({ ...g, offers: needle ? g.offers.filter((o) => o.label.toLowerCase().includes(needle) || o.hint?.toLowerCase().includes(needle)) : g.offers })).filter((g) => g.offers.length) : [];
+  const all = every ? [{ id: "everywhere" as const, offers: everywhereOffers(labels) }] : d ? offersOf(d, labels, t("editor.wholeHint")) : [];
+  const groups = all.map((g) => ({ ...g, offers: needle ? g.offers.filter((o) => o.label.toLowerCase().includes(needle) || o.hint?.toLowerCase().includes(needle)) : g.offers })).filter((g) => g.offers.length);
   return (
     <div className="flex min-h-0 flex-col rounded-lg border border-line bg-surface">
       {workspaces.length > 1 && (
@@ -359,7 +369,7 @@ function AddFrom({ space, workspaces, data, active, onActive, labels, onToggle }
                 w.id === active ? "font-medium text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-[1.5px] after:rounded-full after:bg-fg" : "text-fg-3 hover:text-fg",
               )}
             >
-              <WorkspaceGlyph name={w.name} small />
+              {w.id === EVERY ? <Layers className="size-3.5 text-fg-3" /> : <WorkspaceBadge name={w.name} logo={w.logo} size="sm" decorative />}
               <span className="max-w-[120px] truncate">{w.name}</span>
             </button>
           ))}
@@ -369,11 +379,11 @@ function AddFrom({ space, workspaces, data, active, onActive, labels, onToggle }
         <SearchInput value={query} onChange={setQuery} placeholder={t("editor.search")} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
-        {!d ? (
+        {!d && !every ? (
           <p className="px-3 py-2 text-[12px] text-fg-4">{t("editor.loading", { workspace: ws?.name ?? "" })}</p>
         ) : (
           <>
-            {d.collab === false && !needle && <p className="mx-2 mb-2 rounded-md bg-sunken px-2.5 py-2 text-[11.5px] text-fg-3">{t("editor.noCollab", { workspace: d.name })}</p>}
+            {d?.collab === false && !needle && <p className="mx-2 mb-2 rounded-md bg-sunken px-2.5 py-2 text-[11.5px] text-fg-3">{t("editor.noCollab", { workspace: d.name })}</p>}
             {groups.map((g) => (
               <section key={g.id} className="mb-2">
                 <h4 className="label-caps px-2 pb-1 pt-1.5">{t(`editor.groups.${g.id}`)}</h4>
@@ -410,6 +420,7 @@ function SpaceEditor({ target, make }: { target: EditorTarget; make: () => Space
   const uid = useSession((s) => s.user?.id ?? "");
   const wid = useSession((s) => s.workspaceId);
   const memberships = useSession((s) => s.memberships);
+  const wsPrefs = useWorkspacePrefs();
   const { spaces } = useSpaces();
   const save = useSaveSpaces();
   const saveStarter = useSaveStarter();
@@ -424,14 +435,16 @@ function SpaceEditor({ target, make }: { target: EditorTarget; make: () => Space
   const [saving, setSaving] = useState(false);
 
   // A starter Space is of its workspace alone; a person's Space of any of theirs.
-  const workspaces = (starter ? memberships.filter((m) => m.workspace.id === wid) : memberships).map((m) => ({ id: m.workspace.id, name: m.workspace.name }));
-  const members = useMemo(() => new Set(workspaces.map((w) => w.id)), [workspaces]);
+  const own = (starter ? memberships.filter((m) => m.workspace.id === wid) : orderWorkspaces(memberships, wsPrefs.order)).map((m) => ({ id: m.workspace.id, name: m.workspace.name, logo: m.workspace.avatar_url }));
+  // The Everywhere lists span every workspace: a person's own Space can hold them, a starter can't.
+  const workspaces = starter ? own : [...own, { id: EVERY, name: t("editor.everyWorkspace"), logo: null }];
+  const members = useMemo(() => new Set(own.map((w) => w.id)), [own]);
   const wids = useMemo(() => {
     const out = [tab];
     for (const sec of draft.sections) for (const i of sec.items) if (!out.includes(i.workspace_id) && members.has(i.workspace_id)) out.push(i.workspace_id);
-    return out.filter(Boolean);
+    return out.filter((w) => w && w !== EVERY);
   }, [draft.sections, tab, members]);
-  const data = useAllWorkspacesData(wids, { folders: (w) => w === tab || draft.sections.some((sec) => sec.items.some((i) => i.workspace_id === w && i.kind === "folder")) });
+  const data = useWorkspacesData(wids, { folders: (w) => w === tab || draft.sections.some((sec) => sec.items.some((i) => i.workspace_id === w && i.kind === "folder")) });
   const sections = useMemo(() => draft.sections.map((s) => ({ ...s })), [draft.sections]);
 
   const problems = spaceProblems(draft, members);
@@ -619,7 +632,7 @@ function SpaceEditor({ target, make }: { target: EditorTarget; make: () => Space
                     space={draft}
                     data={data}
                     labels={labels}
-                    marks={distinct.size > 1}
+                    marks={distinct.size > 1 || (distinct.size === 1 && !distinct.has(wid ?? ""))}
                     target={sections.length > 1 && targetSection === s.id}
                     onTarget={() => setTargetSection(s.id)}
                     onChange={setDraft}

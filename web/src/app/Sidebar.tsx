@@ -15,6 +15,7 @@ import {
   Clock,
   Inbox,
   Keyboard,
+  EyeOff,
   Layers,
   Lock,
   LogOut,
@@ -43,7 +44,7 @@ import { AvailabilityMenuItems } from "@/components/presence/availability";
 import { Avatar } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/toast";
 import { Kbd } from "@/components/ui/kbd";
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuSub, MenuTrigger } from "@/components/ui/menu";
 import { Picker } from "@/components/ui/picker";
 import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { useHotkeys } from "@/lib/hotkeys";
@@ -58,13 +59,13 @@ import { atLeast, loadAccounts, useRole, useSession, useWorkspace } from "@/lib/
 import { useTheme, type ThemePref } from "@/lib/theme";
 import { desktop } from "@/lib/desktop";
 import { shell, toggleNav, useNav } from "./shellStore";
-import { quickSwitchKeys, useAccountActions, useQuickSwitch, useSwitcherEntries } from "./useAccounts";
-import { Count, Label, NavTip, PillCtx, rowActive, rowBase, rowIdle, rowShape, Section, WaitDot, WaitingBadge, withPill, WorkspaceGlyph } from "./sidebarParts";
+import { quickEntries, quickSwitchKeys, useAccountActions, useQuickSwitch, useSwitcherEntries } from "./useAccounts";
+import { Count, Label, NavTip, PillCtx, rowActive, rowBase, rowIdle, rowShape, Section, WaitDot, WaitingBadge, withPill } from "./sidebarParts";
 import { useSpaceKeys } from "@/components/spaces/actions";
 import { SpaceGlyph } from "@/components/spaces/icons";
 import { SwitcherSpaces, useSwitcherStarters } from "@/components/spaces/SwitcherSpaces";
 import { SectionList, SpaceView } from "@/components/spaces/SpaceView";
-import { useCarryOver, useSpaces } from "@/lib/spaces/hooks";
+import { useSpaces } from "@/lib/spaces/hooks";
 import { pickedSpace } from "@/lib/spaces/model";
 import { spaceUi, usePickedSpaceId } from "@/lib/spaces/store";
 
@@ -75,8 +76,6 @@ import { useCollab, useSidebarPrefs } from "@/lib/collab/hooks";
 import { ticketRowNumbers } from "@/lib/collab/badges";
 import { badgeFor, hid, pickCount, visibleSections, type BadgeNumbers } from "@/lib/collab/sidebarPrefs";
 import { collabUi } from "@/lib/collab/ui";
-import { useTogether } from "@/lib/together";
-import { TogetherNav } from "./TogetherNav";
 import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 
 // Collab's sections load with Collab: a workspace without it never downloads them.
@@ -507,7 +506,6 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
   const { spaces, fresh, isError } = useSpaces();
   const pickedId = usePickedSpaceId();
   const space = pickedSpace(spaces, pickedId);
-  useCarryOver();
   // A remembered Space that is gone (deleted elsewhere) quietly gives way to the workspace.
   useEffect(() => {
     if (fresh && pickedId && !space && uid) spaceUi.pick(uid, null);
@@ -521,7 +519,7 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
     <nav aria-label={t("nav.main")} className="flex h-full w-full flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden pb-3 pt-1">
         {waiting ? null : space && spaces ? (
-          <SpaceView key={space.id} spaces={spaces} space={space} rail={rail} renderSection={render} live={!drawer} />
+          <SpaceView key={space.id} spaces={spaces} space={space} rail={rail} renderSection={render} />
         ) : (
           <SectionList ids={order} render={render} />
         )}
@@ -570,6 +568,7 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const { switchTo, addAccount } = useAccountActions();
   const { t } = useTranslation("shell");
+  const { t: tw } = useTranslation("workspaces");
   const { spaces } = useSpaces();
   const pickedId = usePickedSpaceId();
   const space = pickedSpace(spaces, pickedId);
@@ -581,11 +580,14 @@ export function WorkspaceSwitcher() {
   const waiting = !!pickedId && !spaces;
   const grouped = accounts.length > 1;
   // Accounts in switcher order, each with its workspaces and their quick switch numbers.
+  // Quick switch numbers skip the workspaces the person hid; those fold away under their account.
+  const numbered = new Map(quickEntries(entries).map((e, i) => [`${e.account.user.id}:${e.membership.workspace.id}`, i + 1]));
+  const withN = entries.map((e) => ({ ...e, n: numbered.get(`${e.account.user.id}:${e.membership.workspace.id}`) ?? Infinity }));
   const groups = (grouped ? accounts : accounts.filter((a) => a.user.id === user.id)).map((a) => ({
     account: a,
-    items: entries.map((e, i) => ({ ...e, n: i + 1 })).filter((e) => e.account.user.id === a.user.id),
+    items: withN.filter((e) => e.account.user.id === a.user.id),
   }));
-  if (!groups.length) groups.push({ account: { user, memberships: [] }, items: entries.map((e, i) => ({ ...e, n: i + 1 })) });
+  if (!groups.length) groups.push({ account: { user, memberships: [] }, items: withN });
   return (
     <Menu
       onOpenChange={(open) => {
@@ -625,26 +627,39 @@ export function WorkspaceSwitcher() {
                 <span className="truncate">{account.user.email}</span>
               </M.Label>
             )}
-            {items.map(({ membership: m, n }) => {
-              const current = !space && account.user.id === user.id && m.workspace.id === ws.id;
+            {(() => {
+              const entry = ({ membership: m, n }: (typeof items)[number]) => {
+                const current = !space && account.user.id === user.id && m.workspace.id === ws.id;
+                return (
+                  <MenuItem
+                    key={`${account.user.id}:${m.workspace.id}`}
+                    icon={<WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative />}
+                    onSelect={() => void switchTo(account.user.id, m.workspace.id)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{m.workspace.name}</span>
+                      {current && <Check aria-label={t("workspaces.current")} className="!size-3 !text-fg" />}
+                      {n <= 9 && (
+                        <Kbd className="opacity-0 transition-opacity duration-100 group-data-[highlighted]/item:opacity-100 motion-reduce:transition-none">
+                          {quickSwitchKeys(n)}
+                        </Kbd>
+                      )}
+                    </span>
+                  </MenuItem>
+                );
+              };
+              const hidden = items.filter((e) => e.hidden);
               return (
-                <MenuItem
-                  key={`${account.user.id}:${m.workspace.id}`}
-                  icon={together && account.user.id === user.id ? <WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative /> : <WorkspaceGlyph name={m.workspace.name} small />}
-                  onSelect={() => void switchTo(account.user.id, m.workspace.id)}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{m.workspace.name}</span>
-                    {current && <Check aria-label={t("workspaces.current")} className="!size-3 !text-fg" />}
-                    {n <= 9 && (
-                      <Kbd className="opacity-0 transition-opacity duration-100 group-data-[highlighted]/item:opacity-100 motion-reduce:transition-none">
-                        {quickSwitchKeys(n)}
-                      </Kbd>
-                    )}
-                  </span>
-                </MenuItem>
+                <>
+                  {items.filter((e) => !e.hidden).map(entry)}
+                  {hidden.length > 0 && (
+                    <MenuSub label={<span className="text-fg-3">{tw("switcher.hidden", { count: hidden.length })}</span>} icon={<EyeOff />}>
+                      {hidden.map(entry)}
+                    </MenuSub>
+                  )}
+                </>
               );
-            })}
+            })()}
             {!items.length && (
               <MenuItem icon={<Plus />} onSelect={() => void switchTo(account.user.id, null)}>
                 <span className="text-fg-3">{t("workspaces.noneYet")}</span>
@@ -735,8 +750,6 @@ function UserMenu({ rail }: { rail: boolean }) {
   const setAvailability = useSetAvailability();
   const collab = useCollab();
   const { t: tc } = useTranslation("collab");
-  const { t: tw } = useTranslation("together");
-  const workspaces = useSession((s) => s.memberships.length);
   if (!user) return null;
   const name = user.name || user.email;
   const me = members?.find((m) => m.user.id === user.id);
@@ -791,11 +804,6 @@ function UserMenu({ rail }: { rail: boolean }) {
         {collab.enabled && (
           <MenuItem icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
             {tc("nav.customize")}
-          </MenuItem>
-        )}
-        {workspaces > 1 && (
-          <MenuItem icon={<Layers />} onSelect={() => void navigate({ to: "/settings/workspaces" })}>
-            {collab.enabled ? tw("customize.arrange") : tw("customize.menu")}
           </MenuItem>
         )}
         <MenuItem icon={<Keyboard />} onSelect={() => shell.shortcuts()}>

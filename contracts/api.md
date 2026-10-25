@@ -283,34 +283,31 @@ type NotificationPreferences = {
 | GET | `/v1/me/assistant-peer/asks` | paginated asks made to the caller's Ollie, newest first, kept 90 days |
 | DELETE | `/v1/me` | `{password?, code?}` → 204. `password` when the account has one, `code` when 2FA is on. Deletes the account and every workspace it solely owns (`409 sole_owner` while owner of a workspace with other members) |
 | GET | `/v1/me/workspace-prefs` | `WorkspacePrefs` (below; the defaults until the person changes something). No `OD-Workspace` |
-| PUT | `/v1/me/workspace-prefs` | any of `{mode, layout, order, hidden, collapsed, items, everywhere}` → `WorkspacePrefs`. Fields left out keep their value; `mode: ""` goes back to the default. `422` for an unknown mode or layout, more than 100 workspace ids, or an item id not shaped `<workspace id>/<kind>[:<id>]` (or `everywhere/<list>`), at most 500 items |
+| PUT | `/v1/me/workspace-prefs` | any of `{order, hidden}` → `WorkspacePrefs`. Fields left out keep their value. `422` for more than 100 workspace ids, or a field it does not take |
 | GET | `/v1/me/overview` | `{workspaces: WorkspaceOverview[]}`: every workspace the person is in, in joining order (below). No `OD-Workspace` |
 
-#### Workspaces together
+#### Several workspaces
 
-A person in several workspaces can work them side by side in the web app ("Together"), or one at a
-time ("Separate"). Every request still targets exactly one workspace (`OD-Workspace`), with that
-workspace's role and private teams: a view across workspaces is made of one request per workspace.
-The app keeps each workspace's data under its own cache keys and opens anything of another workspace
-by moving its focus there, without reloading. Links to a workspace's pages carry `?ws=<id>` (above).
+A person in several workspaces works one at a time in the web app, the focus, and reaches the others
+through Spaces (contracts/spaces.md: sidebars of rows from any of their workspaces), the one bell and
+the Everywhere lists (tickets assigned to them, and all mail, across workspaces). Every request still
+targets exactly one workspace (`OD-Workspace`), with that workspace's role and private teams: a view
+across workspaces is made of one request per workspace. The app keeps each workspace's data under its
+own cache keys and opens anything of another workspace by moving its focus there, without reloading.
+Links to a workspace's pages carry `?ws=<id>` (above).
 
-`WorkspacePrefs` is the person's own, one per user, whatever the workspace, and deleted with them:
+`WorkspacePrefs` is how the person arranges their workspaces in the switcher: their own, one per user,
+whatever the workspace, and deleted with them:
 
 ```jsonc
 {
-  "mode": "together" | "separate",  // the default is together (it only shows with two or more workspaces)
-  "mode_set": false,                // read only: whether the person chose the mode
-  "layout": "grouped" | "mixed",    // grouped: a sidebar group per workspace; mixed: sections combined, rows badged
-  "order": ["<wid>"],               // sidebar order; workspaces not listed follow in joining order
-  "hidden": ["<wid>"],              // left out of the sidebar, the Everywhere lists and the bell
-  "collapsed": ["<wid>" | "everywhere"],
-  "items": { "hidden": ["<wid>/view:<id>"], "order": ["<wid>/team:<id>"] },
-  "everywhere": true,               // the Everywhere lists: assigned to me, and all mail
+  "order": ["<wid>"],    // switcher order; workspaces not listed follow in joining order
+  "hidden": ["<wid>"],   // folded away in the switcher, left out of the bell and the Everywhere lists
   "updated_at": "..."
 }
 ```
 
-Ids in it only arrange the sidebar. They are never checked against memberships and never grant
+Ids in it only arrange the switcher. They are never checked against memberships and never grant
 anything: a workspace the person is not in is simply not shown.
 
 `WorkspaceOverview` is one workspace's sidebar numbers, each computed as that workspace's own route

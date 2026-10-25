@@ -36,7 +36,7 @@ interface SpaceSection {
 }
 
 interface SpaceItem {
-  workspace_id: string       // a workspace the user is a member of
+  workspace_id: string       // a workspace the user is a member of; "" for an everywhere row
   kind: SpaceItemKind
   id: string                 // see below, 1..100 characters
   name?: string              // the person's own label for the row, 1..64 characters, a name people choose
@@ -52,6 +52,8 @@ type SpaceItemKind =
   | "account"        // a Collab account's inbox: id: account uuid
   | "folder"         // a Collab folder or label: id: folder uuid
   | "page"           // a workspace page: id "contacts" | "knowledge" | "reports"
+  | "everywhere"     // an Everywhere list across every workspace: id "mine" (assigned to me) | "mail" (all mail);
+                     // workspace_id "" (the one kind of no workspace); never in a starter Space
 
 // SPACE_ICONS: "sun", "moon", "star", "inbox", "mail", "headphones", "users", "briefcase", "rocket",
 // "flame", "zap", "heart", "coffee", "flag", "bookmark", "layers", "target", "globe", "bell", "leaf",

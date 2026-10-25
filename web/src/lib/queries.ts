@@ -9,7 +9,7 @@ import type { Page, ReportsQuery, ReportsRange, SpacesResponse } from "./api/typ
 import { normalizeSpace, normalizeSpaces } from "./spaces/model";
 
 // Workspace-owned keys start with `ws:<workspace id>`: the cache holds several
-// workspaces at once (Together, contracts/api.md "Workspaces together") and a key of
+// workspaces at once (contracts/api.md "Several workspaces") and a key of
 // one is never read for another. A key is made for the workspace in scope when it is
 // built: the focus workspace, or the one `inWorkspace` names. So a key is built where
 // it is used, never kept in a module constant. User-level keys (the account, its
@@ -43,7 +43,7 @@ export const qk = {
   scope: (wid?: string | null) => [scopeKey(wid === undefined ? scopeWorkspace() : wid)] as const,
   /** An ad hoc workspace key: [scope, ...parts]. Prefer a named key below. */
   of: <T extends readonly unknown[]>(...parts: T) => w(parts),
-  /** The person's Together settings (contracts/api.md "Workspaces together"). */
+  /** How the person arranges their workspaces (contracts/api.md "Several workspaces"). */
   workspacePrefs: ["me", "workspace-prefs"] as const,
   /** Every workspace's sidebar numbers in one answer (GET /v1/me/overview). */
   overview: ["me", "overview"] as const,

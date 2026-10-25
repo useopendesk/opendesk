@@ -1444,19 +1444,19 @@ function seedLumen(): WsData {
     addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hello,\n\n${subject}. Can you help?`), at: t.created_at }, { publish: false });
     if (i === 3) t.status = "pending";
   });
-  seedLumenTogether(ws);
+  seedLumenTeams(ws);
   seedDefaultBrand(ws);
   placeSimple(ws);
   return ws;
 }
 
 /**
- * Lumen Labs, Maya's second workspace (she is an agent there), with enough to show
- * Together (contracts/api.md "Workspaces together"): a team she is on, a private team
+ * Lumen Labs, Maya's second workspace (she is an agent there), with enough for a Space
+ * across workspaces (contracts/spaces.md): a team she is on, a private team
  * she is not on (its ticket never reaches her), a view, tickets assigned to her and
  * notifications. Its Collab mail (handlers/collab.ts) is seeded on first use.
  */
-function seedLumenTogether(ws: WsData) {
+function seedLumenTeams(ws: WsData) {
   const maya = db.users[0].id;
   const owner = db.users[3].id;
   const team = (name: string, color: Team["color"], members: string[], extra: Partial<Team> = {}): Team => ({
@@ -1573,23 +1573,6 @@ function sideTeam(name: string, color: Team["color"], memberIds: string[]): Team
   };
 }
 
-/**
- * Teams and views for Lumen Labs, so a Space that mixes workspaces has rows of each to show.
- * Seeded after everything else, so the rest of the seed keeps its ids.
- */
-function seedLumenTeams(ws: WsData) {
-  const maya = db.users[0].id;
-  const owner = ws.members.find((m) => m.role === "owner")?.user_id ?? maya;
-  ws.teams = [sideTeam("Hardware", "teal", [maya, owner]), sideTeam("Retail", "pink", [owner])];
-  ws.views = [
-    { id: uuid(), name: "Firmware", shared: true, filters: { status: ["open", "pending"], q: "firmware" }, position: 0 },
-    { id: uuid(), name: "Orders", shared: true, filters: { status: ["open", "pending"], q: "order" }, position: 1 },
-  ];
-  ws.tickets.forEach((t, i) => {
-    t.team_id = i % 2 === 0 ? ws.teams[0].id : ws.teams[1].id;
-  });
-}
-
 /** Pressroom: a third workspace of Maya's, without Collab, so a Space shows how mail rows are skipped there. */
 function seedPressroom(): WsData {
   const ws = baseWorkspace(uuid(), "Pressroom", "pressroom");
@@ -1641,7 +1624,6 @@ export function seed() {
   db.notificationSettings = {};
   db.workspaces = [seedMargin(), seedLumen()];
   db.workspaces.push(seedHarbor());
-  // Spaces (contracts/spaces.md): more of Maya's workspaces to mix in one sidebar.
-  seedLumenTeams(db.workspaces[1]);
+  // Spaces (contracts/spaces.md): a third workspace of Maya's, without Collab.
   db.workspaces.push(seedPressroom());
 }

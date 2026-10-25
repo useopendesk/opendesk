@@ -39,10 +39,17 @@ export const SPACE_COLORS: readonly SpaceColor[] = ["grey", "blue", "violet", "t
 /** The colours new Spaces take, in turn. */
 export const NEW_COLORS: readonly SpaceColor[] = ["blue", "violet", "teal", "green", "amber", "red", "pink", "grey"];
 
-export const SPACE_KINDS: readonly SpaceItemKind[] = ["section", "ticket_folder", "team", "view", "box", "account", "folder", "page"];
+export const SPACE_KINDS: readonly SpaceItemKind[] = ["section", "ticket_folder", "team", "view", "box", "account", "folder", "page", "everywhere"];
 /** The pages a Space row can open. */
 export const SPACE_PAGES = ["contacts", "knowledge", "reports"] as const;
 export type SpacePage = (typeof SPACE_PAGES)[number];
+/** The Everywhere lists a Space row can open: tickets assigned to me, and all mail, across workspaces. */
+export const EVERYWHERE_LISTS = ["mine", "mail"] as const;
+export type EverywhereList = (typeof EVERYWHERE_LISTS)[number];
+export const isEverywhereList = (v: unknown): v is EverywhereList => typeof v === "string" && (EVERYWHERE_LISTS as readonly string[]).includes(v);
+/** An everywhere row belongs to no workspace: its workspace_id is "". */
+export const isEverywhere = (i: Pick<SpaceItem, "kind">) => i.kind === "everywhere";
+
 /** The Collab boxes a Space row can open (across a workspace's accounts). */
 export const SPACE_BOXES = ["inbox", "shared", "assigned"] as const;
 export type SpaceBox = (typeof SPACE_BOXES)[number];
@@ -221,9 +228,10 @@ export function spaceProblems(s: Space, members?: ReadonlySet<string>): SpacePro
     total += sec.items.length;
     for (const it of sec.items) {
       const key = itemKey(it);
-      if (!it.id || it.id.length > LIMITS.itemId || !isKind(it.kind) || (it.badge !== undefined && !isBadge(it.badge))) out.push({ code: "bad_item", section: sec.id, item: key });
+      const wrongWorkspace = isEverywhere(it) ? it.workspace_id !== "" || !isEverywhereList(it.id) : !it.workspace_id;
+      if (!it.id || it.id.length > LIMITS.itemId || !isKind(it.kind) || wrongWorkspace || (it.badge !== undefined && !isBadge(it.badge))) out.push({ code: "bad_item", section: sec.id, item: key });
       if (it.name !== undefined && [...cleanName(it.name)].length > LIMITS.rowName) out.push({ code: "row_name_too_long", section: sec.id, item: key });
-      if (members && !members.has(it.workspace_id)) out.push({ code: "not_member", section: sec.id, item: key });
+      if (members && !isEverywhere(it) && !members.has(it.workspace_id)) out.push({ code: "not_member", section: sec.id, item: key });
     }
   }
   if (total > LIMITS.items) out.push({ code: "too_many_items" });
@@ -421,7 +429,7 @@ export type Shown = {
   sections: { section: SpaceSection; items: SpaceItem[] }[];
   /** The workspaces whose rows show, in order of first appearance. */
   workspaces: string[];
-  /** Rows carry their workspace's mark. */
+  /** Rows of a workspace other than the open one carry its badge. */
   marks: boolean;
 };
 
@@ -430,15 +438,15 @@ export type Shown = {
  * Collab rows only where there is Collab; sections left empty do not show.
  */
 export function showSpace(s: Space, ctx: ShowContext): Shown {
-  const usable = (i: SpaceItem) => ctx.members.has(i.workspace_id) && (!isCollabItem(i) || ctx.collab(i.workspace_id) === true);
+  const usable = (i: SpaceItem) => isEverywhere(i) || (ctx.members.has(i.workspace_id) && (!isCollabItem(i) || ctx.collab(i.workspace_id) === true));
   const sections: Shown["sections"] = [];
   const workspaces: string[] = [];
   for (const section of s.sections) {
     const items = section.items.filter(usable);
-    for (const i of items) if (!workspaces.includes(i.workspace_id)) workspaces.push(i.workspace_id);
+    for (const i of items) if (!isEverywhere(i) && !workspaces.includes(i.workspace_id)) workspaces.push(i.workspace_id);
     if (items.length) sections.push({ section, items });
   }
-  return { sections, workspaces, marks: s.marks && workspaces.length > 1 };
+  return { sections, workspaces, marks: s.marks };
 }
 
 /** The workspaces other than the open one with rows showing: the ones to keep live. */

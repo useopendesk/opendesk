@@ -1,32 +1,38 @@
 // One sidebar row from what it names: a favorite, a single Space row of the open workspace,
 // or a row of another workspace. buildRow turns a {kind, id} and that workspace's data into
 // a row model (label, icon, numbers, link); NavItemRow draws it the way the sidebar's own
-// rows look. A row of another workspace opens its page in that workspace (`?ws=`).
+// rows look. A row of another workspace opens its page there: the focus moves first, and
+// what the cache holds of it shows at once (lib/workspaces.ts useOpenInWorkspace). An
+// everywhere row (assigned to me, all mail) spans every workspace and opens its list.
 
-import { Link, useRouter, useRouterState } from "@tanstack/react-router";
-import { BarChart3, BookOpen, CircleCheck, CircleDashed, Clock, Inbox, Layers, Lock, ShieldAlert, User, Users } from "lucide-react";
+import { Link, useRouterState, type NavigateOptions } from "@tanstack/react-router";
+import { BarChart3, BookOpen, CircleCheck, CircleDashed, Clock, Inbox, Layers, Lock, Mails, ShieldAlert, User, UserCheck, Users } from "lucide-react";
 import { forwardRef, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivePill, Count, Label, NavTip, rowActive, rowBase, rowIdle, rowShape, WaitingBadge } from "@/app/sidebarParts";
 import { AccountTags } from "@/components/collab/AccountTags";
 import { AccountDot, boxIcon, FolderGlyph } from "@/components/collab/bits";
 import { TeamDot } from "@/components/tickets/teams";
+import { Tooltip } from "@/components/ui/tooltip";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 import type { WaitingScope } from "@/components/tickets/useUrgentChats";
-import type { MailBox, SidebarBadge, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
+import type { MailBox, SidebarBadge, SidebarPrefs, SidebarSectionId, WorkspaceOverview } from "@/lib/api/types";
 import { accountNumbers, allInboxNumbers, boxTabNumbers, folderNumbers, listBoxNumbers, ticketRowNumbers } from "@/lib/collab/badges";
 import { accountName, isMailBox, isTabBox, type MailSearch } from "@/lib/collab/boxes";
 import { badgeFor, hid, pickCount, type BadgeKind, type BadgeNumbers, type MailBadge, type TicketBadge } from "@/lib/collab/sidebarPrefs";
 import { cn } from "@/lib/cn";
 import { folderById, type FolderId } from "@/lib/folders";
 import { canSeeTeam, type WorkspaceData } from "@/lib/spaces/hooks";
-import { isSpacePage, type SpacePage } from "@/lib/spaces/model";
+import { isEverywhereList, isSpacePage, type EverywhereList, type SpacePage } from "@/lib/spaces/model";
+import { useOpenInWorkspace } from "@/lib/workspaces";
 
 export type RowLink =
   | { kind: "inbox"; folder: FolderId }
   | { kind: "team"; teamId: string }
   | { kind: "view"; viewId: string }
   | { kind: "mail"; box: MailBox | "folder"; account?: string; folder?: string }
-  | { kind: "page"; page: SpacePage };
+  | { kind: "page"; page: SpacePage }
+  | { kind: "everywhere"; list: EverywhereList };
 
 /** The app URL a row opens; with `ws`, in that workspace (web/src/lib/workspaceParam.ts). */
 export function rowHref(l: RowLink, ws?: string): string {
@@ -50,10 +56,31 @@ export function rowHref(l: RowLink, ws?: string): string {
     case "page":
       path = l.page === "contacts" ? "/contacts" : l.page === "knowledge" ? "/kb" : "/reports";
       break;
+    case "everywhere":
+      path = `/everywhere/${l.list}`;
+      break;
   }
   if (ws) p.set("ws", ws);
   const qs = p.toString();
   return qs ? `${path}?${qs}` : path;
+}
+
+/** Where a row goes, as router navigation (a row of another workspace moves the focus first). */
+export function rowNavigate(l: RowLink): NavigateOptions {
+  switch (l.kind) {
+    case "inbox":
+      return { to: "/inbox/$folder/{-$ticketId}", params: { folder: l.folder, ticketId: undefined } } as NavigateOptions;
+    case "team":
+      return { to: "/teams/$teamId/{-$ticketId}", params: { teamId: l.teamId, ticketId: undefined } } as NavigateOptions;
+    case "view":
+      return { to: "/views/$viewId/{-$ticketId}", params: { viewId: l.viewId, ticketId: undefined } } as NavigateOptions;
+    case "mail":
+      return { to: "/mail/$box/{-$threadId}", params: { box: l.box, threadId: undefined }, search: { account: l.account, folder: l.folder } } as NavigateOptions;
+    case "page":
+      return (l.page === "contacts" ? { to: "/contacts/{-$contactId}", params: { contactId: undefined } } : { to: l.page === "knowledge" ? "/kb" : "/reports" }) as NavigateOptions;
+    case "everywhere":
+      return { to: "/everywhere/$list", params: { list: l.list } } as NavigateOptions;
+  }
 }
 
 export type RowModel = {
@@ -86,6 +113,7 @@ export const ticketFolderIcons: Record<FolderId, ReactNode> = {
 };
 
 export const pageIcons: Record<SpacePage, ReactNode> = { contacts: <Users />, knowledge: <BookOpen />, reports: <BarChart3 /> };
+export const everywhereIcons: Record<EverywhereList, ReactNode> = { mine: <UserCheck />, mail: <Mails /> };
 
 const dotIcon = (n: ReactNode) => <span className="flex size-[15px] shrink-0 items-center justify-center">{n}</span>;
 
@@ -97,13 +125,16 @@ export type RowLabels = {
   myTeams: string;
   page: (p: SpacePage) => string;
   section: (id: SidebarSectionId) => string;
+  everywhere: (list: EverywhereList) => string;
 };
 
 export function useRowLabels(): RowLabels {
   const { t: tNav } = useTranslation("navigation");
   const { t: tShell } = useTranslation("shell");
   const { t: tc } = useTranslation("collab");
+  const { t: tw } = useTranslation("workspaces");
   return {
+    everywhere: (l) => (l === "mine" ? tw("everywhere.mineTitle") : tw("everywhere.mailTitle")),
     folder: (id) => {
       const f = folderById(id);
       return f ? tNav(f.labelKey) : id;
@@ -135,6 +166,27 @@ export type RowContext = {
   here?: MailHere;
   waiting?: (scope: WaitingScope) => number;
 };
+
+/**
+ * An everywhere row: its list's number added up over the workspaces it gathers (the
+ * overview's), tickets assigned to the person or unread mail in their inboxes.
+ */
+export function buildEverywhereRow(list: string, labels: RowLabels, overview: WorkspaceOverview[]): RowModel | null {
+  if (!isEverywhereList(list)) return null;
+  const live = overview.filter((o) => !o.suspended);
+  const sum = (f: (o: WorkspaceOverview) => number | undefined) => (overview.length ? live.reduce((n, o) => n + (f(o) ?? 0), 0) : undefined);
+  return {
+    key: `everywhere:${list}`,
+    label: labels.everywhere(list),
+    icon: everywhereIcons[list],
+    badge:
+      list === "mine"
+        ? { kind: "ticket", sections: [], nums: { count: sum((o) => o.ticket_counts?.mine) } }
+        : { kind: "mail", sections: [], nums: { unread: sum((o) => o.mail_counts?.boxes.inbox) } },
+    link: { kind: "everywhere", list },
+    railDot: list === "mail" ? "unread" : undefined,
+  };
+}
 
 /**
  * A row's model, or null when what it names is gone, not visible, or needs Collab the
@@ -283,7 +335,7 @@ const activeLink = { className: rowActive, "data-status": "active" } as Record<s
 type AnchorProps = { link: RowLink; ws?: string; className: string; label?: string; title?: string; active?: boolean; children: (active: boolean) => ReactNode } & Omit<React.HTMLAttributes<HTMLAnchorElement>, "children" | "title">;
 
 const RowAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function RowAnchor({ link, ws, className, label, title, active, children, ...rest }, ref) {
-  const router = useRouter();
+  const openIn = useOpenInWorkspace();
   const common = { ref, className, "aria-label": label, title, ...rest };
   if (ws) {
     const href = rowHref(link, ws);
@@ -295,7 +347,7 @@ const RowAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function RowAnchor(
           rest.onClick?.(e);
           if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
           e.preventDefault();
-          router.history.push(href);
+          openIn(ws, rowNavigate(link));
         }}
       >
         {children(false)}
@@ -332,6 +384,12 @@ const RowAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function RowAnchor(
           {fn}
         </Link>
       );
+    case "everywhere":
+      return (
+        <Link to="/everywhere/$list" params={{ list: link.list }} activeProps={activeLink} {...common}>
+          {fn}
+        </Link>
+      );
     case "mail":
       return (
         <Link
@@ -348,6 +406,20 @@ const RowAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function RowAnchor(
       );
   }
 });
+
+/** The small badge of another workspace beside a row or section title, "In Lumen Labs" on hover. */
+export function InWorkspace({ name, logo }: { name: string; logo: string | null }) {
+  const { t } = useTranslation("workspaces");
+  const label = t("badge.in", { name });
+  return (
+    <Tooltip content={label}>
+      <span className="flex shrink-0">
+        <WorkspaceBadge name={name} logo={logo} size="xs" decorative />
+        <span className="sr-only">{label}</span>
+      </span>
+    </Tooltip>
+  );
+}
 
 /**
  * One row as the sidebar draws its own: icon, name, waiting chats, its number, the rail's

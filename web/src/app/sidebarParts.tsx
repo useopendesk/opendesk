@@ -23,7 +23,7 @@ export const rowActive = "text-fg font-medium [&>svg]:text-fg hover:bg-transpare
 
 export const PillCtx = createContext("nav-pill");
 
-/** The workspace mark a section's header carries inside a Space that shows several workspaces. */
+/** The badge a section's header carries in a Space when the section is another workspace's. */
 export const SectionMarkCtx = createContext<ReactNode>(null);
 
 /** The active row's background, shared across rows so it glides between them. */
@@ -85,6 +85,8 @@ export function Section({
   rail,
   action,
   first,
+  folded: foldedProp,
+  onFold,
   children,
 }: {
   id: string;
@@ -92,18 +94,23 @@ export function Section({
   rail: boolean;
   action?: ReactNode;
   first?: boolean;
+  /** Folded, when the caller keeps it (a Space's own sections save it in the Space). */
+  folded?: boolean;
+  onFold?: (folded: boolean) => void;
   children: ReactNode;
 }) {
   const mark = useContext(SectionMarkCtx);
   const key = `od-nav-fold-${id}`;
-  const [folded, setFolded] = useState(() => {
+  const [foldedHere, setFolded] = useState(() => {
     try {
       return localStorage.getItem(key) === "1";
     } catch {
       return false;
     }
   });
+  const folded = foldedProp ?? foldedHere;
   const toggle = () => {
+    if (onFold) return onFold(!folded);
     setFolded(!folded);
     try {
       localStorage.setItem(key, folded ? "0" : "1");
@@ -121,8 +128,8 @@ export function Section({
             onClick={toggle}
             className="label-caps flex min-w-0 flex-1 items-center gap-1 text-left outline-none transition-colors hover:text-fg-2 focus-visible:text-fg"
           >
-            {mark && <span className="mr-0.5 flex shrink-0">{mark}</span>}
-            {label}
+            <span className="truncate">{label}</span>
+            {mark && <span className="ml-0.5 flex shrink-0 normal-case tracking-normal">{mark}</span>}
             <ChevronDown
               aria-hidden
               className={cn(

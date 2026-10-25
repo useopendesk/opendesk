@@ -22,7 +22,7 @@ import { usePickedSpaceId } from "@/lib/spaces/store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 import { NotificationsButton } from "./Notifications";
 import { WorkspaceSwitcher } from "./Sidebar";
-import { WorkspaceGlyph } from "./sidebarParts";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 import { shell, useNav } from "./shellStore";
 import { useBreadcrumbs } from "./useBreadcrumbs";
 
@@ -76,7 +76,7 @@ export function AppHeader() {
                   <ChevronRight className="size-3.5 shrink-0 text-fg-4" />
                 </li>
                 <li className="flex min-w-0 items-center gap-1.5 animate-label-in motion-reduce:animate-none">
-                  <WorkspaceGlyph name={ws.name} small />
+                  <WorkspaceBadge name={ws.name} logo={ws.avatar_url} size="sm" decorative />
                   <span className="truncate text-[12.5px] text-fg-3">{ws.name}</span>
                 </li>
               </>

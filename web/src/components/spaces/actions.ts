@@ -5,11 +5,11 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "@/components/ui/toast";
-import { api } from "@/lib/api/endpoints";
+import { inWorkspace } from "@/lib/api/client";
 import type { SidebarSectionId, Space } from "@/lib/api/types";
 import { normalizePrefs } from "@/lib/collab/sidebarPrefs";
 import { isTypingTarget } from "@/lib/hotkeys";
-import { qk } from "@/lib/queries";
+import { q } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { useSaveSpaces } from "@/lib/spaces/hooks";
 import { copySpace, defaultSections, LIMITS, moveSpace, nextColor, removeSpace, sidebarCopy, uniqueName } from "@/lib/spaces/model";
@@ -20,14 +20,10 @@ export const spaceKeys = (n: number | string) => `alt ${n}`;
 
 /** A workspace's own sidebar: its built-in sections in its SidebarPrefs order (read with OD-Workspace set to it). */
 export async function workspaceSections(qc: QueryClient, wid: string): Promise<SidebarSectionId[]> {
-  const status = await qc.fetchQuery({ queryKey: qk.wsCollab(wid), queryFn: () => api.inWorkspace(wid).collabStatus().catch(() => null), staleTime: 60_000 });
+  const status = await qc.fetchQuery(inWorkspace(wid, () => q.collabStatus()));
   const collab = status?.enabled === true;
-  const prefs = collab
-    ? await qc
-        .fetchQuery({ queryKey: qk.wsSidebar(wid), queryFn: async () => normalizePrefs(await api.inWorkspace(wid).sidebar()), staleTime: 60_000 })
-        .catch(() => null)
-    : null;
-  return defaultSections(prefs, collab);
+  const prefs = collab ? await qc.fetchQuery(inWorkspace(wid, () => q.mailSidebar())).catch(() => null) : null;
+  return defaultSections(prefs ? normalizePrefs(prefs) : null, collab);
 }
 
 export function useSpaceActions(spaces: Space[] | undefined) {
