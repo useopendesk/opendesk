@@ -15,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/integrations"
 )
 
 // output is a tool's answer: Content for the model (always inside a data block),
@@ -42,6 +43,14 @@ type Preview struct {
 	External bool `json:"external,omitempty"`
 	// System names the connected tool the change runs in ("Linear").
 	System string `json:"system,omitempty"`
+	// Arguments is everything the change runs with, as indented JSON: a connected
+	// tool's arguments as they are sent, or api_change's request. Changes and Body may
+	// summarize; this is complete.
+	Arguments string `json:"arguments,omitempty"`
+	// Omitted counts the fields Changes and Body leave out; Clipped marks a value
+	// they show cut short.
+	Omitted int  `json:"omitted,omitempty"`
+	Clipped bool `json:"clipped,omitempty"`
 }
 
 // Change is one field of a diff.
@@ -64,6 +73,9 @@ type runCtx struct {
 	extOrder []string
 	// names are the workspace's team and brand names, loaded once per run.
 	names *refNames
+	// auto are the built-in changes the workspace lets run without asking, as the run
+	// started (nil until loaded); each one is checked again just before it runs.
+	auto []string
 }
 
 type tool struct {
@@ -83,6 +95,8 @@ type tool struct {
 	// only; the stored args are what Apply later runs.
 	Propose func(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Preview, error)
 	Apply   func(ctx context.Context, rc *runCtx, w *caller, args json.RawMessage, key string) (output, error)
+	// ext is the connected tool behind a <slug>__<tool> name.
+	ext *integrations.Tool
 }
 
 // BulkCap is the most tickets one approved bulk action changes.

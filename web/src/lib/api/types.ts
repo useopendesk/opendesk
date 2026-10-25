@@ -927,7 +927,20 @@ export type IntegrationProvider = {
   token_url?: string;
   starters: IntegrationStarter[];
 };
-export type IntegrationTool = { name: string; title: string; description: string; read_only: boolean; enabled: boolean };
+export type IntegrationTool = {
+  name: string;
+  title: string;
+  description: string;
+  /** Runs without approval: the server marks it read-only and no admin set it to ask first. */
+  read_only: boolean;
+  /** The server marks it read-only (its own hint). */
+  read_only_hint: boolean;
+  /** An admin set it to wait for approval anyway. */
+  ask_first: boolean;
+  /** A write an admin lets run without asking (auto_tools); ask_first wins over it. */
+  auto_run: boolean;
+  enabled: boolean;
+};
 export type Integration = {
   id: string;
   /** A catalog key, or "custom". */
@@ -1458,6 +1471,9 @@ export type BillingUsage = {
 
 // AI (contracts/ai.md).
 export type Sentiment = "positive" | "neutral" | "negative" | "frustrated";
+/** The built-in changes a workspace may let Ollie make without asking. Replies and the API's changes always ask. */
+export const ASSISTANT_AUTO_TOOLS = ["update_ticket", "bulk_update_tickets", "add_note", "create_kb_draft", "create_view", "create_automation_draft"] as const;
+export type AssistantAutoTool = (typeof ASSISTANT_AUTO_TOOLS)[number];
 export type AISettings = {
   enabled: boolean;
   auto_triage: boolean;
@@ -1467,6 +1483,8 @@ export type AISettings = {
   assistant: boolean;
   /** Members may let teammates' Ollie ask theirs about their own mail (contracts/ai.md "Asking a teammate"). Default false. */
   assistant_peer?: boolean;
+  /** Built-in changes Ollie makes without asking (contracts/ai.md "Approvals"). Default empty. */
+  assistant_auto?: AssistantAutoTool[];
   tone: string;
   reply_language: "customer" | "workspace";
   instructions: string;
@@ -2309,6 +2327,8 @@ export type MailMessage = {
   in_reply_to_id?: string | null;
   /** The account's address (its own or an alias) it was sent from or written to; null when none. */
   own_address?: string | null;
+  /** Mail the account wrote: sent from opendesk, a draft, or in its Sent or Drafts at the provider. A From naming the account does not make mail outgoing. */
+  outgoing: boolean;
 };
 
 /** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */
@@ -2453,3 +2473,38 @@ export type MailCounts = {
 
 /** `collab.changed` event data. */
 export type CollabChangedEvent = { account_id: string | null; thread_ids: string[]; folders: boolean };
+
+// Workspaces together (contracts/api.md "Workspaces together").
+export type TogetherMode = "together" | "separate";
+export type TogetherLayout = "grouped" | "mixed";
+export type WorkspacePrefs = {
+  mode: TogetherMode;
+  /** Whether the person chose the mode (false: the default, together). */
+  mode_set: boolean;
+  layout: TogetherLayout;
+  /** Workspace ids in sidebar order; the rest follow in joining order. */
+  order: string[];
+  /** Workspaces left out of the sidebar, the Everywhere lists and the bell. */
+  hidden: string[];
+  /** Folded sidebar groups: workspace ids, or "everywhere". */
+  collapsed: string[];
+  /** Sidebar items by workspace-qualified id (<workspace id>/view:<id>). */
+  items: { hidden: string[]; order: string[] };
+  /** The Everywhere lists: assigned to me and all mail, across workspaces. */
+  everywhere: boolean;
+  updated_at?: string;
+};
+export type WorkspacePrefsInput = Partial<Omit<WorkspacePrefs, "mode_set" | "updated_at" | "mode">> & { mode?: TogetherMode | "" };
+export type WorkspaceOverview = {
+  id: string;
+  name: string;
+  slug: string;
+  avatar_url: string | null;
+  role: Role;
+  suspended: boolean;
+  unread_notifications: number;
+  /** GET /v1/tickets/counts there; null while suspended. */
+  ticket_counts: TicketCounts | null;
+  /** GET /v1/collab/counts there; null without Collab. */
+  mail_counts: MailCounts | null;
+};

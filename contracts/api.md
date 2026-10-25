@@ -281,6 +281,48 @@ type NotificationPreferences = {
 | GET / PUT | `/v1/me/assistant-peer` | workspace-scoped, Collab only → the caller's own agent-to-agent sharing: whether teammates' Ollie may ask theirs, who, from which of their own mail accounts and how, and their rules (contracts/ai.md "Asking a teammate"). Users only; Ollie, API keys and AI clients get `403`. `409 assistant_peer_off` to turn it on while the workspace does not allow it |
 | GET | `/v1/me/assistant-peer/asks` | paginated asks made to the caller's Ollie, newest first, kept 90 days |
 | DELETE | `/v1/me` | `{password?, code?}` → 204. `password` when the account has one, `code` when 2FA is on. Deletes the account and every workspace it solely owns (`409 sole_owner` while owner of a workspace with other members) |
+| GET | `/v1/me/workspace-prefs` | `WorkspacePrefs` (below; the defaults until the person changes something). No `OD-Workspace` |
+| PUT | `/v1/me/workspace-prefs` | any of `{mode, layout, order, hidden, collapsed, items, everywhere}` → `WorkspacePrefs`. Fields left out keep their value; `mode: ""` goes back to the default. `422` for an unknown mode or layout, more than 100 workspace ids, or an item id not shaped `<workspace id>/<kind>[:<id>]` (or `everywhere/<list>`), at most 500 items |
+| GET | `/v1/me/overview` | `{workspaces: WorkspaceOverview[]}`: every workspace the person is in, in joining order (below). No `OD-Workspace` |
+
+#### Workspaces together
+
+A person in several workspaces can work them side by side in the web app ("Together"), or one at a
+time ("Separate"). Every request still targets exactly one workspace (`OD-Workspace`), with that
+workspace's role and private teams: a view across workspaces is made of one request per workspace.
+The app keeps each workspace's data under its own cache keys and opens anything of another workspace
+by moving its focus there, without reloading. Links to a workspace's pages carry `?ws=<id>` (above).
+
+`WorkspacePrefs` is the person's own, one per user, whatever the workspace, and deleted with them:
+
+```jsonc
+{
+  "mode": "together" | "separate",  // the default is together (it only shows with two or more workspaces)
+  "mode_set": false,                // read only: whether the person chose the mode
+  "layout": "grouped" | "mixed",    // grouped: a sidebar group per workspace; mixed: sections combined, rows badged
+  "order": ["<wid>"],               // sidebar order; workspaces not listed follow in joining order
+  "hidden": ["<wid>"],              // left out of the sidebar, the Everywhere lists and the bell
+  "collapsed": ["<wid>" | "everywhere"],
+  "items": { "hidden": ["<wid>/view:<id>"], "order": ["<wid>/team:<id>"] },
+  "everywhere": true,               // the Everywhere lists: assigned to me, and all mail
+  "updated_at": "..."
+}
+```
+
+Ids in it only arrange the sidebar. They are never checked against memberships and never grant
+anything: a workspace the person is not in is simply not shown.
+
+`WorkspaceOverview` is one workspace's sidebar numbers, each computed as that workspace's own route
+answers the person (a principal for that workspace alone: their role there, its private teams):
+
+```jsonc
+{ "id": "<wid>", "name": "Acme", "slug": "acme", "avatar_url": "", "role": "agent", "suspended": false,
+  "unread_notifications": 3,
+  "ticket_counts": TicketCounts | null,   // GET /v1/tickets/counts there; null while suspended
+  "mail_counts": CollabCounts | null }    // GET /v1/collab/counts there; null without Collab
+```
+
+A suspended workspace is listed with its name and nothing else.
 
 ### Workspace (owner: backend-core)
 | method | path | notes |
@@ -447,7 +489,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | method | path | notes |
 | --- | --- | --- |
 | GET | `/v1/tickets` | filters: `status` (csv), `priority` (csv), `severity` (csv of `sev1`..`sev4` and `none`), `assignee` (`me`/`none`/uuid), `team_id` (uuid, `mine` for the caller's teams, `none`), `brand_id`, `widget_id`, `mailbox_id`, `received_at` (the address a ticket was first written to: a mailbox's address or an alias, case-insensitive), `tag`, `channel`, `contact_id`, `view_id`, `q`, `spam`, `field.<key>` / `field.<key>[<op>]` (custom fields, below), `sort` (`last_message_at`/`created_at`/`priority`/`severity` (sev1 first, none last)/`due`/`field.<key>`), `order` |
-| GET | `/v1/tickets/counts` | → `{ unassigned, mine, open, pending, on_hold, solved, spam, views: {<view_id>: n}, teams: {<team_id>: {open, unassigned}}, my_teams: {open, unassigned}, stats: {<row id>: {awaiting, urgent, overdue}} }`. `teams` lists every team the caller can see (open and pending, spam excluded); `my_teams` sums the caller's teams; `views` counts only tickets the caller can see (contracts/teams.md "Visibility"). `stats` breaks a sidebar row's tickets down, over the same tickets as its count: `ticket_folder:unassigned`, `ticket_folder:mine`, `ticket_folder:open`, `ticket_folder:pending` (pending and on hold), `team:<id>` for each team in `teams`, `team:mine` (as `my_teams`) and `view:<id>` for each view in `views`. `awaiting`: open or pending, and the customer's last message is the last message (within a second); `urgent`: urgent priority; `overdue`: not solved or closed, and the due time that applies has passed (first response while unanswered, else resolution) or an SLA breach is recorded |
+| GET | `/v1/tickets/counts` | → `{ unassigned, mine, open, pending, on_hold, solved, spam, views: {<view_id>: n}, teams: {<team_id>: {open, unassigned}}, my_teams: {open, unassigned}, stats: {<row id>: {awaiting, urgent, overdue}} }`. `teams` lists every team the caller can see (open and pending, spam excluded); `my_teams` sums the caller's teams; Every count, the folders and `views` included, covers only tickets the caller can see (contracts/teams.md "Visibility"): a private team's tickets count for its members and for their assignee. `stats` breaks a sidebar row's tickets down, over the same tickets as its count: `ticket_folder:unassigned`, `ticket_folder:mine`, `ticket_folder:open`, `ticket_folder:pending` (pending and on hold), `team:<id>` for each team in `teams`, `team:mine` (as `my_teams`) and `view:<id>` for each view in `views`. `awaiting`: open or pending, and the customer's last message is the last message (within a second); `urgent`: urgent priority; `overdue`: not solved or closed, and the due time that applies has passed (first response while unanswered, else resolution) or an SLA breach is recorded |
 | POST | `/v1/tickets` | `{subject, contact_id? , contact?: {email,name}, channel?: "email"\|"api", mailbox_id?, brand_id?, body_html, kind?: "reply"\|"note", priority?, severity?, assignee_id?, team_id?, tags?: string[], fields?: FieldValues, status?}`; an email ticket with a reply is sent to the contact (`422 mailbox_cannot_send` when its mailbox has `sending: "system_off"`; nothing is created). Without `team_id` the team comes from routing (contracts/teams.md "Routing"); `brand_id` defaults to the mailbox's brand, else the default brand (`mailbox_id` of another brand: `422`; an address the caller may not send from: `403 forbidden`). An assignee who is not on a private team is `422 not_on_team` |
 | GET | `/v1/tickets/{id}` | id is uuid, or `#<number>` / numeric number |
 | PATCH | `/v1/tickets/{id}` | `{subject?, status?, priority?, severity? /* null clears */, contact_id? /* a contact in this workspace */, assignee_id?, team_id?, mailbox_id? /* the reply address */, brand_id?, snoozed_until?, spam?, tags?: string[] /* replaces */, add_tags?: string[], remove_tags?: string[], custom?, fields?: Record<string, FieldValue \| null> /* merged; null clears */}`. Changing `contact_id` changes the recipient of future replies; existing messages stay as sent. It logs `contact_changed` and publishes `ticket.updated` with `contact_id` in `changes`. A live chat stays with the visitor who started it (the widget lists their chats by contact): changing its contact is `422`, and so is `contact_id` in a bulk patch. A status of `solved` or `closed` with an empty `required_on_solve` field is `422 field_required`. Setting `snoozed_until` without a `status` moves the ticket to `on_hold`; a status change that is not `on_hold` clears the snooze. Changing `priority`, `severity`, `team_id`, `spam` or labels removes Ollie's pending suggestion for that field (`custom.ai_suggestions`, contracts/ai.md). `team_id`, `mailbox_id` and `brand_id` follow contracts/teams.md "Reply address": an address of another brand is `422`, one the caller may not send from `403 forbidden`, an assignee not on the ticket's private team `422 not_on_team` (a team change alone unassigns them) |
@@ -467,6 +509,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | GET | `/v1/tickets/{id}/draft` | viewer → `{draft: Draft \| null}` ("Drafts") |
 | PUT | `/v1/tickets/{id}/draft` | agent (`tickets:write`). `{body_html}` → `Draft`; replaces the ticket's draft. Sanitized like a reply, `422` when empty |
 | DELETE | `/v1/tickets/{id}/draft` | agent (`tickets:write`) → 204; idempotent |
+| POST | `/v1/tickets/{id}/typing` | agent (`tickets:write`), signed-in member (an API key gets `403`) → 204. A teammate is writing a reply: on a chat ticket with a contact, the visitor's widget gets `"typing"` `{ticket_id, user: {id, name}}` (contracts/realtime.md "Live events"); on other tickets nothing happens. A ticket the caller cannot see is `404`. Clients send it at most every 2.5 s while typing |
 | GET | `/v1/tickets/{id}/threads` | viewer → `{data: Thread[]}`, oldest first ("Threads") |
 | POST | `/v1/tickets/{id}/threads` | `{to: string[] /* 1..20 */, cc?: string[], subject, body_html, attachment_ids?, mailbox_id?, include_history?: boolean, forward_attachment_ids?: string[]}` → 201 `{thread: Thread, message: Message}` |
 | POST | `/v1/tickets/{id}/threads/{threadId}/messages` | `{body_html, attachment_ids?}` → 201 `Message` |
@@ -717,6 +760,7 @@ checklist is complete (`GET /v1/ai/agent/setup`, `contracts/agent.md` "Setup"). 
 | POST | `/v1/widget/conversations` | `{body, attachment_ids?, page_url?, topic_id?}` → conversation + first message. `body` may be empty when `attachment_ids` has a file; the conversation is then named after the first file. `page_url`: the host page (https, up to 500 chars, no fragment), stored as the ticket's `page_url` and given to routing rules and the AI agent. `topic_id`: one of `WidgetConfig.topics` (422 otherwise). The ticket gets the widget's brand and `widget_id`, and its team by routing (contracts/teams.md "Routing") |
 | GET | `/v1/widget/conversations/{id}/messages` | public messages only (no notes). Counts as the visitor being on the page (contracts/teams.md "Chat follow-up") |
 | POST | `/v1/widget/conversations/{id}/seen` | → 204. The widget sends it while the conversation is on screen and an agent's reply arrives, so the reply is not also emailed (contracts/teams.md "Chat follow-up"). 30 a minute per session |
+| POST | `/v1/widget/conversations/{id}/typing` | → 204. The visitor is writing: agents on the ticket get `"customer_typing"` `{ticket_id, contact_id}` (contracts/realtime.md "Live events"), only those who may see the ticket. The widget sends it at most every 3 s while typing; 30 a minute per session |
 | POST | `/v1/widget/conversations/{id}/messages` | `{body, attachment_ids?, page_url?}` (`body` may be empty with a file) (`page_url`: the host page, https, up to 500 chars, given to the AI agent) |
 | POST | `/v1/widget/conversations/{id}/handoff` | → 204; ask for a person while the AI agent handles the conversation (contracts/agent.md) |
 | POST | `/v1/widget/conversations/{id}/actions/{action_id}` | `{decision: "confirm" \| "decline"}` → 204 (contracts/agent.md "Visitor actions") |
@@ -945,9 +989,16 @@ at (`mailbox_id`).
   never names a forwarding address: it answers to the mailbox's own address, or the alias the
   customer wrote to (`Reply-To` only when `From` is not that address), so the customer's reply comes
   back the way their first message did and threads by `In-Reply-To` and `References`.
-- **Sender checks.** `Authentication-Results` (or `ARC-Authentication-Results`) count only from an
-  authserv-id in `INBOUND_AUTHSERV_ID`, plus `mx.google.com` for Google mailboxes and Microsoft's
-  for Microsoft 365 ones; the first such header from the top is the verdict. A DMARC `fail` opens a
+  A sender new to the conversation, who is neither the ticket's contact nor in the `To` or `Cc` of a
+  message the team sent or the contact wrote (what a newcomer's own message names never counts),
+  still joins it: the message is stored, and no `customer_replied` automation or Ollie answer runs.
+- **Sender checks.** `Authentication-Results` (or `ARC-Authentication-Results`) count only from a
+  server the message passed through, by the route it arrived (`inbound_emails.via`): mail read from
+  the mailbox believes an authserv-id in `INBOUND_AUTHSERV_ID`, plus `mx.google.com` for Google
+  mailboxes and Microsoft's for Microsoft 365 ones; mail to a forwarding address, through
+  `POST /v1/inbound/email` or from a relay in `INBOUND_SMTP_RELAYS` to the built-in SMTP receiver,
+  believes `INBOUND_AUTHSERV_ID` alone; mail the built-in receiver takes straight from the sending
+  server, and an answer read from a member's own Collab account, believe none. The first such header from the top is the verdict. A DMARC `fail` opens a
   new ticket as spam; on an existing conversation the message is stored with `auth_failed`, the
   ticket's status does not change (it is never reopened; a `status_changed` activity with
   `from` = `to`, `reason: "sender_unverified"` and the `message_id` records that it was kept), and no

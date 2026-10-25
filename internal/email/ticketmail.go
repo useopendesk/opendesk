@@ -204,6 +204,6 @@ func (t *TicketMail) TakeIn(ctx context.Context, wid, ticketID uuid.UUID, raw []
 	if err != nil {
 		return err
 	}
-	_, _, err = s.ingest(ctx, m, raw, "", nil)
+	_, _, err = s.ingest(ctx, m, raw, "", nil, viaMember)
 	return err
 }

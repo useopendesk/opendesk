@@ -107,7 +107,7 @@ func TestPersonalReplyAndAnswer(t *testing.T) {
 		t.Fatalf("inbound messages: %d", n)
 	}
 	// The same email reaching the team's address too (a Cc, the Reply-To) is a duplicate.
-	if _, dup, err := w.s.ingest(w.ctx, m, append([]byte("Delivered-To: "+m.Email+"\r\n"), answer...), w.forwardAddr(m, ""), nil); err != nil || !dup {
+	if _, dup, err := w.s.ingest(w.ctx, m, append([]byte("Delivered-To: "+m.Email+"\r\n"), answer...), w.forwardAddr(m, ""), nil, viaForward); err != nil || !dup {
 		t.Fatalf("copy at the mailbox: dup %v, %v", dup, err)
 	}
 }
