@@ -55,7 +55,7 @@ export function useBellNotifications() {
     (n) => n.created_at,
   );
   return {
-    together: active && wids.length > 1,
+    several: active && wids.length > 1,
     items,
     isLoading: results.some((r) => r.isLoading),
     unread: items.filter((x) => !x.row.read_at).length,

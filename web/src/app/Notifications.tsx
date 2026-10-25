@@ -306,7 +306,7 @@ export function NotificationsButton() {
             <AnimatePresence initial={false}>
               {shown.map(({ row: n, workspaceId }) => {
                 const k = kindOf(n);
-                const ws = bell.together ? wsOf(workspaceId) : undefined;
+                const ws = bell.several ? wsOf(workspaceId) : undefined;
                 return (
                   <motion.li
                     key={`${workspaceId}:${n.id}`}

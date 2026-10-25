@@ -2,7 +2,7 @@
 
 A **Space** is a sidebar a person builds and names: sections of rows they choose, from any of the
 workspaces they belong to. Someone keeps several Spaces ("Morning", "Support", "Mail") and picks one
-in the workspace switcher, next to their workspaces. Schema: `migrations/000669_spaces.up.sql`. Owners: the API
+in the workspace switcher, next to their workspaces. Schema: `migrations/000673_spaces.up.sql`. Owners: the API
 is backend-core (`internal/core/spaces.go`), the sidebar is web.
 
 Spaces belong to a user, not to a workspace: one list per user, the same in every workspace and on
@@ -22,7 +22,7 @@ interface Space {
   name: string               // 1..40 characters, a name people choose (internal/displayname, Workspace)
   icon: string               // "" (the name's first letter) or one of SPACE_ICONS below
   color: SpaceColor          // default "grey"
-  marks: boolean             // default true: the workspace's mark beside each row while the Space shows several workspaces
+  marks: boolean             // default true: another workspace's badge beside its rows
   sections: SpaceSection[]   // at most 20
 }
 
@@ -97,20 +97,23 @@ to the starter do not change it.
   another workspace opens it in that workspace (`?ws=<wid>`, `web/src/lib/workspaceParam.ts`) and the
   Space stays picked.
 - **Rows.** A row of the open workspace is the row the sidebar has always had (live counts, menus). A row
-  of another workspace shows that workspace's numbers, read with `OD-Workspace` set to it and kept live
-  through a socket of its own for each such workspace (`workspace:<wid>` with a `ws` token for that
-  workspace; any event refreshes its numbers a moment later; at most 8 such sockets, the others refresh
-  every minute and on focus). With `marks` on and rows of several workspaces showing, each row carries its
-  workspace's small mark (a whole built-in section carries it on its header; the rail shows none). A
+  of another workspace reads its teams, views and accounts with `OD-Workspace` set to it (under that
+  workspace's own cache keys) and its numbers from `GET /v1/me/overview`, kept live by the one socket of
+  an `all_workspaces` token (contracts/api.md "Several workspaces"). The open workspace's rows look exactly
+  like its own sidebar; with `marks` on, a row of another workspace carries that workspace's small badge,
+  "In <workspace>" on hover (a whole built-in section carries it beside its title; the rail shows none). A
   row's default number is its workspace's own choice for it (`SidebarPrefs.badges`, the row's then its
   section's), then the row's usual one. Rows of another workspace have no row menu and no waiting-chat
-  chip: their menus would change that workspace's preferences. Empty sections do not show.
+  chip: their menus would change that workspace's preferences. Empty sections do not show; a Space with
+  nothing to show has the shared empty state with Edit Space. An `everywhere` row opens its Everywhere
+  list (`/everywhere/mine`, `/everywhere/mail`).
 - **Row menu** inside a Space: Number, Rename in this Space, Move to section, Also add to Space, Remove
   from the Space. Rows inside a whole built-in section keep that section's own menu.
 - **The editor** (New Space, Edit) has the name, icon and colour; the Space's sections and rows, dragged
   into order, each row with its name and number; Add section; and "Add from" with a tab per workspace
   listing what that workspace offers: its whole sections, inbox folders, teams, views, Collab boxes,
-  accounts and folders, and pages. Then the `marks` switch. Admins edit the starter Space with the same
+  accounts and folders, and pages, plus an "Every workspace" tab with the Everywhere lists (not offered
+  for a starter Space). Then the `marks` switch. Admins edit the starter Space with the same
   editor from Settings › General.
 - Spaces are the active account's. Workspaces of another account signed in to in the same browser are not
   offered; switching accounts switches Spaces.
