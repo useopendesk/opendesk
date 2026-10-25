@@ -128,7 +128,7 @@ export function countsAfter(
   addresses: Record<string, string[]> = {},
 ): MailCounts {
   const roles = new Map(folders.map((f) => [f.id, f.role]));
-  const out: MailCounts = { boxes: { ...counts.boxes }, accounts: { ...counts.accounts }, folders: { ...counts.folders } };
+  const out: MailCounts = { assigned: { ...counts.assigned }, boxes: { ...counts.boxes }, accounts: { ...counts.accounts }, folders: { ...counts.folders } };
   if (counts.addresses) out.addresses = Object.fromEntries(Object.entries(counts.addresses).map(([id, m]) => [id, { ...m }]));
   // A zero is kept: an account missing from the counts falls back to its own (older) number.
   const bump = (rec: Record<string, number>, key: string, d: number) => {

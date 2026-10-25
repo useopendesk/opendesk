@@ -31,7 +31,7 @@ function data(p: Partial<WorkspaceData> = {}): WorkspaceData {
     myTeams: new Set(["t1"]),
     views: [{ id: "v1", name: "Hot", shared: true, filters: {}, position: 0 } as View],
     accounts: [{ id: "a1", name: "Work", email: "[EMAIL]", color: "blue", unread: 2 } as MailAccount],
-    mailCounts: { boxes: { inbox: 6, unread: 6, shared: 1, assigned: 0, drafts: 0 }, accounts: { a1: 5 }, folders: {} },
+    mailCounts: { boxes: { inbox: 6, unread: 6, shared: 1, assigned: 0, drafts: 0 }, assigned: {}, accounts: { a1: 5 }, folders: {} },
     folders: {},
     ...p,
   };
@@ -83,7 +83,7 @@ describe("Space rows", () => {
 
   it("adds up an everywhere row's number over the workspaces it gathers, a suspended one left out", () => {
     const o = (id: string, mine: number, inbox: number | null, suspended = false) =>
-      ({ id, suspended, ticket_counts: { ...counts, mine }, mail_counts: inbox === null ? null : { boxes: { inbox, unread: inbox, shared: 0, assigned: 0, drafts: 0 }, accounts: {}, folders: {} } }) as unknown as WorkspaceOverview;
+      ({ id, suspended, ticket_counts: { ...counts, mine }, mail_counts: inbox === null ? null : { boxes: { inbox, unread: inbox, shared: 0, assigned: 0, drafts: 0 }, assigned: {}, accounts: {}, folders: {} } }) as unknown as WorkspaceOverview;
     const list = [o("a", 2, 5), o("b", 3, null), o("c", 9, 9, true)];
     expect(buildEverywhereRow("mine", labels, list)).toMatchObject({ label: "everywhere mine", badge: { kind: "ticket", nums: { count: 5 } }, link: { kind: "everywhere", list: "mine" } });
     expect(buildEverywhereRow("mail", labels, list)?.badge?.nums).toEqual({ unread: 5 });
