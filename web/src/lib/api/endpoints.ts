@@ -353,8 +353,8 @@ export const api = {
     deny: (id: string) => http.post<T.OAuthDecision>(`/v1/oauth/requests/${id}/deny`, undefined, { workspace: false }),
   },
   webhooks: {
-    ...crud<T.Webhook, { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }>("/v1/webhooks"),
-    create: (b: { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }) =>
+    ...crud<T.Webhook, { url: string; description: string; events: string[]; headers?: Record<string, string>; enabled: boolean; private_team_ids?: string[] }>("/v1/webhooks"),
+    create: (b: { url: string; description: string; events: string[]; headers?: Record<string, string>; enabled: boolean; private_team_ids?: string[] }) =>
       http.create<T.Webhook & { secret: string }>("/v1/webhooks", b),
     deliveries: (id: string, q?: ListQuery) =>
       http.get<T.Page<T.WebhookDelivery>>(`/v1/webhooks/${id}/deliveries`, { query: q }),

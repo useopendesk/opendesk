@@ -907,6 +907,8 @@ export type Webhook = {
   url: string;
   description: string;
   events: string[];
+  /** Configured custom request header names. Header values are never returned. */
+  header_names: string[];
   enabled: boolean;
   /** The address answered its verification challenge; until then it receives no events. */
   verified: boolean;
