@@ -1,9 +1,9 @@
 {
   "everywhere": {
     "title": "Everywhere",
-    "mine": "Assigned to me",
+    "mine": "My tickets",
     "mail": "All mail",
-    "mineTitle": "Assigned to me everywhere",
+    "mineTitle": "My tickets everywhere",
     "mailTitle": "All mail everywhere",
     "mineHint": "Tickets assigned to you in every workspace, newest activity first.",
     "mailHint": "Your inboxes in every workspace with Collab, newest first.",

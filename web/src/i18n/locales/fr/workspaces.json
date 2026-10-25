@@ -1,9 +1,9 @@
 {
   "everywhere": {
     "title": "Partout",
-    "mine": "Assignés à moi",
+    "mine": "Mes tickets",
     "mail": "Tous les e-mails",
-    "mineTitle": "Assignés à moi partout",
+    "mineTitle": "Mes tickets partout",
     "mailTitle": "Tous les e-mails partout",
     "mineHint": "Les tickets qui vous sont assignés dans chaque espace de travail, activité la plus récente en premier.",
     "mailHint": "Vos boîtes de réception de chaque espace de travail avec Collab, les plus récentes en premier.",

@@ -147,6 +147,8 @@ export type WsData = {
   notificationPrefs?: Record<string, Partial<Record<NotificationType, Partial<NotificationChannels>>>>;
   /** Collab is off here whatever the URL says (a workspace seeded without it). */
   collabOff?: "plan" | "disabled";
+  /** Teams a member turned notifications off for here, by user id (handlers/notificationPrefs.ts). */
+  mutedTeams?: Record<string, string[]>;
   /** Unsubscribe links used here, by user id: when, and each type's email choice before (handlers/notificationPrefs.ts). */
   notificationUnsubscribes?: Record<string, { at: string; previous: Partial<Record<NotificationType, boolean | undefined>> }>;
 };

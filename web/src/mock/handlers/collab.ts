@@ -988,17 +988,21 @@ function counts(ws: WsData) {
     }
     addresses[a.id] = out;
   }
+  const assignedOpen = all.filter((t) => t.assignees.some((a) => a.id === me) && inRole(s, t, "inbox"));
+  const assigned: Record<string, number> = {};
+  for (const t of assignedOpen) assigned[t.account_id] = (assigned[t.account_id] ?? 0) + 1;
   return {
     boxes: {
       inbox: inbox.filter((t) => t.unread).length,
       unread: mine.filter((t) => t.unread && !inRole(s, t, "trash") && !inRole(s, t, "spam")).length,
       shared: all.filter((t) => t.shared && inRole(s, t, "inbox")).length,
-      assigned: all.filter((t) => t.assignees.some((a) => a.id === me) && inRole(s, t, "inbox")).length,
+      assigned: assignedOpen.length,
       drafts: mine.filter((t) => inRole(s, t, "drafts")).length,
     },
     accounts,
     folders,
     addresses,
+    assigned,
   };
 }
 

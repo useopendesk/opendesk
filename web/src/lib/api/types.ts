@@ -1102,7 +1102,10 @@ export type NotificationPreferences = {
   unsubscribed_at: string | null;
   /** The types the caller can receive here: owners and admins also get the ai_billing group. */
   types: NotificationTypePrefs[];
+  /** The teams the caller leads or works in, by name. notify false: nothing of its tickets nobody has (new tickets, their replies). */
+  teams: NotificationTeam[];
 };
+export type NotificationTeam = { id: string; name: string; notify: boolean };
 /** PATCH /v1/me/notification-preferences: only what changed. `paused_until: ""` resumes. */
 export type NotificationPreferencesPatch = {
   email_cadence?: EmailCadence;
@@ -1110,6 +1113,7 @@ export type NotificationPreferencesPatch = {
   timezone?: string;
   paused_until?: string;
   types?: ({ type: NotificationType } & Partial<NotificationChannels>)[];
+  teams?: { id: string; notify: boolean }[];
 };
 
 // Lists and envelopes.
@@ -2479,6 +2483,8 @@ export type MailCounts = {
   folders: Record<string, number>;
   /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
   addresses?: Record<string, Record<string, number>>;
+  /** boxes.assigned by account; only accounts with some. */
+  assigned: Record<string, number>;
 };
 
 /** `collab.changed` event data. */

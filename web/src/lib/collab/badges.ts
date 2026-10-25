@@ -44,6 +44,12 @@ export function listBoxNumbers(box: "shared" | "assigned", counts: MailCounts | 
   return { unread: n, total: n };
 }
 
+/** Assigned to me within one account. */
+export function accountAssignedNumbers(accountId: string, counts: MailCounts | undefined): RowNumbers {
+  const n = counts ? (counts.assigned?.[accountId] ?? 0) : undefined;
+  return { unread: n, total: n };
+}
+
 /**
  * A box tab in the folder bar, over the accounts in scope: Inbox, Unread and Drafts read the
  * live counts across accounts; the rest add up the accounts' folders with that role (unknown

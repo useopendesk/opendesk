@@ -1,7 +1,7 @@
 // The sidebar with Collab on: the member's sections in their order, with Favorites
 // (pinned boxes, folders, accounts, views and teams) and Mail, kept short: All inboxes,
 // Shared with me and Assigned to me while they hold something, then one row per account
-// (its folders unfold on request). Unread counts come from GET /v1/collab/counts, kept
+// (its folders unfold on request) with its own Assigned to me under it while it has some. Unread counts come from GET /v1/collab/counts, kept
 // fresh by collab.changed events.
 
 import { useQuery } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import { buildRow, NavItemRow, useMailLocation, useRowLabels, type MailHere } fr
 import { useWaitingFor } from "@/components/tickets/useUrgentChats";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MailAccount, MailBox, MailCounts, MailFolder, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
-import { accountNumbers, allInboxNumbers, folderNumbers, listBoxNumbers, type RowNumbers } from "@/lib/collab/badges";
+import { accountAssignedNumbers, accountNumbers, allInboxNumbers, folderNumbers, listBoxNumbers, type RowNumbers } from "@/lib/collab/badges";
 import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole } from "@/lib/collab/boxes";
 import { useAllFolders, useMailAccounts, useSaveSidebarPrefs } from "@/lib/collab/hooks";
 import { badgeFor, hid, livePins, pickCount, toggleExpanded, type MailBadge } from "@/lib/collab/sidebarPrefs";
@@ -158,6 +158,7 @@ function AccountGroup({
   const menu: Menu = { badge: { key, kind: "mail", sections: ["mail"] }, pin: { kind: "account", id: account.id }, hideId: hid.account(account.id) };
   const expanded = !rail && prefs.expanded_accounts.includes(account.id);
   const atInbox = here.box === "inbox" && here.account === account.id && !here.folder;
+  const assignedHere = here.box === "assigned" && here.account === account.id;
   const trouble = account.reconnect || account.status === "error";
   if (trouble)
     menu.action = {
@@ -227,6 +228,19 @@ function AccountGroup({
           </button>
         </Tooltip>
       </div>
+      {!hidden.has(hid.box("assigned")) && (assignedHere || !!counts?.assigned?.[account.id]) && (
+        <MailRow
+          link={{ box: "assigned", account: account.id }}
+          active={assignedHere}
+          icon={boxIcon.assigned}
+          label={t("box.assigned")}
+          shown={mailShown(prefs, "box:assigned", ["mail"], accountAssignedNumbers(account.id, counts))}
+          rail={false}
+          depth={1}
+          prefs={prefs}
+          menu={{ badge: { key: "box:assigned", kind: "mail", sections: ["mail"] }, hideId: hid.box("assigned") }}
+        />
+      )}
       {expanded && (
         <>
           {specialShown.map((b) => {
@@ -290,6 +304,11 @@ export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail:
   const hidden = new Set(prefs.hidden);
   const shown = (accounts ?? []).filter((a) => !hidden.has(hid.account(a.id)));
   const unified = prefs.unified_inbox && (accounts?.length ?? 0) >= 2 && !hidden.has(hid.box("inbox"));
+  // Each account shows its own assigned conversations; the row across them shows while they
+  // span two accounts, or some are in an account without a row here (and always on the rail,
+  // which has no rows under an account).
+  const assignedIn = Object.entries(counts?.assigned ?? {}).filter(([, n]) => n > 0).map(([id]) => id);
+  const assignedAcross = !!counts?.boxes.assigned && (rail || assignedIn.length > 1 || assignedIn.some((id) => !shown.some((a) => a.id === id)));
 
   return (
     <Section
@@ -338,10 +357,10 @@ export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail:
           menu={{ badge: { key: "box:shared", kind: "mail", sections: ["mail"] }, pin: { kind: "box", id: "shared" }, hideId: hid.box("shared") }}
         />
       )}
-      {!hidden.has(hid.box("assigned")) && (here.box === "assigned" || !!counts?.boxes.assigned) && (
+      {!hidden.has(hid.box("assigned")) && ((here.box === "assigned" && (rail || !here.account)) || assignedAcross) && (
         <MailRow
           link={{ box: "assigned" }}
-          active={here.box === "assigned"}
+          active={here.box === "assigned" && (rail || !here.account)}
           icon={boxIcon.assigned}
           label={t("box.assigned")}
           shown={mailShown(prefs, "box:assigned", ["mail"], listBoxNumbers("assigned", counts))}
