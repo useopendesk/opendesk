@@ -2477,6 +2477,8 @@ export type MailCounts = {
   boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
+  /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
+  addresses?: Record<string, Record<string, number>>;
 };
 
 /** `collab.changed` event data. */

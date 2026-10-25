@@ -976,6 +976,17 @@ function counts(ws: WsData) {
   for (const a of seeAcc) accounts[a] = inbox.filter((t) => t.account_id === a && t.unread).length;
   const folders: Record<string, number> = {};
   for (const f of s.folders) if (seeAcc.has(f.account_id)) folders[f.id] = mine.filter((t) => t.unread && t.folder_ids.includes(f.id)).length;
+  // Each address of an account with aliases, matched like the list's to=; one without unread mail is left out.
+  const addresses: Record<string, Record<string, number>> = {};
+  for (const a of s.accounts) {
+    if (!seeAcc.has(a.id) || !a.aliases.length) continue;
+    const out: Record<string, number> = {};
+    for (const e of [a.email, ...a.aliases.map((x) => x.email)].map((x) => x.toLowerCase())) {
+      const n = inbox.filter((t) => t.account_id === a.id && t.unread && msgsOf(s, t.id).some((m) => [m.from, ...m.to, ...m.cc].some((x) => x.email.toLowerCase() === e))).length;
+      if (n) out[e] = n;
+    }
+    addresses[a.id] = out;
+  }
   return {
     boxes: {
       inbox: inbox.filter((t) => t.unread).length,
@@ -986,6 +997,7 @@ function counts(ws: WsData) {
     },
     accounts,
     folders,
+    addresses,
   };
 }
 

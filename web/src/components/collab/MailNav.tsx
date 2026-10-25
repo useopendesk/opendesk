@@ -12,12 +12,14 @@ import { useTranslation } from "react-i18next";
 import { ActivePill, Count, Label, WaitingBadge, NavTip, rowActive, rowBase, rowIdle, rowShape, Section, withPill } from "@/app/sidebarParts";
 import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { useWaitingFor } from "@/components/tickets/useUrgentChats";
+import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MailAccount, MailBox, MailCounts, MailFolder, SidebarPin, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
 import { accountNumbers, allInboxNumbers, boxTabNumbers, folderNumbers, listBoxNumbers, ticketRowNumbers, type RowNumbers } from "@/lib/collab/badges";
 import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole, isMailBox, isTabBox, type MailSearch } from "@/lib/collab/boxes";
 import { useAllFolders, useMailAccounts, useSaveSidebarPrefs } from "@/lib/collab/hooks";
 import { badgeFor, hid, livePins, pickCount, toggleExpanded, type BadgeNumbers, type MailBadge, type TicketBadge } from "@/lib/collab/sidebarPrefs";
+import { aliasesOf } from "@/lib/collab/identities";
 import { collabUi } from "@/lib/collab/ui";
 import { folderById, type FolderId } from "@/lib/folders";
 import { cn } from "@/lib/cn";
@@ -91,7 +93,7 @@ function MailRow({
   depth?: number;
   title?: string;
   end?: ReactNode;
-  /** Beside the label, before the count (the Away pill). */
+  /** Beside the label, before the count (the Away pill, the addresses pill). */
   tag?: ReactNode;
   prefs: SidebarPrefs;
   menu?: Menu;
@@ -150,6 +152,33 @@ function AccountAlert({ account }: { account: MailAccount }) {
   );
 }
 
+/** The blue +N beside an account with aliases: how many addresses it has besides its own, and which. The mail page picks one. */
+function AliasPill({ account }: { account: MailAccount }) {
+  const { t } = useTranslation("collab");
+  const aliases = aliasesOf(account);
+  return (
+    <Tooltip
+      content={
+        <span className="flex flex-col gap-0.5">
+          <span>{t("address.pillTip", { count: aliases.length })}</span>
+          {aliases.slice(0, 8).map((x) => (
+            <span key={x.email} className="mono text-[11px] opacity-80">
+              {x.email}
+            </span>
+          ))}
+          {aliases.length > 8 && <span className="opacity-80">{t("address.more", { count: aliases.length - 8 })}</span>}
+        </span>
+      }
+    >
+      <span className="flex shrink-0">
+        <Badge tone="blue" className="h-4 rounded-[4px] px-1 text-[10px] tabular-nums">
+          +{aliases.length}
+        </Badge>
+      </span>
+    </Tooltip>
+  );
+}
+
 /**
  * One account: a single row that opens its inbox, with its unread count. Its other
  * folders stay folded until asked for (the mail page's folder bar has every one), so
@@ -181,6 +210,8 @@ function AccountGroup({
   const menu: Menu = { badge: { key, kind: "mail", sections: ["mail"] }, pin: { kind: "account", id: account.id }, hideId: hid.account(account.id) };
   const expanded = !rail && prefs.expanded_accounts.includes(account.id);
   const atInbox = here.box === "inbox" && here.account === account.id && !here.folder;
+  const away = isAway(account);
+  const aliases = aliasesOf(account).length;
   const trouble = account.reconnect || account.status === "error";
   if (trouble)
     menu.action = {
@@ -229,7 +260,14 @@ function AccountGroup({
           title={account.email}
           rail={false}
           end={trouble ? <AccountAlert account={account} /> : undefined}
-          tag={isAway(account) ? <AwayPill /> : undefined}
+          tag={
+            away || aliases ? (
+              <span className="ml-auto flex shrink-0 items-center gap-1">
+                {away && <AwayPill />}
+                {aliases > 0 && <AliasPill account={account} />}
+              </span>
+            ) : undefined
+          }
           shown={shown}
           prefs={prefs}
           menu={menu}
