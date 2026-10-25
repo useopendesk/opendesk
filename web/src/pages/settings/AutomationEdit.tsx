@@ -589,7 +589,7 @@ function ConditionValue({ c, invalid, onChange }: { c: Condition; invalid: boole
   const { t: ts } = useTranslation("settingsInbox");
   const { t: tt } = useTranslation("settingsTeams");
   const mailboxes = useMailboxItems();
-	const members = useMemberItems();
+  const members = useMemberItems();
   const { teams } = useTeams();
   const { brands } = useBrands();
   const { data: widgets } = useQuery({ ...q.widgets(), enabled: c.field === "widget_id" });
