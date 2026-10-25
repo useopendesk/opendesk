@@ -501,6 +501,9 @@ interface SidebarPrefs {
 }
 ```
 
+These arrange a workspace's own sidebar. A Space (contracts/spaces.md) picked in the switcher shows
+its own rows instead; a whole section in a Space follows these preferences.
+
 `badges` keys are a row (`box:inbox` for All inboxes, `box:shared`, `box:assigned`, `account:<id>`,
 `folder:<id>`, `ticket_folder:<id>`, `view:<id>`, `team:<id>`) or a section's default (`section:mail`,
 `section:inbox`, `section:teams`, `section:views`, `section:favorites`). A row without its own value

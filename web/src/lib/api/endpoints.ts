@@ -207,7 +207,34 @@ export const api = {
     putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
     /** Every workspace's sidebar numbers, each as that workspace answers this person. */
     overview: () => http.get<{ workspaces: T.WorkspaceOverview[] }>("/v1/me/overview", { workspace: false }),
+    /** The caller's Spaces (contracts/spaces.md): one list for every workspace and device. */
+    spaces: {
+      get: () => http.get<T.SpacesResponse>("/v1/me/spaces", { workspace: false }),
+      /** Replaces the whole list. */
+      put: (spaces: T.Space[]) => http.put<T.SpacesResponse>("/v1/me/spaces", { spaces }, { workspace: false }),
+    },
   },
+  /** The workspace's starter Space: members read it, admins publish and remove it. */
+  starterSpace: {
+    get: (workspaceId?: string) => http.get<{ space: T.Space | null }>("/v1/sidebar/starter", { workspaceId }),
+    put: (space: T.Space) => http.put<{ space: T.Space }>("/v1/sidebar/starter", space),
+    remove: () => http.del("/v1/sidebar/starter"),
+  },
+  /**
+   * Reads of another workspace the caller is a member of, with OD-Workspace set to it:
+   * what a Space shows of that workspace's rows (contracts/spaces.md "Rows").
+   */
+  inWorkspace: (workspaceId: string) => ({
+    counts: () => http.get<T.TicketCounts>("/v1/tickets/counts", { workspaceId }),
+    teams: () => http.get<T.Page<T.Team>>("/v1/teams", { workspaceId, query: { limit: 100 } }),
+    views: () => http.get<T.Page<T.View>>("/v1/views", { workspaceId, query: { limit: 100 } }),
+    collabStatus: () => http.get<T.CollabStatus>("/v1/collab", { workspaceId }),
+    mailAccounts: () => http.get<T.MailAccount[] | T.Page<T.MailAccount>>("/v1/collab/accounts", { workspaceId }),
+    mailCounts: () => http.get<T.MailCounts>("/v1/collab/counts", { workspaceId }),
+    mailFolders: (accountId: string) => http.get<T.MailFolder[] | T.Page<T.MailFolder>>(`/v1/collab/accounts/${accountId}/folders`, { workspaceId }),
+    sidebar: () => http.get<T.SidebarPrefs>("/v1/collab/sidebar", { workspaceId }),
+    realtimeToken: () => http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token", undefined, { workspaceId }),
+  }),
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),
     current: () => http.get<T.Workspace>("/v1/workspace"),

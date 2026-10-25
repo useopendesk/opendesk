@@ -10,6 +10,7 @@ import { modKey } from "@/components/ui/kbd";
 import { resetAnalytics } from "@/lib/analytics";
 import { isTypingTarget } from "@/lib/hotkeys";
 import { selectWorkspace, signOut, switchAccount, switcherEntries, useSession } from "@/lib/session";
+import { spaceUi } from "@/lib/spaces/store";
 
 /** The quick switch keys, as Kbd text: mod + alt + n. */
 export function quickSwitchKeys(n: number | string) {
@@ -35,6 +36,8 @@ export function useAccountActions() {
 
   /** Open a workspace, in whichever signed-in account it belongs to. */
   const switchTo = async (userId: string, workspaceId: string | null) => {
+    // Picking a workspace shows its own sidebar: the Space it leaves stays in the switcher (contracts/spaces.md).
+    if (workspaceId) spaceUi.pick(userId, null);
     const s = useSession.getState();
     if (s.user?.id === userId) {
       if (!workspaceId || workspaceId === s.workspaceId) return;

@@ -2518,3 +2518,49 @@ export type WorkspaceOverview = {
   /** GET /v1/collab/counts there; null without Collab. */
   mail_counts: MailCounts | null;
 };
+// ─── Spaces (contracts/spaces.md) ───────────────────────────────────────────
+
+/** The colours a Space takes. */
+export type SpaceColor = "grey" | "blue" | "violet" | "teal" | "green" | "amber" | "red" | "pink";
+
+/** What a Space row names: a whole built-in section, or one row of a workspace. */
+export type SpaceItemKind = "section" | "ticket_folder" | "team" | "view" | "box" | "account" | "folder" | "page";
+
+export type SpaceItem = {
+  /** A workspace the user is a member of. */
+  workspace_id: string;
+  kind: SpaceItemKind;
+  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; else a uuid. */
+  id: string;
+  /** The person's own label for the row, 1..64 characters. */
+  name?: string;
+  /** The number beside the row; left out: the row's default. */
+  badge?: SidebarBadge;
+};
+
+export type SpaceSection = {
+  /** 1..40 of [A-Za-z0-9_-], once per Space. */
+  id: string;
+  /** 0..40 characters; "" shows no header. */
+  title: string;
+  collapsed: boolean;
+  /** At most 60; at most 300 across the Space. */
+  items: SpaceItem[];
+};
+
+export type Space = {
+  /** A uuid made by the client. */
+  id: string;
+  /** 1..40 characters. */
+  name: string;
+  /** "" (the name's first letter) or one of SPACE_ICONS. */
+  icon: string;
+  color: SpaceColor;
+  /** The workspace's mark beside each row while the Space shows several workspaces. */
+  marks: boolean;
+  /** At most 20. */
+  sections: SpaceSection[];
+};
+
+/** GET and PUT /v1/me/spaces. `saved` false: nothing saved yet (no Spaces). */
+export type SpacesResponse = { spaces: Space[]; saved: boolean };

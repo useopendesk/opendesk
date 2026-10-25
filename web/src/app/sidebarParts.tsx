@@ -9,6 +9,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { AnimatedNumber } from "@/components/motion";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { tone, toneFor } from "@/lib/tones";
 
 // The two row shapes share one element so the icon never moves while the label
 // fades and the column narrows.
@@ -21,6 +22,9 @@ export const rowIdle = "text-fg-2 hover:bg-chrome-hover hover:text-fg [&>svg]:te
 export const rowActive = "text-fg font-medium [&>svg]:text-fg hover:bg-transparent";
 
 export const PillCtx = createContext("nav-pill");
+
+/** The workspace mark a section's header carries inside a Space that shows several workspaces. */
+export const SectionMarkCtx = createContext<ReactNode>(null);
 
 /** The active row's background, shared across rows so it glides between them. */
 export function ActivePill() {
@@ -90,6 +94,7 @@ export function Section({
   first?: boolean;
   children: ReactNode;
 }) {
+  const mark = useContext(SectionMarkCtx);
   const key = `od-nav-fold-${id}`;
   const [folded, setFolded] = useState(() => {
     try {
@@ -116,6 +121,7 @@ export function Section({
             onClick={toggle}
             className="label-caps flex min-w-0 flex-1 items-center gap-1 text-left outline-none transition-colors hover:text-fg-2 focus-visible:text-fg"
           >
+            {mark && <span className="mr-0.5 flex shrink-0">{mark}</span>}
             {label}
             <ChevronDown
               aria-hidden
@@ -161,6 +167,22 @@ export function WaitingBadge({ n, rail }: { n: number; rail: boolean }) {
     >
       <WaitDot size="size-[5px]" />
       {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+/** A workspace's mark: its first letter on a tile in its tone. `tiny` is the mark beside a Space row. */
+export function WorkspaceGlyph({ name, small, tiny }: { name: string; small?: boolean; tiny?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex shrink-0 items-center justify-center font-semibold tracking-tight text-white",
+        tone[toneFor(name)].solid,
+        tiny ? "size-3.5 rounded-[3px] text-[8px] !text-white" : small ? "size-4 rounded-sm text-[9px] !text-white" : "size-6 rounded-md text-[10.5px]",
+      )}
+    >
+      {name.trim().charAt(0).toUpperCase() || "?"}
     </span>
   );
 }

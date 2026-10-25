@@ -36,11 +36,13 @@ import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
 import { AllowNotificationsBanner } from "@/components/notifications/AllowBanner";
 import { shell, toggleNav, useNav, useShell } from "./shellStore";
 import { useCollab } from "@/lib/collab/hooks";
+import { useSpaceUi } from "@/lib/spaces/store";
 import { compose } from "@/lib/collab/compose";
 
 const NewTicketDialog = lazy(() => import("@/components/tickets/NewTicketDialog"));
 // Collab's dialogs (customize sidebar, new mail) load only for workspaces with Collab.
 const CollabRoot = lazy(() => import("@/components/collab/CollabRoot"));
+const SpaceEditorRoot = lazy(() => import("@/components/spaces/SpaceEditor"));
 const UpgradeDialog = lazy(() => import("@/components/billing/UpgradeDialog"));
 
 function notificationText(n: Notification) {
@@ -243,6 +245,7 @@ export function AppLayout() {
   useWaitingAlerts(authed && !suspended);
 
   const collab = useCollab();
+  const spaceEditor = useSpaceUi((s) => !!s.editor);
   // On the mail pages, c writes new mail and g i goes to the mail inbox.
   const onMail = collab.enabled && section === "mail";
 
@@ -321,6 +324,11 @@ export function AppLayout() {
       {collab.enabled && (
         <Suspense fallback={null}>
           <CollabRoot />
+        </Suspense>
+      )}
+      {spaceEditor && (
+        <Suspense fallback={null}>
+          <SpaceEditorRoot />
         </Suspense>
       )}
     </div>

@@ -5,7 +5,8 @@
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { scopeWorkspace } from "./api/client";
 import { api, rows, type CollabThreadQuery, type TicketListQuery } from "./api/endpoints";
-import type { Page, ReportsQuery, ReportsRange } from "./api/types";
+import type { Page, ReportsQuery, ReportsRange, SpacesResponse } from "./api/types";
+import { normalizeSpace, normalizeSpaces } from "./spaces/model";
 
 // Workspace-owned keys start with `ws:<workspace id>`: the cache holds several
 // workspaces at once (Together, contracts/api.md "Workspaces together") and a key of
@@ -46,6 +47,12 @@ export const qk = {
   workspacePrefs: ["me", "workspace-prefs"] as const,
   /** Every workspace's sidebar numbers in one answer (GET /v1/me/overview). */
   overview: ["me", "overview"] as const,
+  /** The person's Spaces (contracts/spaces.md): one list, the same in every workspace. */
+  spaces: ["me", "spaces"] as const,
+  /** The workspace's starter Space. */
+  get starter() {
+    return w(["sidebar-starter"] as const);
+  },
   authConfig: ["auth-config"] as const,
   get workspace() {
     return w(["workspace"] as const);
@@ -298,6 +305,19 @@ export const q = {
   authConfig: () => queryOptions({ queryKey: qk.authConfig, queryFn: api.auth.config, staleTime: 5 * 60_000 }),
   workspacePrefs: () => queryOptions({ queryKey: qk.workspacePrefs, queryFn: api.me.workspacePrefs, staleTime: 5 * 60_000 }),
   overview: () => queryOptions({ queryKey: qk.overview, queryFn: async () => (await api.me.overview()).workspaces, staleTime: 30_000 }),
+  /** The user's Spaces, every field present. No events announce changes, so focus refetches them. */
+  spaces: () =>
+    queryOptions({
+      queryKey: qk.spaces,
+      queryFn: async (): Promise<SpacesResponse> => {
+        const r = await api.me.spaces.get();
+        return { spaces: normalizeSpaces(r?.spaces), saved: r?.saved !== false };
+      },
+      staleTime: 60_000,
+      refetchOnWindowFocus: true,
+    }),
+  /** The workspace's starter Space, or null (another workspace's with inWorkspace). */
+  starter: () => queryOptions({ queryKey: qk.starter, queryFn: async () => normalizeSpace((await api.starterSpace.get())?.space), staleTime: 60_000 }),
   workspace: () => queryOptions({ queryKey: qk.workspace, queryFn: api.workspaces.current }),
   sessions: () => list(qk.sessions, api.me.sessions),
   counts: () => queryOptions({ queryKey: qk.counts, queryFn: api.tickets.counts, staleTime: 30_000 }),

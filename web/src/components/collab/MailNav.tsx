@@ -5,49 +5,29 @@
 // fresh by collab.changed events.
 
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { AlertCircle, ChevronRight, CircleCheck, CircleDashed, Clock, Inbox, Layers, Plus, ShieldAlert, SlidersHorizontal, User } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { AlertCircle, ChevronRight, Layers, Plus, SlidersHorizontal } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivePill, Count, Label, WaitingBadge, NavTip, rowActive, rowBase, rowIdle, rowShape, Section, withPill } from "@/app/sidebarParts";
-import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
+import { ActivePill, Count, Label, NavTip, rowActive, rowBase, rowIdle, rowShape, Section } from "@/app/sidebarParts";
+import { buildRow, NavItemRow, useMailLocation, useRowLabels, type MailHere } from "@/components/spaces/rows";
 import { useWaitingFor } from "@/components/tickets/useUrgentChats";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { MailAccount, MailBox, MailCounts, MailFolder, SidebarPin, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
-import { accountNumbers, allInboxNumbers, boxTabNumbers, folderNumbers, listBoxNumbers, ticketRowNumbers, type RowNumbers } from "@/lib/collab/badges";
-import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole, isMailBox, isTabBox, type MailSearch } from "@/lib/collab/boxes";
+import type { MailAccount, MailBox, MailCounts, MailFolder, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
+import { accountNumbers, allInboxNumbers, folderNumbers, listBoxNumbers, type RowNumbers } from "@/lib/collab/badges";
+import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole } from "@/lib/collab/boxes";
 import { useAllFolders, useMailAccounts, useSaveSidebarPrefs } from "@/lib/collab/hooks";
-import { badgeFor, hid, livePins, pickCount, toggleExpanded, type BadgeNumbers, type MailBadge, type TicketBadge } from "@/lib/collab/sidebarPrefs";
-import { aliasesOf } from "@/lib/collab/identities";
+import { badgeFor, hid, livePins, pickCount, toggleExpanded, type MailBadge } from "@/lib/collab/sidebarPrefs";
 import { collabUi } from "@/lib/collab/ui";
-import { folderById, type FolderId } from "@/lib/folders";
 import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
-import { isAway } from "@/lib/collab/outOfOffice";
-import { AwayPill } from "./AccountSettings";
+import { useOpenWorkspaceData } from "@/lib/spaces/hooks";
+import { AccountTags } from "./AccountTags";
 import { AccountDot, boxIcon, FolderGlyph } from "./bits";
 import { RowMenu, type RowMenuProps } from "./RowMenu";
 
-const ticketFolderIcons: Record<FolderId, ReactNode> = {
-  unassigned: <CircleDashed />,
-  mine: <User />,
-  open: <Inbox />,
-  pending: <Clock />,
-  solved: <CircleCheck />,
-  spam: <ShieldAlert />,
-};
-
 const sectionAction =
   "flex size-5 items-center justify-center rounded text-fg-4 opacity-0 transition-opacity hover:bg-chrome-hover hover:text-fg group-hover/section:opacity-100 focus-visible:opacity-100";
-
-/** Where the mail page is: its box, account and folder, from the URL. */
-function useMailLocation(): { box: string | null; account?: string; folder?: string } {
-  const href = useRouterState({ select: (s) => (s.location.pathname.startsWith("/mail/") ? `${s.location.pathname}|${(s.location.search as MailSearch).account ?? ""}|${(s.location.search as MailSearch).folder ?? ""}` : "") });
-  if (!href) return { box: null };
-  const [path, account, folder] = href.split("|");
-  return { box: path.split("/")[2] ?? null, account: account || undefined, folder: folder || undefined };
-}
 
 type MailLink = { box: MailBox | "folder"; account?: string; folder?: string };
 
@@ -61,11 +41,6 @@ type Shown = { count?: number; dot: boolean; nums?: RowNumbers };
 function mailShown(prefs: SidebarPrefs, key: string, sections: SidebarSectionId[], nums: RowNumbers, fallback?: MailBadge): Shown {
   const b = badgeFor(prefs, key, sections, "mail", fallback);
   return { count: pickCount(b, nums), dot: b !== "none" && !!nums.unread, nums };
-}
-
-/** A ticket or team row's number by the member's choice: its usual count, one of its stats, or none. */
-function ticketShown(prefs: SidebarPrefs, key: string, sections: SidebarSectionId[], kind: "ticket" | "team", nums: BadgeNumbers, fallback?: TicketBadge): number | undefined {
-  return pickCount(badgeFor(prefs, key, sections, kind, fallback), nums);
 }
 
 type Menu = Omit<RowMenuProps, "children" | "enabled" | "prefs" | "rail" | "label">;
@@ -152,33 +127,6 @@ function AccountAlert({ account }: { account: MailAccount }) {
   );
 }
 
-/** The blue +N beside an account with aliases: how many addresses it has besides its own, and which. The mail page picks one. */
-function AliasPill({ account }: { account: MailAccount }) {
-  const { t } = useTranslation("collab");
-  const aliases = aliasesOf(account);
-  return (
-    <Tooltip
-      content={
-        <span className="flex flex-col gap-0.5">
-          <span>{t("address.pillTip", { count: aliases.length })}</span>
-          {aliases.slice(0, 8).map((x) => (
-            <span key={x.email} className="mono text-[11px] opacity-80">
-              {x.email}
-            </span>
-          ))}
-          {aliases.length > 8 && <span className="opacity-80">{t("address.more", { count: aliases.length - 8 })}</span>}
-        </span>
-      }
-    >
-      <span className="flex shrink-0">
-        <Badge tone="blue" className="h-4 rounded-[4px] px-1 text-[10px] tabular-nums">
-          +{aliases.length}
-        </Badge>
-      </span>
-    </Tooltip>
-  );
-}
-
 /**
  * One account: a single row that opens its inbox, with its unread count. Its other
  * folders stay folded until asked for (the mail page's folder bar has every one), so
@@ -198,7 +146,7 @@ function AccountGroup({
   prefs: SidebarPrefs;
   hidden: ReadonlySet<string>;
   counts: MailCounts | undefined;
-  here: ReturnType<typeof useMailLocation>;
+  here: MailHere;
   rail: boolean;
 }) {
   const { t } = useTranslation("collab");
@@ -210,8 +158,6 @@ function AccountGroup({
   const menu: Menu = { badge: { key, kind: "mail", sections: ["mail"] }, pin: { kind: "account", id: account.id }, hideId: hid.account(account.id) };
   const expanded = !rail && prefs.expanded_accounts.includes(account.id);
   const atInbox = here.box === "inbox" && here.account === account.id && !here.folder;
-  const away = isAway(account);
-  const aliases = aliasesOf(account).length;
   const trouble = account.reconnect || account.status === "error";
   if (trouble)
     menu.action = {
@@ -260,14 +206,7 @@ function AccountGroup({
           title={account.email}
           rail={false}
           end={trouble ? <AccountAlert account={account} /> : undefined}
-          tag={
-            away || aliases ? (
-              <span className="ml-auto flex shrink-0 items-center gap-1">
-                {away && <AwayPill />}
-                {aliases > 0 && <AliasPill account={account} />}
-              </span>
-            ) : undefined
-          }
+          tag={<AccountTags account={account} />}
           shown={shown}
           prefs={prefs}
           menu={menu}
@@ -342,7 +281,7 @@ function AccountGroup({
   );
 }
 
-function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail: boolean; first: boolean }) {
+export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail: boolean; first: boolean }) {
   const { t } = useTranslation("collab");
   const { data: accounts } = useMailAccounts();
   const { data: counts } = useQuery(q.mailCounts());
@@ -426,260 +365,40 @@ function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail: boolea
   );
 }
 
-type PinTarget = { label: string; icon: ReactNode; row: (rail: boolean) => ReactNode };
-
-function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail: boolean; first: boolean }) {
-  const { t: tNav } = useTranslation("navigation");
+/** Favorites: the pinned rows of every kind, each drawn by the shared row renderer (components/spaces/rows.tsx). */
+export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail: boolean; first: boolean }) {
   const { t } = useTranslation("collab");
   const waitingFor = useWaitingFor();
-  const { data: accounts } = useMailAccounts();
-  const { data: counts } = useQuery(q.mailCounts());
-  const { data: ticketCounts } = useQuery(q.counts());
-  const { data: views } = useQuery(q.views());
-  const teams = useTeamsCtx();
-  const folders = useAllFolders(accounts);
   const here = useMailLocation();
-  const allFolders = Object.values(folders).flatMap((f) => f ?? []);
-  const hidden = new Set(prefs.hidden);
-  const shownAccounts = (accounts ?? []).filter((a) => !hidden.has(hid.account(a.id)));
+  const labels = useRowLabels();
+  const data = useOpenWorkspaceData();
+  if (!data) return null;
   // A favorite is unpinned rather than hidden, and reads Favorites' number first, then its own section's.
-  const mailMenu = (key: string, pin: SidebarPin): Menu => ({ badge: { key, kind: "mail", sections: ["favorites", "mail"] }, pin });
-  const ticketMenu = (key: string, pin: SidebarPin, home: SidebarSectionId, numbers: BadgeNumbers): Menu => ({
-    badge: { key, kind: home === "teams" ? "team" : "ticket", sections: ["favorites", home], numbers },
-    pin,
-  });
-  const ticketRow = (r: boolean, link: ReactNode, menu: Menu, label: string) => (
-    <NavTip rail={r} label={label}>
-      <RowMenu enabled prefs={prefs} rail={r} label={label} {...menu}>
-        {link as React.ReactElement}
-      </RowMenu>
-    </NavTip>
-  );
-
-  const resolve = (pin: SidebarPin): PinTarget | null => {
-    switch (pin.kind) {
-      case "box": {
-        if (!isMailBox(pin.id)) return null;
-        const box = pin.id;
-        const key = `box:${box}`;
-        // Inbox, Unread, Shared and Assigned showed their count before anyone chose; the other boxes nothing.
-        const nums: RowNumbers =
-          box === "inbox"
-            ? allInboxNumbers(shownAccounts, folders, counts)
-            : box === "shared" || box === "assigned"
-              ? listBoxNumbers(box, counts)
-              : isTabBox(box)
-                ? boxTabNumbers(box, accounts ?? [], folders, counts, true)
-                : {};
-        const fallback = box === "inbox" || box === "shared" || box === "assigned" || box === "unread" ? undefined : "none";
-        const label = box === "inbox" ? t("nav.allInboxes") : t(`box.${box}`);
-        return {
-          label,
-          icon: boxIcon[box],
-          row: (r) => (
-            <MailRow
-              link={{ box }}
-              active={here.box === box && !here.account && !here.folder}
-              icon={box === "inbox" ? <Layers /> : boxIcon[box]}
-              label={label}
-              shown={mailShown(prefs, key, ["favorites", "mail"], nums, fallback)}
-              rail={r}
-              prefs={prefs}
-              menu={mailMenu(key, pin)}
-            />
-          ),
-        };
-      }
-      case "account": {
-        const a = accounts?.find((x) => x.id === pin.id);
-        if (!a) return null;
-        const label = accountName(a);
-        const key = `account:${a.id}`;
-        const icon = <span className="flex size-[15px] items-center justify-center"><AccountDot color={a.color} className="size-2.5" /></span>;
-        return {
-          label,
-          icon,
-          row: (r) => (
-            <MailRow
-              link={{ box: "inbox", account: a.id }}
-              active={here.box === "inbox" && here.account === a.id && !here.folder}
-              icon={icon}
-              label={label}
-              shown={mailShown(prefs, key, ["favorites", "mail"], accountNumbers(a, folders[a.id], counts))}
-              rail={r}
-              prefs={prefs}
-              menu={mailMenu(key, pin)}
-            />
-          ),
-        };
-      }
-      case "folder": {
-        const f = allFolders.find((x) => x.id === pin.id);
-        if (!f) return null;
-        const label = f.name;
-        const key = `folder:${f.id}`;
-        const icon = <FolderGlyph folder={f} />;
-        return {
-          label,
-          icon,
-          row: (r) => (
-            <MailRow
-              link={{ box: "folder", folder: f.id, account: f.account_id }}
-              active={here.folder === f.id}
-              icon={icon}
-              label={label}
-              title={f.path}
-              shown={mailShown(prefs, key, ["favorites", "mail"], folderNumbers(f, counts))}
-              rail={r}
-              prefs={prefs}
-              menu={mailMenu(key, pin)}
-            />
-          ),
-        };
-      }
-      case "view": {
-        const v = views?.find((x) => x.id === pin.id);
-        if (!v) return null;
-        const key = `view:${v.id}`;
-        const nums = ticketRowNumbers(ticketCounts, key);
-        const n = ticketShown(prefs, key, ["favorites", "views"], "ticket", nums);
-        return {
-          label: v.name,
-          icon: <Layers />,
-          row: (r) =>
-            ticketRow(
-              r,
-              <Link
-                to="/views/$viewId/{-$ticketId}"
-                params={{ viewId: v.id, ticketId: undefined }}
-                className={cn(rowBase, rowShape(r), rowIdle)}
-                activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
-                aria-label={r ? v.name : undefined}
-              >
-                {withPill(
-                  <>
-                    <Layers />
-                    <Label rail={r}>{v.name}</Label>
-                    <WaitingBadge n={waitingFor({ kind: "view", id: v.id })} rail={r} />
-                    <Count n={n} rail={r} />
-                  </>,
-                )}
-              </Link>,
-              ticketMenu(key, pin, "views", nums),
-              v.name,
-            ),
-        };
-      }
-      case "team": {
-        const team = teams.team(pin.id);
-        if (!team || !teams.canSeeTeam(team)) return null;
-        const key = `team:${team.id}`;
-        const nums = ticketRowNumbers(ticketCounts, key);
-        const n = ticketShown(prefs, key, ["favorites", "teams"], "team", nums);
-        return {
-          label: team.name,
-          icon: <TeamDot team={team} />,
-          row: (r) =>
-            ticketRow(
-              r,
-              <Link
-                to="/teams/$teamId/{-$ticketId}"
-                params={{ teamId: team.id, ticketId: undefined }}
-                className={cn(rowBase, rowShape(r), rowIdle)}
-                activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
-                aria-label={r ? team.name : undefined}
-              >
-                {withPill(
-                  <>
-                    <span className="flex size-[15px] shrink-0 items-center justify-center">
-                      <TeamDot team={team} />
-                    </span>
-                    <Label rail={r}>{team.name}</Label>
-                    <WaitingBadge n={waitingFor({ kind: "team", id: team.id })} rail={r} />
-                    {!!n && <Count n={n} rail={r} />}
-                  </>,
-                )}
-              </Link>,
-              ticketMenu(key, pin, "teams", nums),
-              team.name,
-            ),
-        };
-      }
-      case "ticket_folder": {
-        const f = folderById(pin.id);
-        if (!f) return null;
-        const key = `ticket_folder:${f.id}`;
-        const counted = f.id !== "solved" && f.id !== "spam";
-        const nums = ticketRowNumbers(ticketCounts, key);
-        const n = counted ? ticketShown(prefs, key, ["favorites", "inbox"], "ticket", nums) : undefined;
-        return {
-          label: tNav(f.labelKey),
-          icon: ticketFolderIcons[f.id],
-          row: (r) =>
-            ticketRow(
-              r,
-              <Link
-                to="/inbox/$folder/{-$ticketId}"
-                params={{ folder: f.id, ticketId: undefined }}
-                className={cn(rowBase, rowShape(r), rowIdle)}
-                activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
-                aria-label={r ? tNav(f.labelKey) : undefined}
-              >
-                {withPill(
-                  <>
-                    {ticketFolderIcons[f.id]}
-                    <Label rail={r}>{tNav(f.labelKey)}</Label>
-                    <WaitingBadge n={waitingFor({ kind: "ticket_folder", id: f.id })} rail={r} />
-                    {n !== undefined && <Count n={n} rail={r} />}
-                  </>,
-                )}
-              </Link>,
-              counted ? ticketMenu(key, pin, "inbox", nums) : { pin },
-              tNav(f.labelKey),
-            ),
-        };
-      }
-      default:
-        return null;
-    }
-  };
-
-  const pins = livePins(prefs, resolve);
+  const pins = livePins(prefs, (pin) => buildRow(pin, data, { labels, via: ["favorites"], here, waiting: waitingFor }));
   if (!pins.length) return null;
   return (
     <Section id="favorites" label={t("nav.favorites")} rail={rail} first={first}>
       {pins.map(({ pin, target }) => (
-        <Fragment key={`${pin.kind}:${pin.id}`}>{target.row(rail)}</Fragment>
-      ))}
-    </Section>
-  );
-}
-
-export default function MailSections({
-  order,
-  prefs,
-  rail,
-  renderSection,
-}: {
-  order: SidebarSectionId[];
-  prefs: SidebarPrefs;
-  rail: boolean;
-  drawer?: boolean;
-  renderSection: (id: SidebarSectionId) => ReactNode;
-}) {
-  return (
-    <>
-      {order.map((id, i) => (
-        <Fragment key={id}>
-          {id === "mail" ? (
-            <MailSection prefs={prefs} rail={rail} first={i === 0} />
-          ) : id === "favorites" ? (
-            <FavoritesSection prefs={prefs} rail={rail} first={i === 0} />
-          ) : (
-            renderSection(id)
-          )}
+        <Fragment key={`${pin.kind}:${pin.id}`}>
+          <NavItemRow
+            model={target}
+            rail={rail}
+            prefs={prefs}
+            menu={(row) => (
+              <RowMenu
+                enabled
+                prefs={prefs}
+                rail={rail}
+                label={target.label}
+                badge={target.badge && { key: target.key, kind: target.badge.kind, sections: target.badge.sections, numbers: target.badge.nums }}
+                pin={pin}
+              >
+                {row}
+              </RowMenu>
+            )}
+          />
         </Fragment>
       ))}
-    </>
+    </Section>
   );
 }
