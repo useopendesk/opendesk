@@ -22,6 +22,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -416,11 +417,17 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			if cur.T.IsZero() {
 				cur.T = time.Now().UTC().Add(time.Hour)
 			}
+			hidden, err := domain.HiddenTeams(ctx, s.d.DB.Pool, p)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			rows, err := s.d.DB.Pool.Query(ctx, `SELECT d.event_seq,e.type,t.number,d.status,d.attempts,d.last_error,d.created_at,d.updated_at,d.delivered_at
 				FROM support_channel_dispatches d JOIN events e ON e.workspace_id=d.workspace_id AND e.seq=d.event_seq
 				LEFT JOIN tickets t ON t.workspace_id=d.workspace_id AND t.id=COALESCE(NULLIF(e.data->>'ticket_id','')::uuid,NULLIF(e.data->'ticket'->>'id','')::uuid,NULLIF(e.data->'message'->>'ticket_id','')::uuid)
 				WHERE d.workspace_id=$1 AND (d.created_at,d.event_seq)<($2,$3)
-				ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur.Seq, in.Limit+1)
+AND `+domain.VisibleSQLUser("t", 5, 6)+`
+AND (e.team_id IS NULL OR NOT e.team_id = ANY($5::uuid[]) OR t.assignee_id=$6)
+ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur.Seq, in.Limit+1, hidden, p.ActorUserID())
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -454,12 +461,32 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				var status string
-				err := tx.QueryRow(ctx, `SELECT status FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2 FOR UPDATE`, p.WorkspaceID, in.EventSeq).Scan(&status)
+				var team, ticketID *uuid.UUID
+				err := tx.QueryRow(ctx, `SELECT d.status,e.team_id,COALESCE(NULLIF(e.data->>'ticket_id','')::uuid,NULLIF(e.data->'ticket'->>'id','')::uuid,NULLIF(e.data->'message'->>'ticket_id','')::uuid)
+                FROM support_channel_dispatches d JOIN events e ON e.workspace_id=d.workspace_id AND e.seq=d.event_seq
+                WHERE d.workspace_id=$1 AND d.event_seq=$2 FOR UPDATE OF d`, p.WorkspaceID, in.EventSeq).Scan(&status, &team, &ticketID)
 				if db.IsNotFound(err) {
 					return httpx.NotFound("Support channel delivery")
 				}
 				if err != nil {
 					return err
+				}
+				var assignee *uuid.UUID
+				if ticketID != nil {
+					ticket, err := domain.LoadVisibleTicket(ctx, tx, p, *ticketID)
+					if err != nil {
+						return err
+					}
+					if ticket.Assignee != nil {
+						assignee = &ticket.Assignee.ID
+					}
+				}
+				visible, err := domain.CanSee(ctx, tx, p, team, assignee)
+				if err != nil {
+					return err
+				}
+				if !visible {
+					return httpx.NotFound("Support channel delivery")
 				}
 				if status != "failed" {
 					return httpx.Conflict("Only failed deliveries can be retried.")

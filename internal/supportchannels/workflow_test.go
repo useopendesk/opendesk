@@ -19,6 +19,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
@@ -220,6 +221,43 @@ func TestRetryDeliveryQueuesAndAuditsOnlyFailedDispatch(t *testing.T) {
 	if len(page.Data) != 1 || page.Data[0].EventSeq != seq || page.Data[0].Status != "queued" || page.Data[0].Attempts != 8 {
 		t.Fatalf("delivery view = %+v", page.Data)
 	}
+}
+
+func TestDeliveryActivityRespectsPrivateTeams(t *testing.T) {
+	e := hdtest.New(t, Register)
+	ws := e.NewWorkspace()
+	team := ids.New()
+	e.Exec(`INSERT INTO teams(id,workspace_id,name,private) VALUES($1,$2,'Private',true)`, team, ws.ID)
+	var ticket domain.Ticket
+	var seq int64
+	if err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		var err error
+		ticket, err = domain.CreateTicket(e.Ctx, tx, domain.NewTicket{WorkspaceID: ws.ID, Subject: "Private", Channel: domain.ChannelAPI, TeamID: &team})
+		if err != nil {
+			return err
+		}
+		ev, err := events.Publish(e.Ctx, tx, events.Event{WorkspaceID: ws.ID, Type: "ticket.updated", TicketID: &ticket.ID, Data: map[string]any{"ticket_id": ticket.ID}})
+		seq = ev.Seq
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.Exec(`INSERT INTO support_channel_dispatches(workspace_id,event_seq,status) VALUES($1,$2,'failed')`, ws.ID, seq)
+	var page struct {
+		Data []delivery `json:"data"`
+	}
+	e.Do("GET", "/v1/support-channels/deliveries", ws.Admin.As(ws), nil).Want(t, 200).JSON(t, &page)
+	if len(page.Data) != 0 {
+		t.Fatalf("hidden deliveries: %+v", page.Data)
+	}
+	path := fmt.Sprintf("/v1/support-channels/deliveries/%d/retry", seq)
+	e.Do("POST", path, ws.Admin.As(ws), nil).Want(t, 404)
+	e.Exec(`UPDATE tickets SET assignee_id=$2 WHERE id=$1`, ticket.ID, ws.Admin.ID)
+	e.Do("GET", "/v1/support-channels/deliveries", ws.Admin.As(ws), nil).Want(t, 200).JSON(t, &page)
+	if len(page.Data) != 1 || page.Data[0].TicketNumber == nil || *page.Data[0].TicketNumber != ticket.Number {
+		t.Fatalf("assigned delivery: %+v", page.Data)
+	}
+	e.Do("POST", path, ws.Admin.As(ws), nil).Want(t, 202)
 }
 
 func TestCardCloseAsksAndOnlyItsOwnConfirmApplies(t *testing.T) {
