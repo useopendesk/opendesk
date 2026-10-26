@@ -1683,6 +1683,8 @@ export type AIConfig = {
   decisions?: DecisionEngine;
   /** LLM calls run on the workspace's own provider key and cost $0 (GET /v1/ai/provider). */
   own_key?: boolean;
+  /** Decisions run on the workspace's own TypeSafe or provider key and cost $0. */
+  decisions_own_key?: boolean;
 };
 
 // The workspace's AI provider (contracts/ai.md "Provider per workspace").
@@ -1709,6 +1711,23 @@ export type AIProvider = {
   /** Calls on the instance's provider are charged to the AI balance, in US dollars. */
   billing: boolean;
   key: AIProviderKey | null;
+  /** Where decisions run; missing on older servers. */
+  decisions?: AIDecisionsRoute;
+};
+/** Where the workspace's decisions (Jev) run, and its own TypeSafe key. */
+export type AIDecisionsRoute = {
+  runs_on: "instance" | "provider_key" | "typesafe_key" | "none";
+  engine: "jev" | "llm" | "none";
+  key: AIDecisionsKey | null;
+};
+/** A saved TypeSafe key, never the key itself. */
+export type AIDecisionsKey = {
+  last4: string;
+  status: AIKeyStatus;
+  status_at: string | null;
+  created_by: UserRef | null;
+  created_at: string;
+  updated_at: string;
 };
 export type AIProviderKeyInput = { kind: AIKeyKind; api_key: string; base_url?: string; model?: string; fast_model?: string };
 export type AIProviderTestReason = "invalid_key" | "no_funds" | "unreachable" | "busy" | "model_unavailable";

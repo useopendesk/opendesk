@@ -50,7 +50,7 @@ const (
 type MailAI interface {
 	// Enabled reports an AI provider (suggestions); CanDecide a decision engine (sorting).
 	Enabled() bool
-	CanDecide() bool
+	CanDecide(ctx context.Context, wid uuid.UUID) bool
 	// DecideMail runs one metered decision call; calibrated: probabilities can be gated on.
 	DecideMail(ctx context.Context, wid uuid.UUID, req decide.Request) (res decide.Result, calibrated bool, err error)
 	SuggestMailCategories(ctx context.Context, wid, userID uuid.UUID, sample []string, about string) ([]SuggestedCategory, error)
@@ -235,14 +235,14 @@ func (s *service) queueCategorizeWorkspace(ctx context.Context, tx pgx.Tx, wid u
 	return err
 }
 
-// sortsWithAI reports whether Ollie sorts the workspace's mail: a decision engine is on
-// and the workspace has AI on.
+// sortsWithAI reports whether Ollie sorts the workspace's mail: the workspace has AI on
+// and a decision engine, the instance's or one on its own key.
 func (s *service) sortsWithAI(ctx context.Context, wid uuid.UUID) bool {
-	if s.mailAI == nil || !s.mailAI.CanDecide() {
+	if s.mailAI == nil {
 		return false
 	}
 	st, err := hd.LoadSettings(ctx, s.d.DB.Pool, wid)
-	return err == nil && st.AI().Enabled
+	return err == nil && st.AI().Enabled && s.mailAI.CanDecide(ctx, wid)
 }
 
 // checkCategories queues a sort when the account's categories changed since it was last

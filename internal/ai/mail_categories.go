@@ -52,26 +52,30 @@ var mailCategoriesSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-// CanDecide reports whether typed decisions run on this instance (Jev or the LLM adapter).
-func (s *Service) CanDecide() bool { return s != nil && s.decider != nil }
+// CanDecide reports whether the workspace's typed decisions have an engine: the
+// instance's (Jev or the LLM adapter) or one on the workspace's own key (decisionsFor).
+func (s *Service) CanDecide(ctx context.Context, wid uuid.UUID) bool {
+	if s == nil || !s.Enabled() && s.decider == nil {
+		return false
+	}
+	dr, err := s.decisionsFor(ctx, wid, nil)
+	return err == nil && dr.dc != nil
+}
 
 // DecideMail asks the decision engine to sort mail for a workspace (feature
 // mail_categorize): the typical cost reserved, the real one charged once it answered.
 // calibrated reports whether the answers' probabilities can be gated on (Jev).
 func (s *Service) DecideMail(ctx context.Context, wid uuid.UUID, req decide.Request) (res decide.Result, calibrated bool, err error) {
-	if !s.CanDecide() {
-		return decide.Result{}, false, errDisabled
-	}
 	if _, err := s.workspaceOn(ctx, wid); err != nil {
 		return decide.Result{}, false, err
 	}
 	c := s.newCall(wid, nil, nil, "mail_categorize")
-	res, err = c.decide(ctx, s.decider, req)
+	res, err = c.decide(ctx, req)
 	if err != nil {
 		return decide.Result{}, false, err
 	}
 	c.charge(ctx)
-	return res, s.decider.Calibrated(), nil
+	return res, c.calibrated, nil
 }
 
 // SuggestMailCategories asks the workspace's model for an inbox's categories (feature

@@ -104,8 +104,9 @@ charge (USD) = provider cost in USD × AI_USAGE_MARKUP, rounded up to $0.000001
 - **Own key** (contracts/ai.md "Provider per workspace"): a workspace that brings its own provider key
   pays its provider directly. Its LLM calls charge **$0** and are never refused for the AI balance
   (`Reserve` is skipped); each still writes a usage row with `micro_usd = 0` and
-  `source = "own_key"`. Jev decisions stay on the instance and are charged as usual, so a workspace on
-  its own key still spends a little on triage and automation decisions. The widget agent's
+  `source = "own_key"`. Jev decisions charge $0 the same way when they run on the workspace's own
+  OpenRouter key or its own TypeSafe key (contracts/ai.md "Provider per workspace"); otherwise they run
+  on the instance and are charged as usual. The widget agent's
   monthly cap counts the AI balance spent, so it does not limit calls on the workspace's key.
 
 ### Starting a call

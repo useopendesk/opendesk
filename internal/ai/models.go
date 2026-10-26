@@ -362,6 +362,19 @@ func chatTokens(req ChatRequest) int {
 	return n
 }
 
+// decisionFeatures are the features answered by the decision engine.
+var decisionFeatures = []string{"triage", "decide", "answer_check", "mail_categorize"}
+
+// ownDecisionCosts sets the decision features to $0: they run on the workspace's own
+// credentials (decisionsFor).
+func ownDecisionCosts(costs map[string]float64) {
+	for _, f := range decisionFeatures {
+		if _, ok := costs[f]; ok {
+			costs[f] = 0
+		}
+	}
+}
+
 // featureCosts sets costs[feature] to what a typical call costs on the workspace's
 // model for its tier (GET /v1/ai/config). Features answered by Jev keep their typical
 // cost, which does not depend on the model. On the workspace's own key, LLM features

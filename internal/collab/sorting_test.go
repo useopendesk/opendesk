@@ -23,8 +23,8 @@ type fakeMailAI struct {
 	asked    []string // senders asked about
 }
 
-func (f *fakeMailAI) Enabled() bool   { return true }
-func (f *fakeMailAI) CanDecide() bool { return true }
+func (f *fakeMailAI) Enabled() bool                             { return true }
+func (f *fakeMailAI) CanDecide(context.Context, uuid.UUID) bool { return true }
 func (f *fakeMailAI) DecideMail(_ context.Context, _ uuid.UUID, req decide.Request) (decide.Result, bool, error) {
 	f.calls++
 	if f.err != nil {

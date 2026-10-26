@@ -666,6 +666,12 @@ export const api = {
       test: (b: T.AIProviderKeyInput) => http.post<T.AIProviderTest>("/v1/ai/provider/test", b),
       set: (b: T.AIProviderKeyInput) => http.put<T.AIProvider>("/v1/ai/provider", b),
       remove: () => http.del("/v1/ai/provider"),
+      /** The workspace's own TypeSafe key, for decisions only. */
+      decisions: {
+        test: (b: { api_key: string }) => http.post<T.AIProviderTest>("/v1/ai/provider/decisions/test", b),
+        set: (b: { api_key: string }) => http.put<T.AIProvider>("/v1/ai/provider/decisions", b),
+        remove: () => http.del("/v1/ai/provider/decisions"),
+      },
     },
     agent: {
       report: (r: T.ReportsRange) => http.get<T.AgentReport>("/v1/ai/agent/report", { query: r }),
