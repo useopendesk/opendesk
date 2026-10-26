@@ -49,7 +49,18 @@ var (
 	once    sync.Once
 	shared  *deps.Deps
 	initErr error
+	filesAt string
 )
+
+// Main runs a package's tests, then removes the files they stored, and exits.
+// Every package that uses Deps or New calls it from TestMain.
+func Main(m *testing.M) {
+	code := m.Run()
+	if filesAt != "" {
+		_ = os.RemoveAll(filesAt)
+	}
+	os.Exit(code)
+}
 
 // Deps returns process-wide dependencies against the test database (migrated once).
 func Deps(t testing.TB) *deps.Deps {
@@ -72,6 +83,7 @@ func Deps(t testing.TB) *deps.Deps {
 			initErr = err
 			return
 		}
+		filesAt = dir
 		st, err := storage.New(ctx, storage.Options{Driver: "local", Dir: dir})
 		if err != nil {
 			initErr = err

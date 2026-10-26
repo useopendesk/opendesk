@@ -101,6 +101,8 @@
   "actions": {
     "removeTitle": "Remove mailbox?",
     "removeBody": "Mail sent to {{email}} stops arriving in opendesk. Existing tickets stay.",
+    "removeBodyTickets_one": "Mail sent to {{email}} stops arriving in opendesk. The ticket that replies from it stays ({{open}} open), but its replies will no longer go out from {{email}}.",
+    "removeBodyTickets_other": "Mail sent to {{email}} stops arriving in opendesk. The {{count}} tickets that reply from it stay ({{open}} open), but their replies will no longer go out from {{email}}.",
     "removeConfirm": "Remove",
     "removed": "Mailbox removed",
     "testTitle": "Connection test",
@@ -174,6 +176,9 @@
     "directTitle": "Read the inbox directly",
     "directHint": "New emails become tickets on their own. No forwarding to set up. You'll sign in with {{provider}} to allow it.",
     "directButton": "Read the inbox directly",
+    "syncTitle": "Read the inbox over IMAP",
+    "syncHint": "opendesk fetches new mail from {{email}} itself, instead of waiting for forwarded mail. The mailbox and its tickets stay as they are. You'll sign in with {{provider}} to allow it to read the mailbox.",
+    "syncButton": "Connect {{provider}}",
     "reconnect": "Reconnect",
     "incoming": "Incoming (IMAP)",
     "outgoing": "Outgoing (SMTP)",

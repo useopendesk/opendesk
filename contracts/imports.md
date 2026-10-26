@@ -2,7 +2,7 @@
 
 A team moving to opendesk brings its history along: tickets with every reply and internal
 note, the customers who wrote them, their companies, labels and attachments, and the help
-center articles. Sources are **Zendesk**, **Help Scout**, **Freshdesk** and **Intercom**, read
+center articles. Sources are **Zendesk**, **Help Scout**, **Freshdesk**, **Intercom** and **Front**, read
 through their public APIs, and a **CSV** file for everything else. Same code on the cloud and
 on a self-host; no plan gates it, and imported tickets count toward no limit.
 
@@ -23,7 +23,9 @@ answers `409 import_running`.
    CSV upload (`{source: "csv", upload_id, mapping?}`) answers an `ImportCheck` for a mapping.
 2. **Start** it: `POST /v1/imports` with the same credentials (or the upload), the options
    and the mapping. It checks the source once more, answers the `Import` at once and runs in
-   the background: help center articles first, then tickets.
+   the background: help center articles first, then tickets, then (for a source whose
+   listings leave out its emails' threading headers, Front) those headers, one email at a
+   time, newest first. The tickets can be worked while that last phase runs.
 3. **Watch** it: `import.updated` events carry the whole `Import` as it moves, at most once
    a second while it writes and after every page. When it completes, fails or needs new
    credentials, the member who started it is notified (`import_finished`).
@@ -43,14 +45,14 @@ answers `409 import_running`.
 ## Shapes
 
 ```ts
-type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "csv";
+type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "front" | "csv";
 type ImportStatus = "running" | "paused" | "completed" | "failed" | "canceled" | "undoing" | "undone";
 
 interface Import {
   id: string; source: ImportSource;
   account: { name: string; url: string };          // "Acme Support", "https://acme.zendesk.com"; a CSV import: its filename, ""
   status: ImportStatus;
-  phase: "articles" | "tickets" | "done";
+  phase: "articles" | "tickets" | "threading" | "done";
   run: number;                                      // 1, then +1 per sync
   options: ImportOptions; mapping: ImportMapping;
   totals: { tickets: number | null; articles: number | null }; // what the source said it has; null = unknown or not imported
@@ -64,7 +66,8 @@ interface Import {
   started_at: string /* of the latest run */; finished_at: string | null; created_at: string; updated_at: string;
 }
 interface ImportCounts { tickets: number; updated: number /* by a sync */; messages: number; contacts: number; companies: number;
-  articles: number; attachments: number; skipped: number /* deleted or spam in the source, CSV rows left out */; failed: number }
+  articles: number; attachments: number; skipped: number /* deleted or spam in the source, CSV rows left out */; failed: number;
+  threaded: number; thread_total: number /* emails the threading phase has read, of how many */ }
 interface ImportProblem { at: string; item: string /* "Ticket #1234", "Article Billing FAQ", "Row 18", "Label vip", "Help center" */; message: string }
 
 interface ImportOptions {
@@ -118,6 +121,7 @@ Credentials by source (all strings):
 | `helpscout` | `app_id`, `app_secret` (Your Profile → My Apps → Create My App, any redirect URL), `docs_key` (optional, Docs API key for articles: Your Profile → Authentication → API Keys). A refused Docs key leaves the tickets importable |
 | `freshdesk` | `domain` (`acme`, `acme.freshdesk.com` or its URL), `api_key` (profile picture → Profile settings → View API key). An admin's key also reads the account's name |
 | `intercom` | `token` (Developer Hub → your app → Configure → Authentication → access token), `region` (`us` default, `eu`, `au`) |
+| `front` | `token` (an admin: Settings → Developers → API Tokens → Create API token, Access resources, Shared resources with all shared workspaces, read permission). A sync reads the events feed and walks the inboxes when the token cannot. Articles are not imported |
 
 ## Endpoints
 
@@ -152,33 +156,41 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
 
 ## What is brought over
 
-| opendesk | Zendesk | Help Scout | Freshdesk | Intercom |
-| --- | --- | --- | --- | --- |
-| ticket | ticket | conversation (email, chat, phone) | ticket | conversation |
-| reply / note | public / private comment | customer and reply threads / note and forward threads | description and conversations, `private` = note | source and parts / note parts |
-| contact | requester | primary customer | requester | first contact (user or lead) |
-| company | requester's organization | none | ticket's company | contact's first company |
-| assignee | assignee | assignee | responder | admin assignee |
-| team | group | mailbox | group | team assignee |
-| labels | tags | tags | tags | tags |
-| CSAT | satisfaction good 5, bad 1 | rating great 5, okay 3, not good 1 | none | conversation rating 1..5 |
-| article, collection | Guide article, section | Docs article, collection (with `docs_key`) | solution article, folder | article, collection |
+| opendesk | Zendesk | Help Scout | Freshdesk | Intercom | Front |
+| --- | --- | --- | --- | --- | --- |
+| ticket | ticket | conversation (email, chat, phone) | ticket | conversation | conversation |
+| reply / note | public / private comment | customer and reply threads / note and forward threads | description and conversations, `private` = note | source and parts / note parts | messages / comments |
+| contact | requester | primary customer | requester | first contact (user or lead) | recipient (contact) |
+| company | requester's organization | none | ticket's company | contact's first company | none |
+| assignee | assignee | assignee | responder | admin assignee | assignee |
+| team | group | mailbox | group | team assignee | inbox |
+| labels | tags | tags | tags | tags | tags |
+| CSAT | satisfaction good 5, bad 1 | rating great 5, okay 3, not good 1 | none | conversation rating 1..5 | none |
+| article, collection | Guide article, section | Docs article, collection (with `docs_key`) | solution article, folder | article, collection | none |
 
 - Statuses: Zendesk `new`/`open` → open, `pending` → pending, `hold` → on_hold, `solved` → solved,
   `closed` → closed; Help Scout `active` → open, `pending` → pending, `closed` → closed; Freshdesk 2 → open,
   3 → pending, 4 → solved, 5 → closed, custom statuses → pending; Intercom `open` → open, `snoozed` → on_hold,
-  `closed` → closed; CSV by name (below), closed without a status. A status opendesk does not know is closed;
+  `closed` → closed; Front `archived` → closed (on_hold with a reminder set), `snoozed` → on_hold, else by
+  ticket status category: `open` → open, `waiting` → pending, `resolved` → solved; CSV by name (below), closed without a status. A status opendesk does not know is closed;
   `statuses: "closed"` closes them all. Solved and closed tickets keep when they were solved.
 - Skipped (`counts.skipped`): Zendesk deleted tickets; Help Scout spam, deleted and draft conversations;
-  Freshdesk spam and deleted tickets.
+  Freshdesk spam and deleted tickets; Front spam, deleted and trashed conversations, discussions and tasks, and conversations merged into another one.
 - Priorities map to low, normal, high, urgent: Zendesk as they are (none is normal); Freshdesk 1 low,
-  2 normal, 3 high, 4 urgent; Intercom `priority` is high, else normal; Help Scout normal.
+  2 normal, 3 high, 4 urgent; Intercom `priority` is high, else normal; Help Scout and Front normal.
 - Channels by how the ticket arrived: email, chat, api (phone calls, API and messages the team started)
   or portal (web forms, the help center, Help Scout Beacon); CSV tickets are email.
 - Messages keep their author, time, recipients and HTML (sanitized like every email body). A message
   by an agent mapped to a member is that member's; an unmapped agent's keeps their name and address.
   Intercom bot replies (Fin, workflows) are the team's, named Fin. At most 2,000 messages per ticket
-  (Intercom answers at most 500 parts of a conversation); the rest is listed in `problems`.
+  (Intercom answers at most 500 parts of a conversation); the rest is listed in `problems`. An email
+  reply's quoted history and signature are cut the way an inbound email's are, with the whole original
+  kept behind it (`full_html`); notes, chats and forwards keep everything. Front drafts
+  are left out; a Front conversation that is not email (chat, SMS, social) is tagged `front-<channel>`.
+  Front's read-receipt pixel is dropped and images it proxied get their original link back. Front emails
+  get `message_id`, `in_reply_to` and `references` in the threading phase, read from `GET /messages/{id}`
+  as `message/rfc822` (headers only). Each email is read once, by this import or a later sync; one Front
+  cannot answer for (not a rate limit, refused token or outage) is left without them.
 - Attachments are copied here (25 MB per file, programs refused); inline images point at the copies.
   The plan bounds how many files one message brings, their size in all, and what imports bring into a
   workspace in all (contracts/billing.md "Imports"); a self-hosted instance has none of these limits.
@@ -269,7 +281,8 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
   user removes them, on cancel and undo, and by an hourly sweep 30 days after the import last ran.
 - Every request goes to the source's own API host over https (`<sub>.zendesk.com`,
   `api.helpscout.net`, `docsapi.helpscout.net`, `<domain>.freshdesk.com`, `api.intercom.io`,
-  `api.eu.intercom.io`, `api.au.intercom.io`); a next-page link off that host is refused. Attachment
+  `api.eu.intercom.io`, `api.au.intercom.io`, `api2.frontapp.com` and `<company>.api.frontapp.com`,
+  which Front's next-page links use; requests to Front are spaced at most 60 a minute); a next-page link off that host is refused. Attachment
   downloads follow the outbound URL rules (https, public addresses, at most three redirects, each
   re-checked) and send the source's credentials only to its API host.
 - A subdomain or domain is letters, digits and hyphens.

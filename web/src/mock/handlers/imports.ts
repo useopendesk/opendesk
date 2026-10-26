@@ -21,12 +21,13 @@ import { HttpError, del, forbidden, get, invalid, notFound, post, respond, type 
 import { ensureTags, newTicket } from "../tickets";
 import { nowIso, pick, uuid } from "../util";
 
-const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", intercom: "Intercom", csv: "CSV" };
+const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", intercom: "Intercom", front: "Front", csv: "CSV" };
 const required: Record<Exclude<ImportSource, "csv">, string[]> = {
   zendesk: ["subdomain", "email", "token"],
   helpscout: ["app_id", "app_secret"],
   freshdesk: ["domain", "api_key"],
   intercom: ["token"],
+  front: ["token"],
 };
 
 type Upload = CsvUpload & { header: string[]; data: string[][] };
@@ -58,6 +59,8 @@ function account(src: ImportSource, creds: Record<string, string>) {
       return { name: "Acme Inc.", url: "https://secure.helpscout.net" };
     case "intercom":
       return { name: "Acme", url: "https://app.intercom.com" };
+    case "front":
+      return { name: "Acme", url: "https://app.frontapp.com" };
     default:
       return { name: "tickets.csv", url: "" };
   }
@@ -135,7 +138,7 @@ function check(ws: WsData, b: ImportCheckBody): ImportCheck {
     ...ws.teams.slice(0, 2).map((t, i) => ({ id: `g${i}`, name: t.name, team_id: t.id })),
     { id: "g8", name: "Tier 2", team_id: null },
   ];
-  const hasArticles = b.source !== "freshdesk" || !/nokb/i.test(b.credentials?.domain ?? "");
+  const hasArticles = b.source !== "front" && (b.source !== "freshdesk" || !/nokb/i.test(b.credentials?.domain ?? ""));
   return {
     account: account(b.source, b.credentials ?? {}),
     totals: { tickets: b.source === "intercom" ? null : 1_284, articles: hasArticles ? 46 : null },
@@ -273,7 +276,11 @@ function drive(ws: WsData, x: Import) {
       x.waiting_until = null;
       publishImport(ws, x);
     }
-    if (x.phase === "articles") {
+    if (x.phase === "threading") {
+      // Front lists emails without their headers: they are read last, a page at a time.
+      x.counts.threaded = Math.min(x.counts.thread_total, x.counts.threaded + Math.max(1, Math.round(x.counts.thread_total / 12)));
+      if (x.counts.threaded >= x.counts.thread_total) x.phase = "done";
+    } else if (x.phase === "articles") {
       const total = x.totals.articles ?? 40;
       x.counts.articles = Math.min(total, x.counts.articles + 9);
       if (x.counts.articles >= total) x.phase = x.options.tickets ? "tickets" : "done";
@@ -314,7 +321,13 @@ function drive(ws: WsData, x: Import) {
           { at: nowIso(), item: "Ticket #17533", message: "It had no messages, so it was left out." },
         ];
       }
-      if (done + n >= total) x.phase = "done";
+      if (done + n >= total) {
+        const emails = Math.round(x.counts.messages * 0.8);
+        if (x.source === "front" && emails > x.counts.threaded) {
+          x.counts.thread_total = emails;
+          x.phase = "threading";
+        } else x.phase = "done";
+      }
     }
     if (x.phase === "done") {
       x.status = "completed";
@@ -412,7 +425,7 @@ export function registerImports() {
       options: opts,
       mapping: b.mapping ?? { agents: {}, groups: {} },
       totals: { tickets: opts.tickets ? c.totals.tickets : null, articles: opts.articles ? c.totals.articles : null },
-      counts: { tickets: 0, updated: 0, messages: 0, contacts: 0, companies: 0, articles: 0, attachments: 0, skipped: 0, failed: 0 },
+      counts: { tickets: 0, updated: 0, messages: 0, contacts: 0, companies: 0, articles: 0, attachments: 0, skipped: 0, failed: 0, threaded: 0, thread_total: 0 },
       problems: [],
       last_error: "",
       needs_credentials: false,

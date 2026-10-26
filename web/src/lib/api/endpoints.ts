@@ -12,15 +12,25 @@ export type TicketListQuery = ListQuery & {
   /** "none": tickets without a severity. */
   severity?: (T.Severity | "none")[];
   assignee?: string;
-  /** A team id, "mine" or "none". */
+  /** Team ids, "mine" and "none", comma separated: tickets of any of them. */
   team_id?: string;
+  /** The same values as team_id: tickets of none of them. */
+  team_not?: string;
   mailbox_id?: string;
+  /** Mailbox ids, comma separated: tickets whose reply address is none of them. */
+  mailbox_not?: string;
   /** The address a ticket was first written to: a mailbox's address or an alias. */
   received_at?: string;
   brand_id?: string;
   widget_id?: string;
+  /** Label names, comma separated: tickets carrying any of them. */
   tag?: string;
+  /** Label names, comma separated: tickets carrying none of them. */
+  tag_not?: string;
+  /** Tickets carrying no label. */
+  untagged?: boolean;
   channel?: T.Channel;
+  channel_not?: T.Channel[];
   contact_id?: string;
   view_id?: string;
   q?: string;
@@ -195,7 +205,7 @@ export const api = {
   me: {
     get: () => http.get<T.Me>("/v1/me", { workspace: false }),
     /** `avatar_url` is an https picture to copy (processed in the background), or "" to remove it. */
-    update: (b: { name?: string; avatar_url?: string }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
+    update: (b: { name?: string; avatar_url?: string; time_format?: T.TimeFormat }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
     /** PNG, JPEG, GIF or WebP, at most 5 MB. */
     uploadAvatar: (file: File | Blob) => http.put<T.User>("/v1/me/avatar", imageForm(file), { workspace: false }),
     removeAvatar: () => http.del<T.User>("/v1/me/avatar", undefined, { workspace: false }),
@@ -208,11 +218,23 @@ export const api = {
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
     revokeSession: (id: string) => http.del(`/v1/me/sessions/${id}`, undefined, { workspace: false }),
     delete: (b: { password?: string; code?: string }) => http.del("/v1/me", b, { workspace: false }),
-    /** How this person's workspaces show together (contracts/api.md "Workspaces together"). */
+    /** How this person arranges their workspaces (contracts/api.md "Several workspaces"). */
     workspacePrefs: () => http.get<T.WorkspacePrefs>("/v1/me/workspace-prefs", { workspace: false }),
     putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
     /** Every workspace's sidebar numbers, each as that workspace answers this person. */
     overview: () => http.get<{ workspaces: T.WorkspaceOverview[] }>("/v1/me/overview", { workspace: false }),
+    /** The caller's Spaces (contracts/spaces.md): one list for every workspace and device. */
+    spaces: {
+      get: () => http.get<T.SpacesResponse>("/v1/me/spaces", { workspace: false }),
+      /** Replaces the whole list. */
+      put: (spaces: T.Space[]) => http.put<T.SpacesResponse>("/v1/me/spaces", { spaces }, { workspace: false }),
+    },
+  },
+  /** The workspace's starter Space: members read it, admins publish and remove it. */
+  starterSpace: {
+    get: () => http.get<{ space: T.Space | null }>("/v1/sidebar/starter"),
+    put: (space: T.Space) => http.put<{ space: T.Space }>("/v1/sidebar/starter", space),
+    remove: () => http.del("/v1/sidebar/starter"),
   },
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),
@@ -227,7 +249,7 @@ export const api = {
     removeImage: (slot: "logo" | T.WorkspaceImageSlot) => http.del<T.Workspace>(`/v1/workspace/images/${slot}`),
   },
   members: {
-    list: () => http.get<T.Page<T.Member>>("/v1/members"),
+    list: (q?: ListQuery) => http.get<T.Page<T.Member>>("/v1/members", { query: q }),
     update: (userId: string, role: T.Role) => http.patch<T.Member>(`/v1/members/${userId}`, { role }),
     remove: (userId: string) => http.del(`/v1/members/${userId}`),
     /** `userId` may be "me". Members set their own availability; admins anyone's, and the cap. */
@@ -542,6 +564,7 @@ export const api = {
     ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
+    usage: (id: string) => http.get<T.MailboxUsage>(`/v1/mailboxes/${id}/usage`),
     /** Reads Gmail's send-as list again (422 send_as_unreadable for a send-only connection). */
     checkSendAs: (id: string) => http.post<T.Mailbox>(`/v1/mailboxes/${id}/send-as/check`),
     /**

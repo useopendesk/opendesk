@@ -23,6 +23,7 @@ import {
   setWorkspaceId,
 } from "./api/client";
 import type { Account, Me, Membership, Role, TokenResponse, User, Workspace } from "./api/types";
+import { setClock } from "./format";
 import { qk } from "./queries";
 import { queryClient } from "./queryClient";
 import { workspaceTarget } from "./workspaceParam";
@@ -51,6 +52,9 @@ export const useSession = create<SessionState>(() => ({
   workspaceId: null,
   accounts: [],
 }));
+
+// Times of day follow the active account's clock.
+useSession.subscribe((s) => setClock(s.user?.time_format));
 
 // ─── Persistence: ids only ─────────────────────────────────────────────────
 

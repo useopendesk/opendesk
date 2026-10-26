@@ -9,9 +9,11 @@ import { canSeeTicket, defaultBrand, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
 import { clearDraft } from "./drafts";
+import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
+const CHANNELS: Channel[] = ["email", "chat", "api", "portal"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
 const SEVERITIES: Severity[] = ["sev1", "sev2", "sev3", "sev4"];
 const SUGGESTION_FIELDS: SuggestionField[] = ["priority", "severity", "labels", "team", "spam"];
@@ -30,12 +32,17 @@ function filtersFrom(ctx: Ctx): ListFilters {
     severity: csv(q.get("severity"), [...SEVERITIES, "none" as const]),
     assignee: q.get("assignee") ?? undefined,
     team_id: q.get("team_id") ?? undefined,
+    team_not: q.get("team_not") ?? undefined,
     mailbox_id: q.get("mailbox_id") ?? undefined,
+    mailbox_not: q.get("mailbox_not") ?? undefined,
     received_at: q.get("received_at")?.trim().toLowerCase() || undefined,
     brand_id: q.get("brand_id") ?? undefined,
     widget_id: q.get("widget_id") ?? undefined,
     tag: q.get("tag") ?? undefined,
+    tag_not: q.get("tag_not") ?? undefined,
+    untagged: q.get("untagged") === "true" || undefined,
     channel: (q.get("channel") as Channel | null) ?? undefined,
+    channel_not: csv(q.get("channel_not"), CHANNELS),
     contact_id: q.get("contact_id") ?? undefined,
     view_id: q.get("view_id") ?? undefined,
     q: q.get("q") ?? undefined,
@@ -136,6 +143,11 @@ function simulateDelivery(ws: WsData, t: Ticket, msgId: string) {
     const fail = (t.contact?.email ?? "").includes("bounce");
     m.delivery_status = fail ? "failed" : "sent";
     m.delivery_error = fail ? "550 5.1.1 Recipient address rejected" : "";
+    // A ticket reply from a team address keeps the email as it went out.
+    if (!fail && m.kind === "reply" && !m.from_account) {
+      ws.originals[m.id] = renderSentReply(ws, t.id, m.body_html, m.mailbox_id ?? t.mailbox_id ?? null);
+      m.has_quoted = true;
+    }
     publish(ws, "message.updated", { ticket_id: t.id, message: m });
   }, 1500);
 }
