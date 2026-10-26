@@ -23,6 +23,9 @@ type AvailableDestination = { id: string; name: string; kind?: string; available
 type Destination = { id: string; connection_id: string; team_id: string|null;
   external_channel_id: string; external_channel_name: string; enabled: boolean;
   include_notes: boolean; created_at: string };
+type Delivery = { event_seq: number; event_type: string; ticket_number?: number;
+  status: "queued"|"retrying"|"delivered"|"failed"; attempts: number;
+  last_error: string; created_at: string; updated_at: string; delivered_at?: string };
 ```
 
 | method | path | role | body → response |
@@ -36,6 +39,8 @@ type Destination = { id: string; connection_id: string; team_id: string|null;
 | GET | `/v1/support-channels/connections/{id}/destinations` | admin user | discovers → `{data: AvailableDestination[]}` |
 | DELETE | `/v1/support-channels/connections/{id}` | admin user | → 204, including its destinations and thread mappings |
 | GET | `/v1/support-channels/destinations` | viewer, `settings:read` | → `{data: Destination[]}` |
+| GET | `/v1/support-channels/deliveries` | admin, `settings:read` | `limit?`, `cursor?` → `Page<Delivery>` |
+| POST | `/v1/support-channels/deliveries/{event_seq}/retry` | admin user | → 202 `{event_seq,status:"queued"}` for a failed event |
 | POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,external_channel_id,external_channel_name?,include_notes?}` → 201 `Destination` |
 | DELETE | `/v1/support-channels/destinations/{id}` | admin user | → 204, including its thread mappings |
 | POST | `/v1/me/support-channel-link-code` | agent user | → 201 `{code,expires_at}` |
@@ -149,6 +154,13 @@ none for a batch without ticket events. For each matching destination:
    River retries; the next successful delivery clears the error. A card that can't be edited
    is retried without touching the connection's status. An edit that changes nothing
    (Telegram's "message is not modified") or lands in an archived Discord thread counts as done.
+
+The settings delivery view records queued, retrying, delivered and failed event dispatches.
+A dispatch remains in the view after River exhausts its attempts, so administrators can
+inspect and retry it. Retrying a failed event enqueues it in the same transaction as the
+state change and audit entry. Successful destination deliveries remain idempotent when that
+event is replayed. The view shows recent events to administrators; provider responses and
+credentials are not exposed there.
 
 The root is an editable ticket card showing the ticket number, subject, customer, assignee,
 status, priority and opendesk URL. It offers Assign to me, status and priority controls. A

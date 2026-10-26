@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -31,6 +33,7 @@ type fakeAdapter struct {
 	interactive []channel.Message
 	cleared     []string
 	responses   []string
+	postErr     error
 }
 
 func (*fakeAdapter) Describe() channel.Descriptor {
@@ -48,7 +51,7 @@ func (*fakeAdapter) CreateThread(context.Context, *http.Client, map[string]strin
 }
 func (f *fakeAdapter) Post(_ context.Context, _ *http.Client, _ map[string]string, _, text string) error {
 	f.posts = append(f.posts, text)
-	return nil
+	return f.postErr
 }
 func (*fakeAdapter) Update(context.Context, *http.Client, map[string]string, string, channel.Ticket) error {
 	return nil
@@ -133,6 +136,90 @@ func (w *workflow) status(t *testing.T) (string, string) {
 	w.e.Scalar(`SELECT status FROM tickets WHERE id=$1`, &status, w.ticket.ID)
 	w.e.Scalar(`SELECT priority FROM tickets WHERE id=$1`, &priority, w.ticket.ID)
 	return status, priority
+}
+
+func TestDeliveryMovesToDeadLetterAndManualRetryCompletesIt(t *testing.T) {
+	w := newWorkflow(t)
+	var seq int64
+	w.e.Scalar(`SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE workspace_id=$1`, &seq, w.ws.ID)
+	w.e.Exec(`INSERT INTO events(workspace_id,seq,id,type,visibility,topics,data) VALUES($1,$2,$3,'message.created','agents','{}',
+		jsonb_build_object('ticket_id',$4::text,'message',jsonb_build_object('kind','reply','direction','inbound','body_text','Printer is down')))`,
+		w.ws.ID, seq, ids.New(), w.ticket.ID)
+	w.e.Exec(`INSERT INTO support_channel_dispatches(workspace_id,event_seq) VALUES($1,$2)`, w.ws.ID, seq)
+	args := jobs.SupportChannelDispatchArgs{WorkspaceID: w.ws.ID, EventSeq: seq}
+	worker := &dispatchWorker{s: w.s}
+	w.fake.postErr = errors.New("provider response included a private token")
+	for attempt := 1; attempt <= 2; attempt++ {
+		job := &river.Job[jobs.SupportChannelDispatchArgs]{JobRow: &rivertype.JobRow{Attempt: attempt, MaxAttempts: 2}, Args: args}
+		if err := worker.Work(w.e.Ctx, job); err == nil {
+			t.Fatal("failed provider post was marked successful")
+		}
+	}
+	var status, lastError string
+	var attempts int
+	w.e.Scalar(`SELECT status FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &status, w.ws.ID, seq)
+	w.e.Scalar(`SELECT attempts FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &attempts, w.ws.ID, seq)
+	w.e.Scalar(`SELECT last_error FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &lastError, w.ws.ID, seq)
+	if status != "failed" || attempts != 2 || lastError != deliveryError {
+		t.Fatalf("failed delivery = %s, %d attempts, error %q", status, attempts, lastError)
+	}
+
+	w.e.Exec(`UPDATE support_channel_dispatches SET status='queued' WHERE workspace_id=$1 AND event_seq=$2`, w.ws.ID, seq)
+	w.fake.postErr = nil
+	job := &river.Job[jobs.SupportChannelDispatchArgs]{JobRow: &rivertype.JobRow{Attempt: 1, MaxAttempts: 2}, Args: args}
+	if err := worker.Work(w.e.Ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	var deliveredAt *time.Time
+	w.e.Scalar(`SELECT status FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &status, w.ws.ID, seq)
+	w.e.Scalar(`SELECT attempts FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &attempts, w.ws.ID, seq)
+	w.e.Scalar(`SELECT last_error FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &lastError, w.ws.ID, seq)
+	w.e.Scalar(`SELECT delivered_at FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &deliveredAt, w.ws.ID, seq)
+	if status != "delivered" || attempts != 3 || lastError != "" || deliveredAt == nil {
+		t.Fatalf("retried delivery = %s, %d attempts, error %q, delivered at %v", status, attempts, lastError, deliveredAt)
+	}
+}
+
+func TestRetryDeliveryQueuesAndAuditsOnlyFailedDispatch(t *testing.T) {
+	e := hdtest.New(t, Register)
+	ws := e.NewWorkspace()
+	var seq int64
+	e.Scalar(`SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE workspace_id=$1`, &seq, ws.ID)
+	e.Exec(`INSERT INTO events(workspace_id,seq,id,type,visibility,topics,data) VALUES($1,$2,$3,'ticket.updated','agents','{}','{}')`, ws.ID, seq, ids.New())
+	e.Exec(`UPDATE workspaces SET event_seq=$2 WHERE id=$1`, ws.ID, seq)
+	e.Exec(`INSERT INTO support_channel_dispatches(workspace_id,event_seq,status,attempts,last_error)
+		VALUES($1,$2,'failed',8,$3)`, ws.ID, seq, deliveryError)
+
+	path := fmt.Sprintf("/v1/support-channels/deliveries/%d/retry", seq)
+	res := e.Do(http.MethodPost, path, ws.Admin.As(ws), nil).Want(t, http.StatusAccepted)
+	var queued struct {
+		EventSeq int64  `json:"event_seq"`
+		Status   string `json:"status"`
+	}
+	res.JSON(t, &queued)
+	if queued.EventSeq != seq || queued.Status != "queued" {
+		t.Fatalf("retry response = %+v", queued)
+	}
+	var jobCount int
+	e.Scalar(`SELECT count(*) FROM river_job WHERE kind='support_channels.dispatch' AND args->>'workspace_id'=$1 AND args->>'event_seq'=$2`, &jobCount, ws.ID.String(), fmt.Sprint(seq))
+	if jobCount != 1 {
+		t.Fatalf("retry queued %d dispatch jobs", jobCount)
+	}
+	e.Scalar(`SELECT count(*) FROM audit_logs WHERE workspace_id=$1 AND action='support_channel.delivery_retried'`, &jobCount, ws.ID)
+	if jobCount != 1 {
+		t.Fatalf("retry wrote %d audit entries", jobCount)
+	}
+	e.Do(http.MethodPost, path, ws.Admin.As(ws), nil).Want(t, http.StatusConflict)
+	e.Do(http.MethodPost, path, ws.Agent.As(ws), nil).Want(t, http.StatusForbidden)
+
+	list := e.Do(http.MethodGet, "/v1/support-channels/deliveries?limit=10", ws.Admin.As(ws), nil).Want(t, http.StatusOK)
+	var page struct {
+		Data []delivery `json:"data"`
+	}
+	list.JSON(t, &page)
+	if len(page.Data) != 1 || page.Data[0].EventSeq != seq || page.Data[0].Status != "queued" || page.Data[0].Attempts != 8 {
+		t.Fatalf("delivery view = %+v", page.Data)
+	}
 }
 
 func TestCardCloseAsksAndOnlyItsOwnConfirmApplies(t *testing.T) {

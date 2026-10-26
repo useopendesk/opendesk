@@ -91,6 +91,18 @@ type destination struct {
 	CreatedAt           time.Time  `json:"created_at"`
 }
 
+type delivery struct {
+	EventSeq     int64      `json:"event_seq"`
+	EventType    string     `json:"event_type"`
+	TicketNumber *int64     `json:"ticket_number,omitempty"`
+	Status       string     `json:"status"`
+	Attempts     int        `json:"attempts"`
+	LastError    string     `json:"last_error"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
+}
+
 // AvailableDestination is a provider location discovered during onboarding.
 // It is deliberately distinct from destination, which is a persisted team route.
 type AvailableDestination struct {

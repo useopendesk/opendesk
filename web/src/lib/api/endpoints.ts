@@ -388,6 +388,8 @@ export const api = {
     availableDestinations: (id: string) =>
       http.get<{ data: T.SupportChannelAvailableDestination[] }>(`/v1/support-channels/connections/${id}/destinations`),
     destinations: () => http.get<{ data: T.SupportChannelDestination[] }>("/v1/support-channels/destinations"),
+    deliveries: (q?: ListQuery) => http.get<T.Page<T.SupportChannelDelivery>>("/v1/support-channels/deliveries", { query: q }),
+    retryDelivery: (eventSeq: number) => http.post<{ event_seq: number; status: "queued" }>(`/v1/support-channels/deliveries/${eventSeq}/retry`),
     addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string; include_notes?: boolean }) =>
       http.create<T.SupportChannelDestination>("/v1/support-channels/destinations", b),
     removeDestination: (id: string) => http.del(`/v1/support-channels/destinations/${id}`),

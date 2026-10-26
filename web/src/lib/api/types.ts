@@ -1005,6 +1005,17 @@ export type SupportChannelDestination = {
   include_notes: boolean;
   created_at: string;
 };
+export type SupportChannelDelivery = {
+  event_seq: number;
+  event_type: string;
+  ticket_number?: number;
+  status: "queued" | "retrying" | "delivered" | "failed";
+  attempts: number;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+  delivered_at?: string;
+};
 export type TicketLink = {
   id: string;
   ticket_id: string;

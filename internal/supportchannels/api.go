@@ -396,6 +396,98 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			return out, nil
 		})
 
+	huma.Register(api, huma.Operation{OperationID: "list-support-channel-deliveries", Method: http.MethodGet, Path: "/v1/support-channels/deliveries", Tags: tags, Summary: "List recent support channel deliveries"},
+		func(ctx context.Context, in *struct {
+			httpx.ListParams
+		}) (*struct {
+			Body httpx.Page[delivery]
+		}, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsRead)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			var cur struct {
+				T   time.Time `json:"t"`
+				Seq int64     `json:"seq"`
+			}
+			if err := httpx.DecodeCursor(in.Cursor, &cur); err != nil {
+				return nil, err
+			}
+			if cur.T.IsZero() {
+				cur.T = time.Now().UTC().Add(time.Hour)
+			}
+			rows, err := s.d.DB.Pool.Query(ctx, `SELECT d.event_seq,e.type,t.number,d.status,d.attempts,d.last_error,d.created_at,d.updated_at,d.delivered_at
+				FROM support_channel_dispatches d JOIN events e ON e.workspace_id=d.workspace_id AND e.seq=d.event_seq
+				LEFT JOIN tickets t ON t.workspace_id=d.workspace_id AND t.id=COALESCE(NULLIF(e.data->>'ticket_id','')::uuid,NULLIF(e.data->'ticket'->>'id','')::uuid,NULLIF(e.data->'message'->>'ticket_id','')::uuid)
+				WHERE d.workspace_id=$1 AND (d.created_at,d.event_seq)<($2,$3)
+				ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur.Seq, in.Limit+1)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (delivery, error) {
+				var d delivery
+				err := r.Scan(&d.EventSeq, &d.EventType, &d.TicketNumber, &d.Status, &d.Attempts, &d.LastError, &d.CreatedAt, &d.UpdatedAt, &d.DeliveredAt)
+				return d, err
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct {
+				Body httpx.Page[delivery]
+			}{httpx.NewPage(list, in.Limit, func(d delivery) any {
+				return map[string]any{"t": d.CreatedAt, "seq": d.EventSeq}
+			})}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "retry-support-channel-delivery", Method: http.MethodPost, Path: "/v1/support-channels/deliveries/{event_seq}/retry", Tags: tags, Summary: "Retry a failed support channel delivery", DefaultStatus: http.StatusAccepted},
+		func(ctx context.Context, in *struct {
+			EventSeq int64 `path:"event_seq" minimum:"1"`
+		}) (*struct {
+			Body struct {
+				EventSeq int64  `json:"event_seq"`
+				Status   string `json:"status"`
+			}
+		}, error) {
+			p, err := requireAdminUser(ctx)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				var status string
+				err := tx.QueryRow(ctx, `SELECT status FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2 FOR UPDATE`, p.WorkspaceID, in.EventSeq).Scan(&status)
+				if db.IsNotFound(err) {
+					return httpx.NotFound("Support channel delivery")
+				}
+				if err != nil {
+					return err
+				}
+				if status != "failed" {
+					return httpx.Conflict("Only failed deliveries can be retried.")
+				}
+				if _, err := tx.Exec(ctx, `UPDATE support_channel_dispatches SET status='queued',updated_at=now() WHERE workspace_id=$1 AND event_seq=$2`, p.WorkspaceID, in.EventSeq); err != nil {
+					return err
+				}
+				if _, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SupportChannelDispatchArgs{WorkspaceID: p.WorkspaceID, EventSeq: in.EventSeq}, nil); err != nil {
+					return err
+				}
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_delivery.retry_queued", Admins: true, Data: map[string]any{"event_seq": in.EventSeq}}); err != nil {
+					return err
+				}
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.delivery_retried", "support_channel_delivery", nil, map[string]any{"event_seq": in.EventSeq})
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			out := &struct {
+				Body struct {
+					EventSeq int64  `json:"event_seq"`
+					Status   string `json:"status"`
+				}
+			}{}
+			out.Body.EventSeq, out.Body.Status = in.EventSeq, "queued"
+			return out, nil
+		})
+
 	huma.Register(api, huma.Operation{OperationID: "create-support-channel-destination", Method: http.MethodPost, Path: "/v1/support-channels/destinations", Tags: tags, Summary: "Route a team to a provider channel", DefaultStatus: http.StatusCreated},
 		func(ctx context.Context, in *struct {
 			Body struct {
