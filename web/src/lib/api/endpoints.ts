@@ -12,15 +12,25 @@ export type TicketListQuery = ListQuery & {
   /** "none": tickets without a severity. */
   severity?: (T.Severity | "none")[];
   assignee?: string;
-  /** A team id, "mine" or "none". */
+  /** Team ids, "mine" and "none", comma separated: tickets of any of them. */
   team_id?: string;
+  /** The same values as team_id: tickets of none of them. */
+  team_not?: string;
   mailbox_id?: string;
+  /** Mailbox ids, comma separated: tickets whose reply address is none of them. */
+  mailbox_not?: string;
   /** The address a ticket was first written to: a mailbox's address or an alias. */
   received_at?: string;
   brand_id?: string;
   widget_id?: string;
+  /** Label names, comma separated: tickets carrying any of them. */
   tag?: string;
+  /** Label names, comma separated: tickets carrying none of them. */
+  tag_not?: string;
+  /** Tickets carrying no label. */
+  untagged?: boolean;
   channel?: T.Channel;
+  channel_not?: T.Channel[];
   contact_id?: string;
   view_id?: string;
   q?: string;
@@ -31,6 +41,8 @@ export type TicketListQuery = ListQuery & {
   /** Custom field filters, sent as `field.<key>[<op>]=<value>`. */
   fields?: T.FieldFilter[];
 };
+
+export type TicketBulkQuery = Omit<TicketListQuery, "limit" | "cursor" | "sort" | "order">;
 
 /** Flattens custom field filters into `field.<key>[<op>]` query parameters. */
 export function fieldQuery(fields?: T.FieldFilter[]): Record<string, string> {
@@ -45,6 +57,10 @@ export function fieldQuery(fields?: T.FieldFilter[]): Record<string, string> {
 function listQuery<Q extends { fields?: T.FieldFilter[] }>(q: Q) {
   const { fields, ...rest } = q;
   return { ...(rest as Omit<Q, "fields">), ...fieldQuery(fields) } as Record<string, string | number | boolean | string[] | null | undefined>;
+}
+
+function bulkQuery(q: TicketBulkQuery) {
+	return { ...q, spam: q.spam === true ? "true" : q.spam === false ? "false" : q.spam };
 }
 
 export type ContactListQuery = ListQuery & { q?: string; company_id?: string; tag?: string; fields?: T.FieldFilter[] };
@@ -353,8 +369,8 @@ export const api = {
     deny: (id: string) => http.post<T.OAuthDecision>(`/v1/oauth/requests/${id}/deny`, undefined, { workspace: false }),
   },
   webhooks: {
-    ...crud<T.Webhook, { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }>("/v1/webhooks"),
-    create: (b: { url: string; description: string; events: string[]; enabled: boolean; private_team_ids?: string[] }) =>
+    ...crud<T.Webhook, { url: string; description: string; events: string[]; headers?: Record<string, string>; enabled: boolean; private_team_ids?: string[] }>("/v1/webhooks"),
+    create: (b: { url: string; description: string; events: string[]; headers?: Record<string, string>; enabled: boolean; private_team_ids?: string[] }) =>
       http.create<T.Webhook & { secret: string }>("/v1/webhooks", b),
     deliveries: (id: string, q?: ListQuery) =>
       http.get<T.Page<T.WebhookDelivery>>(`/v1/webhooks/${id}/deliveries`, { query: q }),
@@ -390,7 +406,7 @@ export const api = {
     destinations: () => http.get<{ data: T.SupportChannelDestination[] }>("/v1/support-channels/destinations"),
     deliveries: (q?: ListQuery) => http.get<T.Page<T.SupportChannelDelivery>>("/v1/support-channels/deliveries", { query: q }),
     retryDelivery: (eventSeq: number) => http.post<{ event_seq: number; status: "queued" }>(`/v1/support-channels/deliveries/${eventSeq}/retry`),
-    addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string; include_notes?: boolean }) =>
+    addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string; include_notes?: boolean; message_limit?: number }) =>
       http.create<T.SupportChannelDestination>("/v1/support-channels/destinations", b),
     removeDestination: (id: string) => http.del(`/v1/support-channels/destinations/${id}`),
     linkCode: () => http.create<{ code: string; expires_at: string }>("/v1/me/support-channel-link-code", {}),
@@ -446,8 +462,8 @@ export const api = {
     get: (id: string) => http.get<T.Ticket>(`/v1/tickets/${encodeURIComponent(id)}`),
     update: (id: string, patch: T.TicketPatch) => http.patch<T.Ticket>(`/v1/tickets/${id}`, patch),
     delete: (id: string) => http.del(`/v1/tickets/${id}`),
-    bulk: (b: { ids: string[]; patch?: T.TicketPatch; delete?: true }) =>
-      http.post<{ data: T.Ticket[]; updated: number; deleted: number } | undefined>("/v1/tickets/bulk", b),
+    bulk: (b: ({ ids: string[] } | { query: TicketBulkQuery }) & { patch?: T.TicketPatch; delete?: true }) =>
+      http.post<{ data: T.Ticket[]; updated: number; deleted: number } | undefined>("/v1/tickets/bulk", "query" in b ? { ...b, query: bulkQuery(b.query) } : b),
     merge: (id: string, into_id: string) => http.post<T.Ticket>(`/v1/tickets/${id}/merge`, { into_id }),
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     /** `opts` pins the account and workspace a held reply started in, and lets it outlive the page. */
@@ -815,6 +831,7 @@ export type CollabAccountPatch = {
   color?: string;
   signature_html?: string;
   visibility?: "private" | "shared";
+  handling_enabled?: boolean;
   shared_with?: T.MailAudience;
   imap?: Partial<T.MailImapSettings> & { password?: string; smtp_password?: string };
   /** The address new mail goes out from. */

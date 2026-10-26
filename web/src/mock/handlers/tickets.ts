@@ -13,6 +13,7 @@ import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
+const CHANNELS: Channel[] = ["email", "chat", "api", "portal"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
 const SEVERITIES: Severity[] = ["sev1", "sev2", "sev3", "sev4"];
 const SUGGESTION_FIELDS: SuggestionField[] = ["priority", "severity", "labels", "team", "spam"];
@@ -31,12 +32,17 @@ function filtersFrom(ctx: Ctx): ListFilters {
     severity: csv(q.get("severity"), [...SEVERITIES, "none" as const]),
     assignee: q.get("assignee") ?? undefined,
     team_id: q.get("team_id") ?? undefined,
+    team_not: q.get("team_not") ?? undefined,
     mailbox_id: q.get("mailbox_id") ?? undefined,
+    mailbox_not: q.get("mailbox_not") ?? undefined,
     received_at: q.get("received_at")?.trim().toLowerCase() || undefined,
     brand_id: q.get("brand_id") ?? undefined,
     widget_id: q.get("widget_id") ?? undefined,
     tag: q.get("tag") ?? undefined,
+    tag_not: q.get("tag_not") ?? undefined,
+    untagged: q.get("untagged") === "true" || undefined,
     channel: (q.get("channel") as Channel | null) ?? undefined,
+    channel_not: csv(q.get("channel_not"), CHANNELS),
     contact_id: q.get("contact_id") ?? undefined,
     view_id: q.get("view_id") ?? undefined,
     q: q.get("q") ?? undefined,
@@ -337,25 +343,32 @@ export function registerTickets() {
   });
   post("/v1/tickets/bulk", (ctx) => {
     const ids = strArr(ctx.body.ids) ?? [];
-    if (!ids.length) throw invalid("ids is required");
+    const rawQuery = isRecord(ctx.body.query) ? ctx.body.query : null;
+    const query = rawQuery ? ({ ...rawQuery, spam: rawQuery.spam === "true" ? true : rawQuery.spam === "false" ? false : undefined } as ListFilters) : null;
+    if ((ids.length === 0) === (query === null)) throw invalid("Send either ids or query");
     if (ids.length > 100) throw invalid("At most 100 tickets at a time");
     const doDelete = ctx.body.delete === true;
     const p = isRecord(ctx.body.patch) ? readPatch(ctx.body.patch) : null;
     if (!doDelete && !p) throw invalid("patch or delete is required");
-    for (const id of ids) {
-      const t = findTicket(ctx.ws, id);
-      if (!t || !canSeeTicket(ctx.ws, t)) continue;
+    const tickets = query
+      ? ctx.ws.tickets.filter((t) => matches(ctx.ws, t, query, db.meId))
+      : ids.map((id) => findTicket(ctx.ws, id)).filter((t): t is Ticket => !!t && canSeeTicket(ctx.ws, t));
+    let updated = 0;
+    let deleted = 0;
+    for (const t of tickets) {
       if (doDelete) {
         ctx.ws.deletedTickets.add(t.id);
         publish(ctx.ws, "ticket.deleted", { ticket_id: t.id });
+        deleted++;
       } else if (p) {
         checkPatch(ctx.ws, t, p);
         const from = t.team_id;
         applyPatch(ctx.ws, t, p, userRef(db.meId), true, personOpts(ctx.ws));
         hideIfPrivate(ctx.ws, t, from);
+        updated++;
       }
     }
-    return respond(204);
+    return respond(200, { data: query ? [] : tickets, updated, deleted });
   });
   post("/v1/tickets/:id/merge", (ctx) => {
     const src = ticket(ctx);

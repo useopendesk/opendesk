@@ -542,15 +542,26 @@ export type TicketFilters = {
   /** "none" matches tickets without a severity. */
   severity?: (Severity | "none")[];
   assignee?: "me" | "none" | string;
-  /** A team id, "mine" (the caller's teams) or "none". */
+  /** Team ids, "mine" (the caller's teams) and "none", comma separated: tickets of any of them. */
   team_id?: string;
+  /** The same values as team_id: tickets of none of them. */
+  team_not?: string;
   mailbox_id?: string;
+  /** Mailbox ids, comma separated: tickets whose reply address is none of them. */
+  mailbox_not?: string;
   /** The address a ticket was first written to: a mailbox's address or an alias. */
   received_at?: string;
   brand_id?: string;
   widget_id?: string;
+  /** Label names, comma separated (a name never contains a comma): tickets carrying any of them. */
   tag?: string;
+  /** Label names, comma separated: tickets carrying none of them. */
+  tag_not?: string;
+  /** Tickets carrying no label. */
+  untagged?: boolean;
   channel?: Channel;
+  /** Tickets on none of these channels. */
+  channel_not?: Channel[];
   q?: string;
   /** Custom field filters, ANDed (max 20). */
   fields?: FieldFilter[];
@@ -657,8 +668,9 @@ export type ConditionField =
   | "assignee_id" | "team_id" | "brand_id" | "widget_id" | "received_at"
   /** A ticket custom field, or the ticket contact's. */
   | `field.${string}` | `contact.field.${string}`;
-/** `eq` is the AI sentiment condition's operator (contracts/ai.md). */
-export type ConditionOp = "contains" | "not_contains" | "equals" | "not_equals" | "eq" | "gt" | "lt";
+/** `eq` is the AI sentiment condition's operator (contracts/ai.md). `any` and `none` on subject, body, from_email,
+ *  received_at and tag hold phrases, one per line: the text contains any, or none, of them. */
+export type ConditionOp = "contains" | "not_contains" | "equals" | "not_equals" | "eq" | "gt" | "lt" | "any" | "none";
 /** Custom field conditions (`field.<key>`, `contact.field.<key>`) take the FieldOp set of their type; `ne` aliases `not_equals`. */
 /** ai_decide: op gt/lt, value a probability 0.01..0.99, question a yes/no question (3..300 chars). */
 export type Condition = { field: ConditionField; op: ConditionOp; value: string; question?: string };
@@ -907,6 +919,8 @@ export type Webhook = {
   url: string;
   description: string;
   events: string[];
+  /** Configured custom request header names. Header values are never returned. */
+  header_names: string[];
   enabled: boolean;
   /** The address answered its verification challenge; until then it receives no events. */
   verified: boolean;
@@ -1003,6 +1017,8 @@ export type SupportChannelDestination = {
   enabled: boolean;
   /** Internal notes are posted too; off by default. */
   include_notes: boolean;
+  /** Maximum characters before the provider message links back to opendesk. */
+  message_limit: number;
   created_at: string;
 };
 export type SupportChannelDelivery = {
@@ -2141,6 +2157,8 @@ export type MailAccount = {
   can_manage: boolean;
   /** Unread conversations in its inbox. */
   unread: number;
+  /** Shared accounts can track work separately from provider read state. */
+  handling_enabled: boolean;
   /** IMAP accounts, can_manage only. */
   imap?: MailImapSettings;
   created_at: string;
@@ -2298,6 +2316,8 @@ export type MailThread = {
   unread: boolean;
   starred: boolean;
   has_attachments: boolean;
+  /** A shared inbox conversation that still needs a person to handle it. */
+  needs_action: boolean;
   folder_ids: string[];
   /** Shared on its own beyond its account's audience. */
   shared: boolean;
@@ -2471,7 +2491,7 @@ export type SidebarPrefs = {
 /** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
 export type SidebarBadge = "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none";
 
-export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned";
+export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "needs_action";
 
 export type MailThreadAction =
   | "read"
@@ -2485,11 +2505,13 @@ export type MailThreadAction =
   | "not_spam"
   | "move"
   | "label"
-  | "unlabel";
+  | "unlabel"
+  | "done"
+  | "needs_action";
 
 export type MailCounts = {
   /** Unread conversations; assigned and shared: open ones. */
-  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number };
+  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number; needs_action: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
   /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
