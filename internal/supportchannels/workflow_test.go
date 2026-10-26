@@ -181,6 +181,25 @@ func TestDeliveryMovesToDeadLetterAndManualRetryCompletesIt(t *testing.T) {
 	}
 }
 
+func TestRateLimitedDeliveryRemainsRetryableAtLastAttempt(t *testing.T) {
+	w := newWorkflow(t)
+	var seq int64
+	w.e.Scalar(`SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE workspace_id=$1`, &seq, w.ws.ID)
+	w.e.Exec(`INSERT INTO events(workspace_id,seq,id,type,visibility,topics,data) VALUES($1,$2,$3,'message.created','agents','{}',jsonb_build_object('ticket_id',$4::text,'message',jsonb_build_object('kind','reply','direction','inbound','body_text','Help')))`, w.ws.ID, seq, ids.New(), w.ticket.ID)
+	w.fake.postErr = &channel.RateLimited{RetryAfter: time.Minute}
+	job := &river.Job[jobs.SupportChannelDispatchArgs]{JobRow: &rivertype.JobRow{Attempt: 2, MaxAttempts: 2}, Args: jobs.SupportChannelDispatchArgs{WorkspaceID: w.ws.ID, EventSeq: seq}}
+	err := (&dispatchWorker{s: w.s}).Work(w.e.Ctx, job)
+	var snooze *rivertype.JobSnoozeError
+	if !errors.As(err, &snooze) || snooze.Duration != time.Minute {
+		t.Fatalf("want rate limit snooze, got %v", err)
+	}
+	var status string
+	w.e.Scalar(`SELECT status FROM support_channel_dispatches WHERE workspace_id=$1 AND event_seq=$2`, &status, w.ws.ID, seq)
+	if status != "retrying" {
+		t.Fatalf("rate limited status = %s", status)
+	}
+}
+
 func TestRetryDeliveryQueuesAndAuditsOnlyFailedDispatch(t *testing.T) {
 	e := hdtest.New(t, Register)
 	ws := e.NewWorkspace()

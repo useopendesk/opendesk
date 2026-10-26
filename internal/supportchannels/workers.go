@@ -34,7 +34,7 @@ func (w *dispatchWorker) Timeout(*river.Job[jobs.SupportChannelDispatchArgs]) ti
 	return 30 * time.Second
 }
 func (w *dispatchWorker) Work(ctx context.Context, j *river.Job[jobs.SupportChannelDispatchArgs]) error {
-	return w.s.runDispatch(ctx, j)
+	return snoozeRateLimit(w.s.runDispatch(ctx, j))
 }
 
 func (s *Service) runDispatch(ctx context.Context, j *river.Job[jobs.SupportChannelDispatchArgs]) error {
@@ -57,7 +57,8 @@ func (s *Service) runDispatch(ctx context.Context, j *river.Job[jobs.SupportChan
 	err = s.dispatch(ctx, a)
 	if err != nil {
 		status = "retrying"
-		if j.Attempt >= j.MaxAttempts {
+		var limited *channel.RateLimited
+		if j.Attempt >= j.MaxAttempts && !errors.As(err, &limited) {
 			status = "failed"
 		}
 		_, updateErr := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_dispatches SET status=$3,last_error=$4,updated_at=now()
@@ -83,6 +84,14 @@ func (s *Service) runDispatch(ctx context.Context, j *river.Job[jobs.SupportChan
 	return err
 }
 
+func snoozeRateLimit(err error) error {
+	var limited *channel.RateLimited
+	if errors.As(err, &limited) {
+		return river.JobSnooze(limited.RetryAfter)
+	}
+	return err
+}
+
 type inboundWorker struct {
 	river.WorkerDefaults[jobs.SupportChannelInboundArgs]
 	s *Service
@@ -99,7 +108,7 @@ func (w *inboundWorker) Work(ctx context.Context, j *river.Job[jobs.SupportChann
 		// Waiting for an earlier command is not a failure: it uses no attempt.
 		return river.JobSnooze(2 * time.Second)
 	}
-	return err
+	return snoozeRateLimit(err)
 }
 
 type deliveryTarget struct {
@@ -976,7 +985,10 @@ func (r *reply) clearActions(ctx context.Context) {
 const deliveryError = "Couldn't deliver to the provider."
 
 func (s *Service) connectionError(ctx context.Context, id uuid.UUID, cause error) error {
-	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1 AND (status<>'error' OR last_error=$2)`, id, deliveryError)
+	var limited *channel.RateLimited
+	if !errors.As(cause, &limited) {
+		_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1 AND (status<>'error' OR last_error=$2)`, id, deliveryError)
+	}
 	return fmt.Errorf("support channel delivery: %w", cause)
 }
 func publicError(err error) string {
