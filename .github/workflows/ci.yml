@@ -206,14 +206,21 @@ jobs:
     if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Full history: the commit this lands on and the release tags.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Runs on the PR's merge commit, so main's migrations are included. That
-      # only holds while the branch is current: require branches to be up to
-      # date before merging.
-      - name: No duplicate migration versions
-        run: ./scripts/check-migrations.sh
+          fetch-depth: 0
+      # Runs on the PR's (or merge queue's) merge commit, so main's migrations are
+      # included and HEAD^1 is the main it lands on. A new migration is numbered
+      # above everything there and in the newest release: golang-migrate applies
+      # only versions above a database's current one.
+      - name: Migration versions are unique and ordered
+        run: |
+          against=(--against HEAD^1)
+          tag=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          [ -z "$tag" ] || against+=(--against "$tag")
+          ./scripts/check-migrations.sh "${against[@]}"
 
   web:
     name: Web

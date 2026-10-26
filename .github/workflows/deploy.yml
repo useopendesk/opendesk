@@ -90,6 +90,14 @@ jobs:
         run: |
           git merge-base --is-ancestor "$SHA" origin/main ||
             { echo "::error::$TAG is not on main; only commits on main deploy"; exit 1; }
+      # Production upgrades from the previous release, and its migration task
+      # applies only versions above that release's highest.
+      - if: github.ref_type == 'tag'
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$SHA^" 2>/dev/null) || exit 0
+          ./scripts/check-migrations.sh --against "$prev"
       - id: t
         env:
           INPUT: ${{ inputs.target }}
