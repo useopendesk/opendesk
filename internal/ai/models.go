@@ -26,7 +26,7 @@ const (
 // featureTier maps an AI feature to its model tier.
 func featureTier(feature string) string {
 	switch feature {
-	case "rewrite", "translate", "triage", "decide", "assistant_peer":
+	case "rewrite", "translate", "triage", "decide", "assistant_peer", "mail_categorize", "mail_categories":
 		return tierFast
 	case "answer", "answer_email", "playground":
 		return tierWidget
@@ -284,6 +284,9 @@ var typicalTokens = map[string]tokenCount{
 	"assistant":    {6000, 400},
 	// One answer of a teammate's Ollie: mail excerpts in, a short answer out.
 	"assistant_peer": {4000, 400},
+	// Sorting up to 10 new Collab conversations (decisions), and suggesting an inbox's categories.
+	"mail_categorize": {3000, 100},
+	"mail_categories": {3000, 500},
 }
 
 // estimateMaxOutput caps the output tokens an estimate counts: features allow long
@@ -367,7 +370,7 @@ func (s *Service) featureCosts(ctx context.Context, set hd.AISettings, costs map
 	jev := hd.Engine(s.d.Cfg).Provider == "typesafe"
 	for feature := range typicalTokens {
 		switch {
-		case jev && (feature == "triage" || feature == "decide"):
+		case jev && (feature == "triage" || feature == "decide" || feature == "mail_categorize"):
 		case ownKey:
 			costs[feature] = 0
 		default:

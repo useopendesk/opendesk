@@ -804,5 +804,21 @@
       "paused": "History paused",
       "limited": "History waiting for storage"
     }
+  },
+  "categories": {
+    "group": "Categories",
+    "tabs": "Inbox categories",
+    "settings": "Category settings",
+    "moved_one": "Conversation moved to {{name}}",
+    "moved_other": "{{count}} conversations moved to {{name}}",
+    "always": "Always",
+    "alwaysHint": "Send future mail from {{sender}} here too",
+    "ruleSaved": "Mail from {{sender}} now goes to {{name}}",
+    "offer": {
+      "title": "Split your inbox into tabs.",
+      "body": "Mail from people stays in Primary, while newsletters, updates and promotions get their own tabs. Ollie can suggest categories from your mail.",
+      "action": "Set up categories",
+      "dismiss": "Not now"
+    }
   }
 }

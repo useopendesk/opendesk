@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/collab"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
@@ -32,6 +33,7 @@ func For(d *deps.Deps) *Service {
 	s := New(context.Background(), d)
 	services[d] = s
 	s.installHooks()
+	collab.SetMailAI(d, s)
 	return s
 }
 

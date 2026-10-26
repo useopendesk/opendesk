@@ -142,6 +142,8 @@ workspace's chosen models.
 | Auto-triage (tags, priority, severity, team, sentiment, language): one call, every question batched | `triage` | $0.01 |
 | `ai_decide` automation conditions (all of one trigger run in one call) | `decide` | $0.01 |
 | Widget agent relevance check (Jev) | `answer_check` | $0.001 |
+| Sort new Collab mail into categories (up to 10 conversations in one call, contracts/collab.md "Categories") | `mail_categorize` | $0.002 |
+| Suggest categories for an inbox | `mail_categories` | $0.01 |
 | Ask about a ticket (copilot) | `copilot` | $0.02 |
 | Draft a reply | `draft_reply` | $0.03 |
 | Widget agent reply (each model turn of a reply, tool turns included) | `answer` | $0.03 |
@@ -154,7 +156,8 @@ workspace's chosen models.
 A typical call's size (`internal/ai` `typicalTokens`, input / output tokens): summarize 3,000 / 300,
 rewrite 800 / 400, translate 800 / 500, triage 1,500 / 150, decide 1,500 / 100, copilot 4,000 / 400,
 draft_reply 4,000 / 500, answer 5,000 / 400, answer_email 5,000 / 500, playground 5,000 / 400,
-kb_draft 8,000 / 1,500, assistant 6,000 / 400, assistant_peer 4,000 / 400. A model's `typical_reply_usd` is a draft reply of this size.
+kb_draft 8,000 / 1,500, assistant 6,000 / 400, assistant_peer 4,000 / 400, mail_categorize 3,000 / 100,
+mail_categories 3,000 / 500. A model's `typical_reply_usd` is a draft reply of this size.
 
 Jev decisions cost a fraction of an LLM call (per input token, output free), so triage and the
 widget relevance check use only a little. Usage rows record decision calls with model `jev`.
