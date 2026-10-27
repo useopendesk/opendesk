@@ -1259,6 +1259,8 @@ export type WikiNode = {
   /** Moves on every change of title, icon or body; PATCH sends it back. */
   version: number;
   updated_at: string;
+  /** Who created it; null for an API key or a deleted account. */
+  created_by_id: string | null;
 };
 
 export type WikiRef = { id: string; title: string; icon: string };

@@ -5,6 +5,8 @@
 import type { WikiNode } from "../api/types";
 
 export const MAX_DEPTH = 10;
+/** Characters in a title; the API refuses longer ones. */
+export const MAX_TITLE = 200;
 
 export type Tree = {
   byId: Map<string, WikiNode>;
@@ -64,6 +66,20 @@ export function heightOf(tree: Tree, id: string): number {
   return 1 + kids.reduce((m, c) => Math.max(m, heightOf(tree, c.id)), 0);
 }
 
+/**
+ * Whether me created the page and everything under it (contracts/wiki.md "Access"): "yes";
+ * "page" when someone else created the page; "subpages" when they created one under it.
+ * A page not in the tree is "yes", and the API decides.
+ */
+export type Ownership = "yes" | "page" | "subpages";
+
+export function ownership(tree: Tree, id: string, me: string | undefined): Ownership {
+  const n = tree.byId.get(id);
+  if (!n) return "yes";
+  if (n.created_by_id !== me) return "page";
+  return descendantsOf(tree, id).every((d) => d.created_by_id === me) ? "yes" : "subpages";
+}
+
 export type Drop = { parent: string | null; position: number };
 
 /**
@@ -76,6 +92,25 @@ export function canPlace(tree: Tree, id: string, parent: string | null): boolean
   const up = ancestorsOf(tree, parent);
   if (up.some((a) => a.id === id)) return false;
   return up.length + 1 + heightOf(tree, id) <= MAX_DEPTH;
+}
+
+/** The pages "Move to…" offers for id, in tree order with their depth: those canPlace takes. */
+export function moveTargets(tree: Tree, id: string): { node: WikiNode; depth: number }[] {
+  const out: { node: WikiNode; depth: number }[] = [];
+  const walk = (parent: string, depth: number) => {
+    for (const n of tree.kids.get(parent) ?? []) {
+      if (n.id === id) continue;
+      if (canPlace(tree, id, n.id)) out.push({ node: n, depth });
+      walk(n.id, depth + 1);
+    }
+  };
+  walk("", 0);
+  return out;
+}
+
+/** Moving id under parent with "Move to…": last among its new siblings. */
+export function moveToEnd(tree: Tree, id: string, parent: string | null): Drop {
+  return { parent, position: childrenOf(tree, parent).filter((c) => c.id !== id).length };
 }
 
 export type Zone = "before" | "inside" | "after";

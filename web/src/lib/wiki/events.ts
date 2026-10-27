@@ -1,13 +1,16 @@
 // wiki_page.* events (contracts/wiki.md "Events") on the TanStack Query cache. They carry
 // the page without its body: the tree is patched in place, and an open page someone else
-// changed is refetched (the page view then takes it, or asks when typing is unsaved).
+// changed elsewhere is refetched (the page view then takes it, or asks when typing is
+// unsaved). Elsewhere includes the same person in another tab or through Ollie: what
+// tells this tab's own saves apart is the version its saver already holds.
 
 import type { QueryClient } from "@tanstack/react-query";
-import type { UserRef, WikiNode, WikiPage } from "../api/types";
+import type { WikiNode, WikiPage } from "../api/types";
 import { qk } from "../queries";
+import { openSaver } from "./saver";
 import { removeSubtree, upsertNode } from "./tree";
 
-export function applyWikiEvent(qc: QueryClient, verb: string, d: Record<string, unknown>, me: string) {
+export function applyWikiEvent(qc: QueryClient, verb: string, d: Record<string, unknown>) {
   void qc.invalidateQueries({ queryKey: qk.of("wiki", "search") });
   const patch = (fn: (nodes: WikiNode[]) => WikiNode[]) => qc.setQueryData<WikiNode[]>(qk.wikiTree, (old) => (old ? fn(old) : old));
   if (verb === "deleted") {
@@ -25,9 +28,9 @@ export function applyWikiEvent(qc: QueryClient, verb: string, d: Record<string, 
     return;
   }
   patch((nodes) => upsertNode(nodes, node));
-  const by = d.updated_by as UserRef | null | undefined;
   const page = qc.getQueryData<WikiPage>(qk.wikiPage(node.id));
-  // The person's own saves come back with their answer; the event adds nothing.
-  if (page && page.version < node.version && by?.id !== me) void qc.invalidateQueries({ queryKey: qk.wikiPage(node.id) });
+  // This tab's own saves come back with their answer (the saver has the version already).
+  const known = Math.max(page?.version ?? Infinity, openSaver(node.id)?.version ?? 0);
+  if (known < node.version) void qc.invalidateQueries({ queryKey: qk.wikiPage(node.id) });
   void qc.invalidateQueries({ queryKey: qk.wikiRevisions(node.id), refetchType: "none" });
 }

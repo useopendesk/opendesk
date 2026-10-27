@@ -37,6 +37,7 @@ Write the body with the same editor as help articles: headings, lists, quotes, c
 
 - **Add a subpage** with the **+** beside a page in the list, from the page's **more actions** menu, or at the bottom of the page.
 - **Drag a page** in the list onto another to put it inside, or above or below one to reorder. Its subpages move with it. Pages nest up to 10 levels.
+- **Move to…** in a page's menu, in the list or in the page header, picks where it goes from a searchable list of pages, or **Top level**. The page goes last under the one you pick. On a phone or tablet this is how pages move.
 - **With the keyboard**: in the page list, the arrow keys move between pages, <kbd>Right</kbd> opens a page's subpages and <kbd>Left</kbd> closes them, and <kbd>Enter</kbd> opens a page. <kbd>Alt</kbd> with <kbd>Up</kbd> or <kbd>Down</kbd> moves the page among its neighbours, <kbd>Alt</kbd> <kbd>Right</kbd> puts it inside the page above, and <kbd>Alt</kbd> <kbd>Left</kbd> moves it out a level.
 - **Copy link** in the page header gives an address teammates can open.
 
@@ -48,7 +49,7 @@ You can also ask [Ollie](/guides/ollie/): "What's our refund escalation process?
 
 ## Editing together
 
-Pages update live for everyone who has them open. If a teammate saves the page while you have changes that are not saved yet, opendesk keeps your text and asks: **Load their version** to take theirs, or **Keep mine** to save yours over it. Nothing is overwritten without that choice.
+Pages update live for everyone who has them open. If a teammate saves the page while you have changes that are not saved yet, opendesk keeps your text and asks: **Load their version** to take theirs, or **Keep mine** to save yours over it. Nothing is overwritten without that choice. When you can't edit a page (a viewer, or your role changed), or the page was deleted while you had changes not saved yet, the page says so and offers **Copy my text**, so nothing you typed is lost.
 
 ## History
 
@@ -59,10 +60,10 @@ Click **History** in the page header to see earlier versions, who wrote them and
 | Role | Read | Create, edit, move, restore | Delete |
 | --- | --- | --- | --- |
 | Viewer | Yes | No | No |
-| Agent | Yes | Yes | Pages they created |
+| Agent | Yes | Yes | Pages they created, with only their own pages under them |
 | Admin, owner | Yes | Yes | Any page |
 
-Deleting a page deletes its subpages and their history for good. opendesk asks first and says how many subpages go with it. Creating and deleting pages is recorded in the [audit log](/security/).
+Deleting a page deletes its subpages and their history for good, so when someone else created the page or any page under it, only an admin can delete it. opendesk asks first and says how many subpages go with it. Creating and deleting pages is recorded in the [audit log](/security/).
 
 <Callout>
 

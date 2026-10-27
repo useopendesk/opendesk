@@ -431,7 +431,7 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
   }
 
   if (resource === "wiki_page") {
-    applyWikiEvent(qc, verb, d, ctx.me);
+    applyWikiEvent(qc, verb, d);
     return;
   }
 

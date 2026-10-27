@@ -36,10 +36,11 @@ type page struct {
 }
 
 type node struct {
-	ID       string  `json:"id"`
-	ParentID *string `json:"parent_id"`
-	Title    string  `json:"title"`
-	Position int     `json:"position"`
+	ID          string  `json:"id"`
+	ParentID    *string `json:"parent_id"`
+	Title       string  `json:"title"`
+	Position    int     `json:"position"`
+	CreatedByID *string `json:"created_by_id"`
 }
 
 func create(t *testing.T, e *hdtest.Env, a hdtest.Auth, body map[string]any) page {
@@ -106,6 +107,8 @@ func TestPagesAndAccess(t *testing.T) {
 	// An untitled page is fine; a word is not an icon; bodies have a size cap.
 	create(t, e, agent, map[string]any{})
 	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "x", "icon": "abc"}).Want(t, 422)
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "x", "icon": "\u202e📘"}).Want(t, 422)
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": strings.Repeat("a", 201)}).Want(t, 422)
 	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "x", "body_html": strings.Repeat("a", 513<<10)}).Want(t, 422)
 
 	// Viewers read only; scopes bound API keys.
@@ -239,7 +242,8 @@ func TestDelete(t *testing.T) {
 	e := hdtest.New(t, wiki.Register)
 	ws := e.NewWorkspace()
 	agent, admin := ws.Agent.As(ws), ws.Admin.As(ws)
-	other := e.AddUser(ws, auth.RoleAgent, "Other Agent").As(ws)
+	otherUser := e.AddUser(ws, auth.RoleAgent, "Other Agent")
+	other := otherUser.As(ws)
 
 	top := create(t, e, agent, map[string]any{"title": "Top"})
 	sibling := create(t, e, agent, map[string]any{"title": "Sibling"})
@@ -247,10 +251,13 @@ func TestDelete(t *testing.T) {
 	subsub := create(t, e, agent, map[string]any{"title": "Subsub", "parent_id": sub.ID})
 	_, seq := e.Events(ws.ID, 0)
 
-	// Agents delete the pages they created; admins any.
+	// Agents delete a page they created with everything under it; admins any.
 	e.Do("DELETE", "/v1/wiki/pages/"+top.ID, other, nil).Want(t, 403)
 	e.Do("DELETE", "/v1/wiki/pages/"+sub.ID, agent, nil).Want(t, 403)
-	e.Do("DELETE", "/v1/wiki/pages/"+top.ID, agent, nil).Want(t, 204)
+	if r := e.Do("DELETE", "/v1/wiki/pages/"+top.ID, agent, nil).Want(t, 403); !strings.Contains(string(r.Body), "only an admin") {
+		t.Fatalf("refusal %s", r.Body)
+	}
+	e.Do("DELETE", "/v1/wiki/pages/"+top.ID, admin, nil).Want(t, 204)
 	e.Do("GET", "/v1/wiki/pages/"+sub.ID, agent, nil).Want(t, 404)
 	var left, revs int
 	e.Scalar(`SELECT count(*) FROM wiki_pages WHERE workspace_id = $1`, &left, ws.ID)
@@ -277,8 +284,35 @@ func TestDelete(t *testing.T) {
 	if subpages != "2" {
 		t.Fatalf("audit subpages %q", subpages)
 	}
-	e.Do("DELETE", "/v1/wiki/pages/"+sibling.ID, admin, nil).Want(t, 204)
+	e.Do("DELETE", "/v1/wiki/pages/"+sibling.ID, agent, nil).Want(t, 204)
 	e.Do("DELETE", "/v1/wiki/pages/"+sibling.ID, admin, nil).Want(t, 404)
+
+	// Moving someone else's pages under one's own page doesn't make them deletable.
+	policies := create(t, e, other, map[string]any{"title": "Policies"})
+	create(t, e, other, map[string]any{"title": "Refunds", "parent_id": policies.ID})
+	mine := create(t, e, agent, map[string]any{"title": "Empty"})
+	e.Do("POST", "/v1/wiki/pages/"+policies.ID+"/move", agent, map[string]any{"parent_id": mine.ID, "position": 0}).Want(t, 200)
+	e.Do("DELETE", "/v1/wiki/pages/"+mine.ID, agent, nil).Want(t, 403)
+	nodes := tree(t, e, agent)
+	if got := children(nodes, mine.ID); !slices.Equal(got, []string{"Policies"}) {
+		t.Fatalf("after refused delete %v", got)
+	}
+	// The tree names each page's creator, so the app knows which deletes to offer.
+	for _, n := range nodes {
+		want := otherUser.ID.String()
+		if n.ID == mine.ID {
+			want = ws.Agent.ID.String()
+		}
+		if n.CreatedByID == nil || *n.CreatedByID != want {
+			t.Fatalf("created_by_id of %s: %v", n.Title, n.CreatedByID)
+		}
+	}
+	// An API key with wiki:write deletes any page.
+	key := hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeWikiRead, auth.ScopeWikiWrite)}
+	e.Do("DELETE", "/v1/wiki/pages/"+mine.ID, key, nil).Want(t, 204)
+	if n := tree(t, e, agent); len(n) != 0 {
+		t.Fatalf("left %+v", n)
+	}
 }
 
 type rev struct {

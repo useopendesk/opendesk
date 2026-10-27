@@ -13,7 +13,7 @@ import type { WikiNode, WikiPage } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { forgetSaver } from "@/lib/wiki/saver";
-import { applyMove, buildTree, descendantsOf, removeSubtree, upsertNode, type Drop } from "@/lib/wiki/tree";
+import { applyMove, buildTree, descendantsOf, ownership, removeSubtree, upsertNode, type Drop, type Ownership } from "@/lib/wiki/tree";
 
 export function useWikiTree() {
   const query = useQuery(q.wikiTree());
@@ -29,6 +29,7 @@ export const nodeOf = (p: WikiPage): WikiNode => ({
   position: p.position,
   version: p.version,
   updated_at: p.updated_at,
+  created_by_id: p.created_by?.id ?? null,
 });
 
 /** A page's title for display: "Untitled" until it has one. */
@@ -171,15 +172,20 @@ export function useDeletePage() {
   };
 }
 
-/** Admins delete any page, agents their own; unknown (not loaded) shows the action and lets the API decide. */
-export function useCanDelete() {
+/**
+ * Whether the person may delete a page (contracts/wiki.md "Access"): yes; no (viewers);
+ * or "page" / "subpages" when someone else created the page or one under it, so only an
+ * admin can. A page not in the tree yet shows the action and lets the API decide.
+ */
+export type DeleteRule = "no" | Ownership;
+
+export function useDeleteRule() {
   const role = useRole();
   const me = useSession((s) => s.user?.id);
-  const qc = useQueryClient();
-  return (id: string) => {
-    if (!atLeast(role, "agent")) return false;
-    if (atLeast(role, "admin")) return true;
-    const page = qc.getQueryData<WikiPage>(qk.wikiPage(id));
-    return !page || page.created_by?.id === me;
+  const { tree } = useWikiTree();
+  return (id: string): DeleteRule => {
+    if (!atLeast(role, "agent")) return "no";
+    if (atLeast(role, "admin")) return "yes";
+    return ownership(tree, id, me);
   };
 }

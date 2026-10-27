@@ -558,7 +558,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | POST | `/v1/wiki/pages` | agent (`wiki:write`). `{parent_id?, title?, icon?, body_html?, position?}` → 201 `WikiPage`. `422 wiki_full` past 5,000 pages, `page_too_deep` past 10 levels, `page_too_large` past 512 KB |
 | PATCH | `/v1/wiki/pages/{id}` | agent (`wiki:write`). `{title?, icon?, body_html?, version?}` → `WikiPage`. A `version` that is not the page's is `409 page_changed` and changes nothing |
 | POST | `/v1/wiki/pages/{id}/move` | agent (`wiki:write`). `{parent_id: string \| null, position}` → `WikiPage`; moves its subpages along. Under itself or a subpage is `422 page_cycle` |
-| DELETE | `/v1/wiki/pages/{id}` | agent (`wiki:write`): admins any page, agents those they created (`403` otherwise); API keys any. Removes its subpages and their history → 204. Audit `wiki_page.deleted` |
+| DELETE | `/v1/wiki/pages/{id}` | agent (`wiki:write`): admins any page, agents a page when they created it and every page under it (`403` otherwise); API keys any. Removes its subpages and their history → 204. Audit `wiki_page.deleted` |
 | GET | `/v1/wiki/pages/{id}/revisions` | viewer (`wiki:read`) → `{data: WikiRevision[]}` newest first, without bodies; `/revisions/{revisionId}` → `WikiRevision` with `body_html` |
 | POST | `/v1/wiki/pages/{id}/revisions/{revisionId}/restore` | agent (`wiki:write`) → `WikiPage`: the revision's title, icon and body as a new version |
 | GET | `/v1/wiki/search?q=&limit=` | viewer (`wiki:read`) → `{data: WikiSearchHit[]}` (default 20, at most 50) |

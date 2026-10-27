@@ -15,7 +15,8 @@
     "collapse": "Hide subpages",
     "actions": "Actions for {{title}}",
     "addSubpage": "Add a subpage",
-    "addSubpageTo": "Add a subpage to {{title}}"
+    "addSubpageTo": "Add a subpage to {{title}}",
+    "moveTo": "Move to…"
   },
   "icon": {
     "label": "Emoji",
@@ -65,6 +66,22 @@
     "loadTheirs": "Load their version",
     "keepMine": "Keep mine"
   },
+  "unsent": {
+    "forbidden": "You can't edit this page.",
+    "deleted": "This page was deleted.",
+    "body": "What you typed wasn't saved. Copy it to keep it.",
+    "copy": "Copy my text",
+    "copied": "Your text is copied",
+    "discard": "Discard"
+  },
+  "move": {
+    "title": "Move “{{title}}”",
+    "description": "It goes last under the page you pick, with its subpages.",
+    "search": "Search pages",
+    "top": "Top level",
+    "none": "No page matches.",
+    "here": "Here now"
+  },
   "history": {
     "open": "History",
     "title": "Page history",
@@ -87,7 +104,9 @@
     "withSubpages_other": "Its {{count}} subpages go with it. All of them and their history are deleted for good.",
     "confirm": "Delete page",
     "confirmAll_one": "Delete {{count}} page",
-    "confirmAll_other": "Delete {{count}} pages"
+    "confirmAll_other": "Delete {{count}} pages",
+    "adminOnlyPage": "Someone else created this page, so only an admin can delete it.",
+    "adminOnlySubpages": "Someone else created pages under this one, so only an admin can delete it."
   },
   "toast": {
     "createFailed": "Couldn't create the page.",

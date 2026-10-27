@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WikiNode, WikiPage, WikiRevision, WikiSearchHit } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
 import { applyWikiEvent } from "@/lib/wiki/events";
+import { resetSavers, saverFor } from "@/lib/wiki/saver";
 import { installMock } from "../index";
 import { dispatch } from "../router";
 import { db } from "../db";
@@ -44,6 +45,31 @@ describe("mock wiki", () => {
     expect((await call("GET", `/v1/wiki/pages/${sub.id}`)).status).toBe(404);
   });
 
+  it("lets an agent delete only pages they created with everything under them", async () => {
+    const ws = db.workspaces[0];
+    const me = ws.members.find((m) => m.user_id === db.meId)!;
+    const theirs = (await call("GET", "/v1/wiki/pages")).body.data.find((n: WikiNode) => n.created_by_id && n.created_by_id !== db.meId) as WikiNode;
+    const mine = (await call("POST", "/v1/wiki/pages", { title: "Empty" })).body as WikiPage;
+    const role = me.role;
+    me.role = "agent";
+    try {
+      expect((await call("DELETE", `/v1/wiki/pages/${theirs.id}`)).status).toBe(403);
+      await call("POST", `/v1/wiki/pages/${theirs.id}/move`, { parent_id: mine.id, position: 0 });
+      const refused = await call("DELETE", `/v1/wiki/pages/${mine.id}`);
+      expect(refused).toMatchObject({ status: 403, body: { detail: expect.stringContaining("only an admin") } });
+    } finally {
+      me.role = role;
+    }
+    await call("POST", `/v1/wiki/pages/${theirs.id}/move`, { parent_id: theirs.parent_id, position: theirs.position });
+    expect((await call("DELETE", `/v1/wiki/pages/${mine.id}`)).status).toBe(204);
+  });
+
+  it("refuses long titles and icons that aren't one emoji", async () => {
+    expect((await call("POST", "/v1/wiki/pages", { title: "a".repeat(201) })).status).toBe(422);
+    for (const icon of ["\u202e📘", "📘📘", "ab", "\u200b📘", "📘\u0301"]) expect((await call("POST", "/v1/wiki/pages", { icon })).status, icon).toBe(422);
+    for (const icon of ["📘", "☑️", "🇭🇺", "👨‍👩‍👧‍👦", "1️⃣", "👋🏽"]) expect((await call("POST", "/v1/wiki/pages", { icon })).status, icon).toBe(201);
+  });
+
   it("finds pages by partly typed words, in global search too", async () => {
     const hits = (await call("GET", "/v1/wiki/search?q=escal")).body.data as WikiSearchHit[];
     expect(hits[0]?.title).toBe("Escalation process");
@@ -54,19 +80,34 @@ describe("mock wiki", () => {
 });
 
 describe("wiki events on the cache", () => {
-  const node = (id: string, parent: string | null, position: number, version = 1): WikiNode => ({ id, parent_id: parent, title: id, icon: "", position, version, updated_at: "2026-10-01T00:00:00Z" });
+  const node = (id: string, parent: string | null, position: number, version = 1): WikiNode => ({ id, parent_id: parent, title: id, icon: "", position, version, updated_at: "2026-10-01T00:00:00Z", created_by_id: null });
 
   it("patches the tree, refetches a page someone else changed and drops deleted subpages", () => {
     const qc = new QueryClient();
     qc.setQueryData(qk.wikiTree, [node("a", null, 0), node("b", "a", 0)]);
     qc.setQueryData(qk.wikiPage("a"), { ...node("a", null, 0), body_html: "" });
-    applyWikiEvent(qc, "created", { wiki_page: node("c", null, 1), updated_by: null }, "me");
+    applyWikiEvent(qc, "created", { wiki_page: node("c", null, 1), updated_by: null });
     expect(qc.getQueryData<WikiNode[]>(qk.wikiTree)?.map((n) => n.id)).toEqual(["a", "b", "c"]);
-    applyWikiEvent(qc, "updated", { wiki_page: { ...node("a", null, 0, 2), title: "Renamed" }, updated_by: { id: "other" } }, "me");
+    applyWikiEvent(qc, "updated", { wiki_page: { ...node("a", null, 0, 2), title: "Renamed" }, updated_by: { id: "other" } });
     expect(qc.getQueryData<WikiNode[]>(qk.wikiTree)?.[0]?.title).toBe("Renamed");
     expect(qc.getQueryState(qk.wikiPage("a"))?.isInvalidated).toBe(true);
-    applyWikiEvent(qc, "deleted", { wiki_page_id: "a", wiki_page_ids: ["a", "b"] }, "me");
+    applyWikiEvent(qc, "deleted", { wiki_page_id: "a", wiki_page_ids: ["a", "b"] });
     expect(qc.getQueryData<WikiNode[]>(qk.wikiTree)).toEqual([node("c", null, 0)]);
     expect(qc.getQueryData(qk.wikiPage("a"))).toBeUndefined();
+  });
+
+  it("refetches the person's own change made elsewhere, not the save this tab made", () => {
+    const qc = new QueryClient();
+    const page = { ...node("a", null, 0), body_html: "", breadcrumbs: [], children: [], created_at: "", created_by: null, updated_by: null } as WikiPage;
+    qc.setQueryData(qk.wikiPage("a"), page);
+    const saver = saverFor(page);
+    // This tab saved version 2: the saver knows it, nothing to refetch.
+    saver.version = 2;
+    applyWikiEvent(qc, "updated", { wiki_page: node("a", null, 0, 2), updated_by: { id: "me" } });
+    expect(qc.getQueryState(qk.wikiPage("a"))?.isInvalidated).toBe(false);
+    // The same person in another tab (or Ollie) saved version 3: refetched.
+    applyWikiEvent(qc, "updated", { wiki_page: node("a", null, 0, 3), updated_by: { id: "me" } });
+    expect(qc.getQueryState(qk.wikiPage("a"))?.isInvalidated).toBe(true);
+    resetSavers();
   });
 });

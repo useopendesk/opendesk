@@ -470,6 +470,20 @@ func TestReportsAndSearch(t *testing.T) {
 	if len(res.Tickets) != 0 || len(res.Contacts) != 0 || len(res.Articles) != 1 || len(res.WikiPages) != 0 {
 		t.Fatalf("scoped search %+v", res)
 	}
+	// Knowledge base scopes don't reach the wiki, nor does an AI client's grant without wiki:read.
+	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeKBRead, auth.ScopeKBWrite)}, nil).Want(t, 200).JSON(t, &res)
+	if len(res.Articles) != 1 || len(res.WikiPages) != 0 {
+		t.Fatalf("kb key search %+v", res)
+	}
+	grant := &auth.Principal{Kind: auth.KindUser, UserID: ws.Viewer.ID, WorkspaceID: ws.ID, Role: auth.RoleViewer,
+		GrantID: uuid.New(), Scopes: []string{auth.ScopeTicketsRead, auth.ScopeKBRead}}
+	if got, err := tickets.Search(e.Ctx, e.D.DB.Pool, grant, "shipping", nil); err != nil || len(got.Articles) != 1 || len(got.WikiPages) != 0 {
+		t.Fatalf("grant search %v %+v", err, got)
+	}
+	grant.Scopes = append(grant.Scopes, auth.ScopeWikiRead)
+	if got, err := tickets.Search(e.Ctx, e.D.DB.Pool, grant, "shipping", nil); err != nil || len(got.WikiPages) != 1 {
+		t.Fatalf("grant with wiki:read %v %+v", err, got)
+	}
 	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeWikiRead)}, nil).Want(t, 200).JSON(t, &res)
 	if len(res.Articles) != 0 || len(res.WikiPages) != 1 || res.WikiPages[0].Title != "Shipping carriers" {
 		t.Fatalf("wiki search %+v", res)

@@ -1,17 +1,18 @@
 // The wiki's page tree, beside every wiki page: search on top, then the pages, nested.
-// Rows expand and collapse, "+" adds a subpage, the menu copies a link or deletes, and
-// pages drag onto, above or below each other to nest and reorder. Keyboard: arrows move
+// Rows expand and collapse, "+" adds a subpage, the menu copies a link, moves (Move to…,
+// also on touch screens) or deletes, and pages drag onto, above or below each other to
+// nest and reorder. Keyboard: arrows move
 // through the rows (Right opens, Left closes or goes up), Enter opens a page, and
 // Alt+arrows move the focused page up, down, in under the one above, or out.
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, FileText, Link2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, FileText, FolderInput, Link2, MoreHorizontal, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/input";
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import { copyText } from "@/components/ui/copy-button";
@@ -22,7 +23,8 @@ import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { ancestorsOf, childrenOf, dropFor, keyMove, visibleRows, type Tree, type Zone } from "@/lib/wiki/tree";
-import { useCanDelete, useCreatePage, useDeletePage, useExpanded, useMovePage, useOpenPageId, useTitle, useWikiTree } from "./hooks";
+import { useCreatePage, useExpanded, useMovePage, useOpenPageId, useTitle, useWikiTree } from "./hooks";
+import { DeleteItem, MoveDialog } from "./PageMenu";
 
 export function pageUrl(id: string) {
   return `${location.origin}/wiki/${id}`;
@@ -185,6 +187,7 @@ function TreeView({ tree, canEdit, onNavigate, onSearch }: { tree: Tree; canEdit
   const [focusId, setFocusId] = useState<string | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<Over | null>(null);
+  const [moving, setMoving] = useState<WikiNode | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const root = useRef<HTMLDivElement>(null);
 
@@ -311,43 +314,47 @@ function TreeView({ tree, canEdit, onNavigate, onSearch }: { tree: Tree; canEdit
 
   const top = childrenOf(tree, null);
   return (
-    <div ref={root} role="tree" aria-label={t("tree.label")} onKeyDown={onKeyDown} className="flex flex-col">
-      {rows.map(({ node: n, depth }) => (
-        <TreeRow
-          key={n.id}
-          node={n}
-          depth={depth}
-          hasKids={childrenOf(tree, n.id).length > 0}
-          open={expanded.has(n.id)}
-          active={n.id === openId}
-          focusable={n.id === current}
-          dragging={drag === n.id || (!!drag && ancestorsOf(tree, n.id).some((a) => a.id === drag))}
-          over={over && over.id === n.id ? over.zone : null}
-          canEdit={canEdit}
-          onToggle={() => toggle(n.id)}
-          onFocus={() => setFocusId(n.id)}
-          onNavigate={onNavigate}
-          dnd={dnd(n)}
-        />
-      ))}
-      {canEdit && drag && (
-        // Below the last page: the end of the top level.
-        <div
-          className={cn("relative h-8 rounded-md", over?.id === "__end" && "before:absolute before:inset-x-2 before:top-1 before:h-0.5 before:rounded-full before:bg-tone-blue-solid")}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setOver({ id: "__end", zone: "after" });
-          }}
-          onDragLeave={() => setOver(null)}
-          onDrop={(e) => {
-            e.preventDefault();
-            if (drag) doMove(drag, { parent: null, position: top.filter((x) => x.id !== drag).length });
-            setDrag(null);
-            setOver(null);
-          }}
-        />
-      )}
-    </div>
+    <>
+      <div ref={root} role="tree" aria-label={t("tree.label")} onKeyDown={onKeyDown} className="flex flex-col">
+        {rows.map(({ node: n, depth }) => (
+          <TreeRow
+            key={n.id}
+            node={n}
+            depth={depth}
+            hasKids={childrenOf(tree, n.id).length > 0}
+            open={expanded.has(n.id)}
+            active={n.id === openId}
+            focusable={n.id === current}
+            dragging={drag === n.id || (!!drag && ancestorsOf(tree, n.id).some((a) => a.id === drag))}
+            over={over && over.id === n.id ? over.zone : null}
+            canEdit={canEdit}
+            onToggle={() => toggle(n.id)}
+            onFocus={() => setFocusId(n.id)}
+            onNavigate={onNavigate}
+            onMoveTo={() => setMoving(n)}
+            dnd={dnd(n)}
+          />
+        ))}
+        {canEdit && drag && (
+          // Below the last page: the end of the top level.
+          <div
+            className={cn("relative h-8 rounded-md", over?.id === "__end" && "before:absolute before:inset-x-2 before:top-1 before:h-0.5 before:rounded-full before:bg-tone-blue-solid")}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOver({ id: "__end", zone: "after" });
+            }}
+            onDragLeave={() => setOver(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (drag) doMove(drag, { parent: null, position: top.filter((x) => x.id !== drag).length });
+              setDrag(null);
+              setOver(null);
+            }}
+          />
+        )}
+      </div>
+      <MoveDialog node={moving} open={!!moving} onOpenChange={(o) => !o && setMoving(null)} />
+    </>
   );
 }
 
@@ -364,6 +371,7 @@ function TreeRow({
   onToggle,
   onFocus,
   onNavigate,
+  onMoveTo,
   dnd,
 }: {
   node: WikiNode;
@@ -378,13 +386,12 @@ function TreeRow({
   onToggle: () => void;
   onFocus: () => void;
   onNavigate?: () => void;
+  onMoveTo: () => void;
   dnd: Record<string, unknown>;
 }) {
   const { t } = useTranslation("wiki");
   const title = useTitle();
   const create = useCreatePage();
-  const del = useDeletePage();
-  const canDelete = useCanDelete();
   const [menu, setMenu] = useState(false);
   const indent = 6 + depth * 14;
   const line = (where: "top" | "bottom"): ReactNode => (
@@ -448,9 +455,14 @@ function TreeRow({
           </MenuTrigger>
           <MenuContent align="start">
             {canEdit && (
-              <MenuItem icon={<Plus />} onSelect={() => create.mutate({ parent_id: n.id })}>
-                {t("tree.addSubpage")}
-              </MenuItem>
+              <>
+                <MenuItem icon={<Plus />} onSelect={() => create.mutate({ parent_id: n.id })}>
+                  {t("tree.addSubpage")}
+                </MenuItem>
+                <MenuItem icon={<FolderInput />} onSelect={onMoveTo}>
+                  {t("tree.moveTo")}
+                </MenuItem>
+              </>
             )}
             <MenuItem
               icon={<Link2 />}
@@ -461,14 +473,7 @@ function TreeRow({
             >
               {t("page.copyLink")}
             </MenuItem>
-            {canDelete(n.id) && (
-              <>
-                <MenuSeparator />
-                <MenuItem danger icon={<Trash2 />} onSelect={() => del(n)}>
-                  {t("page.delete")}
-                </MenuItem>
-              </>
-            )}
+            <DeleteItem node={n} />
           </MenuContent>
         </Menu>
         {canEdit && (

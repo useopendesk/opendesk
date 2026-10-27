@@ -1,9 +1,11 @@
 // Autosave for wiki pages (contracts/wiki.md "Editing together"). One saver per open
 // page holds what was typed and sends it a moment after typing stops, one request at a
 // time, each with the version it edited. It lives outside React, so a save started as
-// the person navigates away still finishes, and opening the page again picks it up.
+// the person navigates away still finishes, and opening the page again picks it up; and
+// while any saver holds unsent typing, closing the tab sends it and the browser asks first,
+// wherever in the app the person is.
 
-import { inWorkspace, isApiError, scopeWorkspace } from "../api/client";
+import { ApiError, inWorkspace, isApiError, scopeWorkspace } from "../api/client";
 import { api } from "../api/endpoints";
 import type { WikiNode, WikiPage, WikiPagePatch } from "../api/types";
 
@@ -12,8 +14,13 @@ export type Draft = { title: string; icon: string; body_html: string };
 /**
  * saved: nothing left to send. dirty: typed, waiting for the pause. saving: a request is
  * out. error: the last one failed and is retried. conflict: someone else saved first.
+ * forbidden: the person may not edit the page (403). deleted: the page is gone (404).
+ * The last two are final: nothing is sent again, and the typing stays to be copied.
  */
-export type SaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
+export type SaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict" | "forbidden" | "deleted";
+
+/** Statuses where the saver stops and waits for the person (conflict) or for good. */
+const halted = (s: SaveStatus) => s === "conflict" || s === "forbidden" || s === "deleted";
 
 /** How long after the last keystroke a save goes out. */
 export const SAVE_DELAY = 800;
@@ -47,7 +54,7 @@ export class PageSaver {
   /** Send every field on the next save (keeping what was typed over a newer version). */
   private force = false;
   private listeners = new Set<() => void>();
-  private hooks: SaverHooks;
+  hooks: SaverHooks;
 
   constructor(page: Pick<WikiPage, "id" | "version" | "title" | "icon" | "body_html">, hooks: SaverHooks = {}, workspace = scopeWorkspace()) {
     this.id = page.id;
@@ -76,25 +83,30 @@ export class PageSaver {
     return this.inflight !== null || this.pending;
   }
 
+  /** Saving stopped for good (forbidden, deleted): what is pending can only be copied. */
+  get final(): boolean {
+    return this.status === "forbidden" || this.status === "deleted";
+  }
+
   edit(patch: Partial<Draft>) {
     const next = { ...this.draft, ...patch };
     if (!Object.keys(changes(this.draft, next)).length) return;
     this.draft = next;
-    if (this.status !== "conflict" && this.status !== "saving") this.status = this.pending ? "dirty" : "saved";
+    if (!halted(this.status) && this.status !== "saving") this.status = this.pending ? "dirty" : "saved";
     this.schedule(SAVE_DELAY);
     this.emit();
   }
 
   private schedule(ms: number) {
     clearTimeout(this.timer);
-    if (this.status === "conflict") return;
+    if (halted(this.status)) return;
     this.timer = setTimeout(() => void this.flush(), ms);
   }
 
   /** Sends what is pending now. `keepalive` lets it finish while the page unloads. */
   async flush(opts: { keepalive?: boolean } = {}): Promise<void> {
     clearTimeout(this.timer);
-    if (this.status === "conflict") return;
+    if (halted(this.status)) return;
     if (this.inflight) {
       await this.inflight;
       return this.flush(opts);
@@ -120,7 +132,7 @@ export class PageSaver {
         this.status = this.pending ? "dirty" : "saved";
         this.hooks.onSaved?.(page);
       } catch (e) {
-        this.status = isApiError(e, "page_changed") ? "conflict" : "error";
+        this.status = isApiError(e, "page_changed") ? "conflict" : statusOf(e) === 403 ? "forbidden" : statusOf(e) === 404 ? "deleted" : "error";
       } finally {
         this.inflight = null;
       }
@@ -161,18 +173,24 @@ export class PageSaver {
   }
 }
 
+const statusOf = (e: unknown) => (e instanceof ApiError ? e.status : 0);
+
 const savers = new Map<string, PageSaver>();
 
 /**
- * The saver of a page: the one still holding unsent typing (or a conflict) when there
- * is one, so nothing typed is lost across navigation; otherwise a fresh one from page.
+ * The saver of a page, one per page: the one still holding unsent typing (or a conflict)
+ * keeps it, so nothing typed is lost across navigation; an idle one takes page when page
+ * is newer. Asking twice (React's strict mode does) gives the same saver.
  */
 export function saverFor(page: WikiPage, hooks: SaverHooks = {}): PageSaver {
   const wid = scopeWorkspace();
   const k = `${wid}:${page.id}`;
   const cur = savers.get(k);
-  if (cur && (cur.busy || cur.status === "conflict" || cur.status === "error")) return cur;
-  cur?.dispose();
+  if (cur) {
+    if (!cur.busy && cur.status === "saved" && cur.isNewer(page)) cur.rebase(page);
+    cur.hooks = hooks;
+    return cur;
+  }
   const s = new PageSaver(page, hooks, wid);
   savers.set(k, s);
   return s;
@@ -189,16 +207,26 @@ export function forgetSaver(id: string) {
   savers.delete(k);
 }
 
-/** Sends everything pending, as the page unloads. True while something is still unsent. */
+/**
+ * Sends everything pending, as the page unloads. True while something is still unsent,
+ * including typing a final status keeps (closing the tab would lose it).
+ */
 export function flushAll(opts: { keepalive?: boolean } = {}): boolean {
   let unsent = false;
   for (const s of savers.values()) {
     if (s.busy) {
       unsent = true;
-      void s.flush(opts);
+      if (!s.final) void s.flush(opts);
     }
   }
   return unsent;
+}
+
+if (typeof window !== "undefined") {
+  // Closing or reloading the tab, from any page of the app, sends what is unsent and asks first.
+  window.addEventListener("beforeunload", (e) => {
+    if (flushAll({ keepalive: true })) e.preventDefault();
+  });
 }
 
 /** Test hook. */

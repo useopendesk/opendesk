@@ -17,11 +17,12 @@ wiki is on every plan, with the limits below.
 interface WikiNode {           // a page in the tree, without its body
   id: string
   parent_id: string | null     // the page it sits under; null at the top level
-  title: string                // 0..200 characters, whitespace folded; "" shows as "Untitled"
-  icon: string                 // one emoji, or ""
+  title: string                // 0..200 characters (longer is 422), whitespace folded; "" shows as "Untitled"
+  icon: string                 // one emoji (see "Icons"), or ""
   position: number             // order among its siblings: 0, 1, 2... with no gaps
   version: number              // starts at 1, +1 on every change of title, icon or body
   updated_at: string           // the last change of title, icon or body (moves do not count)
+  created_by_id: string | null // who created it; null for an API key, or once the person deleted their account
 }
 
 interface WikiRef { id: string; title: string; icon: string }
@@ -61,9 +62,15 @@ interface WikiSearchHit {
 | who | reads | creates, edits, moves, restores | deletes |
 | --- | --- | --- | --- |
 | viewer | yes | no | no |
-| agent | yes | yes | the pages they created |
+| agent | yes | yes | a page they created, when they also created every page under it |
 | admin, owner | yes | yes | any page |
 | API key, AI client | `wiki:read` | `wiki:write` | `wiki:write` (an AI client's member: as their role allows) |
+
+An agent deleting a page with someone else's page in it (the page or any subpage, including pages
+moved under it) gets `403`, with a message saying an admin can delete it; so moving another team's
+pages under one's own never makes them deletable. The tree carries `created_by_id` so the app offers
+Delete only where it would pass, and says why it doesn't otherwise. An API key with `wiki:write`
+deletes any page: whoever holds the key is trusted with the whole wiki.
 
 Every page belongs to one workspace and is read and written with the caller's workspace. A
 `parent_id` from another workspace is `422`; another workspace's page is `404`. The parent of a
@@ -80,6 +87,10 @@ scopes do not reach the wiki, nor `wiki:*` the knowledge base.
   (`pg_advisory_xact_lock`), so counts, depths and cycle checks see each other.
 - Deleting a page deletes its subpages and their history, for good (`ON DELETE CASCADE`). The app
   asks first and names how many subpages go with it.
+- In the app, pages drag onto, above and below each other; **Move to…** in a page's menu (in the tree
+  and on the page) picks the new parent from a searchable list, or the top level, and puts the page
+  last among its new siblings. It is what touch screens use, where dragging is not available. Pages
+  the move can't go under (the page itself, its subpages, or past the depth limit) are not offered.
 
 ## Body
 
@@ -96,6 +107,14 @@ else saved since, the API answers `409 page_changed` and changes nothing. The ap
 its own (which saves again with the new version). A PATCH without `version` (an API caller that
 does not care) always applies. A PATCH that changes nothing keeps the version and publishes no
 event.
+
+Only a person who may edit ever saves, and loading a version (someone else's, a restored one,
+theirs after a conflict) is never an edit: viewers and idle agents send nothing. A save answered
+`403` or `404` stops for good (no retries): the page says it can't be edited or was deleted, and
+offers the unsent text to copy. While any page holds unsent text, closing the tab from anywhere in
+the app sends it and the browser asks first. A tab refetches a page when an event's `version` is
+newer than the one it holds, so the same person's edits from another tab or through Ollie arrive
+too.
 
 ## History
 
@@ -116,6 +135,14 @@ Moves are not revisions.
 prefix ("refu" finds "refunds"), like the knowledge base's `prefixQuery`. `GET /v1/search` (the
 command palette) returns the top 5 pages in `wiki_pages` to callers that may read the wiki.
 
+## Icons
+
+`icon` is one emoji as Unicode spells them (UTS #51): an `Extended_Pictographic` character with an
+optional variation selector and skin tone, several joined by ZWJ (families, professions), a flag
+(a pair of regional indicators, or a black flag with tag characters), or a keycap. Anything else
+(letters, bidi controls, zero-width characters other than the joiner, combining marks, two emoji)
+is `422`. Every emoji the app's picker offers passes (`TestPickerEmoji`).
+
 ## Events
 
 `wiki_page.created`, `wiki_page.updated`, `wiki_page.moved`: `{ wiki_page: WikiNode, updated_by }`.
@@ -131,7 +158,7 @@ The web app patches the tree in place on `created`, `updated` and `deleted`, and
 | pages per workspace | 5,000 (`422 wiki_full`) |
 | depth | 10 levels (`422 page_too_deep`, counting the subpages a move takes along) |
 | body | 512 KB (`422 page_too_large`) |
-| title | 200 characters (longer is cut) |
+| title | 200 characters (`422`; the app's title field stops at 200) |
 | revisions per page | 100 |
 
 ## AI

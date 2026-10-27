@@ -1,13 +1,15 @@
 // One wiki page (/wiki/$pageId): its icon and title edited in place, the body in the
 // knowledge base's editor, saved as people type (lib/wiki/saver.ts). Breadcrumbs follow
 // the live tree; "Last edited" ticks in its own small component. When someone else saves
-// first, the page keeps what was typed and asks whose version stays.
+// first, the page keeps what was typed and asks whose version stays. A version loaded
+// from the server (theirs, a restored one) is shown silently: loading is not an edit, and
+// only someone who may edit ever saves.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getRouteApi, Link } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import type { Editor } from "@tiptap/react";
-import { AlertTriangle, Check, CloudOff, History, Link2, MoreHorizontal, Plus, SmilePlus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, Check, CloudOff, FolderInput, History, Link2, MoreHorizontal, Plus, SmilePlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDocumentTitle } from "@/app/RootLayout";
 import { usePageCrumb } from "@/app/useBreadcrumbs";
@@ -17,15 +19,17 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty";
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { HistoryDrawer } from "@/components/wiki/HistoryDrawer";
 import { IconPicker } from "@/components/wiki/IconPicker";
+import { DeleteItem, MoveDialog } from "@/components/wiki/PageMenu";
+import { UnsentBanner } from "@/components/wiki/Unsent";
 import { PageIcon, pageUrl } from "@/components/wiki/WikiTree";
-import { freshPages, nodeOf, patchTree, useCanDelete, useCreatePage, useDeletePage, useTitle, useWikiTree } from "@/components/wiki/hooks";
+import { freshPages, nodeOf, patchTree, useCreatePage, useTitle, useWikiTree } from "@/components/wiki/hooks";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import type { WikiPage } from "@/lib/api/types";
@@ -34,8 +38,8 @@ import { fullDate, relLong } from "@/lib/format";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { useNow } from "@/lib/useNow";
-import { saverFor, type PageSaver } from "@/lib/wiki/saver";
-import { ancestorsOf, childrenOf } from "@/lib/wiki/tree";
+import { forgetSaver, openSaver, saverFor, type PageSaver } from "@/lib/wiki/saver";
+import { ancestorsOf, childrenOf, MAX_TITLE } from "@/lib/wiki/tree";
 import { PagesButton } from "./WikiLayout";
 
 const route = getRouteApi("/app/wiki/$pageId");
@@ -64,6 +68,7 @@ export default function WikiPageView() {
         <header className="flex h-12 shrink-0 items-center border-b border-line px-4">
           <PagesButton />
         </header>
+        {isApiError(page.error, "not_found") && <Orphan id={pageId} />}
         <EmptyState
           art="wiki"
           title={isApiError(page.error, "not_found") ? t("page.notFound") : t("page.loadFailed")}
@@ -79,6 +84,19 @@ export default function WikiPageView() {
   return <PageScreen key={pageId} page={page.data} />;
 }
 
+/** Typing left on a page that is gone: it can still be copied. */
+function Orphan({ id }: { id: string }) {
+  const saver = openSaver(id);
+  if (!saver?.pending) return null;
+  return <OrphanBanner saver={saver} />;
+}
+
+function OrphanBanner({ saver }: { saver: PageSaver }) {
+  useSaver(saver);
+  if (!saver.pending) return null;
+  return <UnsentBanner reason="deleted" draft={saver.draft} onDiscard={() => forgetSaver(saver.id)} />;
+}
+
 function useSaver(saver: PageSaver) {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -89,15 +107,14 @@ function useSaver(saver: PageSaver) {
   }, [saver]);
 }
 
-function PageScreen({ page }: { page: WikiPage }) {
+export function PageScreen({ page }: { page: WikiPage }) {
   const { t } = useTranslation("wiki");
   const { t: ui } = useTranslation("ui");
   const qc = useQueryClient();
   const title = useTitle();
   const canEdit = atLeast(useRole(), "agent");
-  const canDelete = useCanDelete();
-  const del = useDeletePage();
   const create = useCreatePage();
+  const navigate = useNavigate();
   const { tree } = useWikiTree();
 
   const saver = useMemo(
@@ -143,12 +160,18 @@ function PageScreen({ page }: { page: WikiPage }) {
   // A newer version from someone else (realtime refetches the page): taken in place when
   // nothing here is unsaved; with unsaved typing, the banner asks whose version stays.
   const { data: latest = page } = useQuery(q.wikiPage(page.id));
+  const take = useCallback(
+    (p: WikiPage) => {
+      saver.rebase(p);
+      editorRef.current?.setHtml(p.body_html, { silent: true });
+    },
+    [saver],
+  );
   const newer = saver.isNewer(latest);
   useEffect(() => {
     if (!newer || saver.busy || saver.status === "conflict") return;
-    saver.rebase(latest);
-    editorRef.current?.setHtml(latest.body_html);
-  }, [newer, latest, saver, saver.status]);
+    take(latest);
+  }, [newer, latest, saver, saver.status, take]);
   const theirs = saver.status === "conflict" || (newer && saver.status === "dirty");
 
   // Cmd/Ctrl+S saves now.
@@ -167,8 +190,7 @@ function PageScreen({ page }: { page: WikiPage }) {
     try {
       const fresh = await api.wiki.get(page.id);
       qc.setQueryData(qk.wikiPage(page.id), fresh);
-      saver.rebase(fresh);
-      editorRef.current?.setHtml(fresh.body_html);
+      take(fresh);
     } catch (e) {
       toast.error(e);
     }
@@ -201,6 +223,7 @@ function PageScreen({ page }: { page: WikiPage }) {
 
   const [iconOpen, setIconOpen] = useState(false);
   const [history, setHistory] = useState(false);
+  const [moving, setMoving] = useState(false);
   const crumbs = tree.byId.has(page.id) ? ancestorsOf(tree, page.id) : page.breadcrumbs;
   const kids = tree.byId.has(page.id) ? childrenOf(tree, page.id) : page.children;
   const current = latest;
@@ -279,25 +302,33 @@ function PageScreen({ page }: { page: WikiPage }) {
                 <MenuItem icon={<Plus />} onSelect={() => create.mutate({ parent_id: page.id })}>
                   {t("tree.addSubpage")}
                 </MenuItem>
+                <MenuItem icon={<FolderInput />} onSelect={() => setMoving(true)}>
+                  {t("tree.moveTo")}
+                </MenuItem>
                 <MenuItem icon={<Link2 />} onSelect={copyLink}>
                   {t("page.copyLink")}
                 </MenuItem>
                 <MenuItem icon={<History />} onSelect={() => setHistory(true)}>
                   {t("history.open")}
                 </MenuItem>
-                {canDelete(page.id) && (
-                  <>
-                    <MenuSeparator />
-                    <MenuItem danger icon={<Trash2 />} onSelect={() => del(node)}>
-                      {t("page.delete")}
-                    </MenuItem>
-                  </>
-                )}
+                <DeleteItem node={node} />
               </MenuContent>
             </Menu>
           )}
         </div>
       </header>
+
+      {saver.final && saver.pending && (
+        <UnsentBanner
+          reason={saver.status === "forbidden" ? "forbidden" : "deleted"}
+          draft={draft}
+          onDiscard={() => {
+            if (saver.status === "forbidden") return take(latest);
+            forgetSaver(page.id);
+            void navigate({ to: "/wiki" });
+          }}
+        />
+      )}
 
       {theirs && (
         <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[color-mix(in_srgb,var(--tone-amber-solid)_35%,var(--line))] bg-tone-amber-soft px-4 py-2.5 text-[12.5px] text-fg animate-rise-in motion-reduce:animate-none">
@@ -341,7 +372,7 @@ function PageScreen({ page }: { page: WikiPage }) {
               }}
               readOnly={!canEdit}
               rows={1}
-              maxLength={200}
+              maxLength={MAX_TITLE}
               placeholder={t("untitled")}
               aria-label={ui("title")}
               className="field-sizing-content w-full resize-none bg-transparent text-[30px] font-semibold leading-[36px] tracking-[-0.03em] text-fg outline-none placeholder:text-fg-4 focus-visible:shadow-none"
@@ -357,7 +388,7 @@ function PageScreen({ page }: { page: WikiPage }) {
           <RichEditor
             ref={editorRef}
             value={draft.body_html}
-            onChange={(html) => saver.edit({ body_html: html })}
+            onChange={canEdit ? (html) => saver.edit({ body_html: html }) : undefined}
             toolbar="none"
             editable={canEdit}
             placeholder={canEdit ? t("page.bodyPlaceholder") : t("page.bodyEmpty")}
@@ -416,11 +447,9 @@ function PageScreen({ page }: { page: WikiPage }) {
         open={history}
         onOpenChange={setHistory}
         canRestore={canEdit}
-        onRestored={(p) => {
-          saver.rebase(p);
-          editorRef.current?.setHtml(p.body_html);
-        }}
+        onRestored={take}
       />
+      <MoveDialog node={node} open={moving} onOpenChange={setMoving} />
     </div>
   );
 }
@@ -444,7 +473,7 @@ function SaveState({ saver }: { saver: PageSaver }) {
         {t("save.retrying")}
       </>
     );
-  else if (s === "conflict")
+  else if (s === "conflict" || s === "forbidden" || s === "deleted")
     body = (
       <>
         <AlertTriangle className="size-3 text-tone-amber" />

@@ -13,6 +13,7 @@ const page = (over: Partial<WikiPage> = {}): WikiPage => ({
   position: 0,
   version: 1,
   updated_at: "2026-10-01T00:00:00Z",
+  created_by_id: null,
   created_at: "2026-10-01T00:00:00Z",
   created_by: null,
   updated_by: null,
@@ -111,8 +112,13 @@ describe("wiki autosave", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(vi.mocked(api.wiki.update).mock.calls[0][2]).toEqual({ keepalive: true });
     expect(flushAll()).toBe(false);
-    // Once saved, opening it again starts from the page as loaded.
-    expect(saverFor(page({ version: 5 }))).not.toBe(a);
+    // Once saved, opening it again takes the page as loaded, in the same saver (asking
+    // twice, as React's strict mode does, never leaves two savers for one page).
+    await vi.advanceTimersByTimeAsync(0);
+    const again = saverFor(page({ version: 5, body_html: "<p>newer</p>" }));
+    expect(again).toBe(a);
+    expect(again.version).toBe(5);
+    expect(again.draft.body_html).toBe("<p>newer</p>");
   });
 
   it("retries after a failed save", async () => {
@@ -124,5 +130,46 @@ describe("wiki autosave", () => {
     await vi.advanceTimersByTimeAsync(4100);
     expect(s.status).toBe("saved");
     expect(server.title).toBe("Offline edit");
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "deleted"],
+  ] as const)("stops for good at a %i, keeping the typing to copy, and never retries", async (status, want) => {
+    vi.mocked(api.wiki.update).mockImplementation(async (_id, b) => {
+      sent.push(b);
+      throw new ApiError({ status, code: status === 403 ? "forbidden" : "not_found", title: "No" });
+    });
+    const s = saverFor(page());
+    s.edit({ body_html: "<p>typed</p>" });
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY);
+    expect(s.status).toBe(want);
+    expect(s.final).toBe(true);
+    s.edit({ body_html: "<p>typed more</p>" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sent).toHaveLength(1);
+    expect(s.status).toBe(want);
+    expect(s.draft.body_html).toBe("<p>typed more</p>");
+    // Closing the tab still warns (the text would be lost) but sends nothing.
+    expect(flushAll({ keepalive: true })).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toHaveLength(1);
+    // Opening the page again keeps it, so the text can still be copied.
+    expect(saverFor(page())).toBe(s);
+  });
+
+  it("warns before the tab closes on any page of the app while typing is unsent", async () => {
+    vi.mocked(api.wiki.update).mockRejectedValue(new ApiError({ status: 0, title: "Network error" }));
+    const s = saverFor(page());
+    s.edit({ title: "Offline" });
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY);
+    expect(s.status).toBe("error");
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    resetSavers();
+    const idle = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(idle);
+    expect(idle.defaultPrevented).toBe(false);
   });
 });

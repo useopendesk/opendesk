@@ -18,7 +18,7 @@ Scopes: `wiki:read` to read, `wiki:write` to change.
 | `POST` | `/v1/wiki/pages/{id}/revisions/{revisionId}/restore` | Put a revision back as a new version |
 | `GET` | `/v1/wiki/search?q=` | Pages matching the words, best first, with a passage around the match |
 
-Viewers read. Agents and up create, edit and move pages. Admins delete any page, agents the ones they created. `GET /v1/search` also returns the top wiki pages, in `wiki_pages`.
+Viewers read. Agents and up create, edit and move pages. Admins delete any page; agents a page they created, when they also created every page under it (otherwise `403`, and an admin can delete it). API keys with `wiki:write` delete any page. `GET /v1/search` also returns the top wiki pages, in `wiki_pages`.
 
 ## Objects
 
@@ -26,11 +26,12 @@ Viewers read. Agents and up create, edit and move pages. Admins delete any page,
 type WikiNode = {
   id: string;
   parent_id: string | null;
-  title: string;          // "" until named
+  title: string;          // "" until named; up to 200 characters (longer is 422)
   icon: string;           // one emoji, or ""
   position: number;       // among its siblings, from 0
   version: number;        // goes up on every change of title, icon or body
   updated_at: string;
+  created_by_id: string | null;
 };
 
 type WikiPage = WikiNode & {

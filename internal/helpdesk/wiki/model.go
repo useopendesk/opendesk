@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -37,6 +35,7 @@ type WikiNode struct {
 	Position  int        `json:"position" doc:"Order among its siblings, from 0"`
 	Version   int        `json:"version" doc:"Moves on every change of title, icon or body"`
 	UpdatedAt time.Time  `json:"updated_at"`
+	CreatedBy *uuid.UUID `json:"created_by_id" doc:"Who created it; null for an API key or a deleted account"`
 }
 
 // WikiRef names a page: breadcrumbs, subpages, search paths.
@@ -64,14 +63,18 @@ type WikiPage struct {
 }
 
 func (p WikiPage) node() WikiNode {
-	return WikiNode{ID: p.ID, ParentID: p.ParentID, Title: p.Title, Icon: p.Icon, Position: p.Position, Version: p.Version, UpdatedAt: p.UpdatedAt}
+	n := WikiNode{ID: p.ID, ParentID: p.ParentID, Title: p.Title, Icon: p.Icon, Position: p.Position, Version: p.Version, UpdatedAt: p.UpdatedAt}
+	if p.CreatedBy != nil {
+		n.CreatedBy = &p.CreatedBy.ID
+	}
+	return n
 }
 
-const nodeSelect = `SELECT p.id, p.parent_id, p.title, p.icon, p.position, p.version, p.updated_at FROM wiki_pages p`
+const nodeSelect = `SELECT p.id, p.parent_id, p.title, p.icon, p.position, p.version, p.updated_at, p.created_by FROM wiki_pages p`
 
 func scanNode(row pgx.Row) (WikiNode, error) {
 	var n WikiNode
-	err := row.Scan(&n.ID, &n.ParentID, &n.Title, &n.Icon, &n.Position, &n.Version, &n.UpdatedAt)
+	err := row.Scan(&n.ID, &n.ParentID, &n.Title, &n.Icon, &n.Position, &n.Version, &n.UpdatedAt, &n.CreatedBy)
 	return n, err
 }
 
@@ -232,25 +235,13 @@ func cleanTitle(s string) string {
 	return hd.Truncate(strings.Join(strings.Fields(s), " "), maxTitle)
 }
 
-// cleanIcon accepts one emoji (with its modifiers and joiners) or nothing.
+// cleanIcon accepts one emoji or nothing.
 func cleanIcon(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return "", nil
 	}
-	bad := len(s) > 64 || utf8.RuneCountInString(s) > 12
-	pictographic := false
-	for _, r := range s {
-		switch {
-		case r >= 0x80 && !unicode.IsSpace(r) && !unicode.IsControl(r) && !unicode.IsLetter(r):
-			pictographic = true
-		case r >= '0' && r <= '9', r == '#', r == '*', r == 0x200d, r >= 0xfe00 && r <= 0xfe0f:
-			// keycaps, joiners and variation selectors
-		default:
-			bad = true
-		}
-	}
-	if bad || !pictographic {
+	if len(s) > 64 || !isEmoji(s) {
 		return "", httpx.Validation("icon must be one emoji")
 	}
 	return s, nil

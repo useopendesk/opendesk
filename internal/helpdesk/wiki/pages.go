@@ -304,7 +304,7 @@ func registerPages(d *deps.Deps, api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "delete-wiki-page", Method: http.MethodDelete, Path: "/v1/wiki/pages/{id}",
 		Summary: "Delete a wiki page", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Removes the page, its subpages and their history for good. Admins delete any page, agents the pages they created."},
+		Description: "Removes the page, its subpages and their history for good. Admins delete any page; agents a page when they created it and every subpage under it."},
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*hd.Empty, error) {
@@ -320,21 +320,21 @@ func registerPages(d *deps.Deps, api huma.API) {
 				if err := lockTree(ctx, tx, p.WorkspaceID); err != nil {
 					return err
 				}
-				var parent, creator *uuid.UUID
+				var parent *uuid.UUID
 				var title string
-				err := tx.QueryRow(ctx, `SELECT parent_id, created_by, title FROM wiki_pages WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
-					p.WorkspaceID, id).Scan(&parent, &creator, &title)
+				err := tx.QueryRow(ctx, `SELECT parent_id, title FROM wiki_pages WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+					p.WorkspaceID, id).Scan(&parent, &title)
 				if db.IsNotFound(err) {
 					return httpx.NotFound("Page")
 				}
 				if err != nil {
 					return err
 				}
-				if !canDelete(p, creator) {
-					return httpx.E(http.StatusForbidden, "forbidden", "Only admins and the person who created this page can delete it.")
-				}
 				gone, _, err := subtree(ctx, tx, p.WorkspaceID, id)
 				if err != nil {
+					return err
+				}
+				if err := canDelete(ctx, tx, p, gone); err != nil {
 					return err
 				}
 				if _, err := tx.Exec(ctx, `DELETE FROM wiki_pages WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id); err != nil {
@@ -357,13 +357,27 @@ func registerPages(d *deps.Deps, api huma.API) {
 		})
 }
 
-// canDelete: admins and owners delete any page, agents those they created; an API key
-// with wiki:write any (contracts/wiki.md "Access").
-func canDelete(p *auth.Principal, creator *uuid.UUID) bool {
+// canDelete checks a delete of pages (the page first, then everything under it): admins
+// and owners delete any page; agents a page when they created it and every page under it,
+// so moving pages under one's own never makes them deletable; an API key with wiki:write
+// any (contracts/wiki.md "Access").
+func canDelete(ctx context.Context, tx pgx.Tx, p *auth.Principal, pages []uuid.UUID) error {
 	if p.Kind != auth.KindUser || p.Role.AtLeast(auth.RoleAdmin) {
-		return true
+		return nil
 	}
-	return creator != nil && *creator == p.UserID
+	var page, under bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce(bool_or(id = $4), false), coalesce(bool_or(id <> $4), false) FROM wiki_pages
+		WHERE workspace_id = $1 AND id = ANY($2) AND created_by IS DISTINCT FROM $3`,
+		p.WorkspaceID, pages, p.UserID, pages[0]).Scan(&page, &under); err != nil {
+		return err
+	}
+	switch {
+	case page:
+		return httpx.E(http.StatusForbidden, "forbidden", "Someone else created this page, so only an admin can delete it.")
+	case under:
+		return httpx.E(http.StatusForbidden, "forbidden", "Someone else created pages under this one, so only an admin can delete it.")
+	}
+	return nil
 }
 
 func sameParent(a, b *uuid.UUID) bool {

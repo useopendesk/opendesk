@@ -4,14 +4,14 @@
 // support handbook; the others start empty, to show the first-run state.
 
 import type { Role, WikiNode, WikiPage, WikiRevision, WikiSearchHit } from "@/lib/api/types";
-import { MAX_DEPTH, ancestorsOf, applyMove, buildTree, canPlace, childrenOf, descendantsOf, removeSubtree, upsertNode } from "@/lib/wiki/tree";
+import { MAX_DEPTH, ancestorsOf, applyMove, buildTree, canPlace, childrenOf, descendantsOf, ownership, removeSubtree, upsertNode } from "@/lib/wiki/tree";
 import { db, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { del, get, HttpError, invalid, notFound, patch, post, respond, s, type Ctx } from "../router";
 import { roleIn } from "../teams";
 import { ago, DAY, HOUR, MIN, nowIso, stripHtml, uuid } from "../util";
 
-type Row = WikiNode & { body_html: string; created_by: string | null; updated_by: string | null; created_at: string };
+type Row = Omit<WikiNode, "created_by_id"> & { body_html: string; created_by: string | null; updated_by: string | null; created_at: string };
 type Rev = { id: string; page_id: string; title: string; icon: string; body_html: string; author: string | null; created_at: string; updated_at: string };
 type State = { pages: Row[]; revisions: Rev[] };
 
@@ -40,9 +40,9 @@ function requireAgent(ctx: Ctx) {
   if (rank[role(ctx)] < rank.agent) throw new HttpError(403, "forbidden", "You don't have permission to do that");
 }
 
-const node = (r: Row): WikiNode => ({ id: r.id, parent_id: r.parent_id, title: r.title, icon: r.icon, position: r.position, version: r.version, updated_at: r.updated_at });
+const node = (r: Row): WikiNode => ({ id: r.id, parent_id: r.parent_id, title: r.title, icon: r.icon, position: r.position, version: r.version, updated_at: r.updated_at, created_by_id: r.created_by });
 const nodes = (st: State) => st.pages.map(node);
-const refOf = (n: WikiNode) => ({ id: n.id, title: n.title, icon: n.icon });
+const refOf = (n: Pick<WikiNode, "id" | "title" | "icon">) => ({ id: n.id, title: n.title, icon: n.icon });
 
 function pageOut(st: State, r: Row): WikiPage {
   const tree = buildTree(nodes(st));
@@ -74,12 +74,24 @@ function sync(st: State, next: WikiNode[]) {
   }
 }
 
-const cleanTitle = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 200) : "");
+function cleanTitle(v: unknown): string {
+  if (typeof v !== "string") return "";
+  if ([...v].length > 200) throw invalid("title must be at most 200 characters");
+  return v.replace(/\s+/g, " ").trim();
+}
+
+// One emoji as the API reads it (internal/helpdesk/wiki/emoji.go): pictographs with a
+// variation selector and skin tone, joined by ZWJ; a flag; a tag flag; or a keycap.
+const pict = String.raw`\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}]?[\u{1F3FB}-\u{1F3FF}]?`;
+const oneEmoji = new RegExp(
+  String.raw`^(?:${pict}(?:\u{200D}${pict})*|[\u{1F1E6}-\u{1F1FF}]{2}|[0-9#*]\u{FE0F}?\u{20E3}|\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F})$`,
+  "u",
+);
 
 function cleanIcon(v: unknown): string {
   if (typeof v !== "string" || !v.trim()) return "";
   const t = v.trim();
-  if (t.length > 32 || /[A-Za-z\s<>]/.test(t) || !/\p{Extended_Pictographic}/u.test(t)) throw invalid("icon must be one emoji");
+  if (t.length > 64 || !oneEmoji.test(t)) throw invalid("icon must be one emoji");
   return t;
 }
 
@@ -229,9 +241,15 @@ export function registerWiki() {
     requireAgent(ctx);
     const st = stateOf(ctx.ws);
     const r = find(ctx, st);
-    if (rank[role(ctx)] < rank.admin && r.created_by !== db.meId)
-      throw new HttpError(403, "forbidden", "Only admins and the person who created this page can delete it.");
-    const gone = [r.id, ...descendantsOf(buildTree(nodes(st)), r.id).map((n) => n.id)];
+    const tree = buildTree(nodes(st));
+    const owned = ownership(tree, r.id, db.meId);
+    if (rank[role(ctx)] < rank.admin && owned !== "yes")
+      throw new HttpError(
+        403,
+        "forbidden",
+        owned === "page" ? "Someone else created this page, so only an admin can delete it." : "Someone else created pages under this one, so only an admin can delete it.",
+      );
+    const gone = [r.id, ...descendantsOf(tree, r.id).map((n) => n.id)];
     sync(st, removeSubtree(nodes(st), gone));
     st.revisions = st.revisions.filter((x) => !gone.includes(x.page_id));
     publish(ctx.ws, "wiki_page.deleted", { wiki_page_id: r.id, wiki_page_ids: gone });
