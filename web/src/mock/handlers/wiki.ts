@@ -3,6 +3,7 @@
 // and search. Checked as the API checks them. The first workspace starts with a small
 // support handbook; the others start empty, to show the first-run state.
 
+import { sanitizeHtml } from "@/lib/sanitize";
 import type { Role, WikiNode, WikiPage, WikiRevision, WikiSearchHit } from "@/lib/api/types";
 import { MAX_DEPTH, ancestorsOf, applyMove, buildTree, canPlace, childrenOf, descendantsOf, ownership, removeSubtree, upsertNode } from "@/lib/wiki/tree";
 import { db, userRef, type WsData } from "../db";
@@ -98,8 +99,8 @@ function cleanIcon(v: unknown): string {
 function cleanBody(v: unknown): string {
   const html = typeof v === "string" ? v : "";
   if (new TextEncoder().encode(html).length > MAX_BODY) throw new HttpError(422, "page_too_large", "A page can hold up to 512 KB of text and formatting. Split it into subpages.");
-  // The server sanitizes with its rich-text allowlist; the mock drops what never survives it.
-  return html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/\son\w+="[^"]*"/gi, "");
+  // The server sanitizes with its rich-text allowlist; the mock uses the app's own allowlist.
+  return sanitizeHtml(html);
 }
 
 function record(st: State, r: Row, merge: boolean) {
