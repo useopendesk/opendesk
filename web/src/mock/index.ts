@@ -17,6 +17,7 @@ import { registerEmailAnswers } from "./handlers/emailAnswers";
 import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
+import { registerChangelog } from "./handlers/changelog";
 import { registerCollab } from "./handlers/collab";
 import { registerWorkspaces } from "./handlers/workspaces";
 import { registerDrafts, stageDraft } from "./handlers/drafts";
@@ -81,6 +82,7 @@ export function installMock(): void {
   registerTickets();
   registerLabels();
   registerResources();
+  registerChangelog();
   registerBilling();
   registerAi();
   registerAiTicket();

@@ -440,6 +440,17 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
     return;
   }
 
+  if (resource === "changelog_entry") {
+    if (verb === "deleted") qc.removeQueries({ queryKey: qk.changelogEntry(d.changelog_entry_id as string) });
+    else {
+      const e = d.changelog_entry as { id: string } | undefined;
+      if (e) qc.setQueryData(qk.changelogEntry(e.id), e);
+    }
+    void qc.invalidateQueries({ queryKey: qk.changelogEntryLists });
+    void qc.invalidateQueries({ queryKey: qk.changelogCategories });
+    return;
+  }
+
   if (resource === "team") {
     // Joining or leaving a team changes what "My teams" and private tickets hold.
     const before = teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).join(",");

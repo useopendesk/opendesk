@@ -14,6 +14,7 @@ import {
   Layers,
   Mail,
   Moon,
+  Newspaper,
   Search,
   Server,
   Settings,
@@ -328,6 +329,9 @@ export function CommandPalette() {
                 </Item>
                 <Item value="go knowledge base kb articles" keywords={[tNav("titles.knowledgeBase")]} icon={<BookOpen />} onSelect={() => go(() => void navigate({ to: "/kb" }))}>
                   {tNav("titles.knowledgeBase")}
+                </Item>
+                <Item value="go changelog product updates release notes" keywords={[tNav("titles.changelog")]} icon={<Newspaper />} onSelect={() => go(() => void navigate({ to: "/kb/changelog" }))}>
+                  {tNav("titles.changelog")}
                 </Item>
                 <Item value="go reports analytics" keywords={[tNav("titles.reports")]} icon={<BarChart3 />} onSelect={() => go(() => void navigate({ to: "/reports" }))}>
                   {tNav("titles.reports")}

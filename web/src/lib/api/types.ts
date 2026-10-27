@@ -902,6 +902,31 @@ export type KbArticle = {
   updated_at: string;
 };
 
+/** A product update the help center publishes at /changelog (contracts/api.md "Changelog"). */
+export type ChangelogEntry = {
+  id: string;
+  /** 1..200 characters. */
+  title: string;
+  /** Unique in the workspace; the entry's address is <help center>/changelog/<slug>. */
+  slug: string;
+  /** Plain text, up to 300; derived from the body unless written. */
+  excerpt: string;
+  body_html: string;
+  /** Up to 5 names, each up to 32 characters, compared without case. */
+  categories: string[];
+  status: "draft" | "published";
+  /** The date it carries: set when first published unless given. Published and in the future = scheduled. */
+  published_at: string | null;
+  author: UserRef | null;
+  /** The brand whose help center shows it; null = every brand. */
+  brand_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A category the workspace's changelog entries use, with how many use it. */
+export type ChangelogCategory = { name: string; count: number };
+
 export type ApiKey = {
   id: string;
   name: string;

@@ -72,6 +72,9 @@
     "agentPlayground": "Espace d’essai de l’agent",
     "agentTests": "Tests de l’agent",
     "newArticle": "Nouvel article",
+    "changelog": "Journal des modifications",
+    "changelogEntry": "Mise à jour",
+    "newUpdate": "Nouvelle mise à jour",
     "myTeams": "Mes équipes"
   },
   "folders": {

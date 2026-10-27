@@ -51,6 +51,10 @@ export function useBreadcrumbs(): Crumb[] {
   } else if (path.startsWith("/kb")) {
     crumbs.push({ label: t("titles.knowledgeBase"), to: "/kb" });
     if (path.startsWith("/kb/articles/")) crumbs.push({ label: params.articleId === "new" ? t("titles.newArticle") : t("titles.article") });
+    if (path.startsWith("/kb/changelog")) {
+      crumbs.push({ label: t("titles.changelog"), to: "/kb/changelog" });
+      if (params.entryId) crumbs.push({ label: params.entryId === "new" ? t("titles.newUpdate") : t("titles.changelogEntry") });
+    }
   } else if (path.startsWith("/reports")) {
     crumbs.push({ label: t("titles.reports"), to: "/reports" });
   } else if (path.startsWith("/settings")) {
