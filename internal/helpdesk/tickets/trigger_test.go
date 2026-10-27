@@ -452,12 +452,14 @@ func TestReportsAndSearch(t *testing.T) {
 
 	// Search: five of each kind; another workspace's rows never appear.
 	e.Exec(`INSERT INTO kb_articles (id, workspace_id, title, slug, body_html, status) VALUES ($1, $2, 'Shipping times', 'shipping-times', '<p>days</p>', 'published')`, ids.New(), ws.ID)
+	e.Exec(`INSERT INTO wiki_pages (id, workspace_id, title, body_html) VALUES ($1, $2, 'Shipping carriers', '<p>Which carrier for what</p>')`, ids.New(), ws.ID)
 	other := e.NewWorkspace()
+	e.Exec(`INSERT INTO wiki_pages (id, workspace_id, title) VALUES ($1, $2, 'Shipping elsewhere')`, ids.New(), other.ID)
 	createTicket(t, e, other, map[string]any{"subject": "Shipping everywhere"})
 	var res tickets.SearchResults
 	e.Do("GET", "/v1/search?q=shipping", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &res)
-	if len(res.Tickets) != 2 || len(res.Contacts) != 0 || len(res.Articles) != 1 {
-		t.Fatalf("search %d %d %d", len(res.Tickets), len(res.Contacts), len(res.Articles))
+	if len(res.Tickets) != 2 || len(res.Contacts) != 0 || len(res.Articles) != 1 || len(res.WikiPages) != 1 {
+		t.Fatalf("search %d %d %d %d", len(res.Tickets), len(res.Contacts), len(res.Articles), len(res.WikiPages))
 	}
 	e.Do("GET", "/v1/search?q=ship", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &res)
 	if len(res.Tickets) != 2 || len(res.Contacts) != 1 {
@@ -465,8 +467,12 @@ func TestReportsAndSearch(t *testing.T) {
 	}
 	key := e.APIKey(ws, auth.ScopeKBRead)
 	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: key}, nil).Want(t, 200).JSON(t, &res)
-	if len(res.Tickets) != 0 || len(res.Contacts) != 0 || len(res.Articles) != 1 {
+	if len(res.Tickets) != 0 || len(res.Contacts) != 0 || len(res.Articles) != 1 || len(res.WikiPages) != 0 {
 		t.Fatalf("scoped search %+v", res)
+	}
+	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeWikiRead)}, nil).Want(t, 200).JSON(t, &res)
+	if len(res.Articles) != 0 || len(res.WikiPages) != 1 || res.WikiPages[0].Title != "Shipping carriers" {
+		t.Fatalf("wiki search %+v", res)
 	}
 	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeRealtime)}, nil).Want(t, 403)
 	e.Do("GET", "/v1/search", ws.Agent.As(ws), nil).Want(t, 422)

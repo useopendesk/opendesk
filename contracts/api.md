@@ -28,7 +28,7 @@ it exists, and this file is the contract the parts are built against.
 - Roles: `owner` > `admin` > `agent` > `viewer`. Viewers read only. Settings routes
   (mailboxes, members, api keys, webhooks, automations, sla, business hours, assignment, triage, widget settings, labels, label groups, custom fields, workspace images) need `admin`.
 - API key scopes: `tickets:read`, `tickets:write`, `contacts:read`, `contacts:write`,
-  `kb:read`, `kb:write`, `changelog:read`, `changelog:write`, `settings:read`, `settings:write`, `realtime`.
+  `kb:read`, `kb:write`, `changelog:read`, `changelog:write`, `wiki:read`, `wiki:write`, `settings:read`, `settings:write`, `realtime`.
 
 ## Resource shapes
 
@@ -553,7 +553,16 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | CRUD | `/v1/kb/collections`, `/v1/kb/articles` | articles list supports `collection_id`, `status`, `q` and `for_brand_id` (what that brand shows: its own articles and those of every brand; the composer's and assistant's scope for a ticket's brand); both lists `brand_id` (a brand id, or `none` for what every brand shows; an article's brand is its collection's when that has one). Create and PATCH take `brand_id` (a brand of the workspace, or null) |
 | CRUD | `/v1/changelog/entries` | Changelog ("Changelog" below). Reads: members and `changelog:read`; writes: agents and `changelog:write`. List: newest first by `published_at`, else `updated_at` (drafts); `status` (`draft`; `published`: live, dated now or earlier; `scheduled`: published with a future date), `category`, `q`, `brand_id` (a brand, or `none`), `for_brand_id`. Create `{title, slug?, body_html?, excerpt?, categories?, status?, published_at?, brand_id?}`; PATCH the same, where `published_at: null` dates it when it is next published. Events `changelog_entry.created` / `.updated` / `.deleted` |
 | GET | `/v1/changelog/categories` | members and `changelog:read` → `{name, count}[]`: the categories the workspace's entries use, most used first |
-| GET | `/v1/search?q=&brand_id=` | → `{tickets: Ticket[], contacts: Contact[], articles: KbArticle[]}` (5 each). `brand_id` (optional) narrows the articles to what that brand shows: its own and those of every brand |
+| GET | `/v1/wiki/pages` | viewer (`wiki:read`) → `{data: WikiNode[], next_cursor: null}`: every page of the wiki without bodies, the tree (`contracts/wiki.md`) |
+| GET | `/v1/wiki/pages/{id}` | viewer (`wiki:read`) → `WikiPage` with its body, breadcrumbs and subpages |
+| POST | `/v1/wiki/pages` | agent (`wiki:write`). `{parent_id?, title?, icon?, body_html?, position?}` → 201 `WikiPage`. `422 wiki_full` past 5,000 pages, `page_too_deep` past 10 levels, `page_too_large` past 512 KB |
+| PATCH | `/v1/wiki/pages/{id}` | agent (`wiki:write`). `{title?, icon?, body_html?, version?}` → `WikiPage`. A `version` that is not the page's is `409 page_changed` and changes nothing |
+| POST | `/v1/wiki/pages/{id}/move` | agent (`wiki:write`). `{parent_id: string \| null, position}` → `WikiPage`; moves its subpages along. Under itself or a subpage is `422 page_cycle` |
+| DELETE | `/v1/wiki/pages/{id}` | agent (`wiki:write`): admins any page, agents those they created (`403` otherwise); API keys any. Removes its subpages and their history → 204. Audit `wiki_page.deleted` |
+| GET | `/v1/wiki/pages/{id}/revisions` | viewer (`wiki:read`) → `{data: WikiRevision[]}` newest first, without bodies; `/revisions/{revisionId}` → `WikiRevision` with `body_html` |
+| POST | `/v1/wiki/pages/{id}/revisions/{revisionId}/restore` | agent (`wiki:write`) → `WikiPage`: the revision's title, icon and body as a new version |
+| GET | `/v1/wiki/search?q=&limit=` | viewer (`wiki:read`) → `{data: WikiSearchHit[]}` (default 20, at most 50) |
+| GET | `/v1/search?q=&brand_id=` | → `{tickets: Ticket[], contacts: Contact[], articles: KbArticle[], wiki_pages: WikiSearchHit[]}` (5 each; each kind only with its read scope). `brand_id` (optional) narrows the articles to what that brand shows: its own and those of every brand |
 | GET | `/v1/reports/overview?from=&to=&team_id=&brand_id=` | → `{created, solved, open_now, first_response_p50_minutes, resolution_p50_minutes, csat_avg, csat_count, sla_breached, by_day: [{date, created, solved}], by_channel: {...}, by_severity: Record<Severity \| "none", number> /* tickets created in the range */, by_agent: [{user, solved, first_response_p50_minutes}], by_team: [{team_id: string \| null, created, solved, open_now, first_response_p50_minutes}], by_brand: [{brand_id, created, solved, open_now, first_response_p50_minutes}]}`. `team_id` (a team, or `none`) and `brand_id` narrow every figure. Private teams' tickets are counted, with no subjects or contacts |
 | POST | `/v1/attachments` | multipart `file` → `Attachment` (unattached, linked when sent). Only whoever uploaded it (that user, or that API key) may send it in `attachment_ids` (`422` otherwise) |
 | GET | `/v1/attachments/{id}` | → 302 to signed URL or streamed. For img tags, the links messages carry are signed (`?exp=&sig=`) and work for one to two hours. A file on a ticket the caller may not see is `404` (contracts/teams.md "Visibility"); an upload not sent yet is its uploader's alone (`404` for anyone else) |

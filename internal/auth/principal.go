@@ -35,13 +35,15 @@ const (
 	ScopeKBWrite        = "kb:write"
 	ScopeChangelogRead  = "changelog:read"
 	ScopeChangelogWrite = "changelog:write"
+	ScopeWikiRead       = "wiki:read"
+	ScopeWikiWrite      = "wiki:write"
 	ScopeSettingsRead   = "settings:read"
 	ScopeSettingsWrite  = "settings:write"
 	ScopeRealtime       = "realtime"
 )
 
 var AllScopes = []string{ScopeTicketsRead, ScopeTicketsWrite, ScopeContactsRead, ScopeContactsWrite,
-	ScopeKBRead, ScopeKBWrite, ScopeChangelogRead, ScopeChangelogWrite, ScopeSettingsRead, ScopeSettingsWrite, ScopeRealtime}
+	ScopeKBRead, ScopeKBWrite, ScopeChangelogRead, ScopeChangelogWrite, ScopeWikiRead, ScopeWikiWrite, ScopeSettingsRead, ScopeSettingsWrite, ScopeRealtime}
 
 type Kind string
 
