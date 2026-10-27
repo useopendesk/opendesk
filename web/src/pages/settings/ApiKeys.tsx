@@ -32,6 +32,7 @@ const scopeGroups: { resource: string; label: string; scopes: { id: string; labe
   { resource: "contacts", label: "Contacts", scopes: [{ id: "contacts:read", label: "Read" }, { id: "contacts:write", label: "Write" }] },
   { resource: "kb", label: "Knowledge base", scopes: [{ id: "kb:read", label: "Read" }, { id: "kb:write", label: "Write" }] },
   { resource: "changelog", label: "Changelog", scopes: [{ id: "changelog:read", label: "Read" }, { id: "changelog:write", label: "Write" }] },
+  { resource: "wiki", label: "Wiki", scopes: [{ id: "wiki:read", label: "Read" }, { id: "wiki:write", label: "Write" }] },
   { resource: "settings", label: "Settings", scopes: [{ id: "settings:read", label: "Read" }, { id: "settings:write", label: "Write" }] },
   { resource: "realtime", label: "Realtime", scopes: [{ id: "realtime", label: "Subscribe" }] },
 ];

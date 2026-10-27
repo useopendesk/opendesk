@@ -34,6 +34,7 @@ import { registerResources } from "./handlers/resources";
 import { registerSpaces } from "./handlers/spaces";
 import { registerTickets } from "./handlers/tickets";
 import { registerWorkspace } from "./handlers/workspace";
+import { registerWiki } from "./handlers/wiki";
 import { pauseLive, resumeLive, startLive } from "./live";
 import { chatTicket, ollieReply } from "./ollie";
 import { dispatch } from "./router";
@@ -104,6 +105,7 @@ export function installMock(): void {
   registerCollab();
   registerWorkspaces();
   registerSpaces();
+  registerWiki();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);

@@ -1241,7 +1241,61 @@ export type TicketCounts = {
 /** A sidebar row's tickets awaiting a reply (the customer wrote last), urgent, and overdue. */
 export type TicketStats = { awaiting: number; urgent: number; overdue: number };
 
-export type SearchResults = { tickets: Ticket[]; contacts: Contact[]; articles: KbArticle[] };
+/** `wiki_pages` is left out by servers without the wiki and for callers without `wiki:read`. */
+export type SearchResults = { tickets: Ticket[]; contacts: Contact[]; articles: KbArticle[]; wiki_pages?: WikiSearchHit[] };
+
+// ─── Wiki (contracts/wiki.md) ───────────────────────────────────────────────
+
+/** A page in the tree, without its body. */
+export type WikiNode = {
+  id: string;
+  parent_id: string | null;
+  /** "" until named: shown as "Untitled". */
+  title: string;
+  /** One emoji, or "". */
+  icon: string;
+  /** Order among its siblings, from 0. */
+  position: number;
+  /** Moves on every change of title, icon or body; PATCH sends it back. */
+  version: number;
+  updated_at: string;
+};
+
+export type WikiRef = { id: string; title: string; icon: string };
+
+export type WikiPage = WikiNode & {
+  body_html: string;
+  created_by: UserRef | null;
+  updated_by: UserRef | null;
+  created_at: string;
+  /** Its ancestors, the top-level page first. */
+  breadcrumbs: WikiRef[];
+  children: WikiRef[];
+};
+
+export type WikiRevision = {
+  id: string;
+  title: string;
+  icon: string;
+  /** Only when one revision is read. */
+  body_html?: string;
+  author: UserRef | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WikiSearchHit = {
+  id: string;
+  parent_id: string | null;
+  title: string;
+  icon: string;
+  /** Plain text around the match. */
+  snippet: string;
+  path: WikiRef[];
+  updated_at: string;
+};
+
+export type WikiPagePatch = { title?: string; icon?: string; body_html?: string; version?: number };
 
 export type ReportsOverview = {
   created: number;

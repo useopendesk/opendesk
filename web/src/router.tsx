@@ -464,6 +464,30 @@ const changelogEntryRoute = createRoute({
   staticData: { title: "changelogEntry" },
 });
 
+// The wiki (contracts/wiki.md): the page tree beside every page, prefetched with them.
+const wikiLayout = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/wiki",
+  loader: ({ context }) => context.queryClient.ensureQueryData(q.wikiTree()),
+  component: page(() => import("./pages/wiki/WikiLayout")),
+  staticData: { title: "wiki" },
+});
+
+const wikiIndexRoute = createRoute({
+  getParentRoute: () => wikiLayout,
+  path: "/",
+  component: page(() => import("./pages/wiki/WikiHome")),
+  staticData: { title: "wiki" },
+});
+
+const wikiPageRoute = createRoute({
+  getParentRoute: () => wikiLayout,
+  path: "$pageId",
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.wikiPage(params.pageId)).catch(() => undefined),
+  component: page(() => import("./pages/wiki/WikiPageView")),
+  staticData: { title: "wikiPage" },
+});
+
 export function defaultRange() {
   const to = new Date();
   const from = new Date(to.getTime() - 29 * 86400_000);
@@ -892,6 +916,7 @@ const routeTree = rootRoute.addChildren([
     kbArticleRoute,
     changelogRoute,
     changelogEntryRoute,
+    wikiLayout.addChildren([wikiIndexRoute, wikiPageRoute]),
     reportsRoute,
     settingsLayout.addChildren([
       settingsIndex,

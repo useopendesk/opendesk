@@ -55,6 +55,9 @@ export function useBreadcrumbs(): Crumb[] {
       crumbs.push({ label: t("titles.changelog"), to: "/kb/changelog" });
       if (params.entryId) crumbs.push({ label: params.entryId === "new" ? t("titles.newUpdate") : t("titles.changelogEntry") });
     }
+  } else if (path.startsWith("/wiki")) {
+    crumbs.push({ label: t("titles.wiki"), to: "/wiki" });
+    if (params.pageId) crumbs.push({ label: t("titles.wikiPage") });
   } else if (path.startsWith("/reports")) {
     crumbs.push({ label: t("titles.reports"), to: "/reports" });
   } else if (path.startsWith("/settings")) {

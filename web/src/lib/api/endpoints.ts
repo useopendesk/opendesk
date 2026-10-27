@@ -578,6 +578,19 @@ export const api = {
     },
     categories: () => http.get<T.ChangelogCategory[]>("/v1/changelog/categories"),
   },
+  wiki: {
+    tree: () => http.get<T.Page<T.WikiNode>>("/v1/wiki/pages"),
+    get: (id: string) => http.get<T.WikiPage>(`/v1/wiki/pages/${id}`),
+    create: (b: { parent_id?: string | null; title?: string; icon?: string; body_html?: string; position?: number }) => http.create<T.WikiPage>("/v1/wiki/pages", b),
+    /** `keepalive` lets a save started as the page closes finish (contracts/wiki.md "Editing together"). */
+    update: (id: string, b: T.WikiPagePatch, opts?: { keepalive?: boolean }) => http.patch<T.WikiPage>(`/v1/wiki/pages/${id}`, b, opts),
+    move: (id: string, b: { parent_id: string | null; position: number }) => http.post<T.WikiPage>(`/v1/wiki/pages/${id}/move`, b),
+    remove: (id: string) => http.del(`/v1/wiki/pages/${id}`),
+    revisions: (id: string) => http.get<T.Page<T.WikiRevision>>(`/v1/wiki/pages/${id}/revisions`),
+    revision: (id: string, rid: string) => http.get<T.WikiRevision>(`/v1/wiki/pages/${id}/revisions/${rid}`),
+    restore: (id: string, rid: string) => http.post<T.WikiPage>(`/v1/wiki/pages/${id}/revisions/${rid}/restore`, {}),
+    search: (q: string, limit = 20) => http.get<T.Page<T.WikiSearchHit>>("/v1/wiki/search", { query: { q, limit } }),
+  },
   search: (q: string) => http.get<T.SearchResults>("/v1/search", { query: { q } }),
   reports: {
     overview: (r: T.ReportsQuery) => http.get<T.ReportsOverview>("/v1/reports/overview", { query: r }),
