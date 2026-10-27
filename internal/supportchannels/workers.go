@@ -147,16 +147,21 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	if t.Channel != domain.ChannelEmail {
 		return nil
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.created_at,c.provider,c.credentials_enc
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.created_at,c.provider,c.credentials_enc
 		FROM support_channel_destinations d JOIN support_channel_connections c ON c.id=d.connection_id
-		WHERE d.workspace_id=$1 AND d.enabled AND (d.team_id IS NOT DISTINCT FROM $2 OR d.team_id IS NULL)
-		ORDER BY d.connection_id,(d.team_id IS NOT NULL) DESC`, a.WorkspaceID, t.TeamID)
+		WHERE d.workspace_id=$1 AND d.enabled
+			AND (d.team_id IS NULL OR d.team_id IS NOT DISTINCT FROM $2)
+			AND (d.priority IS NULL OR d.priority=$3)
+		ORDER BY d.connection_id,
+			CASE WHEN d.team_id IS NOT NULL AND d.priority IS NOT NULL THEN 3
+				WHEN d.team_id IS NOT NULL THEN 2
+				WHEN d.priority IS NOT NULL THEN 1 ELSE 0 END DESC`, a.WorkspaceID, t.TeamID, t.Priority)
 	if err != nil {
 		return err
 	}
 	targets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (deliveryTarget, error) {
 		var d deliveryTarget
-		err := row.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.CreatedAt, &d.Provider, &d.CredentialsEnc)
+		err := row.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.Priority, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.CreatedAt, &d.Provider, &d.CredentialsEnc)
 		return d, err
 	})
 	if err != nil {
