@@ -605,6 +605,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/identities/{identity_id}/display-name/pull` | manage | → `MailAccount` with the address's From name replaced by Gmail's now (empty uses the account's). `422 display_name_sync_unsupported` for a hand-added address |
 | POST | `/v1/collab/accounts/{id}/identities/{identity_id}/signature/pull` | manage | → `MailAccount` with the address's signature replaced by Gmail's now (`GET sendAs/{email}`). `422 signature_sync_unsupported` for a hand-added address; `502 provider_error` when Gmail refuses |
 | DELETE | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | → `MailAccount`. Hand-added only (`422 identities_from_provider` for Gmail's); the default for new mail goes back to the account's own address when it was this one |
+| POST | `/v1/collab/accounts/{id}/identities/refresh` | manage | → `MailAccount`: Gmail's send-as list and settings read now ("Addresses"); `422 identities_by_hand` for other providers, `502 provider_error` when Gmail refuses |
 | GET | `/v1/collab/accounts/{id}/identities/suggestions` | manage | `{addresses: string[]}`: Microsoft's `proxyAddresses` aliases not added yet, when Graph answers; empty otherwise (and for other providers) |
 | POST | `/v1/collab/accounts/{id}/signature/pull` | manage | → `MailAccount` with the signature replaced by Gmail's now. `422 signature_sync_unsupported` for Microsoft and IMAP; `502 provider_error` when Gmail refuses |
 | POST | `/v1/collab/accounts/{id}/display-name/pull` | manage | → `MailAccount` with the From name replaced by Gmail's now ("Get from Gmail", in place of one with variables). `422 display_name_sync_unsupported` for Microsoft and IMAP; `422 validation_failed` when Gmail has no name of its own; `502 provider_error` |
@@ -613,7 +614,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PUT | `/v1/collab/accounts/{id}/history` | manage | `{since: string \| null, include_spam_trash?: boolean}` → `MailAccount`: starts a history import ("History"), or starts it again with this scope. `since` is RFC 3339, in the past (`422 validation_failed`); `null` imports all mail. `422 history_unavailable` for a sample account |
 | PATCH | `/v1/collab/accounts/{id}/history` | manage | `{paused: boolean}` → `MailAccount`. `404` without an import; `422 validation_failed` for one that ended |
 | DELETE | `/v1/collab/accounts/{id}/history` | manage | → `MailAccount`: stops the import (`canceled`); what it imported stays |
-| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now |
+| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too |
 | GET | `/v1/collab/accounts/{id}/folders` | see | `MailFolder[]`, special ones first, then by path |
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
@@ -664,7 +665,7 @@ entry of the list, else the primary one).
 
 **The provider wins.** The account sync reads the settings on its first pass and then at most every
 15 minutes (one sendAs list and one vacation read for Gmail; the profile and the automatic replies for
-Microsoft), after the mail. Each value is compared with a hash of the value last seen at the provider:
+Microsoft), after the mail, and on the pass a person asks for (`POST …/sync`). Each value is compared with a hash of the value last seen at the provider:
 a different hash replaces opendesk's copy (the signature and the automatic reply's message sanitized
 with the signature allowlist, the name through `displayname.Clean`), stores the hash and publishes
 `collab.accounts`; the same hash changes nothing. A write from opendesk stores the hash of the
@@ -710,8 +711,11 @@ Its own address (`primary`) is the account's: its From name and signature are `d
 `signature_html`. The others are stored per account (`collab_identities`):
 
 - **Gmail**: every send-as address Gmail lists for the account, read with its settings ("Account
-  settings", the same send-as list call, at most every 15 minutes). An address Gmail no longer lists
-  goes; a new one appears. Each one's From name and signature are `pull` (`signature_sync`,
+  settings", the same send-as list call, at most every 15 minutes, and at the sync a person asks for
+  with `POST …/sync`). An address Gmail no longer lists goes; a new one appears. `POST
+  …/identities/refresh` reads them now ("Check Gmail", for one just added there). Mail already
+  written to a new address is found by it at once: `to_address` and `?to=` read the addresses as
+  they are now. Each one's From name and signature are `pull` (`signature_sync`,
   `display_name_sync`): read from Gmail when they change there (the hashes of Gmail's values as last
   seen decide, so Gmail's change wins over an edit made here), and a change made in opendesk is kept
   in opendesk and used by its composer. Gmail lets addresses other than the primary one be changed

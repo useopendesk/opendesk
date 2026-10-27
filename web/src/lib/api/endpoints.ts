@@ -711,6 +711,7 @@ export const api = {
       previewIdentity: (id: string, b: T.MailIdentityPreviewBody) => http.post<T.MailIdentityPreview>(`/v1/collab/accounts/${id}/identities/preview`, b),
       removeIdentity: (id: string, identityId: string) => http.del<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`),
       /** Microsoft: the account's other addresses, when Microsoft shares them. */
+      refreshIdentities: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/refresh`),
       identitySuggestions: (id: string) => http.get<{ addresses: string[] }>(`/v1/collab/accounts/${id}/identities/suggestions`),
       folders: (id: string) => http.get<T.MailFolder[] | T.Page<T.MailFolder>>(`/v1/collab/accounts/${id}/folders`),
       /** kind label on Microsoft makes an Outlook category; color is a tone, labels only. */

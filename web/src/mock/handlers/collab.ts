@@ -1404,6 +1404,14 @@ export function registerCollab() {
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     return accountOut(ctx.ws, a);
   });
+  // The mock's Gmail addresses are all here already: a check finds nothing new.
+  post("/v1/collab/accounts/:id/identities/refresh", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (a.provider !== "google") throw new HttpError(422, "identities_by_hand", "This account's addresses are added here by hand.");
+    return accountOut(ctx.ws, a);
+  });
   get("/v1/collab/accounts/:id/identities/suggestions", (ctx) => {
     requireCollab(ctx.ws);
     const a = accountOr404(ctx.ws, ctx.params.id);
