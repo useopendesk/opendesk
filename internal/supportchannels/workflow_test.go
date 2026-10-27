@@ -179,6 +179,14 @@ func TestDispatchRoutesByTeamAndPriority(t *testing.T) {
 			if got := w.fake.channels[len(w.fake.channels)-1]; got != tc.channel {
 				t.Fatalf("routed to %q, want %q", got, tc.channel)
 			}
+			e.Exec(`UPDATE tickets SET priority='normal' WHERE id=$1`, ticket.ID)
+			threads := len(w.fake.channels)
+			if err := w.s.dispatch(e.Ctx, jobs.SupportChannelDispatchArgs{WorkspaceID: w.ws.ID, EventSeq: seq}); err != nil {
+				t.Fatal(err)
+			}
+			if len(w.fake.channels) != threads {
+				t.Fatal("priority change created another provider thread")
+			}
 		})
 	}
 }

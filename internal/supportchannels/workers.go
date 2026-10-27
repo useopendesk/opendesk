@@ -149,13 +149,14 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	}
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.created_at,c.provider,c.credentials_enc
 		FROM support_channel_destinations d JOIN support_channel_connections c ON c.id=d.connection_id
+		LEFT JOIN support_channel_threads existing ON existing.destination_id=d.id AND existing.ticket_id=$4
 		WHERE d.workspace_id=$1 AND d.enabled
 			AND (d.team_id IS NULL OR d.team_id IS NOT DISTINCT FROM $2)
-			AND (d.priority IS NULL OR d.priority=$3)
-		ORDER BY d.connection_id,
+			AND (existing.id IS NOT NULL OR d.priority IS NULL OR d.priority=$3)
+		ORDER BY d.connection_id, (existing.id IS NOT NULL) DESC,
 			CASE WHEN d.team_id IS NOT NULL AND d.priority IS NOT NULL THEN 3
 				WHEN d.team_id IS NOT NULL THEN 2
-				WHEN d.priority IS NOT NULL THEN 1 ELSE 0 END DESC`, a.WorkspaceID, t.TeamID, t.Priority)
+				WHEN d.priority IS NOT NULL THEN 1 ELSE 0 END DESC, d.id`, a.WorkspaceID, t.TeamID, t.Priority, t.ID)
 	if err != nil {
 		return err
 	}
