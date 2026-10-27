@@ -67,7 +67,8 @@ be mirrored to Slack, Discord and Telegram at the same time. A connection can ha
 destination per team/priority combination, and an external channel can appear only once on
 that connection. Once a thread exists, priority changes keep updating that thread while
 its destination is enabled and still matches the ticket's team. Priority routing selects
-the destination for the first post.
+the destination for the first post. A move to a team with its own destination posts to
+that team's destination.
 
 Private teams cannot have a destination. The dispatcher also rejects any event marked
 with private-team visibility, even if old or manually written data contains a mapping.

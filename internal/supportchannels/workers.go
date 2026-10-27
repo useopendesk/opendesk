@@ -153,10 +153,8 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 		WHERE d.workspace_id=$1 AND d.enabled
 			AND (d.team_id IS NULL OR d.team_id IS NOT DISTINCT FROM $2)
 			AND (existing.id IS NOT NULL OR d.priority IS NULL OR d.priority=$3)
-		ORDER BY d.connection_id, (existing.id IS NOT NULL) DESC,
-			CASE WHEN d.team_id IS NOT NULL AND d.priority IS NOT NULL THEN 3
-				WHEN d.team_id IS NOT NULL THEN 2
-				WHEN d.priority IS NOT NULL THEN 1 ELSE 0 END DESC, d.id`, a.WorkspaceID, t.TeamID, t.Priority, t.ID)
+		ORDER BY d.connection_id, (d.team_id IS NOT NULL) DESC, (existing.id IS NOT NULL) DESC,
+			(d.priority IS NOT NULL) DESC, d.id`, a.WorkspaceID, t.TeamID, t.Priority, t.ID)
 	if err != nil {
 		return err
 	}

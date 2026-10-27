@@ -189,6 +189,35 @@ func TestDispatchRoutesByTeamAndPriority(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("team move follows the team route", func(t *testing.T) {
+		var ticket domain.Ticket
+		if err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+			var err error
+			ticket, err = domain.CreateTicket(e.Ctx, tx, domain.NewTicket{
+				WorkspaceID: w.ws.ID, Subject: "Team move", Channel: domain.ChannelEmail,
+				Priority: urgent, TeamID: &otherTeam,
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var seq int64
+		e.Scalar(`SELECT seq FROM events WHERE workspace_id=$1 AND type='ticket.created' AND data->'ticket'->>'id'=$2`, &seq, w.ws.ID, ticket.ID.String())
+		if err := w.s.dispatch(e.Ctx, jobs.SupportChannelDispatchArgs{WorkspaceID: w.ws.ID, EventSeq: seq}); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.fake.channels[len(w.fake.channels)-1]; got != "priority-urgent" {
+			t.Fatalf("routed to %q, want priority-urgent", got)
+		}
+		e.Exec(`UPDATE tickets SET team_id=$2 WHERE id=$1`, ticket.ID, team)
+		if err := w.s.dispatch(e.Ctx, jobs.SupportChannelDispatchArgs{WorkspaceID: w.ws.ID, EventSeq: seq}); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.fake.channels[len(w.fake.channels)-1]; got != "team" {
+			t.Fatalf("team move stayed on %q, want team", got)
+		}
+	})
 }
 
 var eventCounter int
