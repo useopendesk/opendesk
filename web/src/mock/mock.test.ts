@@ -197,6 +197,24 @@ describe("mock backend", () => {
     expect((await call("GET", "/v1/support-channels/destinations")).body.data).toEqual([]);
   });
 
+  it("connects Google Chat and discovers named spaces", async () => {
+    const providers = (await call("GET", "/v1/support-channels/providers")).body.data;
+    expect(providers.find((p: { key: string }) => p.key === "google_chat").fields).toContainEqual(
+      expect.objectContaining({ name: "service_account_json", secret: true }),
+    );
+    const created = await call("POST", "/v1/support-channels/connections", {
+      provider: "google_chat",
+      credentials: { service_account_json: "{\"type\":\"service_account\"}" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ provider: "google_chat", health_status: "action_required", external_account_name: "Margin Chat app" });
+    expect(created.body).not.toHaveProperty("credentials");
+    expect((await call("GET", `/v1/support-channels/connections/${created.body.id}/destinations`)).body.data).toEqual([
+      { id: "spaces/AAAAsupport", name: "Support", kind: "space", available: true },
+    ]);
+    expect((await call("DELETE", `/v1/support-channels/connections/${created.body.id}`)).status).toBe(204);
+  });
+
   it("sends presence_state when a ticket topic is joined", async () => {
     const [tid] = [...teammatePresence.keys()];
     const wid = db.workspaces[0].workspace.id;
