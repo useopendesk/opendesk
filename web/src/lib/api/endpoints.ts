@@ -873,6 +873,8 @@ export type CollabOAuthStartBody = {
   email?: string;
   /** Reconnect this account (manage). */
   account_id?: string;
+  /** Older mail to import once connected (since null: all of it); left out, none. */
+  history?: T.ConnectHistory;
 };
 
 export type CollabImapBody = {
@@ -891,6 +893,8 @@ export type CollabImapBody = {
   smtp_password?: string;
   visibility: "private" | "shared";
   shared_with?: T.MailAudience;
+  /** Older mail to import once connected (since null: all of it); left out, none. */
+  history?: T.ConnectHistory;
 };
 
 export type CollabAccountPatch = {
