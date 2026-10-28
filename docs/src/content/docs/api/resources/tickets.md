@@ -86,7 +86,7 @@ curl "https://api.opendesk.sh/v1/tickets?status=open,pending&assignee=none&sort=
 
 Plus [`limit` and `cursor`](/api/pagination/).
 
-`GET /v1/tickets/{id}` also accepts an alias, case-insensitively. Aliases follow the same workspace and private-team visibility rules as UUID and number lookups. Agents can set or clear an alias with `PATCH /v1/tickets/{id}`; use 2 to 40 letters, numbers or hyphens, including at least one letter. An alias is a lookup convenience, not proof of identity or permission.
+`GET /v1/tickets/{id}` also accepts an alias, case-insensitively. Aliases follow the same workspace and private-team visibility rules as UUID and number lookups. Agents can set or clear an alias with `PATCH /v1/tickets/{id}`; use 2 to 40 letters, numbers or hyphens, including at least one letter. UUID forms, including compact hexadecimal and wrapped forms, are reserved for ticket IDs. An alias is a lookup convenience, not proof of identity or permission.
 
 ## Counts
 
