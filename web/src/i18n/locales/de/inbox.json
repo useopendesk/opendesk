@@ -354,7 +354,7 @@
     "ticket": "Ticket",
     "copyLink": "Link kopieren",
     "reference": "Referenz",
-    "referenceHint": "Füge eine optionale Referenz hinzu, mit der Kunden oder Teammitglieder dieses Ticket finden. Verwende 2 bis 40 Buchstaben, Ziffern oder Bindestriche, darunter mindestens einen Buchstaben.",
+    "referenceHint": "Füge eine optionale Referenz hinzu, mit der Kunden oder Teammitglieder dieses Ticket finden. Verwende 2 bis 40 Buchstaben, Ziffern oder Bindestriche, darunter mindestens einen Buchstaben. UUID-Formate sind für Ticket-IDs reserviert.",
     "referencePlaceholder": "BESTELLUNG-42",
     "noReference": "Keine",
     "copyReference": "Referenz kopieren",

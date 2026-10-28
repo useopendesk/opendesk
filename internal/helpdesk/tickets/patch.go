@@ -192,6 +192,9 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 			if !ticketAliasPattern.MatchString(v) || !strings.ContainsAny(v, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
 				return nil, httpx.Validation("alias must be 2 to 40 letters, numbers or hyphens, and include a letter")
 			}
+			if _, err := uuid.Parse(v); err == nil {
+				return nil, httpx.Validation("alias must be distinct from a UUID ticket reference")
+			}
 			to = &v
 		}
 		if !sameStr(cur.Alias, to) {

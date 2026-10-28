@@ -8,7 +8,7 @@ import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
-import { DAY, isRecord, nowIso, uuid } from "../util";
+import { DAY, isRecord, nowIso, parseUUID, uuid } from "../util";
 import { clearDraft } from "./drafts";
 import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
@@ -108,6 +108,7 @@ function readPatch(body: Record<string, unknown>): TicketPatch {
     if (value && (!/^[A-Z0-9][A-Z0-9-]{1,39}$/.test(value) || !/[A-Z]/.test(value))) {
       throw invalid("alias must be 2 to 40 letters, numbers or hyphens, and include a letter");
     }
+    if (value && parseUUID(value)) throw invalid("alias must be distinct from a UUID ticket reference");
     p.alias = value || null;
   }
   if (typeof body.status === "string") {

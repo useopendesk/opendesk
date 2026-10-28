@@ -25,7 +25,7 @@ import { contactRef, db, userRef, type WsData } from "./db";
 import { publish } from "./gateway";
 import { canSeeTicket, defaultBrand, teamRole } from "./teams";
 import { applyLabels, checkRequiredOnSolve, fieldDefs, fieldFiltersFromQuery, fieldsText, fieldSortValue, matchFields, mergeFields, type FieldFilterIn } from "./labels";
-import { MIN, nowIso, preview, stripHtml, uuid } from "./util";
+import { MIN, nowIso, parseUUID, preview, stripHtml, uuid } from "./util";
 import { botForTicket, botRefFor } from "./bots";
 
 export const OPENISH: TicketStatus[] = ["open", "pending", "on_hold"];
@@ -283,7 +283,8 @@ export function sortTickets(list: Ticket[], sort: string, order: string | null, 
 
 export function findTicket(ws: WsData, idOrNumber: string): Ticket | undefined {
   const raw = decodeURIComponent(idOrNumber).replace(/^#/, "");
-  const t = /^\d+$/.test(raw)
+  const id = parseUUID(raw);
+  const t = id ? ws.tickets.find((x) => x.id === id) : /^\d+$/.test(raw)
     ? ws.tickets.find((x) => x.number === Number(raw))
     : ws.tickets.find((x) => x.id === raw) ?? ws.tickets.find((x) => x.alias?.toLowerCase() === raw.toLowerCase());
   return t && !ws.deletedTickets.has(t.id) ? t : undefined;

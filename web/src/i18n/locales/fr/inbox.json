@@ -376,7 +376,7 @@
     "ticket": "Ticket",
     "copyLink": "Copier le lien",
     "reference": "Référence",
-    "referenceHint": "Ajoutez une référence facultative pour permettre aux clients ou à l’équipe de retrouver ce ticket. Utilisez de 2 à 40 lettres, chiffres ou tirets, avec au moins une lettre.",
+    "referenceHint": "Ajoutez une référence facultative pour permettre aux clients ou à l’équipe de retrouver ce ticket. Utilisez de 2 à 40 lettres, chiffres ou tirets, avec au moins une lettre. Les formats UUID sont réservés aux identifiants de ticket.",
     "referencePlaceholder": "COMMANDE-42",
     "noReference": "Aucune",
     "copyReference": "Copier la référence",

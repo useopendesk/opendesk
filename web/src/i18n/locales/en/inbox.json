@@ -358,7 +358,7 @@
     "ticket": "Ticket",
     "copyLink": "Copy link",
     "reference": "Reference",
-    "referenceHint": "Add an optional reference customers or teammates can use to find this ticket. Use 2 to 40 letters, numbers or hyphens, including at least one letter.",
+    "referenceHint": "Add an optional reference customers or teammates can use to find this ticket. Use 2 to 40 letters, numbers or hyphens, including at least one letter. UUID forms are reserved for ticket IDs.",
     "referencePlaceholder": "ORDER-42",
     "noReference": "None",
     "copyReference": "Copy reference",
