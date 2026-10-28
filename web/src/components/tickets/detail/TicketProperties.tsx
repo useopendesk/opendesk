@@ -185,7 +185,7 @@ function TicketAliasEditor({ ticket, canEdit }: { ticket: Ticket; canEdit: boole
         description={t("props.referenceHint")}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>{t("cancel")}</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
             <Button variant="primary" type="submit" form={`ticket-reference-form-${ticket.id}`} loading={update.isPending}>{t("props.saveReference")}</Button>
           </>
         }
