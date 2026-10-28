@@ -24,22 +24,28 @@ permissions:
 
 jobs:
   check:
-    name: Simulator build
+    name: Simulator build (${{ matrix.configuration }})
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build
+        env:
+          CONFIGURATION: ${{ matrix.configuration }}
         run: >-
           xcodebuild -project ios/Opendesk.xcodeproj -scheme Opendesk
-          -configuration Debug -sdk iphonesimulator
+          -configuration "$CONFIGURATION" -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath "$RUNNER_TEMP/ios-simulator"
           CODE_SIGNING_ALLOWED=NO -quiet build
 
   testflight:
-    name: Signed build and TestFlight
+    name: ${{ inputs.upload && 'TestFlight upload' || (inputs.version != '' && 'Signed iOS validation' || 'Signed build not requested') }}
     needs: check
     if: inputs.version != ''
     runs-on: macos-latest
