@@ -8,6 +8,7 @@ name: Release
 #   Caddyfile, env.template, opendesk-ctl) listed in SHA256SUMS, plus
 #   images.json with the digests.
 #   desktop installers and update feeds for the same version.
+#   an iOS build uploaded to TestFlight.
 on:
   push:
     tags: ["v*"]
@@ -63,6 +64,15 @@ jobs:
     needs: validate
     uses: ./.github/workflows/desktop-build.yml
     secrets: inherit
+
+  ios:
+    name: iOS and TestFlight
+    needs: validate
+    uses: ./.github/workflows/ios.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.validate.outputs.semver }}
+      upload: true
 
   # The Go build cross-compiles and the web build is architecture independent,
   # so one runner builds both platforms without QEMU.
@@ -259,7 +269,7 @@ jobs:
 
   github-release:
     name: GitHub release
-    needs: [validate, opendesk, realtime, desktop]
+    needs: [validate, opendesk, realtime, desktop, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -325,6 +335,8 @@ jobs:
           Images: \`ghcr.io/useopendesk/opendesk:$TAG\`, \`ghcr.io/useopendesk/realtime:$TAG\` (digests in images.json).
 
           Desktop installers for this version are attached below. Installed desktop apps update automatically; downloads are also at https://opendesk.sh/download.
+
+          The matching iOS build has been uploaded to TestFlight and becomes available after Apple processes it.
           EOF
           # shellcheck disable=SC2086
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --notes-file notes.md $flags
