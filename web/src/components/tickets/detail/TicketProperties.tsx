@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ChevronDown, Clock, CornerDownRight, Hash, Import as ImportIcon, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Clock, CornerDownRight, Hash, Import as ImportIcon, Inbox, Lock, Mail, Pencil, Route, Star, Users } from "lucide-react";
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Priority, Severity, Team, Ticket, TicketStatus } from "@/lib/api/types";
@@ -12,6 +12,9 @@ import { Picker, type PickerItem } from "@/components/ui/picker";
 import { Avatar } from "@/components/ui/avatar";
 import { TagChip } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { TextInput } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContactCard } from "@/components/contacts/ContactCard";
 import { api } from "@/lib/api/endpoints";
@@ -136,6 +139,72 @@ function pageLabel(url: string) {
 export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team" | "contact" | null;
 
 export const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
+
+function TicketAliasEditor({ ticket, canEdit }: { ticket: Ticket; canEdit: boolean }) {
+  const { t } = useTranslation("inbox");
+  const update = useUpdateTicket();
+  const [open, setOpen] = useState(false);
+  const [alias, setAlias] = useState(ticket.alias ?? "");
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    update.mutate({ id: ticket.id, patch: { alias: alias.trim() || null } });
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div className="flex min-h-8 items-center gap-2 text-fg-3">
+        <Hash className="size-3.5" />
+        <span className="flex-1">{t("props.reference")}</span>
+        {ticket.alias ? (
+          <>
+            <span className="mono text-fg-2">{ticket.alias}</span>
+            <CopyButton value={ticket.alias} label={t("props.copyReference")} className="size-5" />
+          </>
+        ) : (
+          <span className="text-fg-4">{t("props.noReference")}</span>
+        )}
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="xs"
+            square
+            aria-label={ticket.alias ? t("props.editReference") : t("props.addReference")}
+            icon={<Pencil />}
+            onClick={() => {
+              setAlias(ticket.alias ?? "");
+              setOpen(true);
+            }}
+          />
+        )}
+      </div>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t("props.reference")}
+        description={t("props.referenceHint")}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{t("cancel")}</Button>
+            <Button variant="primary" type="submit" form={`ticket-reference-form-${ticket.id}`} loading={update.isPending}>{t("props.saveReference")}</Button>
+          </>
+        }
+      >
+        <form id={`ticket-reference-form-${ticket.id}`} onSubmit={save}>
+          <label htmlFor={`ticket-reference-${ticket.id}`} className="sr-only">{t("props.reference")}</label>
+          <TextInput
+            id={`ticket-reference-${ticket.id}`}
+            autoFocus
+            maxLength={40}
+            value={alias}
+            placeholder={t("props.referencePlaceholder")}
+            onChange={(event) => setAlias(event.target.value)}
+          />
+        </form>
+      </Dialog>
+    </>
+  );
+}
 
 /** Who a ticket of this team can go to: its members first, and a private team's to its members only. */
 export function useAssigneeItems(team: Team | undefined): PickerItem[] {
@@ -493,6 +562,7 @@ export function TicketProperties({
           <span className="mono text-fg-2">#{t.number}</span>
           <CopyButton value={`${location.origin}/inbox/open/${t.id}`} label={tr("props.copyLink")} className="size-5" />
         </div>
+        <TicketAliasEditor ticket={t} canEdit={canEdit} />
         <div className="flex items-center gap-2 text-fg-3">
           <ChannelIcon channel={t.channel} />
           <span className="flex-1">{tr("props.channel")}</span>

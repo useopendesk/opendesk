@@ -209,6 +209,8 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
       return { icon: <TimerOff />, hue: "red", text: line(d.kind === "first_response" ? "activity.slaFirst" : "activity.slaResolution") };
     case "subject_changed":
       return { icon: <ArrowRightLeft />, text: line("activity.subject") };
+    case "alias_changed":
+      return { icon: <ArrowRightLeft />, text: line("activity.alias") };
     case "snoozed":
       return { icon: <AlarmClock />, text: typeof d.until === "string" ? line("activity.snoozedUntil", { when: shortDate(d.until) }) : line("activity.snoozed") };
     case "unsnoozed":

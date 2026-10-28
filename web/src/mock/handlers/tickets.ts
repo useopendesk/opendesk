@@ -68,6 +68,9 @@ function ticket(ctx: Ctx): Ticket {
 
 /** Team, brand and reply address checks for a patch (contracts/teams.md). */
 function checkPatch(ws: WsData, t: Ticket, p: TicketPatch) {
+  if (p.alias && ws.tickets.some((x) => x.id !== t.id && x.alias?.toLowerCase() === p.alias?.toLowerCase())) {
+    throw new HttpError(409, "ticket_alias_taken", "That ticket reference is already in use.");
+  }
   if (p.contact_id && !ws.contacts.some((x) => x.id === p.contact_id)) throw invalid("Unknown contact");
   if (p.contact_id && p.contact_id !== t.contact?.id && t.channel === "chat") throw invalid("A live chat stays with the visitor who started it");
   if (p.team_id && !ws.teams.some((x) => x.id === p.team_id)) throw invalid("Unknown team");
@@ -98,6 +101,14 @@ function readPatch(body: Record<string, unknown>): TicketPatch {
   if (typeof body.subject === "string") {
     if (!body.subject.trim()) throw invalid("Subject can't be empty");
     p.subject = body.subject.trim().slice(0, 250);
+  }
+  if ("alias" in body) {
+    if (body.alias !== null && typeof body.alias !== "string") throw invalid("alias must be a string or null");
+    const value = typeof body.alias === "string" ? body.alias.trim().toUpperCase() : "";
+    if (value && (!/^[A-Z0-9][A-Z0-9-]{1,39}$/.test(value) || !/[A-Z]/.test(value))) {
+      throw invalid("alias must be 2 to 40 letters, numbers or hyphens, and include a letter");
+    }
+    p.alias = value || null;
   }
   if (typeof body.status === "string") {
     if (!STATUSES.includes(body.status as TicketStatus)) throw invalid("Unknown status");

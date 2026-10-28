@@ -118,6 +118,7 @@ var (
 type Ticket struct {
 	ID        uuid.UUID   `json:"id"`
 	Number    int64       `json:"number"`
+	Alias     *string     `json:"alias" nullable:"true"`
 	Subject   string      `json:"subject"`
 	Status    string      `json:"status" enum:"open,pending,on_hold,solved,closed"`
 	Priority  string      `json:"priority" enum:"low,normal,high,urgent"`

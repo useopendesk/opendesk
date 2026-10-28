@@ -377,6 +377,7 @@ export type TicketSla = {
 export type Ticket = {
   id: string;
   number: number;
+  alias?: string | null;
   subject: string;
   status: TicketStatus;
   priority: Priority;
@@ -1604,6 +1605,8 @@ export type CsatSurvey = {
 
 export type TicketPatch = {
   subject?: string;
+  /** Optional workspace-unique reference; null clears it. */
+  alias?: string | null;
   status?: TicketStatus;
   priority?: Priority;
   /** null clears. */
