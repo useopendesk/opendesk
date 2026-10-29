@@ -614,7 +614,7 @@ func gmailRefused(err error) bool {
 // fit, oldest first, at most gmailBacklogMax.
 func (s *service) applyGmailChanges(ctx context.Context, p *pass, g *gmailProvider, changes []gmailChange, backlog []string) ([]string, error) {
 	inChanges := make(map[string]bool, len(changes))
-	all := make([]string, 0, len(changes)+len(backlog))
+	all := make([]string, 0, len(changes))
 	for _, c := range changes {
 		inChanges[c.ID] = true
 		all = append(all, c.ID)
