@@ -22,8 +22,22 @@ struct AccountAppearanceView: View {
                 .padding(.horizontal, 4)
                 .contentTransition(.opacity)
                 .motion(Motion.fade, value: env.appearance)
+
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel("Assignee in the ticket list")
+                    .padding(.horizontal, 4)
+                AccountSegmented(options: AssigneeDisplay.allCases, selection: $assigneeDisplay, label: \.title)
+                Text("Teammates on a ticket right now always show in green, with what they are doing.")
+                    .font(ODFont.footnote)
+                    .foregroundStyle(Theme.fg3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.top, 18)
         }
     }
+
+    @AppStorage(AssigneeDisplay.key, store: AssigneeDisplay.store) private var assigneeDisplay: AssigneeDisplay = .photo
 
     private var footer: String {
         switch env.appearance {

@@ -199,9 +199,16 @@ extension DemoSeed {
             Tag(id: demoID(.tag, index + 1), name: label.0, color: label.1, description: label.2, groupID: nil, archived: false, appliesTo: ["tickets"])
         }
         ws.views = [
-            SavedView(id: demoID(.view, 1), name: "Urgent", shared: true, filters: TicketFilters(status: ["open", "pending"], priority: ["urgent", "high"]), position: 0),
-            SavedView(id: demoID(.view, 2), name: "Billing queue", shared: false, filters: TicketFilters(status: ["open", "pending", "on_hold"], teamID: billing), position: 1),
-            SavedView(id: demoID(.view, 3), name: "Waiting on engineering", shared: true, filters: TicketFilters(status: ["on_hold", "pending"], tag: "Bug"), position: 2),
+            SavedView(id: demoID(.view, 1), name: "Urgent", shared: true, filters: TicketFilters(status: ["open", "pending"], priority: ["urgent", "high"]), position: 0,
+                      section: "Triage", icon: ViewIcon(kind: .icon, value: "flame", color: "red")),
+            SavedView(id: demoID(.view, 4), name: "Needs a label", shared: true, filters: TicketFilters(status: ["open", "pending"], untagged: true), position: 1,
+                      section: "Triage", icon: ViewIcon(kind: .text, value: "NL", color: "amber")),
+            SavedView(id: demoID(.view, 2), name: "Billing queue", shared: false, filters: TicketFilters(status: ["open", "pending", "on_hold"], teamID: billing), position: 2,
+                      icon: ViewIcon(kind: .emoji, value: "💳")),
+            SavedView(id: demoID(.view, 3), name: "Waiting on engineering", shared: true, filters: TicketFilters(status: ["on_hold", "pending"], tag: "Bug"), position: 3,
+                      section: "Engineering", icon: ViewIcon(kind: .icon, value: "bug", color: "violet")),
+            SavedView(id: demoID(.view, 5), name: "Open, not billing", shared: true, filters: TicketFilters(status: ["open"], tagNot: "Billing,Refund"), position: 4,
+                      section: "Engineering", icon: ViewIcon(kind: .icon, value: "inbox", color: nil)),
         ]
         ws.savedReplies = [
             ("Greeting and thanks", "thanks", "<p>Hi {{contact.first_name}},</p><p>Thanks for reaching out. I'm looking into this now and will get back to you shortly.</p>"),
@@ -688,6 +695,8 @@ extension DemoSeed {
         ticket.snoozedUntil = spec.snoozedUntil
         ticket.csat = spec.csat
         ticket.tags = spec.tags.compactMap { name in ws.tags.first { $0.name == name }?.ref }
+        // One ticket carries an alias, found and opened by it like its number.
+        if spec.number == 1068 { ticket.alias = "INV-20412" }
 
         var messages: [Message] = []
         for (index, line) in spec.thread.enumerated() {

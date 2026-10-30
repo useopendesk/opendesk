@@ -364,6 +364,9 @@ struct SearchTicketRow: View {
                 }
                 HStack(spacing: 6) {
                     TicketNumber(number: ticket.number)
+                    if let alias = ticket.alias {
+                        TicketAliasTag(alias: alias)
+                    }
                     Text(ticket.contactName).font(ODFont.sans(13)).foregroundStyle(Theme.fg3).lineLimit(1)
                     if !ticket.lastMessagePreview.isEmpty {
                         Text(ticket.lastMessagePreview).font(ODFont.sans(13)).foregroundStyle(Theme.fg4).lineLimit(1)
@@ -375,6 +378,22 @@ struct SearchTicketRow: View {
         .padding(.vertical, 11)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A ticket's alias, searchable and openable like its number, in mono beside the number.
+struct TicketAliasTag: View {
+    let alias: String
+
+    var body: some View {
+        Text(verbatim: alias)
+            .font(ODFont.mono(11))
+            .foregroundStyle(Theme.fg3)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .frame(height: 17)
+            .background(Theme.active, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .accessibilityLabel("Alias \(alias)")
     }
 }
 

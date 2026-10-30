@@ -350,6 +350,8 @@ struct CSAT: Codable, Hashable, Sendable {
 struct Ticket: Codable, Hashable, Sendable, Identifiable {
     var id: String
     var number: Int
+    /// An optional reference of the workspace's own (`ORDER-1234`), found by search and links.
+    var alias: String?
     var subject: String
     var status: TicketStatus
     var priority: Priority
@@ -377,7 +379,7 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
     var updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, number, subject, status, priority, severity, channel, contact, assignee, tags, fields, sla, spam, csat, custom
+        case id, number, alias, subject, status, priority, severity, channel, contact, assignee, tags, fields, sla, spam, csat, custom
         case mailboxID = "mailbox_id"
         case teamID = "team_id"
         case firstRespondedAt = "first_responded_at"
@@ -396,6 +398,7 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         number = c.lenient(Int.self, forKey: .number) ?? 0
+        alias = c.lenient(String.self, forKey: .alias).flatMap { $0.isEmpty ? nil : $0 }
         subject = c.lenient(String.self, forKey: .subject) ?? ""
         status = c.lenient(TicketStatus.self, forKey: .status) ?? .open
         priority = c.lenient(Priority.self, forKey: .priority) ?? .normal
@@ -582,13 +585,17 @@ struct FieldFilter: Codable, Hashable, Sendable {
     var value: String
 }
 
+/// A view's filters (contracts/api.md `TicketFilters`). Every key the API knows is kept, so
+/// saving a view from the app never drops what the web set.
 struct TicketFilters: Codable, Hashable, Sendable {
     var status: [String]?
     var priority: [String]?
     var severity: [String]?
     var assignee: String?
+    /// Comma-separated team ids, `mine` and `none`: tickets of any of them.
     var teamID: String?
     var mailboxID: String?
+    /// Comma-separated label names: tickets carrying any of them.
     var tag: String?
     var channel: String?
     var q: String?
@@ -596,14 +603,68 @@ struct TicketFilters: Codable, Hashable, Sendable {
     var receivedAt: String?
     var brandID: String?
     var widgetID: String?
+    /// The same values as `teamID`: tickets of none of them.
+    var teamNot: String?
+    /// Comma-separated mailbox ids: tickets whose reply address is none of them.
+    var mailboxNot: String?
+    /// Comma-separated contact ids: tickets whose contact is none of them.
+    var contactNot: String?
+    /// Comma-separated company ids: tickets whose contact belongs to none of them.
+    var companyNot: String?
+    /// Comma-separated label names: tickets carrying none of them.
+    var tagNot: String?
+    /// Tickets carrying no label.
+    var untagged: Bool?
+    /// Tickets on none of these channels.
+    var channelNot: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case status, priority, severity, assignee, tag, channel, q, fields
+        case status, priority, severity, assignee, tag, channel, q, fields, untagged
         case teamID = "team_id"
         case mailboxID = "mailbox_id"
         case receivedAt = "received_at"
         case brandID = "brand_id"
         case widgetID = "widget_id"
+        case teamNot = "team_not"
+        case mailboxNot = "mailbox_not"
+        case contactNot = "contact_not"
+        case companyNot = "company_not"
+        case tagNot = "tag_not"
+        case channelNot = "channel_not"
+    }
+}
+
+/// What the sidebar shows beside a view's name (contracts/api.md `ViewIcon`): one emoji, an
+/// icon of the curated list, or one or two letters or digits, the last two in a palette colour.
+struct ViewIcon: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, Sendable { case emoji, icon, text }
+
+    var kind: Kind
+    var value: String
+    /// A `LabelColor`; always nil for an emoji.
+    var color: String?
+
+    enum CodingKeys: String, CodingKey { case kind, value, color }
+
+    init(kind: Kind, value: String, color: String? = nil) {
+        self.kind = kind
+        self.value = value
+        self.color = kind == .emoji ? nil : color
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        value = c.lenient(String.self, forKey: .value) ?? ""
+        color = c.lenient(String.self, forKey: .color)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(value, forKey: .value)
+        // Written whole: no colour is sent as null.
+        try c.encode(kind == .emoji ? nil : color, forKey: .color)
     }
 }
 
@@ -613,6 +674,39 @@ struct SavedView: Codable, Hashable, Sendable, Identifiable {
     var shared: Bool?
     var filters: TicketFilters?
     var position: Int?
+    /// Shared with that team's members.
+    var teamID: String?
+    /// The sidebar heading it shows under, with the other views that name it.
+    var section: String?
+    var icon: ViewIcon?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, shared, filters, position, section, icon
+        case teamID = "team_id"
+    }
+
+    init(id: String, name: String, shared: Bool?, filters: TicketFilters?, position: Int?, teamID: String? = nil, section: String? = nil, icon: ViewIcon? = nil) {
+        self.id = id
+        self.name = name
+        self.shared = shared
+        self.filters = filters
+        self.position = position
+        self.teamID = teamID
+        self.section = section
+        self.icon = icon
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.lenient(String.self, forKey: .name) ?? ""
+        shared = c.lenient(Bool.self, forKey: .shared)
+        filters = c.lenient(TicketFilters.self, forKey: .filters)
+        position = c.lenient(Int.self, forKey: .position)
+        teamID = c.lenient(String.self, forKey: .teamID)
+        section = c.lenient(String.self, forKey: .section)
+        icon = c.lenient(ViewIcon.self, forKey: .icon)
+    }
 }
 
 struct SavedReply: Codable, Hashable, Sendable, Identifiable {
