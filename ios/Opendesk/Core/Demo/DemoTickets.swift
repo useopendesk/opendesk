@@ -15,6 +15,7 @@ struct DemoTicketExtras: Sendable {
     var links: [String: [JSONValue]] = [:]
     var contacts: [String: JSONValue] = [:]
     var mailboxes: [JSONValue] = []
+    var detailsApplied = false
     var applied = false
 
     struct ThreadSeed: Sendable {
@@ -129,6 +130,7 @@ extension DemoBackend {
     /// The answer (nil inside for 204), or nil when the route isn't this area's.
     func ticketRoutes(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
         if !ws.ticketExtras.applied { applyTicketExtras(&ws) }
+        if let answer = try ticketDetailRoutes(call, in: &ws) { return answer }
         let actor = ActivityActor(type: "user", user: me)
 
         // Definitions and lookups another area may answer too: theirs wins.

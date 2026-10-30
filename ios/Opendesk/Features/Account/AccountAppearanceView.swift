@@ -5,6 +5,7 @@ import SwiftUI
 struct AccountAppearanceView: View {
     @Environment(AppEnvironment.self) private var env
     @AppStorage(ConversationLayout.key) private var conversation = false
+    @AppStorage(NextTicketAfterSend.key) private var nextAfterSend = true
 
     var body: some View {
         AccountPage(title: "Appearance") {
@@ -27,6 +28,9 @@ struct AccountAppearanceView: View {
             AccountClockSection()
             AccountSection(title: "Tickets", footer: "The customer's messages on the left, your team's replies and notes on the right, like a chat. Applies to this iPhone.") {
                 AccountToggleRow(symbol: "bubble.left.and.bubble.right", tone: .blue, title: "Conversation layout", isOn: $conversation)
+            }
+            AccountSection(footer: "Also after sending with a status that takes the ticket out of the list. The next ticket of the list you came from opens, with its filters and sort; after the last one, you are back on the list. Undoing the send brings you back to the ticket.") {
+                AccountToggleRow(symbol: "arrow.down.to.line", tone: .green, title: "Open the next ticket after \u{201C}\(env.statusDisplay.sendAndFinish(note: false))\u{201D}", isOn: $nextAfterSend)
             }
         }
     }
