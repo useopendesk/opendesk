@@ -345,6 +345,7 @@ extension DemoBackend {
     func kbRoutes(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
         if call.match("GET", "brands") != nil { return .some(brands(ws)) }
         if call.match("GET", "reports/overview") != nil { return .some(encode(reportOverview(call.query, in: ws))) }
+        if call.match("GET", "reports/agents") != nil { return .some(encode(reportAgents(call.query, in: ws))) }
         if call.path.first == "kb" { return try kbCall(call, in: &ws) }
         return nil
     }

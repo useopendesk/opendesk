@@ -176,6 +176,10 @@ actor DemoBackend {
         }
         if call.match("PATCH", "me") != nil {
             if let name = call.string("name"), !name.isEmpty { world.user.name = name }
+            if let format = call.string("time_format") {
+                guard TimeFormat(rawValue: format) != nil else { throw Failure(status: 422, code: "validation_failed", detail: "Choose auto, 12h or 24h.") }
+                world.user.timeFormat = format
+            }
             return encode(world.user)
         }
         if call.match("DELETE", "me") != nil || call.match("POST", "me/heartbeat") != nil { return nil }

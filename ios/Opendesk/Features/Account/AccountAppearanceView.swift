@@ -22,6 +22,7 @@ struct AccountAppearanceView: View {
                 .padding(.horizontal, 4)
                 .contentTransition(.opacity)
                 .motion(Motion.fade, value: env.appearance)
+            AccountClockSection()
         }
     }
 
