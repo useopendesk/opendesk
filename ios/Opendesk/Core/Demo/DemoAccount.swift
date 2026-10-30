@@ -230,7 +230,8 @@ extension DemoBackend {
             let shared = call.body["shared"]?.bool ?? false
             if shared, !ws.role.isAdmin { throw Failure(status: 403, code: "forbidden", detail: "Only admins share views.") }
             let filters = call.body["filters"].flatMap { try? APICoding.decoder.decode(TicketFilters.self, from: encode($0)) } ?? TicketFilters()
-            let saved = SavedView(id: made(), name: call.string("name") ?? "View", shared: shared, filters: filters, position: (ws.views.compactMap(\.position).max() ?? -1) + 1)
+            var saved = SavedView(id: made(), name: call.string("name") ?? "View", shared: shared, filters: filters, position: call.body["position"]?.int ?? (ws.views.compactMap(\.position).max() ?? -1) + 1)
+            try viewLook(call.body, to: &saved, in: ws)
             ws.views.append(saved)
             if let team = call.string("team_id"), !team.isEmpty { ws.accountExtras.viewTeams[saved.id] = team }
             let json = view(json: saved, in: ws)
@@ -243,6 +244,9 @@ extension DemoBackend {
             if let shared = call.body["shared"]?.bool { ws.views[index].shared = shared }
             if let position = call.body["position"]?.int { ws.views[index].position = position }
             if let filters = call.body["filters"], let decoded = try? APICoding.decoder.decode(TicketFilters.self, from: encode(filters)) { ws.views[index].filters = decoded }
+            var looked = ws.views[index]
+            try viewLook(call.body, to: &looked, in: ws)
+            ws.views[index] = looked
             if let team = call.string("team_id") { ws.accountExtras.viewTeams[id] = team.isEmpty ? nil : team }
             let json = view(json: ws.views[index], in: ws)
             publish("view.updated", ["view": json], in: &ws)
@@ -381,7 +385,31 @@ extension DemoBackend {
     private func view(json view: SavedView, in ws: DemoWorkspace) -> JSONValue {
         var object = DemoSeed.json(view).object ?? [:]
         object["team_id"] = ws.accountExtras.viewTeams[view.id].map(JSONValue.string) ?? .null
+        object["section"] = view.section.map(JSONValue.string) ?? .null
+        object["icon"] = view.icon.map { DemoSeed.json($0) } ?? .null
         return .object(object)
+    }
+
+    /// A view's `section` and `icon` from a create or patch: left out keeps them, null clears them.
+    private func viewLook(_ body: JSONValue, to view: inout SavedView, in ws: DemoWorkspace) throws {
+        if let raw = body["section"] {
+            let name = (raw.string ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if name.count > 60 || name.contains("<") || name.contains(">") {
+                throw Failure(status: 422, code: "validation_failed", detail: "Section names run to 60 characters, without < or >.")
+            }
+            // A section another view already names keeps that view's spelling.
+            let existing = ws.views.compactMap(\.section).first { $0.lowercased() == name.lowercased() }
+            view.section = name.isEmpty ? nil : existing ?? name
+        }
+        if let raw = body["icon"] {
+            if raw == .null {
+                view.icon = nil
+            } else if let icon = try? APICoding.decoder.decode(ViewIcon.self, from: encode(raw)) {
+                view.icon = ViewIcon(kind: icon.kind, value: icon.value, color: icon.color)
+            } else {
+                throw Failure(status: 422, code: "validation_failed", detail: "That icon can't be used.")
+            }
+        }
     }
 
     private func cleanShortcut(_ raw: String?, except id: String?, in ws: DemoWorkspace) throws -> String? {

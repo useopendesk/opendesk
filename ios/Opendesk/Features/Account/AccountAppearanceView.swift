@@ -32,8 +32,22 @@ struct AccountAppearanceView: View {
             AccountSection(footer: "Also after sending with a status that takes the ticket out of the list. The next ticket of the list you came from opens, with its filters and sort; after the last one, you are back on the list. Undoing the send brings you back to the ticket.") {
                 AccountToggleRow(symbol: "arrow.down.to.line", tone: .green, title: "Open the next ticket after \u{201C}\(env.statusDisplay.sendAndFinish(note: false))\u{201D}", isOn: $nextAfterSend)
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel("Assignee in the ticket list")
+                    .padding(.horizontal, 4)
+                AccountSegmented(options: AssigneeDisplay.allCases, selection: $assigneeDisplay, label: \.title)
+                Text("Teammates on a ticket right now always show in green, with what they are doing.")
+                    .font(ODFont.footnote)
+                    .foregroundStyle(Theme.fg3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.top, 18)
         }
     }
+
+    @AppStorage(AssigneeDisplay.key, store: AssigneeDisplay.store) private var assigneeDisplay: AssigneeDisplay = .photo
 
     private var footer: String {
         switch env.appearance {

@@ -453,7 +453,7 @@ struct AccountSavedReply: Codable, Hashable, Sendable, Identifiable {
     var plainBody: String { HTMLText.plain(from: bodyHTML) }
 }
 
-/// A ticket view as the settings list reads it, with its team.
+/// A ticket view as the settings list reads it, with its team, section and icon.
 struct AccountTicketView: Codable, Hashable, Sendable, Identifiable {
     var id: String
     var name: String
@@ -461,19 +461,24 @@ struct AccountTicketView: Codable, Hashable, Sendable, Identifiable {
     var filters: TicketFilters
     var position: Int
     var teamID: String?
+    /// The sidebar heading it shows under (`/v1/views` `section`).
+    var section: String?
+    var icon: ViewIcon?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, shared, filters, position
+        case id, name, shared, filters, position, section, icon
         case teamID = "team_id"
     }
 
-    init(id: String, name: String, shared: Bool, filters: TicketFilters, position: Int, teamID: String?) {
+    init(id: String, name: String, shared: Bool, filters: TicketFilters, position: Int, teamID: String?, section: String? = nil, icon: ViewIcon? = nil) {
         self.id = id
         self.name = name
         self.shared = shared
         self.filters = filters
         self.position = position
         self.teamID = teamID
+        self.section = section
+        self.icon = icon
     }
 
     init(from decoder: Decoder) throws {
@@ -484,6 +489,8 @@ struct AccountTicketView: Codable, Hashable, Sendable, Identifiable {
         filters = c.lenient(TicketFilters.self, forKey: .filters) ?? TicketFilters()
         position = c.lenient(Int.self, forKey: .position) ?? 0
         teamID = c.lenient(String.self, forKey: .teamID)
+        section = c.lenient(String.self, forKey: .section)
+        icon = c.lenient(ViewIcon.self, forKey: .icon)
     }
 
     enum Audience: String, CaseIterable, Identifiable {
@@ -505,12 +512,13 @@ extension TicketFilters {
     var isEmpty: Bool {
         (status ?? []).isEmpty && (priority ?? []).isEmpty && (severity ?? []).isEmpty && (assignee ?? "").isEmpty
             && (teamID ?? "").isEmpty && (mailboxID ?? "").isEmpty && (tag ?? "").isEmpty && (channel ?? "").isEmpty
-            && (q ?? "").isEmpty && (fields ?? []).isEmpty && !hasOtherFilters
+            && (q ?? "").isEmpty && (fields ?? []).isEmpty && (teamNot ?? "").isEmpty && (mailboxNot ?? "").isEmpty
+            && (contactNot ?? "").isEmpty && (companyNot ?? "").isEmpty && (tagNot ?? "").isEmpty && untagged != true
+            && (channelNot ?? []).isEmpty && !hasOtherFilters
     }
 
     /// Filters set on the web that the iPhone keeps as they are without editing them.
     var hasOtherFilters: Bool {
-        !(severity ?? []).isEmpty || !(mailboxID ?? "").isEmpty || !(channel ?? "").isEmpty || !(q ?? "").isEmpty
-            || !(fields ?? []).isEmpty || !(receivedAt ?? "").isEmpty || !(brandID ?? "").isEmpty || !(widgetID ?? "").isEmpty
+        !(fields ?? []).isEmpty || !(receivedAt ?? "").isEmpty || !(brandID ?? "").isEmpty || !(widgetID ?? "").isEmpty
     }
 }
