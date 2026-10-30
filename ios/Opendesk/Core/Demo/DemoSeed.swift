@@ -378,12 +378,26 @@ extension DemoSeed {
                      a(.maya, 260, p("Hi Tomás,", "You're right, the renewal retried after a timeout and both attempts went through. I've refunded the second charge of €4,320. It usually shows on your statement within 5 to 10 business days.", "Apologies for the trouble.", "Maya"), delivery: "failed"),
                      c(35, p("Hi, just checking in on this. I haven't heard back yet. Is the refund being processed?")),
                  ],
-                 summary: summary("Brightline Logistics was charged twice for its annual renewal. Maya refunded the duplicate, but her reply bounced, so Tomás hasn't heard back and is asking again.", ["Duplicate charge of €4,320 on June 9, card ending 4417", "Maya's reply failed to deliver", "Next: resend the refund confirmation"], .frustrated, at: 34)),
+                 summary: summary("Brightline Logistics was charged twice for its annual renewal. Maya refunded the duplicate, but her reply bounced, so Tomás hasn't heard back and is asking again.", ["Duplicate charge of €4,320 on June 9, card ending 4417", "Maya's reply failed to deliver", "Next: resend the refund confirmation"], .frustrated, at: 34),
+                 calls: [
+                     call(42, ["outcome": .string("voicemail"), "missed_reason": .string("agents_did_not_answer"), "number": .string("+34 91 555 0193"), "caller_name": .string("Tomás García"),
+                               "ended_at": .string(stamp(ago(41))), "duration": .number(58), "voicemail": .bool(true),
+                               "summary": .string("Tomás is calling about the refund for the duplicate renewal charge. He hasn't had an email and asks for a call back or a written confirmation.")]),
+                 ]),
             Spec(number: 1045, subject: "Volume pricing for 500 seats", contact: stefan, status: .open, priority: .high, assignee: .maya, team: billing, tags: ["Billing", "VIP", "Question"], mailbox: billingMailbox,
                  thread: [
                      c(190, p("Hi,", "We're evaluating Margin for the whole company. Do you offer volume pricing over 500 seats?", "Stefan Bauer<br>Northwind Traders")),
                      a(.maya, 140, p("Hi Stefan,", "We do. Above 500 seats the Business plan drops to $11 per member per month on a yearly contract, and you get a named contact for onboarding.", "Happy to send a quote whenever you're ready.", "Maya")),
                      c(25, p("That works for us. Can you send a quote for 520 seats, billed yearly?", "Stefan")),
+                 ],
+                 calls: [
+                     call(150, ["direction": .string("outbound"), "outcome": .string("answered"), "number": .string("+49 30 5550 0417"), "caller_name": .string("Stefan Bauer"),
+                                "line": .string("Sales EU"), "agent": json(DemoPerson.maya.ref), "agent_name": .string(DemoPerson.maya.name),
+                                "answered_at": .string(stamp(ago(149.8))), "ended_at": .string(stamp(ago(143.6))), "duration": .number(384), "recording": .bool(true),
+                                "tags": .array([.string("Sales")]),
+                                "comments": .array([.object(["id": .string("1"), "text": .string("Wants a quote for about 520 seats, yearly. Decision by end of month."), "author": .string(DemoPerson.maya.name)])]),
+                                "summary": .string("Stefan is rolling Margin out to about 520 people at Northwind Traders and asked about volume pricing. Maya explained the yearly Business price above 500 seats and the onboarding contact. He will confirm the seat count by email."),
+                                "transcript": .string("Maya: Hi Stefan, it's Maya from Margin, following up on your email about volume pricing.\nStefan: Thanks for calling. We're looking at around 520 seats across three offices.\nMaya: Above 500 seats the Business plan is $11 per member per month on a yearly contract, and you'd get a named contact for onboarding.\nStefan: That sounds right. I'll confirm the final number by email this week.")]),
                  ]),
             Spec(number: 1078, subject: "Two-factor codes not accepted", contact: will, status: .open, priority: .high, assignee: .maya, team: support, tags: ["Problem"],
                  thread: [
@@ -616,6 +630,26 @@ private struct Spec {
     var thread: [Line]
     var summary: AISummary?
     var suggestions: [String: JSONValue] = [:]
+    /// Phone calls on the ticket, as their timeline entries (contracts/phone.md "Timeline").
+    var calls: [CallLine] = []
+}
+
+private struct CallLine {
+    var minutes: Double
+    var data: [String: JSONValue]
+}
+
+/// A call's entry data as Aircall's would be, with what the demo leaves out filled empty.
+private func call(_ minutes: Double, _ data: [String: JSONValue]) -> CallLine {
+    let base: [String: JSONValue] = [
+        "call_id": .string(String(Int(minutes * 1000))), "provider": .string("aircall"), "direction": .string("inbound"),
+        "stage": .string("ended"), "outcome": .string(""), "missed_reason": .string(""), "number": .string(""),
+        "line": .string("Support EU"), "line_id": .string("1201"), "caller_name": .string(""), "agent": .null, "agent_name": .string(""),
+        "started_at": .string(DemoSeed.stamp(DemoSeed.ago(minutes))), "answered_at": .null, "ended_at": .null, "duration": .number(0),
+        "recording": .bool(false), "voicemail": .bool(false), "asset_url": .string(""), "recording_url": .string(""), "voicemail_url": .string(""),
+        "links_expire_at": .null, "tags": .array([]), "comments": .array([]), "summary": .string(""), "transcript": .string(""), "outside_hours": .bool(false),
+    ]
+    return CallLine(minutes: minutes, data: base.merging(data) { _, new in new })
 }
 
 private struct Line {
@@ -804,6 +838,7 @@ extension DemoSeed {
         if let csat = spec.csat {
             activity("csat_received", ["score": .number(Double(csat.score)), "comment": .string(csat.comment ?? "")], actor: system, at: ticket.lastMessageAt.addingTimeInterval(3 * 3600))
         }
+        for line in spec.calls { activity("call", line.data, actor: system, at: ago(line.minutes)) }
 
         ws.tickets.append(ticket)
         ws.messages[id] = messages

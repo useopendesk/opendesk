@@ -286,6 +286,16 @@ final class TicketStore {
                   !activities.contains(where: { $0.id == activity.id })
             else { return }
             activities.append(activity)
+        case "activity.updated":
+            // A call entry follows its call (contracts/phone.md "Timeline").
+            guard let activity = envelope.member("activity", as: Activity.self),
+                  mine(envelope.string("ticket_id") ?? activity.ticketID)
+            else { return }
+            if let index = activities.firstIndex(where: { $0.id == activity.id }) {
+                activities[index] = activity
+            } else {
+                activities.append(activity)
+            }
         case "ai_suggested_reply.created", "ai_suggested_reply.updated":
             guard let suggestion = envelope.member("suggested_reply", as: SuggestedReply.self),
                   mine(envelope.string("ticket_id") ?? suggestion.ticketID)
