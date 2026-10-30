@@ -77,6 +77,8 @@ struct User: Codable, Hashable, Sendable, Identifiable {
     var avatarSource: String?
     var emailVerified: Bool?
     var totpEnabled: Bool?
+    /// The clock times are shown in: "auto", "12h" or "24h" (`TimeFormat`).
+    var timeFormat: String?
     var createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
@@ -85,6 +87,7 @@ struct User: Codable, Hashable, Sendable, Identifiable {
         case avatarSource = "avatar_source"
         case emailVerified = "email_verified"
         case totpEnabled = "totp_enabled"
+        case timeFormat = "time_format"
         case createdAt = "created_at"
     }
 
@@ -921,6 +924,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     case autoRechargeFailed = "auto_recharge_failed"
     case teamJoined = "team_joined"
     case importFinished = "import_finished"
+    case supportChannelUnhealthy = "support_channel_unhealthy"
     case threadReplied = "thread_replied"
     case collabAssigned = "collab_assigned"
     case collabMention = "collab_mention"
@@ -943,6 +947,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Auto-recharge failed"
         case .teamJoined: "Team joins"
         case .importFinished: "Imports"
+        case .supportChannelUnhealthy: "Support channel problems"
         case .threadReplied: "Side conversation answers"
         case .collabAssigned: "Mail assigned to you"
         case .collabMention: "Mail comment mentions"
@@ -964,6 +969,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Owners and admins"
         case .teamJoined: "An admin joins a team you lead"
         case .importFinished: "An import you started ends or needs new credentials"
+        case .supportChannelUnhealthy: "A provider connection stays unhealthy for at least 15 minutes"
         case .threadReplied: "Someone outside your team answers a side conversation on your ticket"
         case .collabAssigned: "A teammate assigns you a mail conversation"
         case .collabMention: "Someone mentions you in a comment on a mail conversation"
@@ -982,6 +988,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed: "creditcard"
         case .teamJoined: "person.2"
         case .importFinished: "square.and.arrow.down"
+        case .supportChannelUnhealthy: "exclamationmark.triangle"
         case .threadReplied: "bubble.left.and.bubble.right"
         case .collabAssigned: "envelope.badge.person.crop"
         case .collabMention: "at"
@@ -991,7 +998,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     /// Ticket-bound kinds; the rest are workspace alerts for owners and admins.
     var isAdminAlert: Bool {
         switch self {
-        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished: true
+        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished, .supportChannelUnhealthy: true
         default: false
         }
     }
@@ -1065,12 +1072,15 @@ struct AppNotification: Codable, Hashable, Sendable, Identifiable {
             case "needs_credentials": return "Your \(source) import needs new credentials"
             default: return "Your \(source) import stopped"
             }
+        case .supportChannelUnhealthy:
+            return "\(data["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "Support channel") needs attention"
         case nil: return "Notification"
         }
     }
 
     var preview: String? {
         if let preview = data["preview"]?.string, !preview.isEmpty { return preview }
+        if kind == .supportChannelUnhealthy, let detail = data["detail"]?.string, !detail.isEmpty { return detail }
         return nil
     }
 }

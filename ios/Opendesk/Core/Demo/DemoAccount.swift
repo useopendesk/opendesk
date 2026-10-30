@@ -38,6 +38,8 @@ struct DemoAccountWorkspace: Sendable {
     var profiles: [String: MemberProfile] = [:]
     var types: [Channels] = []
     var unsubscribedAt: Date?
+    /// Teams whose notifications the user turned off.
+    var quietTeams: Set<String> = []
     var replyTeams: [String: String] = [:]
     var viewTeams: [String: String] = [:]
 
@@ -52,6 +54,7 @@ struct DemoAccountWorkspace: Sendable {
             extras.profiles[DemoPerson.priya.id] = MemberProfile(title: "Customer success", phone: "", pronouns: "she/her", signatureHTML: "")
             if let view = ws.views.first(where: { $0.name == "Billing queue" }) { extras.viewTeams[view.id] = DemoSeed.billing }
             if let reply = ws.savedReplies.first(where: { $0.title.localizedCaseInsensitiveContains("refund") }) { extras.replyTeams[reply.id] = DemoSeed.billing }
+            if let quiet = ws.teams.first(where: { $0.name == "Partnerships" }) { extras.quietTeams = [quiet.id] }
         }
         let admin = ws.role.isAdmin
         extras.types = [
@@ -321,7 +324,15 @@ extension DemoBackend {
             ]),
             "unsubscribed_at": ws.accountExtras.unsubscribedAt.map { .string(DemoSeed.stamp($0)) } ?? .null,
             "types": .array(types),
+            "teams": .array(myTeams(ws).map { team in
+                .object(["id": .string(team.id), "name": .string(team.name), "notify": .bool(!ws.accountExtras.quietTeams.contains(team.id))])
+            }),
         ])
+    }
+
+    /// The teams the user works in, by name.
+    private func myTeams(_ ws: DemoWorkspace) -> [Team] {
+        ws.teams.filter { $0.memberIDs?.contains(world.user.id) ?? false }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func updatePreferences(_ body: JSONValue, workspace index: Int) throws {
@@ -352,6 +363,11 @@ extension DemoBackend {
             }
             if let on = change["push"]?.bool { world.workspaces[index].accountExtras.types[row].push = on }
             if let on = change["desktop"]?.bool { world.workspaces[index].accountExtras.types[row].desktop = on }
+        }
+        let mine = Set(myTeams(world.workspaces[index]).map(\.id))
+        for change in body["teams"]?.array ?? [] {
+            guard let id = change["id"]?.string, mine.contains(id), let on = change["notify"]?.bool else { continue }
+            if on { world.workspaces[index].accountExtras.quietTeams.remove(id) } else { world.workspaces[index].accountExtras.quietTeams.insert(id) }
         }
     }
 

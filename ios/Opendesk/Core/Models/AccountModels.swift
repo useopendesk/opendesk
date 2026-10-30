@@ -312,9 +312,12 @@ struct NotificationPreferences: Codable, Hashable, Sendable {
     var pacing: NotificationPacing?
     var unsubscribedAt: Date?
     var types: [NotificationTypePrefs]
+    /// The teams the caller leads or works in, by name; `notify` false hears nothing of
+    /// its tickets nobody has.
+    var teams: [NotificationTeamPrefs]
 
     enum CodingKeys: String, CodingKey {
-        case timezone, email, pacing, types
+        case timezone, email, pacing, types, teams
         case emailCadence = "email_cadence"
         case digestHour = "digest_hour"
         case pausedUntil = "paused_until"
@@ -335,6 +338,7 @@ struct NotificationPreferences: Codable, Hashable, Sendable {
         pacing = c.lenient(NotificationPacing.self, forKey: .pacing)
         unsubscribedAt = c.lenient(Date.self, forKey: .unsubscribedAt)
         types = c.lenient([NotificationTypePrefs].self, forKey: .types) ?? []
+        teams = c.lenient([NotificationTeamPrefs].self, forKey: .teams) ?? []
     }
 
     func isPaused(at now: Date) -> Bool { (pausedUntil ?? .distantPast) > now }
@@ -364,6 +368,21 @@ struct NotificationPreferences: Codable, Hashable, Sendable {
     }
 }
 
+/// One of the caller's teams in the notification settings: whether its new tickets, and
+/// replies nobody has picked up, reach them.
+struct NotificationTeamPrefs: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var notify: Bool
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.lenient(String.self, forKey: .name) ?? ""
+        notify = c.lenient(Bool.self, forKey: .notify) ?? true
+    }
+}
+
 /// `PATCH /v1/me/notification-preferences`: only what changed.
 struct NotificationPreferencesPatch: Encodable, Sendable {
     struct TypeChange: Encodable, Sendable {
@@ -373,15 +392,21 @@ struct NotificationPreferencesPatch: Encodable, Sendable {
         var desktop: Bool?
     }
 
+    struct TeamChange: Encodable, Sendable {
+        var id: String
+        var notify: Bool
+    }
+
     var emailCadence: EmailCadence?
     var digestHour: Int?
     var timezone: String?
     /// A date pauses; `""` resumes.
     var pausedUntil: String?
     var types: [TypeChange]?
+    var teams: [TeamChange]?
 
     enum CodingKeys: String, CodingKey {
-        case timezone, types
+        case timezone, types, teams
         case emailCadence = "email_cadence"
         case digestHour = "digest_hour"
         case pausedUntil = "paused_until"

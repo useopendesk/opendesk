@@ -260,6 +260,7 @@ extension DemoSeed {
             ("mentioned", 1070, ["actor": json(DemoPerson.lea.ref), "preview": .string("Filed with billing engineering: VAT changes should regenerate open invoices.")], 1495, 1200),
             ("import_finished", nil, ["source": .string("zendesk"), "source_name": .string("Zendesk"), "status": .string("completed"), "tickets": .number(1284), "articles": .number(42)], 2880, 2800),
             ("customer_replied", 1063, ["contact": contact(1063), "preview": .string("Thanks Maya, our compliance team is reviewing the DPA this week.")], 4080, 3600),
+            ("support_channel_unhealthy", nil, ["connection_id": .string(demoID(.made, 9801)), "name": .string("Margin Slack"), "provider": .string("slack"), "status": .string("error"), "detail": .string("Slack stopped accepting the bot token. Reconnect the workspace in Settings.")], 1980, 1900),
         ]
         return rows.enumerated().map { index, row in
             AppNotification(demoID: demoID(.notification, index + 1), type: row.0, ticket: row.1.flatMap(ticket), data: row.2, readAt: row.4.map(ago), createdAt: ago(row.3))

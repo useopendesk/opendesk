@@ -24,6 +24,7 @@ struct AccountAppearanceView: View {
                 .padding(.horizontal, 4)
                 .contentTransition(.opacity)
                 .motion(Motion.fade, value: env.appearance)
+            AccountClockSection()
             AccountSection(title: "Tickets", footer: "The customer's messages on the left, your team's replies and notes on the right, like a chat. Applies to this iPhone.") {
                 AccountToggleRow(symbol: "bubble.left.and.bubble.right", tone: .blue, title: "Conversation layout", isOn: $conversation)
             }

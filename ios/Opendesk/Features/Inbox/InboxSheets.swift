@@ -669,6 +669,7 @@ struct SnoozeSheet: View {
                     Panel(padding: 14) {
                         DatePicker("Pick a date", selection: $custom, in: AppClock.now..., displayedComponents: [.date, .hourAndMinute])
                             .font(ODFont.sans(15))
+                            .environment(\.locale, Format.locale)
                         Button("Snooze until then") { pick(custom) }
                             .buttonStyle(InkButtonStyle(height: 40))
                             .padding(.top, 10)
