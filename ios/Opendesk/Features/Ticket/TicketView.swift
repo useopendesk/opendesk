@@ -495,6 +495,8 @@ struct TicketSheetContent: View {
                     .presentationDetents([.medium, .large])
             case let .editNote(message):
                 EditNoteSheet(message: message) { await c.saveNote(message, text: $0) }
+            case let .sentEmail(message):
+                SentEmailSheet(store: c.store, message: message)
             }
         }
     }

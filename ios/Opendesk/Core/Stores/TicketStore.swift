@@ -660,6 +660,12 @@ final class TicketStore {
         originals[message.id] = result.html
     }
 
+    /// The copy of an email we sent, kept when it went out; its body when none was kept.
+    func sentEmail(_ message: Message) async throws -> String {
+        let result: HTMLResult = try await api.get("v1/messages/\(message.id)/original")
+        return result.html
+    }
+
     func hideOriginal(_ message: Message) {
         originals[message.id] = nil
     }

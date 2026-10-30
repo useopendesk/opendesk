@@ -7,7 +7,7 @@ enum TicketSheet: Identifiable {
     case details, status, priority, severity, assignee, team, labels, snooze, merge
     case savedReplies, ask, sides, newSide, thread(String), guidedDraft
     case field(CustomField), required([CustomField])
-    case editNote(Message)
+    case editNote(Message), sentEmail(Message)
 
     var id: String {
         switch self {
@@ -29,6 +29,7 @@ enum TicketSheet: Identifiable {
         case let .field(field): "field-" + field.key
         case let .required(fields): "required-" + fields.map(\.key).joined(separator: ",")
         case let .editNote(message): "edit-" + message.id
+        case let .sentEmail(message): "sent-" + message.id
         }
     }
 }
@@ -410,6 +411,8 @@ final class TicketController {
             }
         case .hideOriginal:
             store.hideOriginal(message)
+        case .viewSent:
+            sheet = .sentEmail(message)
         case .editNote:
             sheet = .editNote(message)
         case .sendAsReply:

@@ -197,6 +197,9 @@ final class Router {
         if case let .ticket(route)? = top {
             return AssistantPageContext(page: "ticket", path: env.inbox.scope.webPath(ticketID: route.id), ticketID: route.id)
         }
+        if case let .wikiPage(id)? = top {
+            return AssistantPageContext(page: "wiki", path: "/wiki/\(id)", wikiPageID: id)
+        }
         switch (tab, area) {
         case (.inbox, .tickets):
             var context = AssistantPageContext(page: "inbox", path: env.inbox.scope.webPath())

@@ -257,10 +257,8 @@ struct ReplyPreviewSheet: View {
     let onSend: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppEnvironment.self) private var env
     @State private var preview: TemplatePreview?
     @State private var error: String?
-    @State private var height: CGFloat = 320
 
     var body: some View {
         NavigationStack {
@@ -285,11 +283,7 @@ struct ReplyPreviewSheet: View {
                     if let error {
                         Text(error).font(ODFont.sans(13)).foregroundStyle(Tone.red.text)
                     } else if let preview {
-                        MessageWebView(html: preview.html, baseURL: env.session.instance.apiURL, height: $height)
-                            .frame(height: height)
-                            .padding(12)
-                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+                        EmailDocumentFrame(html: preview.html)
                     } else {
                         ProgressView().frame(maxWidth: .infinity, minHeight: 160)
                     }
@@ -316,21 +310,14 @@ struct ReplyPreviewSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            row("From", from)
-            row("To", to)
-            if !cc.isEmpty { row("Cc", cc.joined(separator: ", ")) }
-            if !bcc.isEmpty { row("Bcc", bcc.joined(separator: ", ")) }
-            row("Subject", preview?.subject.isEmpty == false ? preview!.subject : "Re: \(ticket.displaySubject)")
-            if !files.isEmpty { row("Files", files.joined(separator: ", ")) }
-        }
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label).font(ODFont.sans(12.5)).foregroundStyle(Theme.fg3).frame(width: 56, alignment: .leading)
-            Text(value).font(ODFont.sans(13.5)).foregroundStyle(Theme.fg).fixedSize(horizontal: false, vertical: true)
-        }
+        EmailHeaderRows(
+            from: from,
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: preview?.subject.isEmpty == false ? preview!.subject : "Re: \(ticket.displaySubject)",
+            files: files
+        )
     }
 
     private func load() async {

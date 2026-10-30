@@ -500,7 +500,7 @@ struct InboxListView: View {
         } else {
             Button {
                 Task { await solve(ticket) }
-            } label: { Label("Solve", systemImage: "checkmark") }
+            } label: { Label(env.statusDisplay.finishTitle, systemImage: "checkmark") }
                 .tint(Tone.green.solid)
         }
         Button {
@@ -554,7 +554,7 @@ struct InboxListView: View {
         do {
             _ = try await inbox.patch(ticket, TicketPatch(status: .solved), members: directory.members, meRef: env.session.userRef)
             Haptics.success()
-            env.toasts.show(Toast(message: "Solved #\(ticket.number)", kind: .success, actionTitle: "Undo") {
+            env.toasts.show(Toast(message: env.statusDisplay.finishToast(ticket.number), kind: .success, actionTitle: "Undo") {
                 Task { await apply(ticket, TicketPatch(status: previous), done: nil) }
             })
         } catch {

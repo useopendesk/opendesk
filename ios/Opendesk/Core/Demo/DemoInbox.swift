@@ -225,7 +225,7 @@ extension DemoBackend {
 
     private func inboxSearch(_ raw: String, in ws: DemoWorkspace) -> JSONValue {
         let text = raw.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return .object(["tickets": .array([]), "contacts": .array([]), "articles": .array([])]) }
+        guard !text.isEmpty else { return .object(["tickets": .array([]), "contacts": .array([]), "articles": .array([]), "wiki_pages": .array([])]) }
         let tickets = ws.tickets.filter { !$0.spam && matches($0, ["q": text], in: ws) }
             .sorted { $0.lastMessageAt > $1.lastMessageAt }
         let contacts = inboxContacts(ws).filter { ($0.name + " " + ($0.email ?? "")).localizedCaseInsensitiveContains(text) }
@@ -234,6 +234,7 @@ extension DemoBackend {
             "tickets": DemoSeed.json(Array(tickets.prefix(5))),
             "contacts": DemoSeed.json(Array(contacts.prefix(5))),
             "articles": DemoSeed.json(Array(articles.prefix(5))),
+            "wiki_pages": DemoSeed.json(Array(wikiSearch(text, in: ws.kb.wiki).prefix(5))),
         ])
     }
 

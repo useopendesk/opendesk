@@ -60,7 +60,7 @@ struct ActivityPhrasing {
         case "linked", "unlinked": "link"
         case "contact_changed": "person.text.rectangle"
         case "thread_started", "thread_closed", "thread_reopened": "arrow.triangle.branch"
-        case "subject_changed": "textformat"
+        case "subject_changed", "alias_changed": "textformat"
         case "snoozed": "alarm"
         case "spam_marked", "spam": "xmark.octagon"
         case "ai_handoff": "hand.raised"
@@ -181,6 +181,8 @@ struct ActivityPhrasing {
             return line([(who, true), (" reopened the side conversation ", false), (data["subject"]?.string ?? "", true)])
         case "subject_changed":
             return line([(who, true), (" changed the subject", false)])
+        case "alias_changed":
+            return line([(who, true), (" changed the ticket reference", false)])
         case "snoozed":
             if let raw = data["until"]?.string, let date = try? Date.ISO8601FormatStyle().parse(raw) {
                 return line([(who, true), (" snoozed this until ", false), (Format.shortDate(date) + ", " + Format.clock(date), true)])

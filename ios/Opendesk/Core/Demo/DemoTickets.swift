@@ -435,6 +435,13 @@ extension DemoBackend {
         for (_, list) in ws.messages {
             guard let index = list.firstIndex(where: { $0.id == id }) else { continue }
             let message = list[index]
+            if message.direction == "outbound" {
+                // The copy that went out: the reply, the signature and the customer's last message quoted.
+                let signature = "<p>\(message.author.user?.name ?? "Maya Chen")<br>Support, Margin</p>"
+                guard let asked = list[..<index].last(where: { $0.direction == "inbound" && $0.threadID == nil }) else { return message.bodyHTML + signature }
+                let when = asked.createdAt.formatted(date: .abbreviated, time: .shortened)
+                return message.bodyHTML + signature + "<blockquote><p>On \(when), \(asked.fromName) wrote:</p>\(asked.bodyHTML)</blockquote>"
+            }
             let earlier = list[..<index].last { $0.direction == "outbound" && !$0.isNote && $0.threadID == nil }
             guard let earlier else { return message.bodyHTML }
             let when = earlier.createdAt.formatted(date: .abbreviated, time: .shortened)

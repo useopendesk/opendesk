@@ -761,7 +761,8 @@ extension DemoSeed {
                 message.deliveryStatus = "sent"
             }
             message.subject = spec.subject
-            message.hasQuoted = line.quoted
+            // An email reply keeps the copy that went out, like the server does.
+            message.hasQuoted = line.quoted || (message.direction == "outbound" && message.author.type == "user" && !line.note && spec.channel == .email && !messages.isEmpty)
             message.attachments = line.files.enumerated().map { offset, name in
                 DemoSeed.attachment(id: demoID(.attachment, spec.number * 100 + index * 10 + offset), filename: name)
             }

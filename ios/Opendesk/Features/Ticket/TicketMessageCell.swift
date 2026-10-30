@@ -2,7 +2,7 @@ import SwiftUI
 
 /// What can be done to one message, from its menu.
 enum MessageAction {
-    case copy, translate, showOriginalText, loadOriginal, hideOriginal
+    case copy, translate, showOriginalText, loadOriginal, hideOriginal, viewSent
     case editNote, sendAsReply, retract, delete
     case retry, discard
     case open(Attachment)
@@ -108,7 +108,12 @@ struct TicketMessageCell: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             content
-            if message.hasQuoted || original != nil { quotedToggle }
+            // An email we sent keeps the copy that went out: it opens as its recipients got it.
+            if sentCopy {
+                sentButton
+            } else if message.hasQuoted || original != nil {
+                quotedToggle
+            }
             if !message.attachments.isEmpty {
                 TicketAttachmentList(attachments: message.attachments, baseURL: baseURL) { onAction(.open($0)) }
             }
@@ -259,6 +264,21 @@ struct TicketMessageCell: View {
         }
     }
 
+    private var sentCopy: Bool { !message.isInbound && message.hasQuoted && !message.isNote }
+
+    private var sentButton: some View {
+        Button {
+            Haptics.tap()
+            onAction(.viewSent)
+        } label: {
+            Label("View sent email", systemImage: "envelope")
+                .font(ODFont.sans(11.5, weight: .medium))
+                .foregroundStyle(Theme.fg3)
+                .frame(height: 22)
+        }
+        .buttonStyle(TapScaleStyle())
+    }
+
     private var quotedToggle: some View {
         Button {
             Haptics.tap()
@@ -312,7 +332,9 @@ struct TicketMessageCell: View {
                 Button { onAction(.showOriginalText) } label: { Label("Show original", systemImage: "text.quote") }
             }
         }
-        if message.hasQuoted, original == nil {
+        if sentCopy {
+            Button { onAction(.viewSent) } label: { Label("View sent email", systemImage: "envelope") }
+        } else if message.hasQuoted, original == nil {
             Button { onAction(.loadOriginal) } label: { Label("Show quoted text", systemImage: "text.append") }
         }
         if permissions.canEdit(message) {

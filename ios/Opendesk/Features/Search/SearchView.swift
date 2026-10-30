@@ -8,7 +8,7 @@ enum InboxSearchHandoff {
     static var ollie = false
 }
 
-/// Search across tickets, contacts and articles, with Ollie's search by meaning beside it.
+/// Search across tickets, contacts, articles and the wiki, with Ollie's search by meaning beside it.
 struct SearchView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
@@ -65,7 +65,7 @@ struct SearchView: View {
                             Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.fg2)
                         }
                         TextField(text: $text) {
-                            Text(store.mode == .ollie ? "Describe what you're looking for" : "Search tickets, contacts and articles").foregroundStyle(Theme.fg4)
+                            Text(store.mode == .ollie ? "Describe what you're looking for" : "Search tickets, contacts, articles and the wiki").foregroundStyle(Theme.fg4)
                         }
                         .font(ODFont.sans(16))
                         .foregroundStyle(Theme.fg)
@@ -213,7 +213,7 @@ struct SearchView: View {
             }
             .motion(Motion.snappy, value: store.recent)
         } else {
-            EmptyState(symbol: "magnifyingglass", title: "Search everywhere", message: "Search tickets, contacts and articles.")
+            EmptyState(symbol: "magnifyingglass", title: "Search everywhere", message: "Search tickets, contacts, articles and the wiki.")
                 .padding(.top, 40)
         }
     }
@@ -275,8 +275,22 @@ struct SearchView: View {
                     }
                 }
             }
+            if !hits.wikiPages.isEmpty {
+                group("Wiki", count: hits.wikiPages.count) {
+                    ForEach(Array(hits.wikiPages.enumerated()), id: \.element.id) { index, page in
+                        if index > 0 { Hairline(inset: 40) }
+                        Button {
+                            store.remember()
+                            env.router.push(.wikiPage(page.id))
+                        } label: {
+                            SearchWikiRow(page: page)
+                        }
+                        .buttonStyle(RowPressStyle())
+                    }
+                }
+            }
         }
-        .motion(Motion.fade, value: hits.tickets.map(\.id) + hits.contacts.map(\.id) + hits.articles.map(\.id))
+        .motion(Motion.fade, value: hits.tickets.map(\.id) + hits.contacts.map(\.id) + hits.articles.map(\.id) + hits.wikiPages.map(\.id))
     }
 
     private func group<Content: View>(_ title: String, count: Int, @ViewBuilder content: @escaping () -> Content) -> some View {
@@ -439,6 +453,37 @@ struct SearchArticleRow: View {
                 }
                 if !article.excerpt.isEmpty {
                     Text(article.excerpt).font(ODFont.sans(13)).foregroundStyle(Theme.fg3).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A wiki page: its icon, title, where it sits in the tree and the words that matched.
+struct SearchWikiRow: View {
+    let page: WikiSearchHit
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            WikiPageIcon(icon: page.icon, size: 15).padding(.top, -2).frame(width: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(page.displayTitle)
+                    .font(ODFont.sans(15, weight: .medium))
+                    .foregroundStyle(Theme.fg)
+                    .lineLimit(1)
+                if !page.path.isEmpty {
+                    Text(page.path.map(\.displayTitle).joined(separator: " / "))
+                        .font(ODFont.sans(12))
+                        .foregroundStyle(Theme.fg4)
+                        .lineLimit(1)
+                }
+                if !page.snippet.isEmpty {
+                    Text(page.snippet).font(ODFont.sans(13)).foregroundStyle(Theme.fg3).lineLimit(2)
                 }
             }
             Spacer(minLength: 0)

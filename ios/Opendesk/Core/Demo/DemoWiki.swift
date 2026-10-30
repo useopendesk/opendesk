@@ -365,7 +365,7 @@ extension DemoBackend {
     }
 
     /// Titles first, then text; every word also as a prefix.
-    private func wikiSearch(_ q: String, in wiki: DemoWiki) -> [WikiSearchHit] {
+    func wikiSearch(_ q: String, in wiki: DemoWiki) -> [WikiSearchHit] {
         let words = q.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         func matches(_ text: String) -> Bool {
