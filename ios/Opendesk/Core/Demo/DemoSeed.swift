@@ -162,7 +162,7 @@ extension DemoSeed {
     static func margin() -> DemoWorkspace {
         let workspace = Workspace(
             id: marginID, name: "Margin", slug: "margin", avatarURL: nil,
-            settings: WorkspaceSettings(brandColor: "#4f46e5", timezone: DemoMode.timeZone, statusLabels: nil, priorityLabels: nil),
+            settings: WorkspaceSettings(brandColor: "#4f46e5", timezone: DemoMode.timeZone, statusLabels: nil, priorityLabels: nil, sendAndFinishButton: true),
             createdAt: ago(400 * 1440)
         )
         var ws = DemoWorkspace(workspace: workspace, role: .owner)

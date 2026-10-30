@@ -68,11 +68,12 @@ struct InboxBulkBar: View {
         HStack(spacing: 0) {
             action("Assign", symbol: "person.crop.circle") { sheet = .assign }
             Menu {
-                ForEach(TicketStatus.allCases) { status in
+                let display = env.statusDisplay
+                ForEach(display.offered()) { status in
                     Button {
-                        run(TicketPatch(status: status), done: "Marked \(things) \(status.title.lowercased())")
+                        run(TicketPatch(status: status), done: "Marked \(things) \(display.title(status).lowercased())")
                     } label: {
-                        Label(status.title, systemImage: symbol(status))
+                        Label(display.title(status), systemImage: symbol(status))
                     }
                 }
             } label: {

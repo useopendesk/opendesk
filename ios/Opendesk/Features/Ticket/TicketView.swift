@@ -172,8 +172,8 @@ struct TicketScreen: View {
                         Button("Snooze", systemImage: "moon.zzz") { c.open(.snooze) }
                     }
                     Menu("Status", systemImage: "circle.dashed") {
-                        ForEach(TicketStatus.allCases.filter { $0 != ticket.status }, id: \.self) { status in
-                            Button(status.title) { status == .solved ? c.solve() : c.setStatus(status) }
+                        ForEach(env.statusDisplay.offered().filter { $0 != ticket.status }, id: \.self) { status in
+                            Button(env.statusDisplay.title(status)) { status == .solved ? c.solve() : c.setStatus(status) }
                         }
                     }
                 }

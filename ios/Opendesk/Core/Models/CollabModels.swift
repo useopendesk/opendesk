@@ -77,6 +77,8 @@ struct MailIdentity: Codable, Hashable, Sendable, Identifiable {
     var canSend: Bool = true
     var fromName: String = ""
     var filledSignatureHTML: String?
+    /// Where answers go when set ("" none).
+    var replyTo: String = ""
 
     enum CodingKeys: String, CodingKey {
         case email, primary
@@ -87,6 +89,7 @@ struct MailIdentity: Codable, Hashable, Sendable, Identifiable {
         case canSend = "can_send"
         case fromName = "from_name"
         case filledSignatureHTML = "filled_signature_html"
+        case replyTo = "reply_to"
     }
 
     var id: String { email }
@@ -107,6 +110,7 @@ extension MailIdentity {
         canSend = c.lenient(Bool.self, forKey: .canSend) ?? true
         fromName = c.lenient(String.self, forKey: .fromName) ?? ""
         filledSignatureHTML = c.lenient(String.self, forKey: .filledSignatureHTML)
+        replyTo = (c.lenient(String.self, forKey: .replyTo) ?? "").lowercased()
     }
 }
 
