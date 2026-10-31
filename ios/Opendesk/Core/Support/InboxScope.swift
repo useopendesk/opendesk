@@ -135,6 +135,12 @@ enum InboxScope: Hashable, Sendable {
     }
 
     /// The team of a team inbox (`"mine"` for My teams).
+    /// The list whose order is remembered: a team inbox's tabs share one, as on the web.
+    var listKey: String {
+        if case let .team(id, _) = self { return "team:" + id }
+        return key
+    }
+
     var teamID: String? {
         if case let .team(id, _) = self { return id }
         return nil
@@ -167,6 +173,18 @@ enum TicketSortKey: Hashable, Sendable {
     case field(String)
 
     static let builtIn: [TicketSortKey] = [.lastMessage, .created, .priority, .severity, .due]
+
+    init?(raw: String) {
+        if raw.hasPrefix("field.") {
+            let key = String(raw.dropFirst(6))
+            guard !key.isEmpty else { return nil }
+            self = .field(key)
+        } else if let known = Self.builtIn.first(where: { $0.raw == raw }) {
+            self = known
+        } else {
+            return nil
+        }
+    }
 
     var raw: String {
         switch self {
@@ -213,6 +231,20 @@ struct TicketSort: Hashable, Sendable {
     static let due = TicketSort(key: .due, descending: false)
 
     var isDefault: Bool { self == .latest }
+
+    /// `<sort> <order>`, as `Preferences` keeps it.
+    var saved: String { key.raw + " " + (descending ? "desc" : "asc") }
+
+    init(key: TicketSortKey = .lastMessage, descending: Bool = true) {
+        self.key = key
+        self.descending = descending
+    }
+
+    init?(saved: String) {
+        let parts = saved.split(separator: " ").map(String.init)
+        guard parts.count == 2, let key = TicketSortKey(raw: parts[0]), ["asc", "desc"].contains(parts[1]) else { return nil }
+        self.init(key: key, descending: parts[1] == "desc")
+    }
 
     var query: [URLQueryItem] {
         [.init(name: "sort", value: key.raw), .init(name: "order", value: descending ? "desc" : "asc")]

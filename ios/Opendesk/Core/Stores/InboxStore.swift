@@ -10,8 +10,13 @@ final class InboxStore {
     var filters = InboxFilters() {
         didSet { if filters != oldValue { reload() } }
     }
+    /// The list's order, remembered per list (`Preferences.listSort`) so it comes back as the member left it.
     var sort: TicketSort = .latest {
-        didSet { if sort != oldValue { reload() } }
+        didSet {
+            guard sort != oldValue else { return }
+            if let list = sortList { Preferences.setListSort(sort, list) }
+            reload()
+        }
     }
     private(set) var search = ""
     private(set) var tickets: [Ticket] = []
@@ -50,8 +55,17 @@ final class InboxStore {
         if let debug = AppInfo.debugValue("OPENDESK_DEBUG_FOLDER"), let folder = Folder(rawValue: debug) {
             scope = .folder(folder)
         }
+        sort = rememberedSort
         reload()
     }
+
+    /// Where this list's order is kept: the server, workspace, member and list.
+    private var sortList: String? {
+        guard let instance, let me, let workspace = Preferences.workspaceID(for: instance) else { return nil }
+        return [instance.storageKey, workspace, me, scope.listKey].joined(separator: "|")
+    }
+
+    private var rememberedSort: TicketSort { sortList.flatMap(Preferences.listSort) ?? .latest }
 
     func loadMailboxes() async {
         guard let api, let page: Page<InboxMailbox> = try? await api.get("v1/mailboxes") else { return }
@@ -78,7 +92,7 @@ final class InboxStore {
         loadedOnce = false
         if !sameTeam {
             filters = InboxFilters()
-            sort = .latest
+            sort = rememberedSort
         }
         reload()
     }
