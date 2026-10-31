@@ -341,6 +341,25 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
       ctx.onNotification?.(n);
       return;
     }
+    case "notification.read": {
+      // Read in another window or on another device: the bell and the desktop badge follow.
+      if (!ctx.viaUser && !env.topics?.includes(`user:${ctx.me}`)) return;
+      const at = d.read_at as string | undefined;
+      const upTo = at ? Date.parse(at) : NaN;
+      if (Number.isNaN(upTo)) return;
+      const ids = new Set((d.ids as string[] | undefined) ?? []);
+      const all = d.all === true;
+      qc.setQueryData<Notification[]>(qk.notifications, (old) =>
+        old?.map((n) => (!n.read_at && (ids.has(n.id) || (all && Date.parse(n.created_at) <= upTo)) ? { ...n, read_at: at! } : n)),
+      );
+      return;
+    }
+    case "notification.deleted": {
+      if (!ctx.viaUser && !env.topics?.includes(`user:${ctx.me}`)) return;
+      const ids = new Set((d.ids as string[] | undefined) ?? []);
+      qc.setQueryData<Notification[]>(qk.notifications, (old) => old?.filter((n) => !ids.has(n.id)));
+      return;
+    }
   }
 
   if (resource.startsWith("ai_agent_")) return void applyAgentQualityEvent(qc, env.type, d);
