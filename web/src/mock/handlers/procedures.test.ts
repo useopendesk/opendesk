@@ -54,4 +54,14 @@ describe("mock procedures", () => {
     expect(busy.status).toBe(409);
     expect(busy.body.detail).toContain("Pip only procedure");
   });
+
+  it("lets automations run a procedure, never on ticket_updated", async () => {
+    const proc = (await list())[0];
+    const action = [{ type: "run_procedure", value: proc.id }];
+    expect((await call("POST", "/v1/automations", { name: "Loop", trigger: "ticket_updated", actions: action })).status).toBe(422);
+    expect((await call("POST", "/v1/automations", { name: "Unknown", trigger: "ticket_created", actions: [{ type: "run_procedure", value: crypto.randomUUID() }] })).status).toBe(422);
+    const made = await call("POST", "/v1/automations", { name: "Linear", trigger: "customer_replied", actions: action });
+    expect(made.status).toBe(201);
+    expect((await call("PATCH", `/v1/automations/${made.body.id}`, { trigger: "ticket_updated" })).status).toBe(422);
+  });
 });

@@ -553,6 +553,10 @@ interface Procedure {
   `.deleted` (`{procedure_id}`) go to admins (`events.Event.Admins`).
 - The agent reads them as "What it knows" describes; `ai_answered`, the playground's `done` and test
   results record the ones it read.
+- An automation's `run_procedure` action has Ollie run a procedure on a ticket for the team, whatever its
+  `channels` (`[]` makes a procedure for automations only): its own prompt and tools, internal notes,
+  ticket updates and connected tools set to run without asking, never a reply (`contracts/ai.md`
+  "Automations").
 
 ## Knowledge sources
 

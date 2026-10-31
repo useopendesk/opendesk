@@ -154,6 +154,7 @@ export default defineConfig({
             { label: 'Ollie, the assistant', slug: 'guides/ollie' },
             { label: 'Bots', slug: 'guides/bots' },
             { label: 'Procedures', slug: 'guides/procedures' },
+            { label: 'Linear issues from tickets', slug: 'guides/linear-issues-from-tickets' },
             { label: 'Integrations', slug: 'guides/integrations' },
             { label: 'Cloud plans and billing', slug: 'guides/billing' },
             { label: 'Keyboard shortcuts', slug: 'guides/keyboard-shortcuts' },

@@ -73,7 +73,7 @@ export function validQuestion(q: string | undefined): boolean {
   const n = (q ?? "").trim().length;
   return n >= 3 && n <= 300;
 }
-export const aiActions: ReadonlySet<ActionType> = new Set(["ai_triage"]);
+export const aiActions: ReadonlySet<ActionType> = new Set(["ai_triage", "run_procedure"]);
 
 export const sentiments: Sentiment[] = ["positive", "neutral", "negative", "frustrated"];
 export function sentimentLabel(s: string): string {
@@ -114,9 +114,9 @@ export function validPhrases(value: string): boolean {
 }
 
 const plainActions = ["set_status", "set_priority", "set_severity", "assign_user", "assign_replier", "assign_team", "set_reply_address", "add_tag", "remove_tag", "set_field", "send_reply", "add_note", "mark_spam", "delete_ticket", "merge_into_open_ticket"] as const;
-export const actionLabel: Record<ActionType, string> = Object.defineProperty(labels(plainActions, "actionTypes"), "ai_triage", {
-  get: () => i18n.t("ai:automation.ai_triage"),
-  enumerable: true,
+export const actionLabel: Record<ActionType, string> = Object.defineProperties(labels(plainActions, "actionTypes"), {
+  ai_triage: { get: () => i18n.t("ai:automation.ai_triage"), enumerable: true },
+  run_procedure: { get: () => i18n.t("ai:automation.run_procedure"), enumerable: true },
 }) as Record<ActionType, string>;
 
 /** Whether the action's `value` must be filled. set_field may write "" to clear, so it needs only its field. */
@@ -131,10 +131,12 @@ export function newAction(type: ActionType): Action {
 
 /** Actions that run on one trigger only: a merge joins a new ticket to an earlier one. */
 const onlyOn: Partial<Record<ActionType, AutomationTrigger>> = { merge_into_open_ticket: "ticket_created" };
+/** Actions that never run on a trigger: Ollie's own changes must not run a procedure again. */
+const notOn: Partial<Record<ActionType, AutomationTrigger>> = { run_procedure: "ticket_updated" };
 /** Whether an action can run on a trigger (contracts/api.md). */
 export function actionFitsTrigger(type: ActionType, trigger: AutomationTrigger): boolean {
   const only = onlyOn[type];
-  return !only || only === trigger;
+  return (!only || only === trigger) && notOn[type] !== trigger;
 }
 
 /** merge_into_open_ticket: how recent the ticket it joins must be, in days (contracts/api.md). */

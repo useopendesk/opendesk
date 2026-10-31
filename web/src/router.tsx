@@ -821,6 +821,7 @@ const sAutomationEdit = createRoute({
     const qc = context.queryClient;
     void qc.prefetchQuery(q.mailboxes());
     void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.procedures());
     return qc.ensureQueryData(q.automations());
   },
   component: page(() => import("./pages/settings/AutomationEdit")),

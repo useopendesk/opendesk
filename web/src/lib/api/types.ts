@@ -759,7 +759,9 @@ export type ActionType =
   | "ai_triage"
   /** value: a mailbox id of the ticket's brand (contracts/api.md). */
   | "set_reply_address"
-  | "set_field";
+  | "set_field"
+  /** value: a procedure id; Ollie runs it on the ticket (contracts/ai.md "Automations"). Not on ticket_updated. */
+  | "run_procedure";
 /**
  * set_field: `field` is the ticket field key, `value` its string form ("12.5", "true", "2026-10-11", "a,b"; "" clears).
  * merge_into_open_ticket: `same_subject` merges only into a ticket with the same subject (contracts/api.md).
@@ -1837,7 +1839,7 @@ export type AutoRecharge = {
 };
 export type AutoRechargePatch = Partial<Pick<AutoRecharge, "enabled" | "threshold_usd" | "amount_usd" | "monthly_limit_usd">>;
 export type AIFeature =
-  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer";
+  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer" | "procedure";
 /**
  * GET /v1/billing/usage (contracts/billing.md). `from`/`to` are RFC 3339; `to` is exclusive.
  * Every usd value is US dollars, a number with up to 6 decimals.

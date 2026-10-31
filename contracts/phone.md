@@ -230,7 +230,8 @@ trigger takes them; another trigger with one is refused):
 Every other condition and every action works as on other triggers, so "a missed inbound
 call outside business hours reopens the ticket, adds a note and raises its priority" is an
 automation, not code. Tags and comments added after the call ended update its entry but
-don't run the automations again.
+don't run the automations again. A `run_procedure` action waits up to 15 minutes for the call's
+transcript when it has a recording (`contracts/ai.md` "Automations").
 
 ### Insight cards
 

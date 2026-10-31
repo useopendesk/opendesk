@@ -366,6 +366,7 @@
       "actionValue": "Chaque action doit avoir une valeur.",
       "phrases": "Une liste compte de 1 à 100 expressions, une par ligne, de 500 caractères au plus chacune.",
       "mergeTrigger": "La fusion dans le ticket ouvert du contact ne s’exécute qu’à la création d’un ticket.",
+      "procedureTrigger": "Ollie ne peut pas exécuter de procédure quand un ticket est mis à jour. Choisissez un autre déclencheur.",
       "callTrigger": "Les conditions d'appel demandent le déclencheur Un appel se termine."
     },
     "chooseSeverity": "Choisir une gravité",
