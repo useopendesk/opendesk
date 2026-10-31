@@ -47,12 +47,19 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 	// Limits are keyed by address and by known connection only, so requests naming random
 	// ids add no keys of their own.
 	bad := "phone-hook-bad:" + httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
-	if s.d.Limiter.Over(bad, badHooksPerMinute, time.Minute) {
+	// A webhook an admin added by hand (its secret in the path) keeps posting from the
+	// provider's shared addresses after a rotation or a disconnect, until the admin removes
+	// it there: its address's failures never hold back another connection's verified events,
+	// so such a request is always checked, and refused with 429 only once it fails.
+	pathSecret := chi.URLParam(r, "secret")
+	if pathSecret == "" && s.d.Limiter.Over(bad, badHooksPerMinute, time.Minute) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
 	}
 	refuse := func(status int) {
-		s.d.Limiter.Allow(bad, badHooksPerMinute, time.Minute)
+		if !s.d.Limiter.Allow(bad, badHooksPerMinute, time.Minute) {
+			status = http.StatusTooManyRequests
+		}
 		w.WriteHeader(status)
 	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -72,7 +79,6 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	manual := a.Describe().ManualWebhook
-	pathSecret := chi.URLParam(r, "secret")
 	if pathSecret != "" && !manual {
 		refuse(http.StatusNotFound)
 		return

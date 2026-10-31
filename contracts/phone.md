@@ -347,7 +347,10 @@ Docs: [API specs](https://openapi.voys.dev) (`voipgrid/user`, `voipgrid/callerid
   Caddy keeps those paths out of its access log. Its URL reaches the connection, so only admins read it (`webhook_url`,
   `phone_connection.*` events). A request that names no connection or fails verification
   counts against its address (30 a minute, then that address gets `429` before any work);
-  a verified event counts against its connection (600 a minute). The two are apart, so
+  a request with a secret segment is always checked first and gets the `429` only once it
+  fails, because a manual webhook left behind after a rotation or a disconnect keeps posting
+  from the provider's addresses, which other workspaces' webhooks share: their verified events
+  are never refused for its failures. A verified event counts against its connection (600 a minute). The two are apart, so
   forged requests never use up the provider's own allowance, and ids that name no
   connection add no limiter keys. Nothing in a payload
   decides the workspace, the ticket or anyone's access: the connection does. The stored

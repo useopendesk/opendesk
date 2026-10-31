@@ -279,6 +279,17 @@ func TestVoysWebhookVerification(t *testing.T) {
 	if codes[401] != 30 || codes[429] != 10 {
 		t.Fatalf("forged: %v", codes)
 	}
+	// The provider's address is shared: another connection's verified events from it still land.
+	req, _ := http.NewRequest("POST", h.e.Srv.URL+h.hookPath(t), bytes.NewReader(body))
+	req.Header.Set("CF-Connecting-IP", "[IP]")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("verified event after failures from its address: %d", res.StatusCode)
+	}
 
 	// An event more than a week old is acknowledged and dropped; a retry is queued once.
 	old := voysStamp.ReplaceAll(body, []byte(`"timestamp":"2020-01-01T00:00:00+00:00"`))
