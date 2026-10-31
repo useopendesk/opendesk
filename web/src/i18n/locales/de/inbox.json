@@ -906,7 +906,12 @@
       "abandoned_in_ivr": "Im Menü aufgelegt",
       "abandoned_in_classic": "In der Warteschleife aufgelegt",
       "no_available_agent": "Niemand verfügbar",
-      "agents_did_not_answer": "Niemand hat abgenommen"
+      "agents_did_not_answer": "Niemand hat abgenommen",
+      "busy": "Besetzt",
+      "no_answer": "Nicht angenommen",
+      "failed": "Anruf fehlgeschlagen",
+      "cancelled": "Vor der Annahme aufgelegt",
+      "abandon": "In der Warteschlange aufgelegt"
     }
   },
   "panels": {

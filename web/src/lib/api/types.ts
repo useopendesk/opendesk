@@ -1084,7 +1084,15 @@ export type SupportChannelProvider = {
 export type SupportChannelAccount = { id: string; name: string };
 
 /** contracts/phone.md. */
-export type PhoneProvider = { key: string; name: string; fields: { name: string; label: string; secret: boolean }[] };
+export type PhoneProvider = {
+  key: string;
+  name: string;
+  fields: { name: string; label: string; secret: boolean }[];
+  /** An admin adds the connection's webhook URL in the provider by hand (Voys). */
+  manual_webhook: boolean;
+  /** A ringing call can show the caller in the provider's app (Aircall). */
+  insight_cards: boolean;
+};
 export type PhoneHealthCode = "" | "receiving" | "webhook_missing" | "credentials_refused" | "provider_unreachable";
 export type PhoneConnection = {
   id: string;

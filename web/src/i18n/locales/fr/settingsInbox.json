@@ -817,7 +817,12 @@
       "abandoned_in_ivr": "Raccroché dans le menu",
       "abandoned_in_classic": "Raccroché pendant l'attente",
       "no_available_agent": "Aucun collègue disponible",
-      "agents_did_not_answer": "Personne n'a répondu"
+      "agents_did_not_answer": "Personne n'a répondu",
+      "busy": "Ligne occupée",
+      "no_answer": "Sans réponse",
+      "failed": "Échec de l'appel",
+      "cancelled": "Raccroché avant la réponse",
+      "abandon": "Raccroché dans la file d'attente"
     }
   }
 }

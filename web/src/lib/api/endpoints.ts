@@ -439,6 +439,7 @@ export const api = {
     update: (id: string, b: { name?: string; reuse_days?: number; assign_answered?: boolean; insight_cards?: boolean; credentials?: Record<string, string> }) =>
       http.patch<T.PhoneConnection>(`/v1/phone/connections/${id}`, b),
     test: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/test`),
+    rotateWebhook: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/rotate-webhook`),
     disconnect: (id: string) => http.del(`/v1/phone/connections/${id}`),
     lines: () => http.get<{ data: T.PhoneLine[] }>("/v1/phone/lines"),
   },

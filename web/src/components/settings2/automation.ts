@@ -37,8 +37,20 @@ export const callFields: ReadonlySet<ConditionField> = new Set(["call_outcome", 
 export const callOutcomes = ["missed", "voicemail", "answered"] as const;
 export const callDirections = ["inbound", "outbound"] as const;
 export const callTimes = ["outside_business_hours", "business_hours"] as const;
-/** Aircall's missed_call_reason values. */
-export const callReasons = ["out_of_opening_hours", "no_available_agent", "agents_did_not_answer", "abandoned_in_ivr", "abandoned_in_classic", "short_abandoned"] as const;
+/** The providers' missed call reasons: Aircall's missed_call_reason, then Voys' ended reasons. */
+export const callReasons = [
+  "out_of_opening_hours",
+  "no_available_agent",
+  "agents_did_not_answer",
+  "abandoned_in_ivr",
+  "abandoned_in_classic",
+  "short_abandoned",
+  "no_answer",
+  "busy",
+  "cancelled",
+  "abandon",
+  "failed",
+] as const;
 
 /** Fields that only make sense once the workspace has teams, or a second brand (contracts/teams.md). */
 export const teamFields: ReadonlySet<ConditionField> = new Set(["team_id"]);

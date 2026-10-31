@@ -124,6 +124,7 @@ export default defineConfig({
               ],
             },
             { label: 'Phone calls with Aircall', slug: 'guides/aircall' },
+            { label: 'Phone calls with Voys', slug: 'guides/voys' },
             { label: 'Brands and widgets', slug: 'guides/brands-and-widgets' },
             {
               label: 'Email templates',
