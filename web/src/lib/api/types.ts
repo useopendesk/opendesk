@@ -2122,6 +2122,8 @@ export type PlaygroundDone = {
   sources: AgentSource[];
   handoff: boolean;
   action: { tool: string; title: string; summary: string } | null;
+  /** The procedures the agent read for this reply. */
+  procedures: ProcedureRef[];
   /** US dollars. */
   usd: number;
 };
@@ -2131,8 +2133,29 @@ export type PlaygroundEvent =
   | { event: "sources"; data: { sources: AgentSource[] } }
   | { event: "done"; data: PlaygroundDone };
 
+/** contracts/agent.md "Procedures". */
+export type ProcedureChannel = "chat" | "email";
+export type Procedure = {
+  id: string;
+  name: string;
+  /** "Use this when": how the agent recognises a conversation it applies to. */
+  when: string;
+  /** Markdown. */
+  instructions: string;
+  enabled: boolean;
+  /** Where the agent may pick it by `when`; [] = only when an automation runs it. */
+  channels: ProcedureChannel[];
+  /** [] = every bot. */
+  bot_ids: string[];
+  created_at: string;
+  updated_at: string;
+  updated_by: UserRef | null;
+};
+export type ProcedureBody = { name: string; when: string; instructions: string; enabled?: boolean; channels?: ProcedureChannel[]; bot_ids?: string[] };
+export type ProcedureRef = { id: string; name: string };
+
 /** contracts/agent.md "Tests". */
-export type AgentExpectationKind = "mentions" | "not_mentions" | "handoff" | "no_handoff" | "uses_tool" | "cites_knowledge";
+export type AgentExpectationKind = "mentions" | "not_mentions" | "handoff" | "no_handoff" | "uses_tool" | "cites_knowledge" | "uses_procedure";
 export type AgentExpectation = { kind: AgentExpectationKind; value?: string };
 export type AgentTestStatus = "pending" | "running" | "passed" | "failed" | "error";
 export type AgentTestCheck = { kind: AgentExpectationKind; value: string; passed: boolean; reason: string };
@@ -2144,6 +2167,7 @@ export type AgentTestResult = {
   handoff: boolean;
   tools: string[];
   sources: AgentSource[];
+  procedures: ProcedureRef[];
   action: PlaygroundDone["action"];
   checks: AgentTestCheck[];
   error: string | null;

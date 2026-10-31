@@ -14,6 +14,7 @@ import type {
   Message,
   Notification,
   Page,
+  Procedure,
   SuggestedReply,
   Team,
   Thread,
@@ -363,6 +364,14 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
   }
 
   if (resource.startsWith("ai_agent_")) return void applyAgentQualityEvent(qc, env.type, d);
+
+  if (resource === "ai_procedure") {
+    if (verb === "deleted") {
+      if (typeof d.procedure_id === "string") removeFromList(qc, qk.procedures, d.procedure_id);
+    } else if (d.procedure) upsertInList(qc, qk.procedures, d.procedure as Procedure);
+    else void qc.invalidateQueries({ queryKey: qk.procedures, exact: true });
+    return;
+  }
 
   if (resource === "ai_knowledge") {
     if (verb === "deleted") {

@@ -777,6 +777,13 @@ export const api = {
         dismiss: (id: string) => http.post<void>(`/v1/ai/agent/review/${id}/dismiss`),
       },
     },
+    /** The agent's procedures (contracts/agent.md "Procedures"). Admin. */
+    procedures: {
+      list: () => http.get<{ data: T.Procedure[] }>("/v1/ai/procedures"),
+      create: (b: T.ProcedureBody) => http.create<T.Procedure>("/v1/ai/procedures", b),
+      update: (id: string, b: Partial<T.ProcedureBody>) => http.patch<T.Procedure>(`/v1/ai/procedures/${id}`, b),
+      remove: (id: string) => http.del(`/v1/ai/procedures/${id}`),
+    },
     mcp: {
       list: () => http.get<T.Page<T.McpServer>>("/v1/ai/mcp-servers"),
       create: (b: { name: string; url: string; auth: T.McpAuthInput }) => http.create<T.McpServer>("/v1/ai/mcp-servers", b),

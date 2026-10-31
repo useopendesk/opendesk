@@ -43,7 +43,7 @@ gateway pushes it in full to those user channels and the `event.hidden` stand-in
 (`events.user_ids`), and no webhook receives it.
 
 `events.Event.Admins` scopes an event the same way to the workspace's owner and admins at publish
-time: settings whose REST reads need admin (`webhook.*`, `ai_mcp_server.*`, `ai_agent_test*`) never
+time: settings whose REST reads need admin (`webhook.*`, `ai_mcp_server.*`, `ai_agent_test*`, `ai_procedure.*`) never
 reach other members, API keys or webhooks. A notification is scoped to its recipient, and a personal
 view to its owner.
 
@@ -96,6 +96,7 @@ view to its owner.
 | `ai_suggested_reply.created` / `ai_suggested_reply.updated` | agents | — | `{ "ticket_id": "...", "suggested_reply": SuggestedReply }` (`contracts/agent.md` "Email"). `created` when the agent suggests a reply on an email ticket (it supersedes the pending one); `updated` when a teammate sends or discards it |
 | `ai_mcp_server.created` / `ai_mcp_server.updated` / `ai_mcp_server.deleted` | agents | admins (`private`, `user:<uid>`) | `{ "mcp_server": McpServer }` / `{ "mcp_server_id" }` (`contracts/agent.md`). `updated` also when a sync changes the tools or the status |
 | `ai_knowledge.created` / `ai_knowledge.updated` / `ai_knowledge.deleted` | agents | — | `{ "source": KnowledgeSource }` / `{ "source_id" }` (`contracts/agent.md`). `updated` on every status change of a sync |
+| `ai_procedure.created` / `ai_procedure.updated` / `ai_procedure.deleted` | agents | admins (`private`, `user:<uid>`) | `{ "procedure": Procedure }` / `{ "procedure_id" }` (`contracts/agent.md` "Procedures") |
 | `ai_agent_test.created` / `ai_agent_test.updated` / `ai_agent_test.deleted` | agents | admins (`private`, `user:<uid>`) | `{ "test": AgentTest }` / `{ "test_id" }` (`contracts/agent.md` "Tests") |
 | `ai_agent_test_run.created` / `ai_agent_test_run.updated` | agents | admins (`private`, `user:<uid>`) | `{ "run": AgentTestRun }` (without `results`): on start, when the job picks it up, after each test and when it ends or is stopped |
 | `ai_agent_test_result.updated` | agents | admins (`private`, `user:<uid>`) | `{ "result": AgentTestResult }`: a test of a run finished (`passed`, `failed` or `error`); it becomes that test's `last_result` |

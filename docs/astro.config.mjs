@@ -153,6 +153,7 @@ export default defineConfig({
             { label: 'AI features', slug: 'guides/ai' },
             { label: 'Ollie, the assistant', slug: 'guides/ollie' },
             { label: 'Bots', slug: 'guides/bots' },
+            { label: 'Procedures', slug: 'guides/procedures' },
             { label: 'Integrations', slug: 'guides/integrations' },
             { label: 'Cloud plans and billing', slug: 'guides/billing' },
             { label: 'Keyboard shortcuts', slug: 'guides/keyboard-shortcuts' },
