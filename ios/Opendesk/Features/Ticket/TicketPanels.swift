@@ -73,7 +73,7 @@ private struct TicketPanelView: View {
                         PanelSectionView(section: section)
                     }
                     ForEach(Array(data.blocks.enumerated()), id: \.offset) { _, block in
-                        PanelBlockView(block: block)
+                        PanelBlockView(block: block, scope: "\(store.ticketID)\u{1F}\(panel.id)")
                     }
                 }
             }
@@ -244,11 +244,13 @@ private struct PanelSectionView: View {
 
 private struct PanelBlockView: View {
     let block: PanelBlock
+    /// The ticket and panel the block is in, which cards keep their folding by.
+    let scope: String
 
     var body: some View {
         switch block {
         case let .card(card):
-            PanelCardView(card: card)
+            PanelCardView(card: card, scope: scope)
         case let .fields(title, items):
             Panel {
                 if let title, !title.isEmpty { blockTitle(title) }
@@ -287,15 +289,13 @@ private struct PanelBlockView: View {
     }
 }
 
-/// A card: a header with badges and links, and a body that folds away when it starts collapsed.
+/// A card: a header with badges and links, and a body that folds away from the arrow. It
+/// starts as the answer asks and stays as the agent leaves it (`PanelCardFolds`).
 private struct PanelCardView: View {
     let card: PanelCard
-    @State private var open: Bool
+    let scope: String
 
-    init(card: PanelCard) {
-        self.card = card
-        _open = State(initialValue: !card.collapsed)
-    }
+    private var open: Bool { PanelCardFolds.shared.isOpen(card, in: scope) }
 
     var body: some View {
         Panel {
@@ -322,14 +322,16 @@ private struct PanelCardView: View {
                 if card.hasBody {
                     Button {
                         Haptics.tap()
-                        withAnimation(Motion.snappy) { open.toggle() }
+                        withAnimation(Motion.snappy) { PanelCardFolds.shared.set(!open, for: card, in: scope) }
                     } label: {
                         Image(systemName: "chevron.down").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.fg3)
                             .rotationEffect(.degrees(open ? 180 : 0))
                             .frame(width: 26, height: 26).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(open ? "Show less" : "Show more")
+                    .accessibilityLabel(card.title)
+                    .accessibilityValue(open ? "Open" : "Folded")
+                    .accessibilityHint(open ? "Folds the card to its header" : "Shows the rest of the card")
                 }
             }
             .padding(.horizontal, 14)

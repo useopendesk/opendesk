@@ -387,6 +387,8 @@ struct PanelListRow: Decodable, Hashable, Sendable {
 }
 
 struct PanelCard: Hashable, Sendable {
+    /// The record across answers, up to 80 characters; nil without one.
+    var id: String?
     var title: String
     var url: String?
     var subtitle: String?
@@ -409,14 +411,16 @@ enum PanelBlock: Decodable, Hashable, Sendable {
     case note(text: String, tone: PanelTone)
     case unknown
 
-    private enum CodingKeys: String, CodingKey { case type, title, url, subtitle, badges, links, collapsed, fields, lines, footer, items, text, tone }
+    private enum CodingKeys: String, CodingKey { case type, id, title, url, subtitle, badges, links, collapsed, fields, lines, footer, items, text, tone }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let title = c.lenient(String.self, forKey: .title)
         switch c.lenient(String.self, forKey: .type) {
         case "card"?:
+            let id = c.lenient(String.self, forKey: .id) ?? c.lenient(Int.self, forKey: .id).map(String.init)
             self = .card(PanelCard(
+                id: id.flatMap { !$0.isEmpty && $0.count <= 80 ? $0 : nil },
                 title: title ?? "", url: c.lenient(String.self, forKey: .url), subtitle: c.lenient(String.self, forKey: .subtitle),
                 badges: c.lenient(Lossy<PanelBadge>.self, forKey: .badges)?.items ?? [],
                 links: c.lenient(Lossy<PanelLink>.self, forKey: .links)?.items ?? [],

@@ -140,6 +140,11 @@ extension DemoBackend {
                         ]),
                     ]),
                     .object([
+                        "type": .string("card"), "id": .string("inv-2291-0925"), "title": .string("Invoice September"), "collapsed": .bool(true),
+                        "badges": .array([.object(["text": .string("Paid"), "tone": .string("success")])]),
+                        "footer": .array([.object(["label": .string("Total"), "value": .object(["type": .string("money"), "amount": .string("3600.00"), "currency": .string("USD")])])]),
+                    ]),
+                    .object([
                         "type": .string("list"), "title": .string("Recent sign-ins"),
                         "items": .array([
                             .object(["title": .string("SAML sign-in failed"), "subtitle": .string("Okta, certificate mismatch"), "badge": .object(["text": .string("Error"), "tone": .string("danger")])]),
