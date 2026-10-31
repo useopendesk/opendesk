@@ -43,7 +43,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO -quiet build
 
   testflight:
-    name: ${{ (startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push' || inputs.upload) && 'TestFlight upload' || 'Signed iOS validation' }}
+    name: Signed build and TestFlight upload
     needs: check
     # CI calls this workflow on pushes to main too: only a version tag's own push uploads.
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || inputs.version != ''
