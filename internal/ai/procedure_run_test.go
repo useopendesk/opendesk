@@ -298,6 +298,10 @@ func TestProcedureRunSkips(t *testing.T) {
 	if ran := e.procedureRan(tk.ID); len(ran) != 0 {
 		t.Fatalf("activity %v", ran)
 	}
+	// Nothing was written, so the claim is given back and a retry may run it.
+	if claims := e.count(`SELECT count(*) FROM ai_procedure_runs WHERE ticket_id = $1`, tk.ID); claims != 0 {
+		t.Fatalf("a run that wrote nothing kept %d claims", claims)
+	}
 	// 200 runs an hour.
 	for i := 0; i < procedureHourly; i++ {
 		e.Exec(`INSERT INTO ai_procedure_runs (workspace_id, ticket_id, automation_id, procedure_id, trigger_key) VALUES ($1, $2, $3, $4, '')`,

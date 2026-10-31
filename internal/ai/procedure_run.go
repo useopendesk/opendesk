@@ -200,7 +200,9 @@ func (s *Service) RunProcedure(ctx context.Context, a jobs.AIProcedureRunArgs) e
 	r := &procedureRun{s: s, a: a, runID: runID, proc: proc, auto: auto, tc: tc}
 	outcome, err := r.run(ctx, set)
 	if err != nil && r.writes == 0 {
-		s.finishProcedureRun(ctx, runID, "skipped")
+		// Nothing was written: the claim goes, so the job's retry runs it, and a skip
+		// (skippable) leaves the ticket as it was.
+		s.releaseProcedureRun(ctx, runID)
 		return err
 	}
 	if err != nil {
@@ -244,9 +246,10 @@ func (s *Service) claimProcedureRun(ctx context.Context, a jobs.AIProcedureRunAr
 	return id, err
 }
 
-func (s *Service) finishProcedureRun(ctx context.Context, id uuid.UUID, outcome string) {
-	if _, err := s.d.DB.Pool.Exec(context.WithoutCancel(ctx), `UPDATE ai_procedure_runs SET outcome = $2 WHERE id = $1`, id, outcome); err != nil {
-		s.d.Log.Warn("record procedure run", "err", err)
+// releaseProcedureRun removes the claim of a run that wrote nothing, so a retry can run it.
+func (s *Service) releaseProcedureRun(ctx context.Context, id uuid.UUID) {
+	if _, err := s.d.DB.Pool.Exec(context.WithoutCancel(ctx), `DELETE FROM ai_procedure_runs WHERE id = $1`, id); err != nil {
+		s.d.Log.Warn("release procedure run", "err", err)
 	}
 }
 

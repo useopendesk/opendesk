@@ -577,7 +577,8 @@ allowed on `ticket_created`, `customer_replied`, `agent_replied` and `call_ended
 
 - The action only queues job `ai.procedure_run` in the trigger's transaction (unique by automation,
   ticket and the run's message or call); the model is never called inside the trigger. The job records
-  the run in `ai_procedure_runs` under the same key, so a retried or replayed job never runs twice.
+  the run in `ai_procedure_runs` under the same key, so a retried or replayed job never runs twice. A run
+  that stops on an error before writing anything gives its claim back, so the job's retry runs it.
 - At run time a procedure turned off or deleted is skipped (logged), as are AI off, a suspended
   workspace, a spam ticket, more than 200 runs per workspace in the last hour, an AI balance too low and
   a provider failure before anything was written: nothing is recorded on the ticket. The rest of the
