@@ -55,7 +55,10 @@ External identities belong to a workspace and contact, keyed uniquely by
 retains that key as a tombstone. Email matching cannot transfer an identity between
 contacts. A contact's `customer_oidc_relink_required` state prevents normal first-time
 email matching from bypassing administrative recovery. Contact deletion removes its
-identity data; brand and workspace deletion remove their scoped configuration and rows.
+identity data, and workspace deletion removes all workspace identity data. Brand deletion
+clears only the optional originating brand reference: active ownership and revoked
+tombstones remain workspace-scoped, so another brand cannot remap the subject. Brand
+configuration and brand-bound relink authorizations are removed with the brand.
 
 An admin with a recent user sign-in and MFA when enabled can authorize one relink through
 `POST /v1/brands/{id}/portal/relink-authorizations` with `contact_id`. The server checks

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -102,6 +103,35 @@ func TestPortalSettingsValidationDoesNotReflectSecrets(t *testing.T) {
 		}
 		if !strings.Contains(string(response.Body), "location") || !strings.Contains(string(response.Body), "message") {
 			t.Fatalf("missing field errors: %s", response.Body)
+		}
+	}
+}
+
+func TestPortalOIDCOwnershipSurvivesBrandDeletion(t *testing.T) {
+	e := hdtest.New(t, brands.Register)
+	ws := e.NewWorkspace()
+	var origin brands.Brand
+	e.Do("POST", "/v1/brands", ws.Admin.As(ws), map[string]any{"name": "Original portal"}).Want(t, 201).JSON(t, &origin)
+	contact, otherContact := ids.New(), ids.New()
+	e.Exec(`INSERT INTO contacts (id,workspace_id,name,email) VALUES ($1,$2,'Original owner','original@example.com'),($3,$2,'Other owner','other@example.com')`, contact, ws.ID, otherContact)
+	for _, subject := range []string{"active-subject", "revoked-subject"} {
+		e.Exec(`INSERT INTO customer_oidc_identities (id,workspace_id,brand_id,contact_id,issuer,subject,email,revoked_at)
+            VALUES ($1,$2,$3,$4,'https://issuer.example',$5,'original@example.com',CASE WHEN $5='revoked-subject' THEN now() END)`, ids.New(), ws.ID, origin.ID, contact, subject)
+	}
+	e.Do("DELETE", "/v1/brands/"+origin.ID.String(), ws.Admin.As(ws), nil).Want(t, 204)
+	for _, subject := range []string{"active-subject", "revoked-subject"} {
+		var storedContact uuid.UUID
+		var brand *uuid.UUID
+		var revoked bool
+		err := e.D.DB.Pool.QueryRow(e.Ctx, `SELECT contact_id,brand_id,revoked_at IS NOT NULL FROM customer_oidc_identities
+            WHERE workspace_id=$1 AND issuer='https://issuer.example' AND subject=$2`, ws.ID, subject).Scan(&storedContact, &brand, &revoked)
+		if err != nil || storedContact != contact || brand != nil || revoked != (subject == "revoked-subject") {
+			t.Fatalf("retained ownership for %s: contact=%v brand=%v revoked=%v error=%v", subject, storedContact, brand, revoked, err)
+		}
+		_, err = e.D.DB.Pool.Exec(e.Ctx, `INSERT INTO customer_oidc_identities (id,workspace_id,brand_id,contact_id,issuer,subject,email)
+            VALUES ($1,$2,$3,$4,'https://issuer.example',$5,'other@example.com')`, ids.New(), ws.ID, ws.BrandID, otherContact, subject)
+		if !db.IsUniqueViolation(err, "") {
+			t.Fatalf("retained %s must prevent remapping: %v", subject, err)
 		}
 	}
 }

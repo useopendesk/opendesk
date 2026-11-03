@@ -10,7 +10,8 @@ ALTER TABLE contacts ADD COLUMN customer_oidc_relink_required boolean NOT NULL D
 CREATE TABLE customer_oidc_identities (
     id uuid PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    brand_id uuid NOT NULL,
+    -- Origin is optional metadata; ownership and tombstones survive brand deletion.
+    brand_id uuid,
     contact_id uuid NOT NULL,
     issuer text NOT NULL CHECK (issuer <> ''),
     subject text NOT NULL CHECK (subject <> ''),
@@ -19,7 +20,7 @@ CREATE TABLE customer_oidc_identities (
     updated_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     UNIQUE (workspace_id, issuer, subject),
-    FOREIGN KEY (workspace_id, brand_id) REFERENCES brands(workspace_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id, brand_id) REFERENCES brands(workspace_id, id) ON DELETE SET NULL (brand_id),
     FOREIGN KEY (workspace_id, contact_id) REFERENCES contacts(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX customer_oidc_identities_contact_idx ON customer_oidc_identities(workspace_id, contact_id);
