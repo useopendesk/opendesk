@@ -1257,3 +1257,28 @@ defined in `contracts/support-channels.md`.
 
 ### System
 `GET /healthz` (liveness), `GET /readyz` (db + nats), `GET /v1/openapi.json`, `GET /docs` (API reference UI).
+
+### Customer portal OIDC settings
+
+`POST /v1/brands` and `PATCH /v1/brands/{id}` accept optional `portal_auth`:
+`{mode: "local" | "oidc" | "local_and_oidc", issuer?: string, client_id?: string,
+client_secret?: string}`. Settings writes require admin and `settings:write` for API
+keys. OIDC writes require issuer and client ID, and a secret on first configuration or
+when either changes. An omitted secret preserves the existing secret for the same
+issuer/client ID. Empty secrets are refused. `local` accepts no provider fields and
+clears saved provider settings. Brand responses include `portal_auth: {mode}` only.
+
+`GET /v1/brands/{id}/portal/auth` requires admin (`settings:read` for API keys), and
+returns `{mode, issuer, client_id, secret_configured}`. No operation returns the secret.
+Discovery is limited to 10 seconds and 1 MiB, uses HTTPS public endpoints and refuses
+redirects. Invalid or unsafe metadata/configuration returns `422 invalid_oidc_config`;
+a missing replacement secret returns `422 oidc_secret_required`.
+
+`POST /v1/brands/{id}/portal/relink-authorizations` requires a recently signed-in admin
+user with MFA if enabled (API keys are refused). Body: `{contact_id}`. Returns `201`
+`{id, brand_id, contact_id, expires_at}`. Permission expires in 15 minutes, replaces
+any prior unused authorization for this brand/contact, and is consumed once by a
+verified OIDC relink. It does not carry a token. An old or insufficient sign-in returns
+`403 reauth_required`; foreign brands/contacts are refused and blocked contacts return
+`422 validation_failed`. Settings and relink actions are audited with actor and target;
+`brand.portal_auth_updated` events contain only `brand_id` and go to admins.

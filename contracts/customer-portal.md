@@ -34,3 +34,33 @@ Authenticated ticket operations are `GET /v1/customer/portal/tickets`, `GET /v1/
 The first release does not create tickets, change ticket status, upload files, add CCs, show organization-wide tickets, or expose side conversations. The customer routes are noindex and API responses are not stored in shared caches.
 
 See [API routes](api.md#customer-portal-tickets) and [token rules](tokens.md#customer-portal) for wire details.
+
+## Per-brand OIDC configuration and identity ownership
+
+Brands default to `portal_auth.mode: "local"`. Admins can choose `local`, `oidc`, or
+`local_and_oidc` when creating or updating a brand. OIDC scopes are fixed to
+`openid email profile`. Provider settings are read separately through the admin-only
+`GET /v1/brands/{id}/portal/auth`; ordinary brand reads expose only the mode.
+
+An OIDC configuration supplies an HTTPS issuer, client ID and write-only client secret.
+Saving loads bounded discovery metadata through the public-address guarded HTTP client,
+refuses redirects, checks the exact issuer, and validates the authorization, token and
+JWKS HTTPS endpoints. Secrets are sealed with `d.Box`, included in credential-key rotation,
+and never included in responses, events or audit metadata. Omitting a secret preserves
+it only for the same issuer and client ID. Selecting `local` clears the provider settings.
+Configuration changes are audited; configuration events go to admins only.
+
+External identities belong to a workspace and contact, keyed uniquely by
+`(workspace_id, issuer, subject)`, with the originating brand recorded. A revoked link
+retains that key as a tombstone. Email matching cannot transfer an identity between
+contacts. A contact's `customer_oidc_relink_required` state prevents normal first-time
+email matching from bypassing administrative recovery. Contact deletion removes its
+identity data; brand and workspace deletion remove their scoped configuration and rows.
+
+An admin with a recent user sign-in and MFA when enabled can authorize one relink through
+`POST /v1/brands/{id}/portal/relink-authorizations` with `contact_id`. The server checks
+both workspace boundaries and rejects blocked contacts. The authorization expires in
+15 minutes; creating another revokes the previous unused authorization for that brand
+and contact. It is server-side permission, not a bearer credential. The callback must
+consume it atomically with a link only after verifying the provider email matches the
+contact's current email. The actor and target are audited without credentials.
