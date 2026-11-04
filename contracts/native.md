@@ -345,6 +345,11 @@ type UpdateState =
     1.3.0 is ready. Restart to update", with What's new opening `notes_url` through
     `openExternal`). The shell also shows an OS notification when an update is ready, and
     the app menu has Check for updates (or Restart to update) and Get beta updates.
+  - Always the newest version, in one step from the running one. While an update waits for
+    a restart the checks go on; a newer one downloads behind it (the banner keeps saying the
+    ready one) and replaces it once installable, on macOS once Squirrel.Mac has staged it.
+    Restart to update looks once more (up to 8 s) and, when a newer version is out, shows its
+    download and installs that instead. A failed newer download leaves the ready one to install.
   - Stable downloads, at fixed names on `desktop-latest` (linked from
     `opendesk.sh/download`): `opendesk-mac.dmg` (universal), `opendesk-windows.exe` (x64 and
     arm64), `opendesk-linux-x64.AppImage`, `opendesk-linux-arm64.AppImage`,
