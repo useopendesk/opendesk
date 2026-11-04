@@ -50,6 +50,7 @@ const fixtures: Record<string, unknown> = {
       latest: { version: "v1.3.0", url: "https://github.com/useopendesk/opendesk/releases/tag/v1.3.0", published_at: now },
       available: true,
       major: false,
+      in_major: null,
       checked_at: now,
       error: "",
       previous_version: "v1.2.2",

@@ -251,20 +251,43 @@ func capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// UpdateAvailable tells an instance's super admins a newer opendesk release is out. major
-// marks a new major version, which automatic updates leave to the operator.
-func UpdateAvailable(s Site, adminLink, current, latest, releaseURL string, major bool) mailer.Mail {
-	how := "Upgrade on the server with: opendesk-ctl upgrade " + latest + ". It backs up the instance first."
-	if major {
-		how = "It is a new major version, so automatic updates leave it to you. Read the release notes, then upgrade on the server with: opendesk-ctl upgrade " + latest + "."
+// Update is what an update email says about the releases out.
+type Update struct {
+	Current, Latest, LatestURL string
+	// Major marks Latest as a new major version, which automatic updates leave to the operator.
+	Major bool
+	// InMajor, with a new major version out, is the newest release of the running major
+	// version (Series, "v1"), which automatic updates (Auto) install themselves.
+	InMajor, Series string
+	Auto            bool
+}
+
+// UpdateAvailable tells an instance's super admins a newer opendesk release is out.
+func UpdateAvailable(s Site, adminLink string, u Update) mailer.Mail {
+	how := "Upgrade on the server with: opendesk-ctl upgrade " + u.Latest + ". It backs up the instance first."
+	if u.Major {
+		how = "It is a new major version, so automatic updates leave it to you. Read the release notes, then upgrade on the server with: opendesk-ctl upgrade " + u.Latest + "."
+	}
+	subject := "opendesk " + u.Latest + " is available"
+	intro := []string{"A new opendesk release is out. This instance runs " + u.Current + ".", how}
+	facts := []mailer.Fact{{Label: "Running", Value: u.Current}, {Label: "Newest release", Value: u.Latest}}
+	if u.InMajor != "" {
+		first := u.InMajor + " is the newest " + u.Series + " release. Upgrade on the server with: opendesk-ctl upgrade " + u.InMajor + ". It backs up the instance first."
+		if u.Auto {
+			first = u.InMajor + ", the newest " + u.Series + " release, installs at the next automatic update, after a backup."
+		}
+		subject = "opendesk " + u.InMajor + " and " + u.Latest + " are available"
+		intro = []string{"New opendesk releases are out. This instance runs " + u.Current + ".", first,
+			u.Latest + " is a new major version, so automatic updates leave it to you. Read its release notes, then upgrade on the server with: opendesk-ctl upgrade " + u.Latest + "."}
+		facts = []mailer.Fact{{Label: "Running", Value: u.Current}, {Label: "Newest " + u.Series + " release", Value: u.InMajor}, {Label: "Newest release", Value: u.Latest}}
 	}
 	return s.build(mailer.Email{
-		Subject:   "opendesk " + latest + " is available",
-		Preheader: "This instance runs " + current + ". " + how,
-		Heading:   "opendesk " + latest + " is available",
-		Intro:     []string{"A new opendesk release is out. This instance runs " + current + ".", how},
-		Facts:     []mailer.Fact{{Label: "Running", Value: current}, {Label: "Newest release", Value: latest}},
-		Button:    &mailer.Button{Label: "Read the release notes", URL: releaseURL},
+		Subject:   subject,
+		Preheader: strings.Join(intro[1:], " "),
+		Heading:   subject,
+		Intro:     intro,
+		Facts:     facts,
+		Button:    &mailer.Button{Label: "Read the release notes", URL: u.LatestURL},
 		Outro:     []string{"The admin panel shows the version and update status under Health: " + adminLink},
 		Footer: mailer.Footer{
 			Reason:  "You get this email because you are a super admin of this opendesk instance. Set UPDATE_CHECK=false to stop looking for releases.",

@@ -72,6 +72,10 @@
     "auto": "This instance runs {{current}}. It installs at the next automatic update, after a backup.",
     "major": "A new major version, so automatic updates leave it to you: read the release notes first.",
     "runs": "This instance runs {{current}}.",
+    "both": "opendesk {{inMajor}} and {{latest}} are available",
+    "inMajorAuto": "This instance runs {{current}}. {{version}}, the newest {{series}} release, installs at the next automatic update, after a backup.",
+    "inMajorRuns": "This instance runs {{current}}. {{version}} is the newest {{series}} release. Upgrade on the server, which backs up first:",
+    "majorLater": "{{version}} is a new major version, so automatic updates leave it to you. Read its release notes, then run:",
     "how": "Upgrade on the server, which backs up first:",
     "copyCommand": "Copy the command"
   },
@@ -84,6 +88,7 @@
     "running": "Running",
     "from": "from {{version}},",
     "newestRelease": "Newest release",
+    "newestIn": "Newest {{series}} release",
     "notChecked": "Not checked",
     "newMajor": "New major",
     "availableBadge": "Available",

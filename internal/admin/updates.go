@@ -1,7 +1,7 @@
 package admin
 
 // Releases and automatic updates (contracts/admin.md "Updates"). A release build looks for
-// the newest opendesk release on GitHub every few hours, shows it on the health page and
+// the newest opendesk release on GitHub every few hours, and the newest of its own major version, shows it on the health page and
 // emails the super admins once per release. Installing it is the host's job: opendesk-ctl
 // runs automatic updates from a timer and reports each run with `opendesk updates report`.
 
@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	releaseRepo      = "useopendesk/opendesk"
-	latestReleaseAPI = "https://api.github.com/repos/" + releaseRepo + "/releases/latest"
+	releaseRepo = "useopendesk/opendesk"
+	releasesAPI = "https://api.github.com/repos/" + releaseRepo + "/releases?per_page=100"
 	// releaseCheckEvery is how often the worker asks GitHub; the job itself runs hourly so
 	// a failed automatic update is reported soon after it happened.
 	releaseCheckEvery = 6 * time.Hour
@@ -94,6 +94,12 @@ func newer(a, b string) bool {
 	return x.pre > y.pre
 }
 
+// majorOf is a release's major version as people write it ("v1").
+func majorOf(v string) string {
+	x, _ := parseVersion(v)
+	return "v" + strconv.Itoa(x.major)
+}
+
 // majorBump reports whether release a has a higher major version than b.
 func majorBump(a, b string) bool {
 	x, ok1 := parseVersion(a)
@@ -125,6 +131,7 @@ type AdminUpdates struct {
 	Latest          *AdminRelease   `json:"latest"`
 	Available       bool            `json:"available"`
 	Major           bool            `json:"major" doc:"The newest release is a new major version, which automatic updates leave to the operator"`
+	InMajor         *AdminRelease   `json:"in_major" doc:"With a new major version out: the newest release of the running major version, newer than the running one. Automatic updates install it"`
 	CheckedAt       *time.Time      `json:"checked_at"`
 	Error           string          `json:"error"`
 	PreviousVersion string          `json:"previous_version"`
@@ -134,21 +141,21 @@ type AdminUpdates struct {
 
 // updateRow is the instance_updates row; the zero value before anything was recorded.
 type updateRow struct {
-	running, previous, latest, checkErr, notified, autoResult, autoDetail  string
-	runningSince, latestPublished, checkedAt, autoRanAt, failureNotifiedAt *time.Time
-	autoEnabled                                                            *bool
+	running, previous, latest, inMajor, checkErr, notified, notifiedInMajor, autoResult, autoDetail string
+	runningSince, latestPublished, inMajorPublished, checkedAt, autoRanAt, failureNotifiedAt        *time.Time
+	autoEnabled                                                                                     *bool
 }
 
 func loadUpdateRow(ctx context.Context, q db.Querier, lock bool) (updateRow, error) {
 	r := updateRow{autoResult: AutoNone}
-	sql := `SELECT running_version, previous_version, latest_version, check_error, notified_version, auto_result, auto_detail,
-		running_since, latest_published_at, checked_at, auto_ran_at, auto_failure_notified_at, auto_enabled
+	sql := `SELECT running_version, previous_version, latest_version, in_major_version, check_error, notified_version, notified_in_major,
+		auto_result, auto_detail, running_since, latest_published_at, in_major_published_at, checked_at, auto_ran_at, auto_failure_notified_at, auto_enabled
 		FROM instance_updates WHERE id`
 	if lock {
 		sql += ` FOR UPDATE`
 	}
-	err := q.QueryRow(ctx, sql).Scan(&r.running, &r.previous, &r.latest, &r.checkErr, &r.notified, &r.autoResult, &r.autoDetail,
-		&r.runningSince, &r.latestPublished, &r.checkedAt, &r.autoRanAt, &r.failureNotifiedAt, &r.autoEnabled)
+	err := q.QueryRow(ctx, sql).Scan(&r.running, &r.previous, &r.latest, &r.inMajor, &r.checkErr, &r.notified, &r.notifiedInMajor,
+		&r.autoResult, &r.autoDetail, &r.runningSince, &r.latestPublished, &r.inMajorPublished, &r.checkedAt, &r.autoRanAt, &r.failureNotifiedAt, &r.autoEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return updateRow{autoResult: AutoNone}, nil
 	}
@@ -178,6 +185,10 @@ func updatesFrom(r updateRow, current string, check bool) AdminUpdates {
 		u.Available = check && newer(r.latest, current)
 		u.Major = u.Available && majorBump(r.latest, current)
 	}
+	// Checked by another version, it may be of another major version or already installed.
+	if u.Major && newer(r.inMajor, current) && majorOf(r.inMajor) == majorOf(current) {
+		u.InMajor = &AdminRelease{Version: r.inMajor, URL: releasePage(r.inMajor), PublishedAt: r.inMajorPublished}
+	}
 	return u
 }
 
@@ -203,6 +214,12 @@ func updateCheck(u AdminUpdates) (status, detail string) {
 			d += " " + u.Auto.LastDetail
 		}
 		return "warn", d
+	case u.InMajor != nil && u.Auto.Enabled:
+		return "warn", fmt.Sprintf("%s, the newest %s release, installs at the next automatic update (this instance runs %s). %s is a new major version: read its release notes, then run opendesk-ctl upgrade %s.",
+			u.InMajor.Version, majorOf(u.Current), u.Current, u.Latest.Version, u.Latest.Version)
+	case u.InMajor != nil:
+		return "warn", fmt.Sprintf("%s, the newest %s release, is out (this instance runs %s): upgrade with opendesk-ctl upgrade %s. %s is a new major version: read its release notes, then run opendesk-ctl upgrade %s.",
+			u.InMajor.Version, majorOf(u.Current), u.Current, u.InMajor.Version, u.Latest.Version, u.Latest.Version)
 	case u.Available && u.Major:
 		return "warn", fmt.Sprintf("%s is out, a new major version (this instance runs %s). Read the release notes, then run opendesk-ctl upgrade %s.",
 			u.Latest.Version, u.Current, u.Latest.Version)
@@ -276,7 +293,8 @@ func (w *updatesWorker) Work(ctx context.Context, _ *river.Job[updatesArgs]) err
 		if err != nil {
 			return err
 		}
-		if r.checkedAt == nil || time.Since(*r.checkedAt) >= releaseCheckEvery {
+		// A new running version looks again at once: the newest release of its major version may differ.
+		if r.checkedAt == nil || time.Since(*r.checkedAt) >= releaseCheckEvery || (r.runningSince != nil && r.checkedAt.Before(*r.runningSince)) {
 			if err := s.checkRelease(ctx); err != nil {
 				return err
 			}
@@ -285,10 +303,11 @@ func (w *updatesWorker) Work(ctx context.Context, _ *river.Job[updatesArgs]) err
 	return s.sendUpdateEmails(ctx)
 }
 
-// checkRelease asks GitHub for the newest release and stores the answer. A failed look is
+// checkRelease asks GitHub for the newest release, and the newest of the running major
+// version, and stores the answer. A failed look is
 // stored as the error, not returned: the next look tries again.
 func (s *svc) checkRelease(ctx context.Context) error {
-	rel, err := s.fetchLatest(ctx)
+	rel, err := s.fetchReleases(ctx)
 	if err != nil {
 		s.d.Log.Warn("admin: release check failed", "err", err)
 		_, err := s.d.DB.Pool.Exec(ctx, `INSERT INTO instance_updates (id, checked_at, check_error) VALUES (true, now(), $1)
@@ -298,59 +317,84 @@ func (s *svc) checkRelease(ctx context.Context) error {
 	if rel.Version != "" && newer(rel.Version, version.Version) {
 		s.d.Log.Info("a new opendesk release is available", "version", rel.Version, "running", version.Version, "notes", releasePage(rel.Version))
 	}
-	_, err = s.d.DB.Pool.Exec(ctx, `INSERT INTO instance_updates (id, latest_version, latest_published_at, checked_at, check_error)
-		VALUES (true, $1, $2, now(), '')
-		ON CONFLICT (id) DO UPDATE SET latest_version = $1, latest_published_at = $2, checked_at = now(), check_error = ''`,
-		rel.Version, rel.PublishedAt)
+	_, err = s.d.DB.Pool.Exec(ctx, `INSERT INTO instance_updates (id, latest_version, latest_published_at, in_major_version, in_major_published_at, checked_at, check_error)
+		VALUES (true, $1, $2, $3, $4, now(), '')
+		ON CONFLICT (id) DO UPDATE SET latest_version = $1, latest_published_at = $2, in_major_version = $3, in_major_published_at = $4,
+			checked_at = now(), check_error = ''`,
+		rel.Version, rel.PublishedAt, rel.InMajor.Version, rel.InMajor.PublishedAt)
 	return err
 }
 
-type latestRelease struct {
+type release struct {
 	Version     string
 	PublishedAt *time.Time
 }
 
-// fetchLatest reads GitHub's newest release (pre-releases and drafts are never "latest").
-// No releases yet is an empty answer, not an error. The request carries nothing about
+// releases is what one look at GitHub found: the newest release, and the newest of the
+// running major version (empty when the running version is not a release).
+type releases struct {
+	release
+	InMajor release
+}
+
+// fetchReleases reads GitHub's recent releases and picks the newest one, and the newest of
+// the running major version, so a new major version does not hide the release automatic
+// updates install. Drafts, pre-releases and tags that are not a release version are passed
+// over. No releases yet is an empty answer, not an error. The request carries nothing about
 // the instance.
-func (s *svc) fetchLatest(ctx context.Context) (latestRelease, error) {
+func (s *svc) fetchReleases(ctx context.Context) (releases, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.releaseAPI, nil)
 	if err != nil {
-		return latestRelease{}, err
+		return releases{}, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "opendesk-update-check")
 	res, err := s.http.Do(req)
 	if err != nil {
-		return latestRelease{}, errors.New("GitHub did not answer")
+		return releases{}, errors.New("GitHub did not answer")
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
-		return latestRelease{}, nil
+		return releases{}, nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return latestRelease{}, fmt.Errorf("GitHub answered %d", res.StatusCode)
+		return releases{}, fmt.Errorf("GitHub answered %d", res.StatusCode)
 	}
-	var body struct {
+	var body []struct {
 		TagName     string     `json:"tag_name"`
 		Draft       bool       `json:"draft"`
 		Prerelease  bool       `json:"prerelease"`
 		PublishedAt *time.Time `json:"published_at"`
 	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body); err != nil {
-		return latestRelease{}, errors.New("GitHub's answer was not a release")
+	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&body); err != nil {
+		return releases{}, errors.New("GitHub's answer was not a list of releases")
 	}
-	if body.Draft || body.Prerelease || !isRelease(body.TagName) {
-		return latestRelease{}, errors.New("the newest release on GitHub has no release version")
+	var out releases
+	for _, r := range body {
+		if r.Draft || r.Prerelease || !isRelease(r.TagName) || strings.Contains(r.TagName, "-") {
+			continue
+		}
+		rel := release{Version: r.TagName, PublishedAt: r.PublishedAt}
+		if out.Version == "" || newer(rel.Version, out.Version) {
+			out.release = rel
+		}
+		if isRelease(version.Version) && majorOf(rel.Version) == majorOf(version.Version) &&
+			(out.InMajor.Version == "" || newer(rel.Version, out.InMajor.Version)) {
+			out.InMajor = rel
+		}
 	}
-	return latestRelease{Version: body.TagName, PublishedAt: body.PublishedAt}, nil
+	if len(body) > 0 && out.Version == "" {
+		return releases{}, errors.New("GitHub lists no release with a release version")
+	}
+	return out, nil
 }
 
 // sendUpdateEmails emails the super admins about a new release (once per release, and
-// not when automatic updates will install it) and about a failed automatic update (once
+// not when automatic updates will install it; a new major version and the newest release
+// before it share one email) and about a failed automatic update (once
 // per failed run).
 func (s *svc) sendUpdateEmails(ctx context.Context) error {
 	site := emails.SiteFrom(s.d.Cfg)
@@ -362,11 +406,19 @@ func (s *svc) sendUpdateEmails(ctx context.Context) error {
 		}
 		var out []mailer.Mail
 		u := updatesFrom(r, version.Version, s.checksReleases())
-		if u.Available && r.notified != r.latest {
-			if !u.Auto.Enabled || u.Major {
-				out = append(out, emails.UpdateAvailable(site, panel, u.Current, u.Latest.Version, u.Latest.URL, u.Major))
+		inMajor := ""
+		if u.InMajor != nil {
+			inMajor = u.InMajor.Version
+		}
+		if u.Available && (r.notified != r.latest || r.notifiedInMajor != inMajor) {
+			// Automatic updates install a release of the running major version themselves.
+			newLatest := r.notified != r.latest && (u.Major || !u.Auto.Enabled)
+			newInMajor := inMajor != "" && r.notifiedInMajor != inMajor && !u.Auto.Enabled
+			if newLatest || newInMajor {
+				out = append(out, emails.UpdateAvailable(site, panel, emails.Update{Current: u.Current, Latest: u.Latest.Version, LatestURL: u.Latest.URL,
+					Major: u.Major, InMajor: inMajor, Series: majorOf(u.Current), Auto: u.Auto.Enabled}))
 			}
-			if _, err := tx.Exec(ctx, `UPDATE instance_updates SET notified_version = $1 WHERE id`, r.latest); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE instance_updates SET notified_version = $1, notified_in_major = $2 WHERE id`, r.latest, inMajor); err != nil {
 				return err
 			}
 		}

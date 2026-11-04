@@ -99,7 +99,7 @@ type svc struct {
 var processStart = time.Now()
 
 func newSvc(d *deps.Deps) *svc {
-	return &svc{d: d, ops: core.NewOps(d), billing: billing.NewPublisher(d), started: processStart, releaseAPI: latestReleaseAPI,
+	return &svc{d: d, ops: core.NewOps(d), billing: billing.NewPublisher(d), started: processStart, releaseAPI: releasesAPI,
 		http: &http.Client{Timeout: 20 * time.Second}}
 }
 

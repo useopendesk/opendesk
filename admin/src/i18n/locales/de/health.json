@@ -72,6 +72,10 @@
     "auto": "Diese Instanz läuft mit {{current}}. Das Update wird beim nächsten automatischen Update installiert, nach einem Backup.",
     "major": "Eine neue Hauptversion, also überlassen automatische Updates sie dir: lies zuerst die Versionshinweise.",
     "runs": "Diese Instanz läuft mit {{current}}.",
+    "both": "opendesk {{inMajor}} und {{latest}} sind verfügbar",
+    "inMajorAuto": "Diese Instanz läuft mit {{current}}. {{version}}, die neueste Version von {{series}}, wird beim nächsten automatischen Update installiert, nach einem Backup.",
+    "inMajorRuns": "Diese Instanz läuft mit {{current}}. {{version}} ist die neueste Version von {{series}}. Aktualisiere auf dem Server, der zuerst ein Backup macht:",
+    "majorLater": "{{version}} ist eine neue Hauptversion, also überlassen automatische Updates sie dir. Lies ihre Versionshinweise, dann führe aus:",
     "how": "Aktualisiere auf dem Server, der zuerst ein Backup macht:",
     "copyCommand": "Befehl kopieren"
   },
@@ -84,6 +88,7 @@
     "running": "Läuft",
     "from": "von {{version}},",
     "newestRelease": "Neueste Version",
+    "newestIn": "Neueste Version von {{series}}",
     "notChecked": "Nicht geprüft",
     "newMajor": "Neue Hauptversion",
     "availableBadge": "Verfügbar",

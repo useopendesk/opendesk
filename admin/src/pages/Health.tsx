@@ -227,35 +227,60 @@ function HealthView({ h, stale }: { h: AdminHealth; stale: boolean }) {
 
 const command = (version: string) => `opendesk-ctl upgrade ${version}`;
 
+function UpgradeCommand({ version }: { version: string }) {
+  const { t } = useTranslation("health");
+  return (
+    <span className="mt-1.5 flex w-fit items-center gap-1.5 rounded-md bg-surface px-2 py-1 shadow-[inset_0_0_0_1px_var(--line)]">
+      <code className="mono text-[12px] text-fg">{command(version)}</code>
+      <CopyButton value={command(version)} label={t("update.copyCommand")} />
+    </span>
+  );
+}
+
+/** "v1" of v1.4.2: the major version a release belongs to. */
+const series = (version: string) => version.split(".")[0];
+
 function UpdateBanner({ u }: { u: AdminUpdates }) {
   const { t } = useTranslation(["health", "common", "jobs"]);
   const latest = u.latest!;
   const auto = u.auto.enabled && !u.major;
+  const notes = (
+    <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] font-medium text-fg hover:underline">
+      {t("update.releaseNotes")} <ArrowUpRight className="size-3.5" />
+    </a>
+  );
+  // A new major version out beside a newer release of this one: the newer one first, as
+  // automatic updates install it, then the major version, which is the operator's.
+  if (u.in_major) {
+    const v = { version: u.in_major.version, series: series(u.current), current: u.current };
+    return (
+      <Banner tone="amber" title={t("update.both", { inMajor: u.in_major.version, latest: latest.version })} action={notes}>
+        {u.auto.enabled ? (
+          t("update.inMajorAuto", v)
+        ) : (
+          <>
+            {t("update.inMajorRuns", v)}
+            <UpgradeCommand version={u.in_major.version} />
+          </>
+        )}
+        <span className="mt-2 block">{t("update.majorLater", { version: latest.version })}</span>
+        <UpgradeCommand version={latest.version} />
+      </Banner>
+    );
+  }
   return (
-    <Banner
-      tone={auto ? "blue" : "amber"}
-      title={t("update.available", { version: latest.version })}
-      action={
-        <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] font-medium text-fg hover:underline">
-          {t("update.releaseNotes")} <ArrowUpRight className="size-3.5" />
-        </a>
-      }
-    >
+    <Banner tone={auto ? "blue" : "amber"} title={t("update.available", { version: latest.version })} action={notes}>
       {auto ? (
         <>{t("update.auto", { current: u.current })}</>
       ) : (
         <>
           {u.major ? t("update.major") : t("update.runs", { current: u.current })} {t("update.how")}
-          <span className="mt-1.5 flex w-fit items-center gap-1.5 rounded-md bg-surface px-2 py-1 shadow-[inset_0_0_0_1px_var(--line)]">
-            <code className="mono text-[12px] text-fg">{command(latest.version)}</code>
-            <CopyButton value={command(latest.version)} label={t("update.copyCommand")} />
-          </span>
+          <UpgradeCommand version={latest.version} />
         </>
       )}
     </Banner>
   );
 }
-
 
 function UpdatesSection({ u }: { u: AdminUpdates }) {
   const { t } = useTranslation(["health", "common", "jobs"]);
@@ -319,6 +344,24 @@ function UpdatesSection({ u }: { u: AdminUpdates }) {
               <span className="text-fg-4">{t("updates.noneFound")}</span>
             ),
           ],
+          ...(u.in_major
+            ? [
+                [
+                  t("updates.newestIn", { series: series(u.current) }),
+                  <span className="flex flex-wrap items-center gap-x-2">
+                    <a href={u.in_major.url} target="_blank" rel="noreferrer" className="mono text-[12px] hover:underline">
+                      {u.in_major.version}
+                    </a>
+                    <Badge tone="blue">{t("updates.availableBadge")}</Badge>
+                    {u.in_major.published_at && (
+                      <span className="text-[11.5px] text-fg-3">
+                        <Time iso={u.in_major.published_at} />
+                      </span>
+                    )}
+                  </span>,
+                ] satisfies [ReactNode, ReactNode],
+              ]
+            : []),
           [
             t("updates.lastChecked"),
             !u.check ? (

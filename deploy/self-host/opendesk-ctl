@@ -10,8 +10,8 @@
 #                                       goes back to the version before if it does not come up
 #   ./opendesk-ctl auto-update on|off   install new releases each night, or stop
 #   ./opendesk-ctl auto-update status   whether it is on, when it runs, and how it went
-#   ./opendesk-ctl auto-update run      what the nightly timer runs: upgrade when a newer
-#                                       release of the same major version is out
+#   ./opendesk-ctl auto-update run      what the nightly timer runs: upgrade to the newest
+#                                       release of the same major version
 #   ./opendesk-ctl restart|stop|start
 #
 # The installer puts this next to docker-compose.yml (default /opt/opendesk),
@@ -229,6 +229,18 @@ resolve_latest() {
         sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1
 }
 
+# newest_in_major MAJOR: the newest release of that major version among GitHub's
+# recent releases, so a new major version does not hold back the releases before it.
+newest_in_major() {
+    _best=""
+    for _t in $(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=100" 2>/dev/null |
+        grep -o '"tag_name": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/'); do
+        is_release "$_t" && [ "$(major_of "$_t")" = "$1" ] || continue
+        if [ -z "$_best" ] || newer "$_t" "$_best"; then _best=$_t; fi
+    done
+    printf '%s' "$_best"
+}
+
 # is_release: v1.2.3, and not a pre-release (automatic updates never pick one).
 is_release() {
     printf '%s' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
@@ -433,7 +445,7 @@ cmd_upgrade() {
 #
 # A systemd timer (or a cron entry where there is no systemd) runs
 # `opendesk-ctl auto-update run` each night around 04:00, server time. A run
-# upgrades only within the same major version, never to a pre-release, and
+# upgrades to the newest release of the same major version, never to a pre-release, and
 # never again to a release that failed here (.auto-update-failed); each run is
 # reported to the instance, which shows it in the admin panel and emails the
 # super admins when one fails.
@@ -549,29 +561,38 @@ auto_run() {
         report current ""
         return 0
     fi
+    # One run goes straight to the newest release it may install, however many came out
+    # since: migrations never skip, so there are no versions to step through.
+    target=$latest
+    later=""
     if [ "$(major_of "$latest")" != "$(major_of "$current")" ]; then
-        info "$latest is a new major version; upgrade by hand after reading its release notes"
-        report skipped "$latest is a new major version. Read its release notes, then run opendesk-ctl upgrade $latest."
-        return 0
+        later=" $latest is a new major version: read its release notes, then run opendesk-ctl upgrade $latest."
+        target=$(newest_in_major "$(major_of "$current")")
+        if [ -z "$target" ] || ! newer "$target" "$current"; then
+            info "$latest is a new major version; upgrade by hand after reading its release notes"
+            report skipped "${later# }"
+            return 0
+        fi
+        info "$latest is a new major version, left to you; installing $target, the newest v$(major_of "$current") release"
     fi
-    if [ "$(cat "$DIR/.auto-update-failed" 2>/dev/null || true)" = "$latest" ]; then
-        info "$latest failed here before; waiting for the next release (or: opendesk-ctl upgrade $latest)"
-        report skipped "$latest failed here before, so automatic updates wait for the next release. To try it again: opendesk-ctl upgrade $latest."
+    if [ "$(cat "$DIR/.auto-update-failed" 2>/dev/null || true)" = "$target" ]; then
+        info "$target failed here before; waiting for the next release (or: opendesk-ctl upgrade $target)"
+        report skipped "$target failed here before, so automatic updates wait for the next release. To try it again: opendesk-ctl upgrade $target.$later"
         return 0
     fi
     lock
     _rc=0
-    upgrade_to "$latest" "$DIR/backups/auto" || _rc=$?
+    upgrade_to "$target" "$DIR/backups/auto" || _rc=$?
     case "$_rc" in
         0)
             rm -f "$DIR/.auto-update-failed"
             prune_auto_backups
-            report updated "$DETAIL"
+            report updated "$DETAIL$later"
             ;;
         2)
-            printf '%s\n' "$latest" >"$DIR/.auto-update-failed"
+            printf '%s\n' "$target" >"$DIR/.auto-update-failed"
             keep_owner "$DIR/.auto-update-failed"
-            report failed "$DETAIL Automatic updates will not try $latest again; to retry: opendesk-ctl upgrade $latest."
+            report failed "$DETAIL Automatic updates will not try $target again; to retry: opendesk-ctl upgrade $target."
             ;;
         *)
             report failed "$DETAIL The next run tries again."

@@ -74,6 +74,10 @@
     "auto": "Cette instance utilise {{current}}. La mise à jour s’installe à la prochaine mise à jour automatique, après une sauvegarde.",
     "major": "Une nouvelle version majeure : les mises à jour automatiques vous la laissent. Lisez d’abord les notes de version.",
     "runs": "Cette instance utilise {{current}}.",
+    "both": "opendesk {{inMajor}} et {{latest}} sont disponibles",
+    "inMajorAuto": "Cette instance utilise {{current}}. {{version}}, la dernière version {{series}}, s’installe à la prochaine mise à jour automatique, après une sauvegarde.",
+    "inMajorRuns": "Cette instance utilise {{current}}. {{version}} est la dernière version {{series}}. Mettez à jour sur le serveur, qui sauvegarde d’abord :",
+    "majorLater": "{{version}} est une nouvelle version majeure : les mises à jour automatiques vous la laissent. Lisez ses notes de version, puis lancez :",
     "how": "Mettez à jour sur le serveur, qui sauvegarde d’abord :",
     "copyCommand": "Copier la commande"
   },
@@ -86,6 +90,7 @@
     "running": "En service",
     "from": "depuis {{version}},",
     "newestRelease": "Dernière version",
+    "newestIn": "Dernière version {{series}}",
     "notChecked": "Non vérifiée",
     "newMajor": "Nouvelle majeure",
     "availableBadge": "Disponible",

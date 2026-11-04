@@ -109,11 +109,11 @@ To roll back later by hand, restore the backup taken before the upgrade, then in
 
 ## Automatic updates
 
-The installer turns automatic updates on (`--no-auto-update` skips it). Each night around 04:00, server time, a systemd timer (or a cron entry where there is no systemd) runs `opendesk-ctl auto-update run`. When a newer release is out, it runs the [upgrade](#upgrade) above, with its backups in `backups/auto/` (the newest three are kept).
+The installer turns automatic updates on (`--no-auto-update` skips it). Each night around 04:00, server time, a systemd timer (or a cron entry where there is no systemd) runs `opendesk-ctl auto-update run`. When a newer release is out, it runs the [upgrade](#upgrade) above straight to the newest one, however many came out since, with its backups in `backups/auto/` (the newest three are kept).
 
 A run never installs:
 
-- a new **major** version (`v1.x` to `v2.0.0`): those can need you to change something, so the admin panel and an email tell you, and you run `opendesk-ctl upgrade v2.0.0` after reading the release notes
+- a new **major** version (`v1.x` to `v2.0.0`): those can need you to change something, so the admin panel and an email tell you, and you run `opendesk-ctl upgrade v2.0.0` after reading the release notes. Releases of your own major version still install: with `v1.4.0` and `v2.0.0` both out, a `v1.2.0` server moves to `v1.4.0` on its own
 - a **pre-release** (`v1.3.0-rc.1`)
 - a release that already **failed** on this server: after going back, it waits for the next release (`opendesk-ctl upgrade <version>` tries it again by hand)
 - anything when `OPENDESK_VERSION` is not a release (`latest`, or your own build)

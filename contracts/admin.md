@@ -211,6 +211,8 @@ type AdminUpdates = {
   latest: { version: string; url: string /* its GitHub release page */; published_at: string | null } | null;
   available: boolean;             // latest is newer than current
   major: boolean;                 // ... and a new major version, which automatic updates leave alone
+  in_major: AdminRelease | null;  // with a new major version out: the newest release of the running
+                                  // major version, newer than the running one; automatic updates install it
   checked_at: string | null; error: string;                 // the last look at GitHub
   previous_version: string; running_since: string | null;   // the version before this one, and since when this one runs
   auto: { reported: boolean /* opendesk-ctl has reported */; enabled: boolean; last_run_at: string | null;
@@ -368,16 +370,19 @@ A release build (`version` is `vX.Y.Z`) with `UPDATE_CHECK` on (the default) kee
 `instance_updates`, current. The `admin.updates` job runs hourly on the workers:
 
 - it records the running version, and the one before it when it changes;
-- every 6 hours it reads `https://api.github.com/repos/useopendesk/opendesk/releases/latest`
-  (no credentials, a fixed User-Agent, nothing about the instance). No release yet is not an
+- every 6 hours, and at once when the running version changed, it reads
+  `https://api.github.com/repos/useopendesk/opendesk/releases?per_page=100` (no credentials, a
+  fixed User-Agent, nothing about the instance) and keeps the newest release and the newest of the
+  running major version; drafts, pre-releases and other tags are passed over. No release yet is not an
   error; a failed look is stored as `error` and tried again. The release link is built from the
   validated tag, never taken from the answer;
 - it emails the `super` admins (`mail.system`) once per newer release, unless automatic updates
   are on and the release is the same major version (they will install it), and once per failed
-  automatic update.
+  automatic update. A new major version and the newest release of the running one share an email.
 
 Installing is the host's job. `opendesk-ctl auto-update run` (a nightly systemd timer or cron entry,
-`AUTO_UPDATE` in the install's `.env`) upgrades within the same major version, backs up first, and
+`AUTO_UPDATE` in the install's `.env`) goes straight to the newest release of the same major version,
+however many came out since, even when a newer major version is out; it backs up first, and
 goes back to the previous version (and the backup, when migrations ran) if the new one does not
 answer its health check as the new version. It reports each run through the binary:
 

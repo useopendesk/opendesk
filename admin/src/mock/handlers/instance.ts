@@ -74,6 +74,7 @@ function updates(): AdminUpdates {
     latest: { ...u.latest },
     available,
     major: false,
+    in_major: null,
     checked_at: u.checked_at,
     error: "",
     previous_version: u.previous_version,

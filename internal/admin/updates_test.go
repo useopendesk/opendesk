@@ -67,6 +67,17 @@ func TestUpdateCheck(t *testing.T) {
 	if s, u := status(updateRow{latest: "v1.0.0", autoEnabled: &on}, "v0.9.0", true); s != "warn" || !u.Major {
 		t.Errorf("new major with auto on: %s %+v", s, u)
 	}
+	// v1.5.0 out beside v2.0.0: the newest v1 release is offered, and installs itself with auto on.
+	if s, u := status(updateRow{latest: "v2.0.0", inMajor: "v1.5.0", autoEnabled: &on}, "v1.2.0", true); s != "warn" || u.InMajor == nil || u.InMajor.Version != "v1.5.0" {
+		t.Errorf("new major and a newer v1: %s %+v", s, u)
+	} else if _, d := updateCheck(u); !strings.Contains(d, "v1.5.0, the newest v1 release, installs at the next automatic update") || !strings.Contains(d, "opendesk-ctl upgrade v2.0.0") {
+		t.Errorf("detail: %s", d)
+	}
+	for _, in := range []string{"v1.2.0", "v1.1.0", "v2.0.0", "v0.9.0", ""} {
+		if _, u := status(updateRow{latest: "v2.0.0", inMajor: in}, "v1.2.0", true); u.InMajor != nil {
+			t.Errorf("in-major %q offered to v1.2.0", in)
+		}
+	}
 	if s, _ := status(updateRow{latest: "v0.1.0", autoEnabled: &off}, "v0.1.0", true); s != "ok" {
 		t.Errorf("current: %s", s)
 	}
@@ -86,8 +97,9 @@ func TestUpdateCheck(t *testing.T) {
 	}
 }
 
-// TestFetchLatest: GitHub's newest release, no release yet, and answers that are not one.
-func TestFetchLatest(t *testing.T) {
+// TestFetchReleases: the newest release and the newest of the running major version from
+// GitHub's list, no release yet, and answers that are not one.
+func TestFetchReleases(t *testing.T) {
 	answer, code := "", 200
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") != "opendesk-update-check" || r.Header.Get("Authorization") != "" {
@@ -99,27 +111,40 @@ func TestFetchLatest(t *testing.T) {
 	defer srv.Close()
 	s := &svc{releaseAPI: srv.URL, http: srv.Client()}
 	ctx := context.Background()
+	was := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = was })
 
-	answer = `{"tag_name":"v0.3.1","draft":false,"prerelease":false,"published_at":"2026-10-18T09:00:00Z","html_url":"https://evil.test"}`
-	if r, err := s.fetchLatest(ctx); err != nil || r.Version != "v0.3.1" || r.PublishedAt == nil {
-		t.Errorf("release: %+v %v", r, err)
+	answer = `[{"tag_name":"v2.1.0-rc.1","prerelease":true},{"tag_name":"v2.0.0","published_at":"2026-10-18T09:00:00Z","html_url":"https://evil.test"},
+		{"tag_name":"v1.10.0","published_at":"2026-10-11T09:00:00Z"},{"tag_name":"v1.9.3"},{"tag_name":"v1.11.0","draft":true},{"tag_name":"latest"}]`
+	if r, err := s.fetchReleases(ctx); err != nil || r.Version != "v2.0.0" || r.PublishedAt == nil || r.InMajor.Version != "v1.10.0" || r.InMajor.PublishedAt == nil {
+		t.Errorf("releases: %+v %v", r, err)
 	}
 	if got := releasePage("v0.3.1"); got != "https://github.com/useopendesk/opendesk/releases/tag/v0.3.1" {
 		t.Errorf("release page = %s", got)
 	}
-	code, answer = 404, `{"message":"Not Found"}`
-	if r, err := s.fetchLatest(ctx); err != nil || r.Version != "" {
-		t.Errorf("no release yet: %+v %v", r, err)
+	version.Version = "3f9c1e0"
+	if r, err := s.fetchReleases(ctx); err != nil || r.Version != "v2.0.0" || r.InMajor.Version != "" {
+		t.Errorf("commit build: %+v %v", r, err)
+	}
+	for _, empty := range []struct {
+		code   int
+		answer string
+	}{{404, `{"message":"Not Found"}`}, {200, `[]`}} {
+		code, answer = empty.code, empty.answer
+		if r, err := s.fetchReleases(ctx); err != nil || r.Version != "" {
+			t.Errorf("no release yet (%d): %+v %v", code, r, err)
+		}
 	}
 	code = 200
-	for _, bad := range []string{`{"tag_name":"latest"}`, `{"tag_name":"v1.0.0","prerelease":true}`, `<html>`, `{"tag_name":"v1.0.0\" onload=x"}`} {
+	for _, bad := range []string{`[{"tag_name":"latest"}]`, `[{"tag_name":"v1.0.0","prerelease":true}]`, `<html>`, `{"tag_name":"v1.0.0"}`, `[{"tag_name":"v1.0.0\" onload=x"}]`} {
 		answer = bad
-		if _, err := s.fetchLatest(ctx); err == nil {
+		if _, err := s.fetchReleases(ctx); err == nil {
 			t.Errorf("accepted %s", bad)
 		}
 	}
 	code = 403
-	if _, err := s.fetchLatest(ctx); err == nil || !strings.Contains(err.Error(), "403") {
+	if _, err := s.fetchReleases(ctx); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("rate limited: %v", err)
 	}
 }
@@ -148,9 +173,9 @@ func TestUpdatesFlow(t *testing.T) {
 	e.d.Cfg.UpdateCheck = true
 	t.Cleanup(func() { version.Version = was; e.d.Cfg.UpdateCheck = false })
 
-	latest := "v0.2.0"
+	latest, inMajor := "v0.2.0", "v0.1.0"
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"tag_name":"` + latest + `","published_at":"2026-10-18T09:00:00Z"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"` + latest + `","published_at":"2026-10-18T09:00:00Z"},{"tag_name":"` + inMajor + `"}]`))
 	}))
 	defer gh.Close()
 	s := newSvc(e.d)
@@ -231,6 +256,41 @@ func TestUpdatesFlow(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("checks = %v", r.Body["checks"])
+	}
+
+	// A new major version out beside a newer v0 release: with automatic updates on, one email
+	// about the major version, naming the v0 release they install; nothing for later v0 releases.
+	latest, inMajor = "v1.0.0", "v0.4.0"
+	stale := func() {
+		t.Helper()
+		if _, err := q.Exec(ctx, `UPDATE instance_updates SET checked_at = now() - interval '7 hours'`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale()
+	work()
+	if n := mails(super.email, "opendesk v0.4.0 and v1.0.0 are available"); n != 1 {
+		t.Errorf("major with a newer v0: %d emails", n)
+	}
+	r = panel.do("GET", "/v1/admin/health", nil)
+	if u, _ := r.Body["updates"].(map[string]any); u["major"] != true || u["in_major"].(map[string]any)["version"] != "v0.4.0" {
+		t.Errorf("updates = %v", u)
+	}
+	inMajor = "v0.4.1"
+	stale()
+	work()
+	if n := mails(super.email, "opendesk v0.4.1"); n != 0 {
+		t.Errorf("auto update on, a v0 patch emailed: %d", n)
+	}
+	// Without automatic updates, the next v0 release is news.
+	if err := ReportAutoUpdate(ctx, q, false, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	inMajor = "v0.4.2"
+	stale()
+	work()
+	if n := mails(super.email, "opendesk v0.4.2 and v1.0.0 are available"); n != 1 {
+		t.Errorf("auto update off, a v0 release: %d emails", n)
 	}
 
 	// A new running version is recorded with the one before it.

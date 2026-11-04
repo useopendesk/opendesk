@@ -219,6 +219,8 @@ export type AdminUpdates = {
   latest: AdminRelease | null;
   available: boolean;
   major: boolean;
+  /** With a new major version out: the newest release of the running major version, which automatic updates install. */
+  in_major: AdminRelease | null;
   checked_at: string | null;
   error: string;
   previous_version: string;
