@@ -7,7 +7,7 @@ import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, pos
 import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
-import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
+import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, refreshLastNote, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
 import { DAY, escapeHtml, isRecord, nowIso, parseUUID, uuid } from "../util";
 import { clearDraft } from "./drafts";
 import { renderSentReply } from "./templates";
@@ -446,7 +446,8 @@ export function registerTickets() {
     addActivity(ctx.ws, src, "merged", { into: { id: into.id, number: into.number, subject: into.subject } }, userRef(db.meId));
     addActivity(ctx.ws, into, "merged", { from: { id: src.id, number: src.number, subject: src.subject } }, userRef(db.meId));
     applyPatch(ctx.ws, src, { status: "closed" }, userRef(db.meId));
-    publishTicketUpdated(ctx.ws, into, ["message_count"]);
+    refreshLastNote(ctx.ws, into);
+    publishTicketUpdated(ctx.ws, into, ["message_count", "last_note"]);
     return into;
   });
 
@@ -498,6 +499,8 @@ export function registerTickets() {
       Object.assign(note, { sent_as_reply_id: msg.id, deleted_at: nowIso(), deleted_by: myRef });
       addActivity(ctx.ws, t, "note_sent_as_reply", { message_id: fromNote, reply_id: msg.id }, myRef);
       publish(ctx.ws, "message.updated", { ticket_id: t.id, message: tombstone(note) });
+      refreshLastNote(ctx.ws, t);
+      publishTicketUpdated(ctx.ws, t, ["last_note"]);
     }
     // A reply going out ends the ticket's shared draft, whoever sends it.
     if (kind === "reply") clearDraft(ctx.ws, t);
@@ -518,6 +521,8 @@ export function registerTickets() {
     message.edited_at = nowIso();
     addActivity(ctx.ws, t, "note_edited", { message_id: message.id }, userRef(db.meId));
     publish(ctx.ws, "message.updated", { ticket_id: t.id, message });
+    refreshLastNote(ctx.ws, t);
+    publishTicketUpdated(ctx.ws, t, ["last_note"]);
     return message;
   });
   // A deleted message stays as a marker; only admins read it (contracts/api.md).
@@ -544,6 +549,9 @@ export function registerTickets() {
     if (message.kind === "reply") {
       refreshPreview(ctx.ws.messages, t);
       publish(ctx.ws, "ticket.updated", { ticket: t, changes: ["last_message_preview"] });
+    } else {
+      refreshLastNote(ctx.ws, t);
+      publishTicketUpdated(ctx.ws, t, ["last_note"]);
     }
     return undefined;
   });
@@ -576,6 +584,9 @@ export function registerTickets() {
     if (message.kind === "reply") {
       refreshPreview(ctx.ws.messages, t);
       publish(ctx.ws, "ticket.updated", { ticket: t, changes: ["last_message_preview"] });
+    } else {
+      refreshLastNote(ctx.ws, t);
+      publishTicketUpdated(ctx.ws, t, ["last_note"]);
     }
     addActivity(ctx.ws, t, "message_restored", { message_id: message.id }, userRef(db.meId));
     publish(ctx.ws, "message.updated", { ticket_id: t.id, message });
@@ -592,8 +603,9 @@ export function registerTickets() {
     if (message.author.user?.id !== db.meId && role !== "admin" && role !== "owner") throw forbidden();
     message.kind = "note";
     refreshPreview(ctx.ws.messages, t);
+    refreshLastNote(ctx.ws, t);
     addActivity(ctx.ws, t, "reply_retracted", { message_id: message.id }, userRef(db.meId));
-    publish(ctx.ws, "ticket.updated", { ticket: t, changes: ["last_message_preview"] });
+    publish(ctx.ws, "ticket.updated", { ticket: t, changes: ["last_message_preview", "last_note"] });
     publish(ctx.ws, "message.updated", { ticket_id: t.id, message });
     return message;
   });

@@ -431,12 +431,24 @@ export type Ticket = {
   /** The customer's public messages since the last reply; 0 once anyone (or the AI agent) replied. */
   unanswered_count: number;
   last_message_preview: string;
+  /** The newest internal note a member or an API key wrote on the ticket (not a side conversation's, not Ollie's); null when none. */
+  last_note: TicketLastNote | null;
   message_count: number;
   spam: boolean;
   csat: { score: number; comment: string } | null;
   custom: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+};
+
+export type TicketLastNote = {
+  id: string;
+  /** The start of the note's text, whitespace collapsed, up to 200 characters. */
+  preview: string;
+  /** name is what to show; user is the member, null for an API key. */
+  author: { type: "user" | "api"; name: string; user: UserRef | null };
+  created_at: string;
+  edited_at: string | null;
 };
 
 export type Attachment = {

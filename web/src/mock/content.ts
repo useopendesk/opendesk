@@ -159,6 +159,12 @@ export const STORIES: Story[] = [
         attach: ["pdf", "screenshot2"],
         html: `<p>Hello,</p><p>When I export our "Client brief" notebook to PDF the download starts, then fails with "Export failed, try again later". Smaller notebooks export fine. This one has about 60 pages and a lot of images.</p><p>I attached what I get when I export a single page from it, the images are missing. We need this for a client presentation tomorrow morning.</p><p>Elena</p>`,
       },
+      {
+        from: "jonas",
+        note: true,
+        min: 9,
+        html: `<p>Reproduced with a 60 page notebook: the image step times out after 30 s. Asked the export team to raise the limit for her workspace.</p>`,
+      },
     ],
   },
   {
@@ -240,6 +246,12 @@ export const STORIES: Story[] = [
         from: "c",
         min: 35,
         html: `<p>Hi, just checking in on this. I haven't heard back yet. Is the refund being processed?</p>`,
+      },
+      {
+        from: "maya",
+        note: true,
+        min: 20,
+        html: `<p>Checked with billing: the refund went through on the 9th. My reply bounced, resending it from the billing address.</p>`,
       },
     ],
   },

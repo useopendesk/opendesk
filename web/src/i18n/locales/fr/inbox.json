@@ -85,7 +85,10 @@
     "awaiting": "En attente d’une réponse",
     "severity": "{{severity}}",
     "receivedAt": "Envoyé à {{address}}",
-    "assignedTo": "Attribué à {{name}}"
+    "assignedTo": "Attribué à {{name}}",
+    "note": "Note interne",
+    "noteBy": "{{name}} :",
+    "noteFrom": "Note interne de {{name}}, {{when}}"
   },
   "waiting": {
     "label": "En attente depuis {{time}}",

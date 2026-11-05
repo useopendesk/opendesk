@@ -85,7 +85,10 @@
     "awaiting": "Wartet auf Antwort",
     "severity": "{{severity}}",
     "receivedAt": "Gesendet an {{address}}",
-    "assignedTo": "Zugewiesen an {{name}}"
+    "assignedTo": "Zugewiesen an {{name}}",
+    "note": "Interne Notiz",
+    "noteBy": "{{name}}:",
+    "noteFrom": "Interne Notiz von {{name}}, {{when}}"
   },
   "waiting": {
     "label": "Wartet seit {{time}}",
