@@ -118,6 +118,21 @@ struct SettingsSaveBar: View {
     }
 }
 
+/// Under the save bar the page blurs and fades into the chrome, from clear at the top to most of
+/// the way at the buttons, so the bar never sits on a hard line.
+private struct SettingsSaveBarFade: View {
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)], startPoint: .top, endPoint: .bottom))
+            LinearGradient(stops: [.init(color: Theme.chrome.opacity(0), location: 0), .init(color: Theme.chrome.opacity(0.85), location: 0.6)], startPoint: .top, endPoint: .bottom)
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .allowsHitTesting(false)
+    }
+}
+
 private struct SettingsSaveBarModifier: ViewModifier {
     let dirty: Bool
     let guarded: Bool
@@ -130,11 +145,13 @@ private struct SettingsSaveBarModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .safeAreaBar(edge: .bottom, spacing: 0) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if dirty {
                     bar
                         .padding(.horizontal, 18)
+                        .padding(.top, 30)
                         .padding(.bottom, 4)
+                        .background { SettingsSaveBarFade() }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
