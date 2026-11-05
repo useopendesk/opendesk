@@ -274,34 +274,45 @@ struct WSSummaryStrip: View {
     let items: [Item]
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 5) {
-                            if let tone = item.tone { Circle().fill(tone.solid).frame(width: 6, height: 6) }
-                            Text(item.label)
-                                .font(ODFont.sans(11.5, weight: .medium))
-                                .foregroundStyle(Theme.fg3)
-                        }
-                        Text(item.value)
-                            .font(ODFont.sans(19, weight: .semibold))
-                            .foregroundStyle(Theme.fg)
-                            .monospacedDigit()
-                        if let hint = item.hint {
-                            Text(hint).font(ODFont.sans(11)).foregroundStyle(Theme.fg4)
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    if index < items.count - 1 {
-                        Rectangle().fill(Theme.lineSoft).frame(width: 1).padding(.vertical, 10)
-                    }
-                }
-            }
+        // Shares the width out when every number fits, and scrolls only when they don't.
+        ViewThatFits(in: .horizontal) {
+            row(fill: true)
+            ScrollView(.horizontal, showsIndicators: false) { row(fill: false) }
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+    }
+}
+
+extension WSSummaryStrip {
+    fileprivate func row(fill: Bool) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        if let tone = item.tone { Circle().fill(tone.solid).frame(width: 6, height: 6) }
+                        Text(item.label)
+                            .font(ODFont.sans(11.5, weight: .medium))
+                            .foregroundStyle(Theme.fg3)
+                            .lineLimit(1)
+                    }
+                    Text(item.value)
+                        .font(ODFont.sans(19, weight: .semibold))
+                        .foregroundStyle(Theme.fg)
+                        .monospacedDigit()
+                    if let hint = item.hint {
+                        Text(hint).font(ODFont.sans(11)).foregroundStyle(Theme.fg4).lineLimit(1)
+                    }
+                }
+                .fixedSize()
+                .padding(.horizontal, fill ? 7 : 14)
+                .padding(.vertical, 11)
+                .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
+                if index < items.count - 1 {
+                    Rectangle().fill(Theme.lineSoft).frame(width: 1).padding(.vertical, 10)
+                }
+            }
+        }
     }
 }
 
@@ -357,4 +368,9 @@ extension Error {
     }
 
     var wsNeedsMFA: Bool { (self as? APIError)?.code == "mfa_required" }
+}
+
+/// `one` for a single thing, `many` otherwise, each written in full ("1 member", "3 members").
+func wsPlural(_ count: Int, _ one: String, _ many: String) -> String {
+    count == 1 ? one : many
 }

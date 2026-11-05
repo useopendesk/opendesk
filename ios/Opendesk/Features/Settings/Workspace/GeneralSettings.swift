@@ -346,7 +346,7 @@ struct GeneralSettings: View {
             + store.draft.priorityLabels.values.filter { !($0.label ?? "").isEmpty || $0.color != nil }.count
         return AccountSection(title: "Statuses and priorities", footer: "Rename or recolour them for your team, and hide the statuses you don't use from the menus agents pick from. A ticket already in a hidden status keeps it; filters, automations and the API keep working as before.") {
             Button { editingDisplay = true } label: {
-                AccountRow(title: "Names and colours", subtitle: renamed == 0 ? "The standard names" : Format.plural(renamed, "1 changed", "\(renamed) changed")) {
+                AccountRow(title: "Names and colours", subtitle: renamed == 0 ? "The standard names" : wsPlural(renamed, "1 changed", "\(renamed) changed")) {
                     AccountDisclosure()
                 }
             }
@@ -724,12 +724,12 @@ private struct WSSnoozeRow: View {
                 .buttonStyle(ChipButtonStyle())
                 if preset.kind == .hours {
                     Stepper(value: Binding(get: { preset.hours ?? 1 }, set: { preset.hours = $0 }), in: 1 ... 168) {
-                        Text(Format.plural(preset.hours ?? 1, "1 hour", "\(preset.hours ?? 1) hours")).font(ODFont.sans(13.5)).foregroundStyle(Theme.fg2)
+                        Text(wsPlural(preset.hours ?? 1, "1 hour", "\(preset.hours ?? 1) hours")).font(ODFont.sans(13.5)).foregroundStyle(Theme.fg2)
                     }
                 }
                 if preset.kind == .days {
                     Stepper(value: Binding(get: { preset.days ?? 1 }, set: { preset.days = $0 }), in: 1 ... 365) {
-                        Text(Format.plural(preset.days ?? 1, "1 day", "\(preset.days ?? 1) days")).font(ODFont.sans(13.5)).foregroundStyle(Theme.fg2)
+                        Text(wsPlural(preset.days ?? 1, "1 day", "\(preset.days ?? 1) days")).font(ODFont.sans(13.5)).foregroundStyle(Theme.fg2)
                     }
                 }
                 if preset.kind != .hours {

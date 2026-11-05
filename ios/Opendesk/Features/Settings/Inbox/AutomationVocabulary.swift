@@ -170,7 +170,7 @@ enum AutomationVocabulary {
     static func placeholder(for field: String) -> String {
         switch field {
         case "from_email": "@acme.com"
-        case "received_at": "[EMAIL]"
+        case "received_at": "support@acme.com"
         case "subject": "refund"
         case "call_line": "B2B"
         default: "invoice"

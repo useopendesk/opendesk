@@ -245,7 +245,7 @@ struct BillingSettings: View {
                             Text(row.label).font(ODFont.sans(14.5)).foregroundStyle(Theme.fg).lineLimit(1)
                             if row.ownKey { TonePill(text: "Own key", tone: .gray) }
                             Spacer(minLength: 8)
-                            Text(Format.plural(row.calls, "1 request", "\(row.calls.formatted()) requests"))
+                            Text(wsPlural(row.calls, "1 request", "\(row.calls.formatted()) requests"))
                                 .font(ODFont.sans(12.5))
                                 .foregroundStyle(Theme.fg4)
                             Text(WSUSD.format(row.usd, precise: true))

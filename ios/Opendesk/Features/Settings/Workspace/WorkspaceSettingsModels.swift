@@ -25,7 +25,7 @@ struct WSSnoozePreset: Codable, Hashable, Sendable {
     /// "In 1 hour", "Tomorrow at 09:00", "Next week (Monday) at 09:00".
     var label: String {
         switch kind {
-        case .hours: return Format.plural(hours ?? 1, "In 1 hour", "In \(hours ?? 1) hours")
+        case .hours: return wsPlural(hours ?? 1, "In 1 hour", "In \(hours ?? 1) hours")
         case .days:
             let day = (days ?? 1) == 1 ? "Tomorrow" : "In \(days ?? 1) days"
             return "\(day) at \(time ?? "09:00")"
@@ -1124,7 +1124,7 @@ struct WSIntegration: Decodable, Hashable, Sendable, Identifiable {
         if status == "pending" { return "Finish signing in to use it." }
         let on = tools.filter(\.enabled).count
         let asks = tools.filter { !$0.readOnly && !$0.autoRun && $0.enabled }.count
-        let base = Format.plural(on, "1 tool", "\(on) tools")
+        let base = wsPlural(on, "1 tool", "\(on) tools")
         return asks > 0 ? "\(base), \(asks) ask first" : base
     }
 }

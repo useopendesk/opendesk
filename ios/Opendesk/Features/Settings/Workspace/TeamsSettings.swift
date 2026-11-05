@@ -698,7 +698,7 @@ struct WSTeamLine: View {
     }
 
     private var line: String {
-        var parts = [Format.plural(team.memberIDs.count, "1 member", "\(team.memberIDs.count) members")]
+        var parts = [wsPlural(team.memberIDs.count, "1 member", "\(team.memberIDs.count) members")]
         parts.append("\(team.openCount) open")
         if !team.description.isEmpty { parts.append(team.description) }
         return parts.joined(separator: " \u{00B7} ")
@@ -958,7 +958,7 @@ struct WSDeleteTeamSheet: View {
                 Panel {
                     WSMenuRow(
                         title: "Move its tickets to",
-                        subtitle: team.openCount > 0 ? Format.plural(team.openCount, "1 open ticket", "\(team.openCount) open tickets") : nil,
+                        subtitle: team.openCount > 0 ? wsPlural(team.openCount, "1 open ticket", "\(team.openCount) open tickets") : nil,
                         options: [""] + others.map(\.id),
                         selection: $moveTo,
                         label: { id in id.isEmpty ? "No team" : (others.first { $0.id == id }?.name ?? "Team") }

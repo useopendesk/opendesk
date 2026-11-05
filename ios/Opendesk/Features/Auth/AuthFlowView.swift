@@ -24,7 +24,7 @@ struct AuthFlowView: View {
         case "register": [.register]
         case "forgot": [.forgot]
         case "mfa": [.mfa(token: "")]
-        case "link": [.link(token: "", email: "[EMAIL]")]
+        case "link": [.link(token: "", email: "maya@margin.app")]
         default: []
         }
     }

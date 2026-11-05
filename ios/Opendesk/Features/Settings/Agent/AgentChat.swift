@@ -190,6 +190,8 @@ struct AgentChatView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        // The composer takes the bottom edge, as in a ticket or a mail thread.
+        .tabBarHidden()
     }
 
     private var empty: some View {

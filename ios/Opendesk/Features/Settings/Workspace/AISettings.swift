@@ -441,7 +441,7 @@ struct WSProviderKeySheet: View {
                 if let result {
                     Notice(
                         text: result.ok
-                            ? "The key works.\(result.models.isEmpty ? "" : " \(Format.plural(result.models.count, "1 model", "\(result.models.count) models")) available.")"
+                            ? "The key works.\(result.models.isEmpty ? "" : " \(wsPlural(result.models.count, "1 model", "\(result.models.count) models")) available.")"
                             : (result.message ?? "The provider refused the key."),
                         tone: result.ok ? .green : .red,
                         symbol: result.ok ? "checkmark.circle" : "xmark.octagon"

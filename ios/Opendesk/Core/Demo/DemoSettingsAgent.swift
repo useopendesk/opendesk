@@ -41,12 +41,12 @@ struct DemoAgentSettings: Sendable {
         let lumen = ws.workspace.slug == "lumen"
         s.bots = [bot(1, "Ollie", role: "Support assistant", look: BotLook.ollie.json, isDefault: true, position: 0,
                       personality: ["tone": "friendly", "instructions": lumen ? "" : "Margin is a note-taking app for teams. Keep answers short and link the help center article you used.", "greeting": "Hi! I'm Ollie. Ask me anything about Margin.", "sign_off": ""],
-                      usage: ["widgets": [["name": "Website"]], "mailboxes": lumen ? [] : [["email": "[EMAIL]"]], "api_keys": []])]
+                      usage: ["widgets": [["name": "Website"]], "mailboxes": lumen ? [] : [["email": "support@margin.app"]], "api_keys": []])]
         s.peer = obj(["available": !lumen, "enabled": false, "share_with": "everyone", "user_ids": [Any](), "team_ids": [Any](),
                   "all_accounts": true, "default_mode": "summary", "rules": "",
                   "accounts": lumen ? [Any]() : jv([
-                      ["id": agentID(301), "email": "[EMAIL]", "name": "Maya Chen", "provider": "gmail", "mode": "summary", "chosen": false],
-                      ["id": agentID(302), "email": "[EMAIL]", "name": "Personal", "provider": "imap", "mode": "summary", "chosen": false],
+                      ["id": agentID(301), "email": "maya@margin.app", "name": "Maya Chen", "provider": "gmail", "mode": "summary", "chosen": false],
+                      ["id": agentID(302), "email": "maya.chen@fastmail.com", "name": "Personal", "provider": "imap", "mode": "summary", "chosen": false],
                   ])])
         guard !lumen else { return s }
 
@@ -61,7 +61,7 @@ struct DemoAgentSettings: Sendable {
         nova.background = "soft"
         s.bots.append(bot(2, "Nova", role: "Billing helper", look: nova.json, isDefault: false, position: 1,
                           personality: ["tone": "professional", "reply_length": "short", "emoji": "none", "instructions": "Only billing and plans. Hand anything about refunds over 200 dollars to the billing team.", "greeting": "Hello, I'm Nova. I can help with plans, invoices and payments.", "handoff_message": "I've passed this to our billing team. They usually reply within a few hours."],
-                          usage: ["widgets": [], "mailboxes": [["email": "[EMAIL]"]], "api_keys": []]))
+                          usage: ["widgets": [], "mailboxes": [["email": "billing@margin.app"]], "api_keys": []]))
 
         s.knowledge = [
             source(11, "website", "Margin docs", status: "ready", docs: 64, chars: 412_300, synced: 260,
@@ -117,7 +117,7 @@ struct DemoAgentSettings: Sendable {
             (43, "Asks for a person", [line("Can I talk to a real person?")], [expect("handoff")], nil),
             (44, "Export to PDF", [line("Can I export a notebook as a PDF?")], [expect("mentions", "File, Export"), expect("cites_knowledge")], nil),
             (45, "Pricing for teams", [line("How much is Pro?"), line("Margin Pro is $8 per member per month, billed yearly.", agent: true), line("And for a team of 30?")], [expect("mentions", "volume pricing"), expect("not_mentions", "lifetime plan")], nil),
-            (46, "Invoice lookup", [line("Where can I find my latest invoice?")], [expect("uses_tool", "margin__list_invoices"), expect("no_handoff")], ["verified": .bool(true), "email": .string("[EMAIL]"), "user_id": .string("u_4821")]),
+            (46, "Invoice lookup", [line("Where can I find my latest invoice?")], [expect("uses_tool", "margin__list_invoices"), expect("no_handoff")], ["verified": .bool(true), "email": .string("ines@northwind.example"), "user_id": .string("u_4821")]),
             (47, "Sync stuck", [line("My notes won't sync on my phone")], [expect("uses_procedure", agentID(22))], nil),
             (48, "", [line("Please cancel my subscription")], [expect("handoff")], nil),
         ]
@@ -835,7 +835,7 @@ extension DemoBackend {
             let args = call.body["arguments"]?.object ?? [:]
             let content: String
             switch captured[1] {
-            case "get_account": content = #"{"workspace":"Northwind Traders","plan":"business","seats":42,"owner":"[EMAIL]"}"#
+            case "get_account": content = #"{"workspace":"Northwind Traders","plan":"business","seats":42,"owner":"ines@northwind.example"}"#
             case "list_invoices": content = #"[{"id":"INV-2026-10-0412","amount":"96.00","status":"paid","date":"2026-10-01"},{"id":"INV-2026-09-0398","amount":"96.00","status":"paid","date":"2026-09-01"}]"#
             default: content = "Not run: this tool changes things, so the demo answers without calling it. Arguments: " + (String(data: encode(JSONValue.object(args)), encoding: .utf8) ?? "{}")
             }
