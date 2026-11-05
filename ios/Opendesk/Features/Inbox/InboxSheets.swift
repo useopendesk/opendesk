@@ -20,7 +20,7 @@ struct ScopeSheet: View {
                     }
                     Button {
                         Haptics.selection()
-                        env.router.show(.tickets, [.search])
+                        env.router.show(env.router.shownArea, [.search])
                         dismiss()
                     } label: {
                         HStack(spacing: 10) {
@@ -37,41 +37,8 @@ struct ScopeSheet: View {
                     .buttonStyle(TapScaleStyle())
                     .accessibilityHint("Tickets, contacts and articles")
 
-                    Panel {
-                        ForEach(Array(Folder.allCases.enumerated()), id: \.element) { index, folder in
-                            if index > 0 { Hairline(inset: 46) }
-                            row(scope: .folder(folder), title: folder.title, symbol: folder.symbol, count: folder.count(in: env.directory.counts))
-                        }
-                    }
-                    if !myTeams.isEmpty {
-                        SectionLabel("Teams")
-                        Panel {
-                            teamRow(id: InboxScope.myTeams, title: "My teams", count: env.directory.counts?.myTeams)
-                            ForEach(myTeams) { team in
-                                Hairline(inset: 46)
-                                teamRow(id: team.id, title: team.name, count: env.directory.counts?.teams[team.id])
-                            }
-                        }
-                    }
-                    if !env.directory.views.isEmpty {
-                        SectionLabel("Views")
-                        Panel {
-                            ForEach(Array(ViewSections.group(env.directory.views).enumerated()), id: \.element.id) { index, entry in
-                                if index > 0 { Hairline(inset: 46) }
-                                switch entry {
-                                case let .view(view):
-                                    viewRow(view)
-                                case let .section(key, name, views):
-                                    sectionRow(key: key, name: name, views: views)
-                                    if !folded.contains(key) {
-                                        ForEach(views) { view in
-                                            Hairline(inset: 46)
-                                            viewRow(view, nested: true)
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if env.products.tickets {
+                        ticketScopes
                     }
                     SectionLabel("Workspace")
                     Panel {
@@ -84,12 +51,53 @@ struct ScopeSheet: View {
                 .padding(20)
             }
             .background(Theme.chrome.ignoresSafeArea())
-            .navigationTitle("Inbox")
+            .navigationTitle(env.products.tickets ? "Inbox" : "Workspace")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .onAppear { folded = ViewSections.folded(key: foldedKey) }
+        }
+    }
+
+    /// Folders with live counts, team inboxes and views: the ticket part, gone while Tickets is off.
+    @ViewBuilder
+    private var ticketScopes: some View {
+        Panel {
+            ForEach(Array(Folder.allCases.enumerated()), id: \.element) { index, folder in
+                if index > 0 { Hairline(inset: 46) }
+                row(scope: .folder(folder), title: folder.title, symbol: folder.symbol, count: folder.count(in: env.directory.counts))
+            }
+        }
+        if !myTeams.isEmpty {
+            SectionLabel("Teams")
+            Panel {
+                teamRow(id: InboxScope.myTeams, title: "My teams", count: env.directory.counts?.myTeams)
+                ForEach(myTeams) { team in
+                    Hairline(inset: 46)
+                    teamRow(id: team.id, title: team.name, count: env.directory.counts?.teams[team.id])
+                }
+            }
+        }
+        if !env.directory.views.isEmpty {
+            SectionLabel("Views")
+            Panel {
+                ForEach(Array(ViewSections.group(env.directory.views).enumerated()), id: \.element.id) { index, entry in
+                    if index > 0 { Hairline(inset: 46) }
+                    switch entry {
+                    case let .view(view):
+                        viewRow(view)
+                    case let .section(key, name, views):
+                        sectionRow(key: key, name: name, views: views)
+                        if !folded.contains(key) {
+                            ForEach(views) { view in
+                                Hairline(inset: 46)
+                                viewRow(view, nested: true)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -161,7 +169,12 @@ struct ScopeSheet: View {
     }
 
     private var areas: [AppArea] {
-        AppArea.allCases.filter { $0 != .tickets && ($0 != .mail || env.directory.collab.enabled) }
+        // With Tickets off the home is Mail, so it is listed with the rest.
+        let products = env.products
+        return AppArea.allCases.filter { area in
+            guard products.allows(area), area != .tickets else { return false }
+            return area != .mail || env.directory.collab.enabled
+        }
     }
 
     private func areaRow(_ area: AppArea) -> some View {

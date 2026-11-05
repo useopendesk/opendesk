@@ -16,7 +16,7 @@ struct InboxRootView: View {
         }
         .environment(alerts)
         .overlay(alignment: .top) {
-            if let ticket = alerts.banner {
+            if let ticket = alerts.banner, env.products.tickets {
                 InboxChatBanner(
                     ticket: ticket,
                     quiet: alerts.quiet,

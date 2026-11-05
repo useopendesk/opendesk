@@ -76,7 +76,7 @@ final class Router {
     var wide = false
     /// The tab on screen shows its list and its stack side by side (`AdaptiveStack`): in a wide
     /// window, for every tab but Reports, which is one page of its own.
-    var columns: Bool { wide && !(tab == .inbox && area == .reports) }
+    var columns: Bool { wide && !(tab == .inbox && shownArea == .reports) }
     /// The list column's width while `columns` is on.
     var listWidth: CGFloat = 360
 
@@ -143,6 +143,7 @@ final class Router {
 
     /// Opens what waited for sign-in or a workspace switch.
     func workspaceReady() {
+        keepAreaAvailable()
         #if DEBUG
         if let screen = pendingDemoScreen {
             pendingDemoScreen = nil
@@ -188,11 +189,36 @@ final class Router {
         }
     }
 
-    /// The Inbox tab at `area` with `path` on top of it.
+    /// The Inbox tab at `area` with `path` on top of it. An area the workspace has turned off
+    /// gives way to its home, without the tickets that were to open in it (as the web redirects).
     func show(_ area: AppArea, _ path: [AppRoute]) {
-        self.area = area
+        let products = environment?.products ?? Products()
+        if products.allows(area) {
+            self.area = area
+            inboxPath = path
+        } else {
+            self.area = products.home
+            inboxPath = path.filter { if case .ticket = $0 { false } else { true } }
+            if path.contains(where: { if case .ticket = $0 { true } else { false } }) {
+                environment?.toasts.show("Tickets are turned off in this workspace.")
+            }
+        }
         tab = .inbox
-        inboxPath = path
+    }
+
+    /// Never leaves the Inbox tab on an area the workspace no longer offers (a switch, or a
+    /// product turned off while it was open).
+    func keepAreaAvailable() {
+        let products = environment?.products ?? Products()
+        guard !products.allows(area) else { return }
+        area = products.home
+        inboxPath = []
+    }
+
+    /// The area the Inbox tab draws: the picked one, or the workspace's home while it is off.
+    var shownArea: AppArea {
+        let products = environment?.products ?? Products()
+        return products.allows(area) ? area : products.home
     }
 
     /// Pushes `route` on the stack of the tab on screen.
@@ -240,7 +266,7 @@ final class Router {
         if case let .wikiPage(id)? = top {
             return AssistantPageContext(page: "wiki", path: "/wiki/\(id)", wikiPageID: id)
         }
-        switch (tab, area) {
+        switch (tab, shownArea) {
         case (.inbox, .tickets):
             var context = AssistantPageContext(page: "inbox", path: env.inbox.scope.webPath())
             switch env.inbox.scope {

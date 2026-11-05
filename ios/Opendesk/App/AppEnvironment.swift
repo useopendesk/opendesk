@@ -72,6 +72,7 @@ final class AppEnvironment {
             self.directory.handle(update)
             self.inbox.handle(update)
             self.notifications.handle(update)
+            self.productsHeard(update)
         }
         directory.start(api: api)
         inbox.start(api: api, me: user.id)

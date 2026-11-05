@@ -10,9 +10,15 @@ struct MainTabView: View {
     @State private var showPushPrimer = false
     @State private var showAccounts = false
 
+    /// The first tab is the inbox, or the workspace's home while Tickets is off (Mail).
+    private var home: (title: String, symbol: String) {
+        let home = env.products.home
+        return home == .tickets ? ("Inbox", "tray") : (home.title, home.symbol)
+    }
+
     private var items: [TabItem] {
         [
-            TabItem(tab: .inbox, title: "Inbox", symbol: "tray"),
+            TabItem(tab: .inbox, title: home.title, symbol: home.symbol),
             TabItem(tab: .notifications, title: "Notifications", symbol: "bell", badge: env.notifications.unread),
             TabItem(tab: .account, title: "Account", symbol: "person.crop.circle"),
         ]
@@ -39,7 +45,7 @@ struct MainTabView: View {
     var body: some View {
         @Bindable var router = env.router
         TabView(selection: $router.tab) {
-            Tab("Inbox", systemImage: "tray", value: AppTab.inbox) {
+            Tab(home.title, systemImage: home.symbol, value: AppTab.inbox) {
                 InboxRootView().toolbarVisibility(.hidden, for: .tabBar)
             }
             Tab("Notifications", systemImage: "bell", value: AppTab.notifications) {
@@ -61,6 +67,11 @@ struct MainTabView: View {
         .onChange(of: AppColumns.on(width: width, sizeClass: sizeClass), initial: true) { _, on in router.wide = on }
         .onChange(of: width, initial: true) { _, width in router.listWidth = AppColumns.listWidth(for: width) }
         .motion(Motion.snappy, value: tabBar.isHidden)
+        // A product turned off (here or on the web) never strands the Inbox tab on it.
+        .onChange(of: env.products) { _, _ in router.keepAreaAvailable() }
+        #if DEBUG
+        .onChange(of: router.demoAction, initial: true) { _, action in DemoProducts.run(action, env: env) }
+        #endif
         .environment(tabBar)
         .sheet(isPresented: $router.showOllie) {
             AssistantView(context: router.assistantContext)

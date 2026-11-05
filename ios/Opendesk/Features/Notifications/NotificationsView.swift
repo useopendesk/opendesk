@@ -32,7 +32,9 @@ private struct NotificationsList: View {
 
     private var days: [Day] {
         var result: [Day] = []
-        for item in store.items {
+        // With Tickets off, notifications about tickets are left out, as on the web.
+        let tickets = env.products.tickets
+        for item in store.items where tickets || item.ticket == nil {
             let label = Format.dayLabel(item.createdAt)
             if result.last?.id == label { result[result.count - 1].items.append(item) } else { result.append(Day(id: label, items: [item])) }
         }
