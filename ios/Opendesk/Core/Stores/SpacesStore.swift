@@ -243,6 +243,39 @@ final class SpacesStore {
 
     func starter(of workspace: String) -> Space? { starters[workspace] ?? nil }
 
+    /// Reads `workspace`'s starter Space again, for its settings page.
+    func reloadStarter(_ workspace: String) async {
+        guard let api, let answer: StarterSpace = try? await api.get("v1/sidebar/starter", workspace: .id(workspace)) else { return }
+        starters[workspace] = .some(answer.space)
+    }
+
+    /// Publishes `space` as `workspace`'s starter Space (admins). The server sets every row's
+    /// workspace to `workspace`.
+    func saveStarter(_ space: Space, in workspace: String) async -> String? {
+        guard let api else { return "Sign in again to save the starter Space." }
+        do {
+            var request = APIRequest(method: "PUT", path: "v1/sidebar/starter", body: try APICoding.encoder.encode(space))
+            request.workspace = .id(workspace)
+            let answer: StarterSpace = try await api.send(request)
+            starters[workspace] = .some(answer.space)
+            return nil
+        } catch {
+            return (error as? APIError)?.userMessage ?? "Couldn't save the starter Space."
+        }
+    }
+
+    /// Takes `workspace`'s starter Space away. Spaces people already made from it stay theirs.
+    func removeStarter(in workspace: String) async -> String? {
+        guard let api else { return "Sign in again to remove the starter Space." }
+        do {
+            try await api.delete("v1/sidebar/starter", workspace: .id(workspace))
+            starters[workspace] = .some(nil)
+            return nil
+        } catch {
+            return (error as? APIError)?.userMessage ?? "Couldn't remove the starter Space."
+        }
+    }
+
     // MARK: Opening rows
 
     /// Opens a row: at once in the open workspace, or in its own after switching there (the

@@ -579,7 +579,7 @@ struct WidgetDraft: Equatable {
     window.opendesk('identify', {
       user_id: "42",
       user_hash: "<hmac from your server>",
-      email: "[EMAIL]",
+      email: "ada@example.com",
       name: "Ada Lovelace",
     });
     """

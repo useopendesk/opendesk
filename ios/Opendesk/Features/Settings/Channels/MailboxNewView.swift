@@ -61,7 +61,7 @@ struct MailboxNewView: View {
         ChannelForm(title: "Address") {
             ODTextField(label: "Name", text: $form.name, prompt: "Support")
             ChannelHint("Shown to your team, like Support or Billing.")
-            ODTextField(label: "Email address", text: $form.email, prompt: "[EMAIL]", contentType: .emailAddress, keyboard: .emailAddress, submitLabel: .continue, onSubmit: lookUp)
+            ODTextField(label: "Email address", text: $form.email, prompt: "support@company.com", contentType: .emailAddress, keyboard: .emailAddress, submitLabel: .continue, onSubmit: lookUp)
             ChannelHint("The address customers write to.")
             if !form.email.isEmpty, !ChannelValidate.email(form.email) { FormError(text: "That doesn't look like an email address.") }
             if detecting {

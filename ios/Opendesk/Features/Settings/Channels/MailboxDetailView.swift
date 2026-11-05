@@ -389,7 +389,7 @@ struct MailboxDetailView: View {
 
     private func contactForms(_ mailbox: SettingsMailbox) -> some View {
         ChannelForm(title: "Contact forms", footer: "Add the address your website's contact form sends from. When its email passes the sender check, the visitor who filled in the form becomes the contact and replies go to them.") {
-            ChannelChipEditor(label: "", items: $draft.trusted, placeholder: "[EMAIL] or @company.com", empty: "No contact forms. Enter an address or @domain.", max: 50, disabled: !admin) { text, _ in
+            ChannelChipEditor(label: "", items: $draft.trusted, placeholder: "forms@company.com or @company.com", empty: "No contact forms. Enter an address or @domain.", max: 50, disabled: !admin) { text, _ in
                 let clean = text.lowercased()
                 if clean.hasPrefix("@") {
                     let domain = String(clean.dropFirst())

@@ -9,7 +9,7 @@ final class AssignmentStore {
     private(set) var config: AutoAssignConfig?
     private(set) var members: [AutoAssignMember] = []
     private(set) var teams: [AutoAssignTeam] = []
-    private(set) var mailboxes: [SettingsMailbox] = []
+    private(set) var mailboxes: [InboxMailboxRef] = []
     private(set) var skills: [AutoAssignSkill] = []
     private(set) var load: InboxLoad = .loading
 
@@ -30,7 +30,7 @@ final class AssignmentStore {
             async let config: AutoAssignConfig = api.get("v1/assignment")
             async let members: [AutoAssignMember]? = try? api.all("v1/members")
             async let teams: Page<AutoAssignTeam>? = try? api.get("v1/teams", query: [URLQueryItem(name: "limit", value: "100")])
-            async let mailboxes: Page<SettingsMailbox>? = try? api.get("v1/mailboxes")
+            async let mailboxes: Page<InboxMailboxRef>? = try? api.get("v1/mailboxes")
             async let skills: Page<AutoAssignSkill>? = isAdmin ? try? api.get("v1/skills") : nil
             self.config = try await config
             if let all = await members { self.members = all }

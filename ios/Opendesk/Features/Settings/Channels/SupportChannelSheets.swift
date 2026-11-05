@@ -123,7 +123,7 @@ enum SupportConditionFields {
         var fields = [
             ChannelConditionField(key: "subject", label: "Subject", group: "Message", ops: text, value: .text("refund")),
             ChannelConditionField(key: "from_email", label: "Sender email", group: "Message", ops: text, value: .text("@acme.com")),
-            ChannelConditionField(key: "received_at", label: "Address written to", group: "Message", ops: ["equals", "not_equals", "contains"], value: .text("[EMAIL]")),
+            ChannelConditionField(key: "received_at", label: "Address written to", group: "Message", ops: ["equals", "not_equals", "contains"], value: .text("support@company.com")),
             ChannelConditionField(key: "mailbox_id", label: "Mailbox", group: "Ticket", ops: ["equals", "not_equals"], value: .choice(mailboxes.map { ChannelChoice(value: $0.id, label: $0.email) })),
         ]
         if brands.count > 1 {

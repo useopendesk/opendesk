@@ -312,5 +312,7 @@ struct SpaceSwitcherSheet: View {
 struct SpaceDraft: Identifiable {
     var space: Space
     var isNew: Bool
+    /// The workspace whose starter Space this is (Settings › General), or nil for one of your own.
+    var starterOf: String?
     var id: String { space.id }
 }

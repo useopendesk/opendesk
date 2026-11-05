@@ -29,7 +29,7 @@ struct AutomationLookup: Decodable, Hashable, Sendable, Identifiable {
 final class AutomationsStore {
     private(set) var automations: [AutomationRule] = []
     private(set) var load: InboxLoad = .loading
-    private(set) var mailboxes: [SettingsMailbox] = []
+    private(set) var mailboxes: [InboxMailboxRef] = []
     private(set) var brands: [AutomationLookup] = []
     private(set) var widgets: [AutomationLookup] = []
     private(set) var lines: [AutomationLookup] = []
@@ -64,7 +64,7 @@ final class AutomationsStore {
     func loadLookups() async {
         guard let api else { return }
         lookupsLoaded = true
-        async let mailboxes: Page<SettingsMailbox>? = try? api.get("v1/mailboxes")
+        async let mailboxes: Page<InboxMailboxRef>? = try? api.get("v1/mailboxes")
         async let brands: Page<AutomationLookup>? = try? api.get("v1/brands")
         async let widgets: Page<AutomationLookup>? = try? api.get("v1/widgets")
         async let phones: Page<AutomationLookup>? = try? api.get("v1/phone/connections")

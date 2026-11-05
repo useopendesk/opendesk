@@ -8,6 +8,7 @@ struct SpaceEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var space: Space
     private let isNew: Bool
+    private let starterOf: String?
 
     @State private var adding: AddTarget?
     @State private var renaming: RowRef?
@@ -21,6 +22,7 @@ struct SpaceEditorSheet: View {
         _space = State(initialValue: draft.space)
         original = draft.space
         isNew = draft.isNew
+        starterOf = draft.starterOf
     }
 
     private struct AddTarget: Identifiable {
@@ -74,7 +76,7 @@ struct SpaceEditorSheet: View {
             .scrollContentBackground(.hidden)
             .background(Theme.chrome.ignoresSafeArea())
             .environment(\.editMode, .constant(.active))
-            .navigationTitle(isNew ? "New Space" : "Edit Space")
+            .navigationTitle(starterOf != nil ? "Starter Space" : isNew ? "New Space" : "Edit Space")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -88,14 +90,14 @@ struct SpaceEditorSheet: View {
                     Button {
                         Task { await save() }
                     } label: {
-                        if saving { ProgressView() } else { Text(isNew ? "Create" : "Save").bold() }
+                        if saving { ProgressView() } else { Text(isNew && starterOf == nil ? "Create" : "Save").bold() }
                     }
                     .disabled(saving)
                 }
             }
         }
         .sheet(item: $adding) { target in
-            SpaceAddRowsSheet(space: space) { items in
+            SpaceAddRowsSheet(space: space, only: starterOf) { items in
                 add(items, to: target.section)
             }
             .presentationDetents([.large])
@@ -353,7 +355,7 @@ struct SpaceEditorSheet: View {
 
     private func save() async {
         space.name = SpaceRules.clean(space.name)
-        let members = Set(env.session.memberships.map(\.id))
+        let members = starterOf.map { Set([$0]) } ?? Set(env.session.memberships.map(\.id))
         if let problem = SpaceRules.problem(in: space, members: members) {
             Haptics.warning()
             withAnimation(Motion.fade) { self.problem = problem }
@@ -361,7 +363,11 @@ struct SpaceEditorSheet: View {
         }
         problem = nil
         saving = true
-        let failure = await SpacesStore.shared.upsert(space)
+        let failure = if let starterOf {
+            await SpacesStore.shared.saveStarter(space, in: starterOf)
+        } else {
+            await SpacesStore.shared.upsert(space)
+        }
         saving = false
         if let failure {
             Haptics.error()
@@ -369,7 +375,7 @@ struct SpaceEditorSheet: View {
             return
         }
         Haptics.success()
-        if isNew { SpacesStore.shared.pick(space.id) }
+        if isNew, starterOf == nil { SpacesStore.shared.pick(space.id) }
         dismiss()
     }
 }
@@ -380,6 +386,8 @@ struct SpaceAddRowsSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     let space: Space
+    /// Offers only this workspace's rows (a starter Space), with no Everywhere tab.
+    var only: String? = nil
     let onAdd: ([SpaceItem]) -> Void
 
     @State private var tab: String = ""
@@ -431,7 +439,7 @@ struct SpaceAddRowsSheet: View {
             }
         }
         .onAppear {
-            if tab.isEmpty { tab = env.session.workspace?.id ?? env.session.memberships.first?.id ?? "" }
+            if tab.isEmpty { tab = only ?? env.session.workspace?.id ?? env.session.memberships.first?.id ?? "" }
         }
         .task(id: tab + "/\(OverviewStore.shared.loaded)") {
             guard !tab.isEmpty, tab != Self.everywhereTab, let collab = builder.collab(tab) else { return }
@@ -447,7 +455,8 @@ struct SpaceAddRowsSheet: View {
 
     /// A tab per workspace, then "Every workspace" for the Everywhere lists.
     private var tabs: [Tab] {
-        env.session.memberships.map { Tab(id: $0.id, title: $0.workspace.name, workspace: $0.workspace) }
+        if only != nil { return [] }
+        return env.session.memberships.map { Tab(id: $0.id, title: $0.workspace.name, workspace: $0.workspace) }
             + [Tab(id: Self.everywhereTab, title: "Every workspace", workspace: nil)]
     }
 

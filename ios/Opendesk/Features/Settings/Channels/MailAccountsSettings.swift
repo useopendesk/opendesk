@@ -219,7 +219,7 @@ struct MailAccountConnectSheet: View {
 
     @ViewBuilder
     private var imap: some View {
-        ODTextField(label: "Email address", text: Binding(get: { form.email }, set: { form.setEmail($0) }), prompt: "[EMAIL]", contentType: .emailAddress, keyboard: .emailAddress)
+        ODTextField(label: "Email address", text: Binding(get: { form.email }, set: { form.setEmail($0) }), prompt: "name@company.com", contentType: .emailAddress, keyboard: .emailAddress)
         if let preset = form.preset { ChannelHint("Settings for \(preset) filled in") }
         ODTextField(label: "Name in the sidebar", text: $form.name, prompt: "Work, Sales, Personal")
         ODTextField(label: form.appPassword ? "App password" : "Password", text: $form.password, prompt: "", secure: true, contentType: .password)

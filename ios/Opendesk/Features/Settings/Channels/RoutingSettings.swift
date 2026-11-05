@@ -206,7 +206,7 @@ private struct RoutingRuleRow: View {
             }
             Toggle("", isOn: Binding(get: { rule.enabled }, set: toggle))
                 .labelsHidden()
-                .tint(Theme.fg)
+                .tint(Tone.green.solid)
                 .accessibilityLabel("Turn \(rule.name) on or off")
         }
         .padding(.horizontal, 14)
@@ -260,7 +260,7 @@ private struct RoutingTestPanel: View {
                     }
                     ODTextField(label: "Page", text: $page, prompt: "https://margin.app/pricing", keyboard: .URL)
                 }
-                ODTextField(label: "From", text: $from, prompt: "[EMAIL]", contentType: .emailAddress, keyboard: .emailAddress)
+                ODTextField(label: "From", text: $from, prompt: "ada@example.com", contentType: .emailAddress, keyboard: .emailAddress)
                 if channel == "email" {
                     ODTextField(label: "Subject", text: $subject, prompt: "Question about my invoice")
                 }
@@ -709,7 +709,7 @@ final class RoutingStore {
             ChannelConditionField(key: "channel", label: "Channel", group: "Where it arrived", ops: ids, value: .choice(Self.channels.map { ChannelChoice(value: $0.0, label: $0.1) })),
             ChannelConditionField(key: "page_url", label: "Page URL", group: "Where it arrived", ops: text, value: .text("/pricing")),
             ChannelConditionField(key: "topic", label: "Topic", group: "Where it arrived", ops: ids, value: .choice(widgets.flatMap { w in w.settings.topics.filter { !$0.isNew }.map { ChannelChoice(value: $0.id, label: $0.label, group: w.name) } })),
-            ChannelConditionField(key: "from_email", label: "From email", group: "Who sent it", ops: text, value: .text("[EMAIL]")),
+            ChannelConditionField(key: "from_email", label: "From email", group: "Who sent it", ops: text, value: .text("ada@example.com")),
             ChannelConditionField(key: "from_domain", label: "From domain", group: "Who sent it", ops: ["equals", "not_equals", "contains"], value: .text("acme.com")),
         ]
         for field in env.directory.fields(for: "contact") {

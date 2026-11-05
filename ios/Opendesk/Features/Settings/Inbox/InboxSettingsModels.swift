@@ -406,7 +406,7 @@ struct AutoAssignTeam: Decodable, Hashable, Sendable, Identifiable {
 }
 
 /// A mailbox, the part rules and automations name (`GET /v1/mailboxes`).
-struct SettingsMailbox: Decodable, Hashable, Sendable, Identifiable {
+struct InboxMailboxRef: Decodable, Hashable, Sendable, Identifiable {
     var id: String
     var name: String
     var email: String

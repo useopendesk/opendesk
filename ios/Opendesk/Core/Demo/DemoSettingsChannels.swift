@@ -154,44 +154,44 @@ struct DemoChannelSettings: Sendable {
 
         // Mailboxes: Google sign-in reading directly, forwarding with SMTP, and an IMAP one that needs attention.
         var support = Self.mailbox(
-            id: DemoSeed.supportMailbox, name: "Support", email: "[EMAIL]", display: "Margin Support", team: DemoSeed.support, brand: margin,
+            id: DemoSeed.supportMailbox, name: "Support", email: "support@margin.app", display: "Margin Support", team: DemoSeed.support, brand: margin,
             inbound: "google", outbound: "google",
-            config: ["oauth_email": .string("[EMAIL]"), "oauth_grant": .string("api"), "oauth_client": .string("instance"), "mail_host": .string("google_workspace"), "provider_mark_read": .bool(true), "provider_archive_on_solve": .bool(true), "provider_label": .bool(true)],
+            config: ["oauth_email": .string("support@margin.app"), "oauth_grant": .string("api"), "oauth_client": .string("instance"), "mail_host": .string("google_workspace"), "provider_mark_read": .bool(true), "provider_archive_on_solve": .bool(true), "provider_label": .bool(true)],
             received: 4, created: 240 * 1440
         )
-        support["aliases"] = jstrs(["[EMAIL]", "[EMAIL]"])
-        support["alias_teams"] = .object(["[EMAIL]": .string(DemoSeed.partnerships)])
+        support["aliases"] = jstrs(["partners@margin.app", "help@margin.app"])
+        support["alias_teams"] = .object(["partners@margin.app": .string(DemoSeed.partnerships)])
         support["alias_settings"] = .object([
-            "[EMAIL]": .object(["display_name": .string("Margin Partnerships"), "signature_html": .string(""), "brand_id": .null, "send_as": .string("verified"), "send_as_by": .string("google")]),
-            "[EMAIL]": .object(["display_name": .string(""), "signature_html": .string(""), "brand_id": .null, "send_as": .string("unknown"), "send_as_by": .string("")]),
+            "partners@margin.app": .object(["display_name": .string("Margin Partnerships"), "signature_html": .string(""), "brand_id": .null, "send_as": .string("verified"), "send_as_by": .string("google")]),
+            "help@margin.app": .object(["display_name": .string(""), "signature_html": .string(""), "brand_id": .null, "send_as": .string("unknown"), "send_as_by": .string("")]),
         ])
         support["provider_send_as"] = .object([
             "readable": .bool(true), "checked_at": jago(2 * 1440),
             "addresses": .array([
-                .object(["email": .string("[EMAIL]"), "display_name": .string("Margin Support"), "verified": .bool(true)]),
-                .object(["email": .string("[EMAIL]"), "display_name": .string("Margin Partnerships"), "verified": .bool(true)]),
+                .object(["email": .string("support@margin.app"), "display_name": .string("Margin Support"), "verified": .bool(true)]),
+                .object(["email": .string("partners@margin.app"), "display_name": .string("Margin Partnerships"), "verified": .bool(true)]),
             ]),
         ])
         support["signature_html"] = .string("<p>{agent}<br>Margin Support</p>")
         support["ai_answers"] = .bool(true)
-        support["trusted_form_senders"] = jstrs(["[EMAIL]"])
+        support["trusted_form_senders"] = jstrs(["forms@margin.app"])
 
         var billing = Self.mailbox(
-            id: DemoSeed.billingMailbox, name: "Billing", email: "[EMAIL]", display: "Margin Billing", team: DemoSeed.billing, brand: margin,
+            id: DemoSeed.billingMailbox, name: "Billing", email: "billing@margin.app", display: "Margin Billing", team: DemoSeed.billing, brand: margin,
             inbound: "forwarding", outbound: "smtp",
-            config: ["smtp_host": .string("smtp.fastmail.com"), "smtp_port": jn(465), "smtp_tls": .string("tls"), "smtp_username": .string("[EMAIL]"), "mail_host": .string("fastmail")],
+            config: ["smtp_host": .string("smtp.fastmail.com"), "smtp_port": jn(465), "smtp_tls": .string("tls"), "smtp_username": .string("billing@margin.app"), "mail_host": .string("fastmail")],
             received: 95, created: 200 * 1440
         )
-        billing["forwarding_address"] = .string("[EMAIL]")
+        billing["forwarding_address"] = .string("billing.k3f9@in.demo.opendesk.invalid")
         billing["last_synced_at"] = .null
         billing["auto_reply_enabled"] = .bool(true)
         billing["auto_reply_subject"] = .string("We got your message about {{ticket.subject}}")
         billing["auto_reply_html"] = .string("<p>Thanks for writing. Billing answers within one business day.</p>")
 
         var ink = Self.mailbox(
-            id: channelID(ChannelKind.mailbox, 1), name: "Inkwell", email: "[EMAIL]", display: "Inkwell", team: DemoSeed.support, brand: inkwell,
+            id: channelID(ChannelKind.mailbox, 1), name: "Inkwell", email: "hello@inkwell.app", display: "Inkwell", team: DemoSeed.support, brand: inkwell,
             inbound: "imap", outbound: "smtp",
-            config: ["imap_host": .string("imap.zoho.eu"), "imap_port": jn(993), "imap_tls": .string("tls"), "imap_username": .string("[EMAIL]"), "smtp_host": .string("smtp.zoho.eu"), "smtp_port": jn(465), "smtp_tls": .string("tls"), "smtp_username": .string("[EMAIL]"), "mail_host": .string("zoho")],
+            config: ["imap_host": .string("imap.zoho.eu"), "imap_port": jn(993), "imap_tls": .string("tls"), "imap_username": .string("hello@inkwell.app"), "smtp_host": .string("smtp.zoho.eu"), "smtp_port": jn(465), "smtp_tls": .string("tls"), "smtp_username": .string("hello@inkwell.app"), "mail_host": .string("zoho")],
             received: 3 * 1440, created: 90 * 1440
         )
         ink["status"] = .string("error")
@@ -426,7 +426,7 @@ extension DemoBackend {
             let provider: JSONValue = .object(["configured": .bool(true), "oauth": .bool(true), "api_sync": .bool(true)])
             return .some(encode(JSONValue.object([
                 "google": provider, "microsoft": provider, "forwarding": .object(["enabled": .bool(true)]),
-                "mailbox_imap": .bool(true), "instance_imap": .bool(true), "system_send": .bool(true), "system_sender": .string("[EMAIL]"),
+                "mailbox_imap": .bool(true), "instance_imap": .bool(true), "system_send": .bool(true), "system_sender": .string("no-reply@demo.opendesk.invalid"),
             ])))
         }
         if call.match("POST", "mailboxes/detect") != nil {

@@ -731,7 +731,7 @@ private struct MailAccountCategoriesSection: View {
             }
             AccountDivider(tiles: false)
             VStack(alignment: .leading, spacing: 10) {
-                ODTextField(label: "Sender", text: $sender, prompt: "[EMAIL] or @example.com", contentType: .emailAddress, keyboard: .emailAddress, submitLabel: .done, onSubmit: { add(pick, valid: valid) })
+                ODTextField(label: "Sender", text: $sender, prompt: "news@example.com or @example.com", contentType: .emailAddress, keyboard: .emailAddress, submitLabel: .done, onSubmit: { add(pick, valid: valid) })
                 if !sender.isEmpty, !valid { FormError(text: "Enter an address, or @ and a domain.") }
                 ChannelMenuField(label: "Category", value: pick?.name ?? "Category") {
                     ForEach(categories) { category in Button(category.name) { ruleCategory = category.key } }

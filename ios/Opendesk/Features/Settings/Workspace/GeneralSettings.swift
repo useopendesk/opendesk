@@ -33,6 +33,7 @@ struct GeneralSettings: View {
                 pictures
                 reports
                 display
+                if admin { WSStarterSpaceSection() }
                 if owner { danger(info) }
             } else if let error = store.error {
                 ErrorState(message: error) { Task { await store.load() } }
