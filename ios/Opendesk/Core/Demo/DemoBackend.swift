@@ -120,7 +120,7 @@ actor DemoBackend {
         let call = Self.call(from: request)
         let beats: [Beat]
         do {
-            if let extra = try streamRoutes(call) {
+            if let extra = try streamRoutes(call) ?? agentStreamRoutes(call) {
                 beats = extra
             } else if let session = call.match("POST", "assistant/sessions/*/messages")?.first {
                 beats = try assistantRun(call, session: session)
