@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The Account tab: who you are and how you show up, your settings, the
-/// workspace's settings on the web for admins, and signing out.
+/// workspace's settings, and signing out.
 struct AccountView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = AccountStore()
@@ -43,7 +43,9 @@ private struct AccountHome: View {
                 AccountProfileCard()
                 personal
                 workspace
-                if session.isAdmin { workspaceSettings }
+                ForEach(SettingsGroup.allCases, id: \.self) { group in
+                    settings(group)
+                }
                 help
                 ending
                 AccountFootnote()
@@ -79,6 +81,10 @@ private struct AccountHome: View {
             AccountLinkRow(route: .security, subtitle: securitySubtitle)
             AccountDivider()
             AccountLinkRow(route: .appearance, value: env.appearance.title)
+            if SettingsPage.agentToAgent.isVisible(env: env) {
+                AccountDivider()
+                SettingsLinkRow(page: .agentToAgent, subtitle: "Let teammates' \(env.directory.ai.assistantName ?? "Ollie") ask yours")
+            }
         }
     }
 
@@ -92,24 +98,16 @@ private struct AccountHome: View {
         }
     }
 
-    private var workspaceSettings: some View {
-        AccountSection(
-            title: "Workspace settings",
-            footer: "These open the web app. It keeps its own sign-in, so it may ask you to sign in once."
-        ) {
-            ForEach(Array(AccountWebSetting.all(cloud: session.instance.isCloud).enumerated()), id: \.element.path) { index, setting in
-                if index > 0 { AccountDivider() }
-                Button {
-                    Haptics.tap()
-                    web = session.instance.webURL(path: setting.path).map(AccountWebPage.init)
-                } label: {
-                    AccountRow(symbol: setting.symbol, tone: .gray, title: setting.title, subtitle: setting.subtitle) {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.fg4)
-                    }
+    /// A group of the workspace's settings, as the web's settings sidebar lists them.
+    @ViewBuilder
+    private func settings(_ group: SettingsGroup) -> some View {
+        let pages = SettingsPage.visible(in: group, env: env)
+        if !pages.isEmpty {
+            AccountSection(title: group.title) {
+                ForEach(Array(pages.enumerated()), id: \.element) { index, page in
+                    if index > 0 { AccountDivider() }
+                    SettingsLinkRow(page: page)
                 }
-                .buttonStyle(RowPressStyle())
             }
         }
     }
@@ -197,9 +195,6 @@ private struct AccountHome: View {
         #if DEBUG
         guard let action else { return }
         switch action {
-        case "web-settings":
-            env.router.demoAction = nil
-            web = session.instance.webURL(path: "/settings/members").map(AccountWebPage.init)
         case "delete-account":
             env.router.demoAction = nil
             deleting = true
@@ -241,28 +236,6 @@ enum AccountDemo {
         #else
         return false
         #endif
-    }
-}
-
-/// The workspace settings pages, on the web.
-struct AccountWebSetting {
-    let title: String
-    var subtitle: String?
-    let symbol: String
-    let path: String
-
-    static func all(cloud: Bool) -> [AccountWebSetting] {
-        var list = [
-            AccountWebSetting(title: "General", subtitle: "Name, address, time zone", symbol: "building.2", path: "/settings/workspace"),
-            AccountWebSetting(title: "Members", subtitle: "Invite people and set roles", symbol: "person.2", path: "/settings/members"),
-            AccountWebSetting(title: "Teams", symbol: "person.3", path: "/settings/teams"),
-            AccountWebSetting(title: "Mailboxes", subtitle: "Addresses, signatures and routing", symbol: "tray.2", path: "/settings/mailboxes"),
-            AccountWebSetting(title: "Automations and SLA", symbol: "bolt", path: "/settings/automations"),
-            AccountWebSetting(title: "Ollie and AI", symbol: "sparkles", path: "/settings/ai"),
-            AccountWebSetting(title: "Chat widget", symbol: "bubble.left.and.text.bubble.right", path: "/settings/widget"),
-        ]
-        if cloud { list.append(AccountWebSetting(title: "Plan and billing", symbol: "creditcard", path: "/settings/billing")) }
-        return list
     }
 }
 

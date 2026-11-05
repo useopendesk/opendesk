@@ -285,7 +285,7 @@ final class Router {
         case "account":
             showOllie = false
             tab = .account
-            accountPath = parts.dropFirst().compactMap(AccountRoute.init(rawValue:))
+            accountPath = AccountRoute.stack(from: Array(parts.dropFirst()))
         case "ollie":
             showOllie = true
         case "inbox" where parts.count == 1:

@@ -208,6 +208,7 @@ actor DemoBackend {
     }
 
     func handle(_ call: Call, in ws: inout DemoWorkspace) throws -> Data? {
+        if let answer = try settingsRoutes(call, in: &ws) { return answer }
         if let answer = try ticketRoutes(call, in: &ws) { return answer }
         if let answer = try inboxRoutes(call, in: &ws) { return answer }
         if let answer = try accountRoutes(call, in: &ws) { return answer }
