@@ -9,6 +9,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/templates"
 )
 
@@ -36,6 +37,15 @@ func (s *service) renderEmail(ctx context.Context, ref templates.Ref, p template
 	return tc.RenderEmail(design, p), nil
 }
 
+// senderSQL are who wrote a message m and the address it was sent from (the customer's From,
+// or the address a reply went out from; for a customer's message without one, such as chat,
+// their contact's), with senderJoins.
+const senderSQL = `COALESCE(NULLIF(m.from_name, ''), u.name, c.name, m.from_email, ''),
+	COALESCE(NULLIF(m.from_email, ''), CASE WHEN m.direction = 'inbound' THEN c.email::text END, '')`
+
+const senderJoins = `LEFT JOIN users u ON u.id = m.author_user_id
+	LEFT JOIN contacts c ON c.id = m.author_contact_id AND c.workspace_id = m.workspace_id`
+
 // loadHistory returns up to limit public replies of the ticket before message (or the
 // latest ones), newest first: what the customer wrote, and what was sent or posted to them.
 func loadHistory(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, message *uuid.UUID, limit int) ([]templates.HistoryItem, error) {
@@ -43,16 +53,10 @@ func loadHistory(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, mes
 	if message != nil && *message != uuid.Nil {
 		before = message
 	}
-	// The address: the one it was sent from (the customer's From, or the address a reply went
-	// out from), else for the customer's messages without one (chat) their contact's.
-	rows, err := q.Query(ctx, `SELECT COALESCE(NULLIF(m.from_name, ''), u.name, c.name, m.from_email, ''),
-			COALESCE(NULLIF(m.from_email, ''), CASE WHEN m.direction = 'inbound' THEN c.email::text END, ''), m.created_at, m.body_html, m.body_text
-		FROM messages m
-		LEFT JOIN users u ON u.id = m.author_user_id
-		LEFT JOIN contacts c ON c.id = m.author_contact_id AND c.workspace_id = m.workspace_id
-		WHERE m.workspace_id = $1 AND m.ticket_id = $2 AND m.kind = 'reply' AND m.deleted_at IS NULL
+	rows, err := q.Query(ctx, `SELECT `+senderSQL+`, m.created_at, m.body_html, m.body_text
+		FROM messages m `+senderJoins+`
+		WHERE m.workspace_id = $1 AND m.ticket_id = $2 AND `+domain.CustomerConversationSQL+`
 			AND ($3::uuid IS NULL OR (m.id <> $3 AND m.created_at <= (SELECT created_at FROM messages WHERE workspace_id = $1 AND id = $3)))
-			AND ((m.direction = 'inbound' AND NOT m.auth_failed) OR (m.direction = 'outbound' AND m.delivery_status IN ('sent', 'none')))
 		ORDER BY m.created_at DESC, m.id DESC LIMIT $4`, wid, ticketID, before, limit)
 	if err != nil {
 		return nil, err

@@ -474,6 +474,7 @@ export default function TicketDetail({
             loading={!messages.data}
             onRetry={(m) => composer.current?.retry(m)}
             onToReply={canEdit ? (m) => composer.current?.fromNote(m) : undefined}
+            onForward={canEdit ? (m) => composer.current?.forward(m) : undefined}
             onRetract={canEdit && t?.channel === "chat" ? retract : undefined}
             contactName={t?.contact?.name}
             receivedAt={t && t.channel !== "email" ? null : t?.received_at}

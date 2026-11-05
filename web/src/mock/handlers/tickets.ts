@@ -8,7 +8,7 @@ import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
-import { DAY, isRecord, nowIso, parseUUID, uuid } from "../util";
+import { DAY, escapeHtml, isRecord, nowIso, parseUUID, uuid } from "../util";
 import { clearDraft } from "./drafts";
 import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
@@ -207,7 +207,22 @@ export function registerTickets() {
     const to = strArr(ctx.body.to) ?? [];
     if (!to.length) throw invalid("a thread needs at least one recipient");
     const subject = required(ctx, "subject").trim();
-    const html = required(ctx, "body_html");
+    // One email of the conversation forwarded in full, in place of the quoted conversation.
+    const forwardId = s(ctx, "forward_message_id");
+    if (forwardId && ctx.body.include_history === true) throw invalid("forward one email or quote the conversation, not both");
+    const forwarded = forwardId
+      ? ctx.ws.messages.find(
+          (m) =>
+            m.id === forwardId &&
+            m.ticket_id === t.id &&
+            m.kind === "reply" &&
+            !m.thread_id &&
+            !m.deleted_at &&
+            (m.direction === "inbound" ? !m.auth_failed : m.delivery_status === "sent" || m.delivery_status === "none"),
+        )
+      : undefined;
+    if (forwardId && !forwarded) throw invalid("forward_message_id must be an email of this ticket's conversation with the customer");
+    const html = forwarded ? (s(ctx, "body_html") ?? "") : required(ctx, "body_html");
     const mailbox = ctx.ws.mailboxes.find((m) => m.id === (s(ctx, "mailbox_id") ?? t.mailbox_id)) ?? ctx.ws.mailboxes.find((m) => m.brand_id === t.brand_id);
     const now = nowIso();
     const th: Thread = {
@@ -219,6 +234,7 @@ export function registerTickets() {
       mailbox_id: mailbox?.id ?? null,
       status: "open",
       include_history: ctx.body.include_history === true,
+      forward_message_id: forwarded?.id ?? null,
       created_by: userRef(db.meId),
       message_count: 0,
       last_message_at: now,
@@ -240,7 +256,29 @@ export function registerTickets() {
       db.attachments.push(copy);
       return copy.id;
     });
-    const message = threadMessage(ctx.ws, t, th, html, [...(strArr(ctx.body.attachment_ids) ?? []), ...copies]);
+    // The forwarded email's inline images go along as inline copies, in their places.
+    const inline = (forwarded?.attachments ?? [])
+      .filter((a) => a.inline)
+      .map((a) => {
+        const copy = { ...a, id: uuid() };
+        db.attachments.push(copy);
+        return copy.id;
+      });
+    const message = threadMessage(ctx.ws, t, th, html, [...(strArr(ctx.body.attachment_ids) ?? []), ...copies, ...inline]);
+    if (forwarded) {
+      // What went out, for the team to open: the message, then the email whole.
+      const when = new Date(forwarded.created_at).toUTCString();
+      const lines = [
+        `From: ${forwarded.from_name ? `${forwarded.from_name} <${forwarded.from_email}>` : forwarded.from_email}`,
+        `Date: ${when}`,
+        `Subject: ${forwarded.subject || t.subject}`,
+        `To: ${forwarded.to.join(", ")}`,
+      ];
+      ctx.ws.originals[message.id] =
+        `${html}<div style="margin-top:24px"><div style="margin:0 0 16px;font-size:12px;color:#737373">---------- Forwarded message ---------<br>${lines.map(escapeHtml).join("<br>")}</div>` +
+        `${ctx.ws.originals[forwarded.id] ?? forwarded.body_html}</div>`;
+      message.has_quoted = true;
+    }
     return respond(201, { thread: th, message });
   });
   post("/v1/tickets/:id/threads/:threadId/messages", (ctx) => {

@@ -649,7 +649,8 @@
     "sentAsReplyLabel": "Notiz von {{name}}, als Antwort gesendet",
     "showReply": "Antwort anzeigen",
     "showNote": "Notiz anzeigen",
-    "hideNote": "Notiz ausblenden"
+    "hideNote": "Notiz ausblenden",
+    "forward": "Weiterleiten"
   },
   "merge": {
     "title": "#{{number}} mit anderem Ticket zusammenführen",
@@ -806,7 +807,17 @@
     "withFiles_other": "mit {{count}} Dateien des Kunden",
     "withBoth_one": "mit zitierter Unterhaltung und 1 Datei des Kunden",
     "withBoth_other": "mit zitierter Unterhaltung und {{count}} Dateien des Kunden",
-    "optionsHint": "Unterhaltung oder Dateien des Kunden mitsenden"
+    "optionsHint": "Unterhaltung oder Dateien des Kunden mitsenden",
+    "withForwarded": "E-Mail weitergeleitet",
+    "forwarded": "Weitergeleitete E-Mail",
+    "forwardFrom": "Von",
+    "forwardDate": "Datum",
+    "forwardSubject": "Betreff",
+    "forwardTo": "An",
+    "forwardRemove": "Weitergeleitete E-Mail entfernen",
+    "withForward": "mit der weitergeleiteten E-Mail",
+    "withForwardAndFiles_one": "mit der weitergeleiteten E-Mail und 1 Datei",
+    "withForwardAndFiles_other": "mit der weitergeleiteten E-Mail und {{count}} Dateien"
   },
   "links": {
     "title": "Verknüpft",

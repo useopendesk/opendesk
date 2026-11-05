@@ -519,6 +519,8 @@ export type Thread = {
   status: "open" | "closed";
   /** The first message quoted the ticket's conversation with the customer. */
   include_history: boolean;
+  /** The email of the ticket the first message forwarded in full; null when none (or it is gone). */
+  forward_message_id: string | null;
   created_by: UserRef | null;
   message_count: number;
   last_message_at: string;

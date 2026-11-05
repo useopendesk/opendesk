@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileText, Forward, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import { memo, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
@@ -33,6 +33,7 @@ import { useNow } from "@/lib/useNow";
 import { messageAuthor, messageFrame } from "./messageFrame";
 import { asNote, release, undo, useHeld } from "./outbox";
 import { showInTimeline } from "./Timeline";
+import { inConversation } from "./SideIncludes";
 
 function authorName(m: Message): string {
   if (m.author.user) return m.author.user.name;
@@ -422,6 +423,16 @@ function ThreadBar({ thread, actions, first }: { thread: Thread; actions?: Threa
           {t("side.withHistory")}
         </span>
       )}
+      {first && thread.forward_message_id && (
+        <button
+          type="button"
+          onClick={() => showInTimeline(thread.forward_message_id!)}
+          className="flex shrink-0 items-center gap-1 rounded-sm bg-hover px-1.5 text-[10.5px] text-fg-3 outline-none transition-colors hover:bg-active hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+        >
+          <Forward className="size-2.5" />
+          {t("side.withForwarded")}
+        </button>
+      )}
       {closed && <span className="shrink-0 rounded-sm bg-hover px-1.5 text-[10.5px] text-fg-3">{t("message.threadClosed")}</span>}
       {actions && (
         <span className="ml-auto flex items-center gap-1">
@@ -498,6 +509,7 @@ export const MessageItem = memo(function MessageItem({
   onRetry,
   onToReply,
   onRetract,
+  onForward,
   highlight,
   receivedAt,
   thread,
@@ -510,6 +522,8 @@ export const MessageItem = memo(function MessageItem({
   onToReply?: (m: Message) => void;
   /** Takes a sent chat reply back from the customer, as an internal note. */
   onRetract?: (m: Message) => void;
+  /** Starts a side conversation that forwards this email in full. */
+  onForward?: (m: Message) => void;
   highlight?: boolean;
   /** The ticket's first address, for inbound messages that don't record one; null when the ticket isn't email. */
   receivedAt?: string | null;
@@ -552,6 +566,8 @@ export const MessageItem = memo(function MessageItem({
   const deletable = !inThread && (admin || (m.author.type === "user" && (rule === "all" || (rule === "own" && mine && note))));
   // Only a chat reply that was not emailed as a follow-up (delivery "none") can be taken back.
   const retractable = !!onRetract && outbound && m.author.type === "user" && !m.ai && (mine || admin) && m.delivery_status === "none";
+  // An email of the conversation with the customer, as a side conversation may forward it.
+  const forwardable = !!onForward && inConversation(m);
   const [editing, setEditing] = useState(false);
   const remove = () =>
     confirm.show(
@@ -636,7 +652,7 @@ export const MessageItem = memo(function MessageItem({
           </time>
         </Tooltip>
         {note && m.edited_at && <span className="shrink-0 text-[10.5px] text-fg-4">{t("message.edited")}</span>}
-        {(deletable || retractable || (editableNote && onToReply)) && !editing && !m.id.startsWith("tmp-") && (
+        {(deletable || retractable || forwardable || (editableNote && onToReply)) && !editing && !m.id.startsWith("tmp-") && (
           <Menu>
             <MenuTrigger asChild>
               <button
@@ -660,6 +676,11 @@ export const MessageItem = memo(function MessageItem({
                   onSelect={() => setEditing(true)}
                 >
                   {t("message.edit")}
+                </MenuItem>
+              )}
+              {forwardable && (
+                <MenuItem icon={<Forward />} onSelect={() => onForward(m)}>
+                  {t("message.forward")}
                 </MenuItem>
               )}
               {retractable && (
