@@ -2555,7 +2555,7 @@ export type EmailLayoutOptions = {
   font: "system" | "sans" | "serif";
   footer_html: string;
   history: "none" | "last" | "all";
-  /** "" is the default "On {{ message.date }}, {{ message.author }} wrote:". */
+  /** Takes {{ message.author }}, {{ message.email }} and {{ message.date }}; "" is the default "On {{ message.date }}, {{ message.author }} wrote:". */
   history_header: string;
 };
 export type EmailTemplate = {

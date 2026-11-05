@@ -43,7 +43,10 @@ func loadHistory(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, mes
 	if message != nil && *message != uuid.Nil {
 		before = message
 	}
-	rows, err := q.Query(ctx, `SELECT COALESCE(NULLIF(m.from_name, ''), u.name, c.name, m.from_email, ''), m.created_at, m.body_html, m.body_text
+	// The address: the one it was sent from (the customer's From, or the address a reply went
+	// out from), else for the customer's messages without one (chat) their contact's.
+	rows, err := q.Query(ctx, `SELECT COALESCE(NULLIF(m.from_name, ''), u.name, c.name, m.from_email, ''),
+			COALESCE(NULLIF(m.from_email, ''), CASE WHEN m.direction = 'inbound' THEN c.email::text END, ''), m.created_at, m.body_html, m.body_text
 		FROM messages m
 		LEFT JOIN users u ON u.id = m.author_user_id
 		LEFT JOIN contacts c ON c.id = m.author_contact_id AND c.workspace_id = m.workspace_id
@@ -57,7 +60,7 @@ func loadHistory(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, mes
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (templates.HistoryItem, error) {
 		var h templates.HistoryItem
 		var at time.Time
-		err := r.Scan(&h.Author, &at, &h.HTML, &h.Text)
+		err := r.Scan(&h.Author, &h.Email, &at, &h.HTML, &h.Text)
 		h.Author, h.At = displayname.Displayable(h.Author), at
 		return h, err
 	})

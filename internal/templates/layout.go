@@ -12,6 +12,7 @@ import (
 // HistoryItem is an earlier public reply quoted under a new one.
 type HistoryItem struct {
 	Author string
+	Email  string // the address it was sent from, or ""
 	At     time.Time
 	HTML   string // sanitized
 	Text   string
@@ -223,6 +224,7 @@ func (c *Context) renderHistory(o LayoutOptions, items []HistoryItem) (string, s
 	for _, it := range items {
 		vals := &Values{Text: map[string]string{
 			"message.author": it.Author,
+			"message.email":  it.Email,
 			"message.date":   it.At.In(c.Location).Format("Mon, 2 Jan 2006 at 15:04"),
 		}}
 		line := strings.Join(strings.Fields(t.Render(vals, Text)), " ")

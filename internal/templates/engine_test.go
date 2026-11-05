@@ -178,6 +178,58 @@ func TestRenderEmail(t *testing.T) {
 	}
 }
 
+// The quote line reads each quoted message's author, address and date, filled in one pass.
+func TestHistoryHeaderEmail(t *testing.T) {
+	c := &Context{Values: vals(nil), Location: time.UTC, BrandColor: "#2563EB"}
+	at := time.Date(2026, 10, 17, 14, 3, 0, 0, time.UTC)
+	d := DefaultDesign()
+	d.Layout.History = "all"
+	d.Layout.HistoryHeader = `On {{ message.date }}, {{ message.author }}{% if message.email %} <{{ message.email }}>{% endif %} wrote:`
+	parts := Parts{Content: "<p>Thanks!</p>", ContentText: "Thanks!", History: []HistoryItem{
+		{Author: "Jana Nováková", Email: "jana@firma.cz", At: at, HTML: "<p>Help</p>"},
+		{Author: "{{ message.author }}", Email: "{{ message.date }}@x.cz", At: at, HTML: "<p>Odd</p>"},
+		{Author: "Chat visitor", At: at, HTML: "<p>No address</p>"},
+	}}
+	e := c.RenderEmail(d, parts)
+	for _, want := range []string{
+		"On Sat, 17 Oct 2026 at 14:03, Jana Nováková &lt;jana@firma.cz&gt; wrote:",
+		"On Sat, 17 Oct 2026 at 14:03, Chat visitor wrote:",
+	} {
+		if !strings.Contains(e.HTML, want) {
+			t.Errorf("html missing %q in %s", want, e.HTML)
+		}
+	}
+	if !strings.Contains(e.Text, "Jana Nováková <jana@firma.cz> wrote:\n> Help") {
+		t.Errorf("text: %q", e.Text)
+	}
+	// A value that looks like a tag is never read again as one.
+	if strings.Contains(e.HTML, "Sat, 17 Oct 2026 at 14:03@x.cz") {
+		t.Errorf("filled twice: %s", e.HTML)
+	}
+	// The default quote line stays as it was.
+	if e := c.RenderEmail(DefaultDesign(), parts); !strings.Contains(e.HTML, "On Sat, 17 Oct 2026 at 14:03, Jana Nováková wrote:") || strings.Contains(e.HTML, "jana@firma.cz") {
+		t.Errorf("default: %s", e.HTML)
+	}
+}
+
+func TestCheckHistoryHeader(t *testing.T) {
+	if p := Check(`{{ message.author }} <{{ message.email | downcase }}> {{ message.date }}{% if message.email %}!{% endif %}`, KindHistoryHeader, nil); len(p) != 0 {
+		t.Fatalf("history variables: %+v", p)
+	}
+	for _, src := range []string{"{{ contact.email }}", "{{ message.from }}", "{{ agent.name }}"} {
+		p := Check(src, KindHistoryHeader, nil)
+		if len(p) != 1 || p[0].Message != "Use {{ message.author }}, {{ message.email }} and {{ message.date }} here." || p[0].Token != src {
+			t.Errorf("%s: %+v", src, p)
+		}
+	}
+	// Saving a layout checks its quote line.
+	o := DefaultDesign().Layout
+	o.HistoryHeader = "{{ message.email }} {{ ticket.subject }}"
+	if _, _, p := CleanLayout(o, "", nil); len(p) != 1 || p[0].Token != "{{ ticket.subject }}" {
+		t.Errorf("layout: %+v", p)
+	}
+}
+
 func TestSurveyButtons(t *testing.T) {
 	h, txt := SurveyButtons("https://app.test/csat/tok?score=", "#2563EB")
 	if !strings.Contains(h, `href="https://app.test/csat/tok?score=5"`) || !strings.Contains(txt, "5 (Great): https://app.test/csat/tok?score=5") {
