@@ -88,6 +88,14 @@ in the response body and keeps it in the Keychain.
 - Sessions record their client (`sessions.client`: `web`, `desktop`, `ios`), taken from
   `OD-Client` (`desktop/<version>` is sent by the desktop shell's user agent suffix
   `opendesk-desktop/<version>`). `GET /v1/me/sessions` items gain `client`.
+- **Several accounts on the iPhone.** The app holds up to 5 accounts at once, on one server or
+  several, each its own native session: its refresh token in a Keychain item of its own
+  (server + user id) and one client that rotates it. The list and the open account sit in the
+  Keychain too. Switching account stops realtime and every store and starts them for the
+  other account, as the web does. Signing in again to an account already held ends its
+  earlier session (`/v1/auth/logout`); signing out of one account ends only its session. A
+  version that held one account (its token under the server alone) moves it to its own item
+  on the first launch after the update, so nobody is signed out by it.
 
 ### App Attest (iPhone stand-in for Turnstile)
 
@@ -185,6 +193,13 @@ a member does not end them; it deletes the member's notifications in that worksp
 push is sent only while the recipient is a member, so that workspace's pushes stop at once.
 APNs `410 Unregistered` / `BadDeviceToken` / `DeviceTokenNotForTopic` deletes the device.
 
+A server keeps one device per token (`token_hash` is unique), so a phone with several accounts
+gets one server's pushes for one of its accounts there: the one that registered last, which the
+app does whenever an account opens. Accounts on other servers keep their own devices, and the
+app registers a changed APNs token for them too. A push carries no user id, so the app reads
+`server` and `workspace_id` to find the account it is for; tapping one for an account that
+isn't open opens that account first, and its actions (reply, assign, mark read) run as that
+account.
 ### Sending
 
 `hd.Notify` (the single place notifications are created) enqueues `jobs.PushNotificationArgs`

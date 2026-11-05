@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Account tab: who you are and how you show up, your settings, the
-/// workspace's settings, and signing out.
+/// The Account tab: who you are and how you show up, the other accounts on this
+/// device, your settings, the workspace's settings, and signing out.
 struct AccountView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var store = AccountStore()
@@ -31,6 +31,7 @@ private struct AccountHome: View {
     @State private var web: AccountWebPage?
     @State private var confirm: AccountConfirm?
     @State private var deleting = false
+    @State private var showAccounts = false
 
     private var session: SessionStore { env.session }
 
@@ -40,7 +41,10 @@ private struct AccountHome: View {
                 TitleHeader(title: "Account")
                     .padding(.horizontal, -16)
                     .padding(.bottom, -10)
-                AccountProfileCard()
+                VStack(spacing: 10) {
+                    AccountProfileCard()
+                    AccountSwitcherPanel()
+                }
                 personal
                 workspace
                 ForEach(SettingsGroup.allCases, id: \.self) { group in
@@ -62,6 +66,7 @@ private struct AccountHome: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
+        .sheet(isPresented: $showAccounts) { AccountSwitcherSheet() }
         #if DEBUG
         .onAppear { handleDemo(env.router.demoAction) }
         .onChange(of: env.router.demoAction) { _, action in handleDemo(action) }
@@ -138,19 +143,23 @@ private struct AccountHome: View {
         VStack(spacing: 10) {
             if inAppDemo {
                 Button {
-                    Task { await env.session.signOut() }
+                    Task { await env.session.signOutAll() }
                 } label: {
                     ButtonLabel(title: "Leave the demo", symbol: "rectangle.portrait.and.arrow.right")
                 }
                 .buttonStyle(OutlineButtonStyle())
             } else {
                 Button {
-                    confirm = AccountConfirm(
-                        title: "Sign out of opendesk?",
-                        message: "This \(AppInfo.device) stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.",
-                        confirmTitle: "Sign out"
-                    ) {
-                        await env.session.signOut()
+                    if let account = session.activeAccount {
+                        confirm = .signOut(account, session: session)
+                    } else {
+                        confirm = AccountConfirm(
+                            title: "Sign out of opendesk?",
+                            message: "This \(AppInfo.device) stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.",
+                            confirmTitle: "Sign out"
+                        ) {
+                            await env.session.signOut()
+                        }
                     }
                 } label: {
                     ButtonLabel(title: "Sign out", symbol: "rectangle.portrait.and.arrow.right")
@@ -198,6 +207,18 @@ private struct AccountHome: View {
         case "delete-account":
             env.router.demoAction = nil
             deleting = true
+        case "accounts":
+            // A second demo person beside Maya, and the switcher the Account tab's long press opens.
+            env.router.demoAction = nil
+            env.router.tab = .account
+            Task {
+                await session.addDemoAccount()
+                showAccounts = true
+            }
+        case "add-account":
+            // The switcher panel on this page takes the action and opens the sign-in sheet.
+            env.router.tab = .account
+            env.router.accountPath = []
         case "sign-out":
             env.router.demoAction = nil
             confirm = AccountConfirm(title: "Sign out of opendesk?", message: "This \(AppInfo.device) stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.", confirmTitle: "Sign out") {}

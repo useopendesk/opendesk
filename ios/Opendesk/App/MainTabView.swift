@@ -8,6 +8,7 @@ struct MainTabView: View {
     @State private var tabBar = TabBarState()
     @State private var width: CGFloat = 0
     @State private var showPushPrimer = false
+    @State private var showAccounts = false
 
     private var items: [TabItem] {
         [
@@ -29,7 +30,8 @@ struct MainTabView: View {
                 if tab == .inbox { router.inboxPath = [] }
                 if tab == .notifications { router.notificationsPath = [] }
                 if tab == .account { router.accountPath = [] }
-            }
+            },
+            onLongPress: [.account: { showAccounts = true }]
         )
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -65,6 +67,7 @@ struct MainTabView: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
+        .sheet(isPresented: $showAccounts) { AccountSwitcherSheet() }
         .sheet(isPresented: $showPushPrimer) {
             PushPrimerSheet()
                 .presentationDetents([.height(380)])

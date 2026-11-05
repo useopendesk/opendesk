@@ -67,7 +67,11 @@ struct ODTabBar: View {
     @Binding var selection: AppTab
     var ollie: (() -> Void)?
     var onReselect: (AppTab) -> Void = { _ in }
+    /// What a long press on a tab opens (the account switcher on Account).
+    var onLongPress: [AppTab: () -> Void] = [:]
 
+    /// A long press just fired, so the tap that ends it doesn't also select the tab.
+    @State private var longPressedAt: Date?
     @Namespace private var activeNS
     @Namespace private var glassNS
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -102,7 +106,12 @@ struct ODTabBar: View {
 
     private func button(_ item: TabItem) -> some View {
         let selected = item.tab == selection
+        let longPress = onLongPress[item.tab]
         return Button {
+            if let at = longPressedAt, Date.now.timeIntervalSince(at) < 1 {
+                longPressedAt = nil
+                return
+            }
             if selected {
                 onReselect(item.tab)
             } else {
@@ -124,6 +133,14 @@ struct ODTabBar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(TapScaleStyle(scale: 0.92))
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                longPressedAt = .now
+                Haptics.tap()
+                longPress?()
+            },
+            including: longPress == nil ? .subviews : .all
+        )
         .frame(width: 74)
         .accessibilityLabel(item.title)
         .accessibilityValue(item.badge > 0 ? "\(item.badge) unread" : "")

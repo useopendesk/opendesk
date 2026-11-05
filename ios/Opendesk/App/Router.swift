@@ -120,7 +120,13 @@ final class Router {
             return
         }
         if let server = target.server, let url = URL(string: server), PushPayload.origin(url) != PushPayload.origin(session.instance.apiURL) {
-            env.toasts.show("That's from another opendesk server (\(url.host() ?? server)). Switch servers in Account to open it.")
+            // An account signed in on that server opens first (SessionStore accounts).
+            if let account = session.accounts.first(where: { PushPayload.origin($0.instance.apiURL) == PushPayload.origin(url) }) {
+                pending = target
+                Task { await session.switchAccount(to: account.id) }
+                return
+            }
+            env.toasts.show("That's from another opendesk server (\(url.host() ?? server)). Add an account there in Account to open it.")
             return
         }
         if let workspaceID = target.workspaceID, workspaceID != session.workspace?.id {
