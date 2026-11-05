@@ -28,7 +28,7 @@ struct DemoWorkspaceSettings: Sendable {
             "help_center_enabled": .bool(true), "help_center_title": .string(margin ? "Margin help" : ""),
             "csat_enabled": .bool(margin), "undo_send_seconds": .number(5), "undo_send_chat_seconds": .number(0),
             "message_delete": .string("own"), "gravatar": .bool(false), "domain_logos": .bool(true),
-            "agent_online_time": .bool(true), "severity_enabled": .bool(true),
+            "agent_online_time": .bool(true), "severity_enabled": .bool(true), "label_creation": .string("anyone"),
             "auto_assign": .string(margin ? "round_robin" : "none"),
         ]
         for (key, value) in extras where settings[key] == nil { settings[key] = value }
@@ -611,6 +611,8 @@ extension DemoBackend {
     private func wsAIConfig(_ ws: DemoWorkspace) -> JSONValue {
         let extra = ws.settings.workspace
         var features = extra.ai
+        // The AI agent pages' own settings (`widget_*`, DemoSettingsAgent.swift) ride in the same config.
+        for (key, value) in ws.settings.agent.behaviour where features[key] == nil { features[key] = value }
         features["assistant_auto"] = .array(extra.assistantAuto.map(JSONValue.string))
         let costs: [String: Double] = [
             "summarize": 0.0042, "rewrite": 0.0011, "translate": 0.0013, "triage": 0.0021, "copilot": 0.0068,
@@ -618,7 +620,7 @@ extension DemoBackend {
         ]
         return .object([
             "enabled": .bool(features["enabled"]?.bool ?? true), "provider": .string(extra.providerKey == nil ? "anthropic" : "openrouter"),
-            "models": .object(["default": .string("claude-sonnet"), "fast": .string("claude-haiku")]),
+            "models": .object(["default": .string(DemoAgentSettings.defaultModel), "fast": .string(DemoAgentSettings.defaultModel)]),
             "embeddings": .bool(true), "features": .object(features),
             "costs": .object(costs.mapValues(JSONValue.number)),
             "metered": .bool(true), "assistant_name": .string("Ollie"), "own_key": .bool(extra.providerKey != nil),
@@ -644,16 +646,7 @@ extension DemoBackend {
             publish("workspace.updated", [:], in: &ws)
             return .some(encode(JSONValue.object(ws.settings.workspace.ai)))
         }
-        if call.match("GET", "ai/models") != nil {
-            return .some(encode(JSONValue.object([
-                "default": .string("claude-sonnet"), "fast": .string("claude-haiku"),
-                "data": .array([
-                    .object(["id": .string("claude-sonnet"), "name": .string("Claude Sonnet"), "vendor": .string("Anthropic"), "typical_reply_usd": .number(0.0093)]),
-                    .object(["id": .string("claude-haiku"), "name": .string("Claude Haiku"), "vendor": .string("Anthropic"), "typical_reply_usd": .number(0.0021)]),
-                    .object(["id": .string("claude-opus"), "name": .string("Claude Opus"), "vendor": .string("Anthropic"), "typical_reply_usd": .number(0.046)]),
-                ]),
-            ])))
-        }
+        // The model list is the AI agent pages' (DemoSettingsAgent.swift).
         if call.match("GET", "ai/provider") != nil {
             try wsRequireAdmin(ws)
             return .some(encode(JSONValue.object([
