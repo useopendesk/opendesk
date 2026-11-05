@@ -4,7 +4,9 @@ import SwiftUI
 /// Ollie's round button beside it.
 struct MainTabView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tabBar = TabBarState()
+    @State private var width: CGFloat = 0
     @State private var showPushPrimer = false
 
     private var items: [TabItem] {
@@ -16,6 +18,21 @@ struct MainTabView: View {
     }
 
     private var ollieAvailable: Bool { env.directory.ai.assistantOn }
+
+    private var bar: some View {
+        @Bindable var router = env.router
+        return ODTabBar(
+            items: items,
+            selection: $router.tab,
+            ollie: ollieAvailable ? { router.showOllie = true } : nil,
+            onReselect: { tab in
+                if tab == .inbox { router.inboxPath = [] }
+                if tab == .notifications { router.notificationsPath = [] }
+                if tab == .account { router.accountPath = [] }
+            }
+        )
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
 
     var body: some View {
         @Bindable var router = env.router
@@ -31,20 +48,16 @@ struct MainTabView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !tabBar.isHidden {
-                ODTabBar(
-                    items: items,
-                    selection: $router.tab,
-                    ollie: ollieAvailable ? { router.showOllie = true } : nil,
-                    onReselect: { tab in
-                        if tab == .inbox { router.inboxPath = [] }
-                        if tab == .notifications { router.notificationsPath = [] }
-                        if tab == .account { router.accountPath = [] }
-                    }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            if !tabBar.isHidden, !router.columns { bar }
         }
+        // In columns the bar floats under the list alone (which keeps room for it,
+        // `AdaptiveStack`), so the screen beside it runs to the bottom edge.
+        .overlay(alignment: .bottomLeading) {
+            if !tabBar.isHidden, router.columns { bar.frame(width: router.listWidth) }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onChange(of: AppColumns.on(width: width, sizeClass: sizeClass), initial: true) { _, on in router.wide = on }
+        .onChange(of: width, initial: true) { _, width in router.listWidth = AppColumns.listWidth(for: width) }
         .motion(Motion.snappy, value: tabBar.isHidden)
         .environment(tabBar)
         .sheet(isPresented: $router.showOllie) {

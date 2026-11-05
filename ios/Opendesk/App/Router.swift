@@ -72,6 +72,13 @@ final class Router {
     var showOllie = false
     /// The ticket on screen, so a push for it stays quiet in the foreground.
     var visibleTicketID: String?
+    /// On while the window is wide enough for a list beside what it opened (iPhone Duo open).
+    var wide = false
+    /// The tab on screen shows its list and its stack side by side (`AdaptiveStack`): in a wide
+    /// window, for every tab but Reports, which is one page of its own.
+    var columns: Bool { wide && !(tab == .inbox && area == .reports) }
+    /// The list column's width while `columns` is on.
+    var listWidth: CGFloat = 360
 
     @ObservationIgnored weak var environment: AppEnvironment?
     @ObservationIgnored private var pending: DeepLink.Target?
@@ -188,6 +195,33 @@ final class Router {
         case .notifications: notificationsPath.append(route)
         default: inboxPath.append(route)
         }
+    }
+
+    /// Opens `route` from the list at the root of the tab on screen: beside the list in
+    /// `columns`, in place of what was open there, and pushed on the stack otherwise.
+    func pick(_ route: AppRoute) {
+        guard columns else { return push(route) }
+        switch tab {
+        case .notifications: notificationsPath = [route]
+        default: inboxPath = [route]
+        }
+    }
+
+    /// Opens an Account page from the tab's home, as `pick` does.
+    func pick(_ route: AccountRoute) {
+        if columns { accountPath = [route] } else { accountPath.append(route) }
+    }
+
+    /// What the list at the root of the tab on screen has open beside it.
+    var picked: AppRoute? {
+        guard columns else { return nil }
+        return tab == .notifications ? notificationsPath.first : inboxPath.first
+    }
+
+    /// Whether `ticket` is open beside its list; a link may name it by id or by number.
+    func isPicked(_ ticket: Ticket) -> Bool {
+        guard case let .ticket(route)? = picked else { return false }
+        return route.id == ticket.id || route.id == String(ticket.number)
     }
 
     /// What Ollie is told about the screen behind it (contracts/ai.md page context).

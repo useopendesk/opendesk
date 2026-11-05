@@ -23,6 +23,8 @@ final class TabBarState {
 
 private struct TabBarHiddenModifier: ViewModifier {
     @Environment(TabBarState.self) private var state: TabBarState?
+    /// Beside a list the tab bar is under the list, out of this screen's way.
+    @Environment(\.inDetailColumn) private var inDetailColumn
     let hidden: Bool
     @State private var key = UUID().uuidString
 
@@ -30,11 +32,12 @@ private struct TabBarHiddenModifier: ViewModifier {
         content
             .onAppear { apply(hidden) }
             .onChange(of: hidden) { _, value in apply(value) }
+            .onChange(of: inDetailColumn) { apply(hidden) }
             .onDisappear { apply(false) }
     }
 
     private func apply(_ value: Bool) {
-        withAnimation(Motion.snappy) { state?.set(value, by: key) }
+        withAnimation(Motion.snappy) { state?.set(value && !inDetailColumn, by: key) }
     }
 }
 
@@ -57,6 +60,9 @@ struct TabItem: Identifiable {
 /// bottom edge, icon-only and monochrome, the active tab on a soft tile that
 /// slides between items, and Ollie's round button beside it.
 struct ODTabBar: View {
+    /// The room the bar takes above the bottom safe area, for a column it floats over.
+    static let height: CGFloat = 60
+
     let items: [TabItem]
     @Binding var selection: AppTab
     var ollie: (() -> Void)?

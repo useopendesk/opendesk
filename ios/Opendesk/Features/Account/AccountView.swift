@@ -8,11 +8,12 @@ struct AccountView: View {
 
     var body: some View {
         @Bindable var router = env.router
-        NavigationStack(path: $router.accountPath) {
+        AdaptiveStack(path: $router.accountPath) {
             AccountHome()
-                .navigationDestination(for: AccountRoute.self) { route in
-                    AccountRouteDestination(route: route)
-                }
+        } destination: { route in
+            AccountRouteDestination(route: route)
+        } placeholder: {
+            ColumnPlaceholder(symbol: "person.crop.circle", title: "Your account", message: "Pick a setting to open it here.")
         }
         .environment(store)
         .task {
@@ -118,7 +119,7 @@ private struct AccountHome: View {
             Button {
                 web = URL(string: "https://docs.opendesk.sh/guides/iphone-app/").map(AccountWebPage.init)
             } label: {
-                AccountRow(symbol: "book", tone: .violet, title: "Guide to the iPhone app") {
+                AccountRow(symbol: "book", tone: .violet, title: "Guide to the \(AppInfo.device) app") {
                     Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.fg4)
                 }
             }
@@ -148,7 +149,7 @@ private struct AccountHome: View {
                 Button {
                     confirm = AccountConfirm(
                         title: "Sign out of opendesk?",
-                        message: "This iPhone stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.",
+                        message: "This \(AppInfo.device) stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.",
                         confirmTitle: "Sign out"
                     ) {
                         await env.session.signOut()
@@ -204,7 +205,7 @@ private struct AccountHome: View {
             deleting = true
         case "sign-out":
             env.router.demoAction = nil
-            confirm = AccountConfirm(title: "Sign out of opendesk?", message: "This iPhone stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.", confirmTitle: "Sign out") {}
+            confirm = AccountConfirm(title: "Sign out of opendesk?", message: "This \(AppInfo.device) stops getting notifications for \(session.user?.email ?? "this account") until you sign in again.", confirmTitle: "Sign out") {}
         default:
             // Actions of a page open that page; it handles them once it shows.
             if let route = AccountDemo.route(for: action), env.router.accountPath.last != route {

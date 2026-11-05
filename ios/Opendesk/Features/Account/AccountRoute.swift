@@ -4,12 +4,12 @@ import SwiftUI
 enum AccountRoute: String, Hashable, CaseIterable {
     case profile, security, notifications, phone, savedReplies = "saved-replies", views, workspaces, appearance, about
 
-    var title: String {
+    @MainActor var title: String {
         switch self {
         case .profile: "Profile"
         case .security: "Security"
         case .notifications: "Notifications"
-        case .phone: "This iPhone"
+        case .phone: "This \(AppInfo.device)"
         case .savedReplies: "Saved replies"
         case .views: "Views"
         case .workspaces: "Workspaces"
@@ -18,12 +18,12 @@ enum AccountRoute: String, Hashable, CaseIterable {
         }
     }
 
-    var symbol: String {
+    @MainActor var symbol: String {
         switch self {
         case .profile: "person.text.rectangle"
         case .security: "lock.shield"
         case .notifications: "bell.badge"
-        case .phone: "iphone"
+        case .phone: AppInfo.device == "iPad" ? "ipad" : "iphone"
         case .savedReplies: "text.bubble"
         case .views: "line.3.horizontal.decrease.circle"
         case .workspaces: "square.stack.3d.up"
