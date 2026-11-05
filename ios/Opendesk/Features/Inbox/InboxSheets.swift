@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Search everywhere, folders with live counts, team inboxes, the workspace's views,
-/// then the app's other areas.
+/// The app's menu: the Space and workspace switcher, search everywhere, then the picked Space's
+/// rows, or the workspace's own: folders with live counts, team inboxes, views and other areas.
 struct ScopeSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
@@ -10,14 +10,8 @@ struct ScopeSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if let workspace = env.session.workspace?.workspace {
-                        HStack(spacing: 10) {
-                            WorkspaceAvatar(workspace: workspace, size: 28)
-                            Text(workspace.name).font(ODFont.sans(16, weight: .semibold)).foregroundStyle(Theme.fg)
-                            Spacer()
-                            RealtimeDot(status: env.realtime.status)
-                        }
-                    }
+                    // A Space or the workspace, as on the web's switcher (contracts/spaces.md).
+                    SpaceSwitcherButton { switching = true }
                     Button {
                         Haptics.selection()
                         env.router.show(env.router.shownArea, [.search])
@@ -37,28 +31,48 @@ struct ScopeSheet: View {
                     .buttonStyle(TapScaleStyle())
                     .accessibilityHint("Tickets, contacts and articles")
 
-                    if env.products.tickets {
-                        ticketScopes
-                    }
-                    SectionLabel("Workspace")
-                    Panel {
-                        ForEach(Array(areas.enumerated()), id: \.element) { index, area in
-                            if index > 0 { Hairline(inset: 46) }
-                            areaRow(area)
+                    if let space = SpacesStore.shared.picked {
+                        SpaceSidebar(space: space, onOpen: { dismiss() }, onEdit: { editing = SpaceDraft(space: space, isNew: false) })
+                    } else {
+                        if env.products.tickets {
+                            ticketScopes
+                        }
+                        SectionLabel("Workspace")
+                        Panel {
+                            ForEach(Array(areas.enumerated()), id: \.element) { index, area in
+                                if index > 0 { Hairline(inset: 46) }
+                                areaRow(area)
+                            }
                         }
                     }
                 }
                 .padding(20)
+                .motion(Motion.snappy, value: SpacesStore.shared.pickedID)
             }
             .background(Theme.chrome.ignoresSafeArea())
-            .navigationTitle(env.products.tickets ? "Inbox" : "Workspace")
+            .navigationTitle(SpacesStore.shared.picked?.name ?? (env.products.tickets ? "Inbox" : "Workspace"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .onAppear { folded = ViewSections.folded(key: foldedKey) }
         }
+        .followsOverview()
+        .sheet(isPresented: $switching) {
+            SpaceSwitcherSheet()
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(item: $editing) { draft in
+            SpaceEditorSheet(draft: draft)
+                .presentationDetents([.large])
+                .presentationCornerRadius(Theme.Radius.sheet)
+                .interactiveDismissDisabled()
+        }
     }
+
+    @State private var switching = false
+    @State private var editing: SpaceDraft?
 
     /// Folders with live counts, team inboxes and views: the ticket part, gone while Tickets is off.
     @ViewBuilder

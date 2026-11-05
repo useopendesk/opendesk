@@ -150,6 +150,7 @@ final class Router {
             openDemo(screen)
         }
         #endif
+        if let env = environment { SpacesStore.shared.workspaceReady(env) }
         guard let target = pending else { return }
         pending = nil
         open(target)

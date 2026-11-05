@@ -167,6 +167,7 @@ actor DemoBackend {
     func handle(_ call: Call) throws -> Data? {
         if let answer = try accountsRoutes(call) { return answer }
         if let answer = try meRoutes(call) { return answer }
+        if let answer = try spacesRoutes(call) { return answer }
         if call.match("POST", "auth/password/forgot") != nil || call.match("POST", "auth/password/reset") != nil { return nil }
         if call.path.first == "auth" { throw Failure(status: 400, code: "captcha_failed", detail: "The demo signs in with email and password.") }
 
