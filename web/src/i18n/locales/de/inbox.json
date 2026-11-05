@@ -1002,5 +1002,33 @@
     "discountCodes_other": "Rabattcodes",
     "refunded": "{{amount}} erstattet",
     "openLink": "{{name}} öffnen"
+  },
+  "print": {
+    "action": "Drucken oder als PDF speichern",
+    "dialogTitle": "Unterhaltung drucken",
+    "dialogDescription": "Öffnet das Ticket als Dokument zum Drucken. Um eine Datei zu behalten, wähle Als PDF speichern als Drucker.",
+    "notes": "Interne Notizen einschließen",
+    "notesHint": "Notizen deines Teams, die der Kunde nie sieht.",
+    "side": "Nebenunterhaltungen einschließen",
+    "sideHint": "E-Mails mit Personen außerhalb deines Teams zu diesem Ticket.",
+    "open": "Druckansicht öffnen",
+    "toolbar": "Druckansicht",
+    "conversation": "Unterhaltung",
+    "oneMessage": "Eine Nachricht",
+    "close": "Schließen",
+    "print": "Drucken",
+    "remoteImages": "Externe Bilder anzeigen",
+    "remoteImagesHint": "Bilder von anderen Websites sind ausgeblendet. Lädst du sie, erfährt der Absender, dass die E-Mail geöffnet wurde.",
+    "requester": "Anfragender",
+    "status": "Status",
+    "created": "Eröffnet",
+    "to": "An:",
+    "cc": "Cc:",
+    "sideConversation": "Nebenunterhaltung",
+    "sideConversationNamed": "Nebenunterhaltung: {{subject}}",
+    "imagesHidden": "Externe Bilder nicht angezeigt",
+    "attachments": "Anhänge",
+    "nothing": "Nichts zu drucken",
+    "nothingHint": "Mit diesen Optionen gibt es keine Nachrichten zum Drucken, oder die Nachricht ist nicht mehr im Ticket."
   }
 }

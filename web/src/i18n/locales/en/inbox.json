@@ -1006,5 +1006,33 @@
     "discountCodes_other": "Discount codes",
     "refunded": "{{amount}} refunded",
     "openLink": "Open {{name}}"
+  },
+  "print": {
+    "action": "Print or save as PDF",
+    "dialogTitle": "Print conversation",
+    "dialogDescription": "Opens the ticket as a document to print. To keep a file, choose Save as PDF as the printer.",
+    "notes": "Include internal notes",
+    "notesHint": "Notes your team wrote, which the customer never sees.",
+    "side": "Include side conversations",
+    "sideHint": "Emails with people outside your team about this ticket.",
+    "open": "Open print view",
+    "toolbar": "Print view",
+    "conversation": "Conversation",
+    "oneMessage": "One message",
+    "close": "Close",
+    "print": "Print",
+    "remoteImages": "Show remote images",
+    "remoteImagesHint": "Images from other sites are hidden. Loading them tells the sender the email was opened.",
+    "requester": "Requester",
+    "status": "Status",
+    "created": "Opened",
+    "to": "To:",
+    "cc": "Cc:",
+    "sideConversation": "Side conversation",
+    "sideConversationNamed": "Side conversation: {{subject}}",
+    "imagesHidden": "Remote images not shown",
+    "attachments": "Attachments",
+    "nothing": "Nothing to print",
+    "nothingHint": "There are no messages to print with these options, or the message is no longer on the ticket."
   }
 }

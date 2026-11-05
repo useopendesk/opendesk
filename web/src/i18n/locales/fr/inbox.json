@@ -988,5 +988,33 @@
     "discountCodes_other": "Codes de réduction",
     "refunded": "Remboursé : {{amount}}",
     "openLink": "Ouvrir {{name}}"
+  },
+  "print": {
+    "action": "Imprimer ou enregistrer en PDF",
+    "dialogTitle": "Imprimer la conversation",
+    "dialogDescription": "Ouvre le ticket sous forme de document à imprimer. Pour garder un fichier, choisissez Enregistrer au format PDF comme imprimante.",
+    "notes": "Inclure les notes internes",
+    "notesHint": "Les notes de votre équipe, que le client ne voit jamais.",
+    "side": "Inclure les conversations parallèles",
+    "sideHint": "Les e-mails échangés avec des personnes extérieures à votre équipe au sujet de ce ticket.",
+    "open": "Ouvrir l’aperçu",
+    "toolbar": "Aperçu avant impression",
+    "conversation": "Conversation",
+    "oneMessage": "Un message",
+    "close": "Fermer",
+    "print": "Imprimer",
+    "remoteImages": "Afficher les images distantes",
+    "remoteImagesHint": "Les images d’autres sites sont masquées. Les charger indique à l’expéditeur que l’e-mail a été ouvert.",
+    "requester": "Demandeur",
+    "status": "Statut",
+    "created": "Ouvert le",
+    "to": "À :",
+    "cc": "Cc :",
+    "sideConversation": "Conversation parallèle",
+    "sideConversationNamed": "Conversation parallèle : {{subject}}",
+    "imagesHidden": "Images distantes non affichées",
+    "attachments": "Pièces jointes",
+    "nothing": "Rien à imprimer",
+    "nothingHint": "Aucun message à imprimer avec ces options, ou le message n’est plus dans le ticket."
   }
 }
