@@ -411,7 +411,7 @@ struct RoutingRuleEditor: View {
         .settingsSaveBar(
             dirty: env.session.isAdmin && (ruleID == nil || draft != base),
             guarded: draft != base,
-            title: ruleID == nil ? "New rule" : "Unsaved changes",
+            saveTitle: ruleID == nil ? "Create rule" : "Save changes",
             saving: saving,
             save: save
         ) {

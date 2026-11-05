@@ -207,7 +207,7 @@ extension ProceduresSettings {
                     }
                 }
             }
-            .settingsSaveBar(dirty: isNew || dirty, guarded: isNew ? !AgentText.trimmed(name + when + instructions).isEmpty : dirty, title: isNew ? "New procedure" : "Unsaved changes", saving: saving) {
+            .settingsSaveBar(dirty: isNew || dirty, guarded: isNew ? !AgentText.trimmed(name + when + instructions).isEmpty : dirty, saveTitle: isNew ? "Create procedure" : "Save changes", saving: saving) {
                 Task { await save() }
             } discard: {
                 discard()

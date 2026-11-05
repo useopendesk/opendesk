@@ -63,45 +63,58 @@ extension Router {
     }
 }
 
-/// Unsaved changes on a settings page: what is waiting, Discard and Save, on glass where the tab
-/// bar floats (`settingsSaveBar`).
+/// Unsaved changes on a settings page, in the tab bar's place and shape (`settingsSaveBar`): a wide
+/// Save and a round glass Discard beside it, where Ollie's button sits. What stops it saving
+/// floats above them.
 struct SettingsSaveBar: View {
-    var title = "Unsaved changes"
-    /// Why it can't save yet, in place of the title.
+    var saveTitle = "Save changes"
+    /// Why it can't save yet.
     var problem: String?
     let saving: Bool
     var canSave = true
     let save: () -> Void
     let discard: () -> Void
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 28, style: .continuous) }
-
     var body: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(problem == nil ? Tone.amber.solid : Tone.red.solid)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            Text(problem ?? title)
-                .font(ODFont.sans(13.5, weight: .medium))
-                .foregroundStyle(problem == nil ? Theme.fg2 : Tone.red.text)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Button("Discard", action: discard)
-                .buttonStyle(OutlineButtonStyle(fullWidth: false, height: 40))
-                .disabled(saving)
-            Button(action: save) { ButtonLabel(title: "Save", busy: saving) }
-                .buttonStyle(InkButtonStyle(fullWidth: false, height: 40))
-                .disabled(!canSave || saving)
+        VStack(spacing: 10) {
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.circle.fill")
+                    .font(ODFont.sans(13, weight: .medium))
+                    .foregroundStyle(Tone.red.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular.tint(Theme.glassTint), in: Capsule())
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            GlassEffectContainer(spacing: 14) {
+                HStack(spacing: 10) {
+                    Button(action: save) {
+                        ButtonLabel(title: saveTitle, busy: saving)
+                            .font(ODFont.sans(16, weight: .semibold))
+                            .foregroundStyle(Theme.inverseFg)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(Theme.inverse.opacity(canSave ? 1 : 0.35), in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(TapScaleStyle(scale: 0.97))
+                    .disabled(!canSave || saving)
+
+                    Button(action: discard) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(Theme.fg)
+                            .frame(width: 56, height: 56)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(TapScaleStyle(scale: 0.9))
+                    .glassEffect(.regular.tint(Theme.glassTint).interactive(), in: Circle())
+                    .disabled(saving)
+                    .accessibilityLabel("Discard changes")
+                }
+            }
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 8)
-        .frame(minHeight: 56)
-        .background(Theme.surface.opacity(0.9), in: shape)
-        .glassEffect(.regular, in: shape)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Unsaved changes")
+        .motion(Motion.snappy, value: problem)
     }
 }
 
@@ -117,10 +130,10 @@ private struct SettingsSaveBarModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            .safeAreaBar(edge: .bottom, spacing: 0) {
                 if dirty {
                     bar
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 18)
                         .padding(.bottom, 4)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -175,7 +188,7 @@ extension View {
     func settingsSaveBar(
         dirty: Bool,
         guarded: Bool? = nil,
-        title: String = "Unsaved changes",
+        saveTitle: String = "Save changes",
         problem: String? = nil,
         saving: Bool,
         canSave: Bool = true,
@@ -185,7 +198,7 @@ extension View {
         modifier(SettingsSaveBarModifier(
             dirty: dirty,
             guarded: guarded ?? dirty,
-            bar: SettingsSaveBar(title: title, problem: problem, saving: saving, canSave: canSave, save: save, discard: discard)
+            bar: SettingsSaveBar(saveTitle: saveTitle, problem: problem, saving: saving, canSave: canSave, save: save, discard: discard)
         ))
     }
 }
