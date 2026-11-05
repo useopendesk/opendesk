@@ -31,6 +31,7 @@ struct AreaPlaceholder: View {
         case .kb: ColumnPlaceholder(symbol: "book.closed", title: "Pick an article", message: "It opens here to read or edit.")
         case .wiki: ColumnPlaceholder(symbol: "book.pages", title: "Pick a page", message: "It opens here to read or edit.")
         case .reports: ColumnPlaceholder(symbol: "chart.bar.xaxis", title: "Reports", message: "Pick a report in the list.")
+        case .everywhere: ColumnPlaceholder(symbol: "globe", title: "Pick a row", message: "This workspace's open here. Another workspace's open in that workspace.")
         }
     }
 }
@@ -49,6 +50,7 @@ struct AreaRootView: View {
         case .kb: KBListView()
         case .wiki: WikiListView()
         case .reports: ReportsView()
+        case .everywhere: EverywhereListView()
         }
     }
 }

@@ -31,6 +31,8 @@ enum AppRoute: Hashable {
 /// What the Inbox tab shows at its root, chosen from the menu.
 enum AppArea: String, CaseIterable, Identifiable, Sendable {
     case tickets, mail, contacts, companies, kb, wiki, reports
+    /// An Everywhere list across workspaces (`Router.everywhere` says which).
+    case everywhere
 
     var id: String { rawValue }
 
@@ -43,6 +45,7 @@ enum AppArea: String, CaseIterable, Identifiable, Sendable {
         case .kb: "Knowledge base"
         case .wiki: "Wiki"
         case .reports: "Reports"
+        case .everywhere: "Everywhere"
         }
     }
 
@@ -55,6 +58,7 @@ enum AppArea: String, CaseIterable, Identifiable, Sendable {
         case .kb: "book.closed"
         case .wiki: "book.pages"
         case .reports: "chart.bar.xaxis"
+        case .everywhere: "globe"
         }
     }
 }
@@ -66,6 +70,8 @@ enum AppArea: String, CaseIterable, Identifiable, Sendable {
 final class Router {
     var tab: AppTab = .inbox
     var area: AppArea = .tickets
+    /// The Everywhere list the Inbox tab shows while `area` is `.everywhere`.
+    var everywhere: EverywhereList = .mine
     var inboxPath: [AppRoute] = []
     var notificationsPath: [AppRoute] = []
     var accountPath: [AccountRoute] = []
@@ -333,6 +339,9 @@ final class Router {
         case "search":
             showOllie = false
             show(area, [.search])
+        case "everywhere":
+            showOllie = false
+            openEverywhere(parts.count > 1 ? EverywhereList(rawValue: parts[1]) ?? .mine : .mine)
         case "demo":
             demoAction = parts.dropFirst().joined(separator: "/")
         default:

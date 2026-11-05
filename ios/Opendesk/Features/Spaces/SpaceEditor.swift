@@ -391,7 +391,7 @@ struct SpaceAddRowsSheet: View {
         let builder = SpaceRowBuilder(env: env)
         NavigationStack {
             List {
-                if env.session.memberships.count > 1 {
+                if !tabs.isEmpty {
                     Section {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
@@ -434,7 +434,7 @@ struct SpaceAddRowsSheet: View {
             if tab.isEmpty { tab = env.session.workspace?.id ?? env.session.memberships.first?.id ?? "" }
         }
         .task(id: tab + "/\(OverviewStore.shared.loaded)") {
-            guard !tab.isEmpty, let collab = builder.collab(tab) else { return }
+            guard !tab.isEmpty, tab != Self.everywhereTab, let collab = builder.collab(tab) else { return }
             store.loadData(for: tab, collab: collab, folders: true)
         }
     }
@@ -445,9 +445,13 @@ struct SpaceAddRowsSheet: View {
         var workspace: Workspace?
     }
 
+    /// A tab per workspace, then "Every workspace" for the Everywhere lists.
     private var tabs: [Tab] {
         env.session.memberships.map { Tab(id: $0.id, title: $0.workspace.name, workspace: $0.workspace) }
+            + [Tab(id: Self.everywhereTab, title: "Every workspace", workspace: nil)]
     }
+
+    private static let everywhereTab = "everywhere"
 
     private func tabChip(_ id: String, title: String, workspace: Workspace?) -> some View {
         let selected = tab == id
@@ -456,7 +460,7 @@ struct SpaceAddRowsSheet: View {
             tab = id
         } label: {
             HStack(spacing: 6) {
-                if let workspace { WorkspaceAvatar(workspace: workspace, size: 18) }
+                if let workspace { WorkspaceAvatar(workspace: workspace, size: 18) } else { Image(systemName: "globe").font(.system(size: 13)) }
                 Text(title).font(ODFont.sans(13.5, weight: selected ? .semibold : .regular)).lineLimit(1)
             }
             .foregroundStyle(selected ? Theme.inverseFg : Theme.fg)
@@ -477,6 +481,9 @@ struct SpaceAddRowsSheet: View {
     /// What the workspace in the tab offers, in the web editor's groups.
     private func catalog(_ builder: SpaceRowBuilder) -> [CatalogGroup] {
         let w = tab
+        if w == Self.everywhereTab {
+            return [CatalogGroup(title: "Across every workspace", items: EverywhereList.allCases.map { SpaceItem(workspaceID: "", kind: .everywhere, itemID: $0.rawValue) })]
+        }
         guard builder.membership(w) != nil else { return [] }
         let tickets = builder.ticketsOn(w)
         let collab = builder.collab(w) == true

@@ -59,7 +59,7 @@ struct ScopeSheet: View {
         }
         .followsOverview()
         .sheet(isPresented: $switching) {
-            SpaceSwitcherSheet()
+            SpaceSwitcherSheet(onLeave: { dismiss() })
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
@@ -186,7 +186,7 @@ struct ScopeSheet: View {
         // With Tickets off the home is Mail, so it is listed with the rest.
         let products = env.products
         return AppArea.allCases.filter { area in
-            guard products.allows(area), area != .tickets else { return false }
+            guard products.allows(area), area != .tickets, area != .everywhere else { return false }
             return area != .mail || env.directory.collab.enabled
         }
     }

@@ -42,6 +42,8 @@ struct SpaceSwitcherSheet: View {
     @Environment(\.dismiss) private var dismiss
     /// Something was picked: the menu sheet behind may close too.
     var onPicked: () -> Void = {}
+    /// An Everywhere list opened: the menu sheet behind closes.
+    var onLeave: () -> Void = {}
 
     @State private var editing: SpaceDraft?
     @State private var confirm: AccountConfirm?
@@ -52,6 +54,12 @@ struct SpaceSwitcherSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if env.session.memberships.count > 1 {
+                        EverywhereEntries {
+                            dismiss()
+                            onLeave()
+                        }
+                    }
                     spacesSection
                     VStack(alignment: .leading, spacing: 8) {
                         SectionLabel(env.session.memberships.count == 1 ? "Workspace" : "Workspaces").padding(.horizontal, 4)

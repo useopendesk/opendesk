@@ -115,7 +115,7 @@ struct SpaceRowBuilder {
     // MARK: Showing
 
     func usable(_ item: SpaceItem) -> Bool {
-        guard !item.isEverywhere else { return false }
+        if item.isEverywhere { return EverywhereList(rawValue: item.itemID) != nil }
         guard membership(item.workspaceID) != nil else { return false }
         if item.needsTickets, !ticketsOn(item.workspaceID) { return false }
         if item.needsCollab, collab(item.workspaceID) != true { return false }
@@ -151,6 +151,7 @@ struct SpaceRowBuilder {
 
     /// The workspaces with rows in the Space, to read their teams, views and accounts.
     func workspaces(in space: Space) -> [String] {
+        // Everywhere rows belong to no workspace: their numbers come from the overview.
         var out: [String] = []
         for item in space.items where !item.isEverywhere && !out.contains(item.workspaceID) && membership(item.workspaceID) != nil {
             out.append(item.workspaceID)
@@ -250,6 +251,10 @@ struct SpaceRowBuilder {
             }
             guard let page else { return nil }
             return model(page.title, .symbol(page.symbol), nil, .area(page), area == page)
+        case .everywhere:
+            guard workspace.isEmpty, let list = EverywhereList(rawValue: id) else { return nil }
+            return SpaceRowModel(id: "everywhere:\(id)", title: list.title, mark: .symbol(list.symbol), count: EverywhereStore.shared.count(list),
+                                 workspaceID: "", destination: .everywhere(list), selected: env.router.tab == .inbox && area == .everywhere && env.router.everywhere == list)
         default:
             return nil
         }
@@ -450,6 +455,7 @@ private struct FollowsOverview: ViewModifier {
                 SpacesStore.shared.start(env: env)
                 SpacesStore.shared.refresh()
                 OverviewStore.shared.start(env: env)
+                EverywhereStore.shared.start(env: env)
                 OverviewStore.shared.follow()
             }
             .onDisappear { OverviewStore.shared.unfollow() }

@@ -23,6 +23,8 @@ enum SpaceDestination: Hashable, Sendable {
     case mailAccount(String)
     case mailFolder(id: String, account: String)
     case area(AppArea)
+    /// An Everywhere list: of no workspace, it opens where you are.
+    case everywhere(EverywhereList)
 }
 
 /// The person's Spaces (contracts/spaces.md): one list per user, the same in every workspace and
@@ -116,8 +118,9 @@ final class SpacesStore {
         spaces = next
         saving = true
         defer { saving = false }
+        struct Body: Encodable { let spaces: [Space] }
         do {
-            var request = APIRequest(method: "PUT", path: "v1/me/spaces", body: try APICoding.encoder.encode(SpacesList(spaces: next)))
+            var request = APIRequest(method: "PUT", path: "v1/me/spaces", body: try APICoding.encoder.encode(Body(spaces: next)))
             request.workspace = .none
             let answer: SpacesList = try await api.send(request)
             spaces = answer.spaces
@@ -245,6 +248,10 @@ final class SpacesStore {
     /// Opens a row: at once in the open workspace, or in its own after switching there (the
     /// picked Space stays picked).
     func open(_ destination: SpaceDestination, in workspace: String, env: AppEnvironment) {
+        if case .everywhere = destination {
+            perform(destination, env: env)
+            return
+        }
         if workspace == env.session.workspace?.id {
             perform(destination, env: env)
             return
@@ -288,18 +295,24 @@ final class SpacesStore {
             openMail(MailScope(box: .inbox, folderID: id, accountID: account), env: env)
         case let .area(area):
             env.router.show(area, [])
+        case let .everywhere(list):
+            env.router.openEverywhere(list)
         }
     }
 
     /// Mail follows the workspace on screen: started for it first, so the scope is kept.
     private func openMail(_ scope: MailScope, env: AppEnvironment) {
-        if let workspace = env.session.workspace?.id, let me = env.session.user?.id {
-            let directory = env.directory
-            MailDirectoryNames.shared.directory = directory
-            MailStore.shared.onStatus = { status in directory.setCollab(status.availability) }
-            MailStore.shared.start(api: env.session.api, realtime: env.realtime, workspaceID: workspace, me: me)
-        }
+        startMail(env: env)
         MailStore.shared.setScope(scope)
         env.router.show(.mail, [])
+    }
+
+    /// Starts the mail store for the open workspace, as the Mail list does when it appears.
+    func startMail(env: AppEnvironment) {
+        guard let workspace = env.session.workspace?.id, let me = env.session.user?.id else { return }
+        let directory = env.directory
+        MailDirectoryNames.shared.directory = directory
+        MailStore.shared.onStatus = { status in directory.setCollab(status.availability) }
+        MailStore.shared.start(api: env.session.api, realtime: env.realtime, workspaceID: workspace, me: me)
     }
 }
