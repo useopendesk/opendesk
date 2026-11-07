@@ -241,7 +241,7 @@ func (s *service) recordSyncError(ctx context.Context, a *accountRow, cause erro
 		next = retryAt
 	}
 	// A wait the provider asked for that outlasts the quiet failures shows at once.
-	quiet := !reconnect && !isPermanent(cause) && failures < quietFailures && a.Status != "error" &&
+	quiet := !reconnect && !isPermanent(cause) && failures < quietFailures && a.LastError == "" &&
 		!retryAt.After(time.Now().Add(syncBackoff(quietFailures)))
 	attrs := syncFailure(a, cause, failures, !quiet)
 	s.log.Info("collab sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", msg, "reconnect", reconnect,

@@ -1166,6 +1166,58 @@ func TestGmailBusy(t *testing.T) {
 	}
 }
 
+// TestSyncNowShowsTheTry: Sync now on a failing account shows it syncing until that sync
+// sets the status again, and the account says when it is tried next; one its provider asked
+// to wait keeps its error.
+func TestSyncNowShowsTheTry(t *testing.T) {
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	srv := w.api(w.agent)
+	g.status = http.StatusServiceUnavailable
+	for range quietFailures {
+		if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := w.apiAccount(srv, w.reload(a))
+	if m.Status != "error" || m.NextSyncAt == nil || !m.NextSyncAt.After(time.Now()) {
+		t.Fatalf("failing: %s next %v", m.Status, m.NextSyncAt)
+	}
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/sync", nil, nil); st != 202 {
+		t.Fatalf("sync now: %d", st)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "syncing" || m.LastError == "" {
+		t.Fatalf("after Sync now: %s %q", m.Status, m.LastError)
+	}
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil { // still failing: back to the error
+		t.Fatal(err)
+	}
+	if a = w.reload(a); a.Status != "error" {
+		t.Fatalf("after the try: %s", a.Status)
+	}
+	g.status = 0
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "active" || m.NextSyncAt != nil {
+		t.Fatalf("synced: %s next %v", m.Status, m.NextSyncAt)
+	}
+
+	// Held, Sync now leaves the error that says until when.
+	g.limitedUntil = time.Now().Add(time.Hour)
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/sync", nil, nil); st != 202 {
+		t.Fatalf("sync now: %d", st)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "error" || !strings.Contains(m.LastError, "wait until") || m.NextSyncAt == nil {
+		t.Fatalf("held: %s %q %v", m.Status, m.LastError, m.NextSyncAt)
+	}
+}
+
 // TestGmailRateLimitHoldsTheAccount: a rate limit that asks for a longer wait than a call
 // sits out holds the account until then, on every server: no call is made, Sync now
 // included, and the account says when it goes on.

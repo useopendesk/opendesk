@@ -360,6 +360,7 @@
     "you": "dir",
     "lastSync": "Synchronisiert {{when}}",
     "neverSynced": "Noch nicht synchronisiert",
+    "nextTry": "{{last}}. Nächster Versuch um {{time}}.",
     "reconnect": "Neu verbinden",
     "status": {
       "syncing": "Wird synchronisiert",

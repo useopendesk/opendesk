@@ -644,6 +644,7 @@ interface MailAccount {
   reconnect: boolean           // the grant or password was refused: connect it again
   last_error: string
   last_synced_at: string | null
+  next_sync_at: string | null  // a failing account: when it is tried again (its backoff, or the end of a wait its provider asked for)
   can_manage: boolean
   unread: number               // unread conversations in its inbox
   imap?: { imap_host: string; imap_port: number; imap_tls: "tls" | "starttls"; imap_username: string;
@@ -986,7 +987,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PUT | `/v1/collab/accounts/{id}/history` | manage | `{since: string \| null, include_spam_trash?: boolean}` → `MailAccount`: starts a history import ("History"), or starts it again with this scope. `since` is RFC 3339, in the past (`422 validation_failed`); `null` imports all mail. `422 history_unavailable` for a sample account |
 | PATCH | `/v1/collab/accounts/{id}/history` | manage | `{paused: boolean}` → `MailAccount`. `404` without an import; `422 validation_failed` for one that ended |
 | DELETE | `/v1/collab/accounts/{id}/history` | manage | → `MailAccount`: stops the import (`canceled`); what it imported stays |
-| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too |
+| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too. A failing account shows `status: "syncing"` (with `collab.accounts`) until that sync sets it again, unless its provider asked to wait |
 | GET | `/v1/collab/accounts/{id}/folders` | see | `MailFolder[]`, special ones first, then by path |
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |

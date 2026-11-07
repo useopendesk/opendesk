@@ -30,7 +30,7 @@ import type { MailAccount, MailAudience, MailIdentityPreview } from "@/lib/api/t
 import { errorMessage } from "@/lib/api/client";
 import { storeAccount, useCollab, useSettingsAccounts } from "@/lib/collab/hooks";
 import { identitySignature } from "@/lib/collab/identities";
-import { relLong } from "@/lib/format";
+import { clock, relLong, weekdayClock } from "@/lib/format";
 import { COLLAB_FROM_VARS, fromNameProblem } from "@/lib/fromname";
 import { qk } from "@/lib/queries";
 import { useSession } from "@/lib/session";
@@ -231,7 +231,7 @@ export default function MailAccountDetail() {
       )}
 
       <Section title={t("detail.status")}>
-        <Row label={t("detail.status")} description={account.last_synced_at ? t("accounts.lastSync", { when: relLong(account.last_synced_at) }) : t("accounts.neverSynced")}>
+        <Row label={t("detail.status")} description={<SyncWhen account={account} />}>
           <AccountStatus account={account} />
           <Button size="sm" icon={<RefreshCw />} loading={sync.isPending} onClick={() => sync.mutate()}>
             {t("detail.sync")}
@@ -366,4 +366,14 @@ export default function MailAccountDetail() {
       )}
     </SettingsPage>
   );
+}
+
+/** When the account last synced, and while it fails, when it is tried again. */
+function SyncWhen({ account }: { account: MailAccount }) {
+  const { t } = useTranslation("collab");
+  const last = account.last_synced_at ? t("accounts.lastSync", { when: relLong(account.last_synced_at) }) : t("accounts.neverSynced");
+  const next = account.status === "error" ? account.next_sync_at : null;
+  if (!next || Date.parse(next) <= Date.now()) return <>{last}</>;
+  const sameDay = new Date(next).toDateString() === new Date().toDateString();
+  return <>{t("accounts.nextTry", { last, time: sameDay ? clock(next) : weekdayClock(next) })}</>;
 }

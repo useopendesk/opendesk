@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
@@ -354,6 +355,20 @@ func (s *service) registerAccountRoutes(api huma.API) {
 			}
 			if err := s.queueSync(ctx, s.d.DB.Pool, id); err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			// A failing account shows its new try while it runs; the sync's result sets the status
+			// again. One its provider asked to wait keeps its error, which says until when.
+			if a.Status == "error" && !a.Reconnect && !time.Now().Before(s.heldUntil(a)) {
+				err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+					tag, err := tx.Exec(ctx, `UPDATE collab_accounts SET status = 'syncing' WHERE id = $1 AND status = 'error' AND NOT reconnect`, id)
+					if err != nil || tag.RowsAffected() == 0 {
+						return err
+					}
+					return s.publishAccounts(ctx, tx, a.WorkspaceID, a.ID, nil)
+				})
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
 			}
 			return nil, nil
 		})

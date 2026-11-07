@@ -118,6 +118,7 @@ type MailAccount struct {
 	Reconnect       bool            `json:"reconnect"`
 	LastError       string          `json:"last_error"`
 	LastSyncedAt    *time.Time      `json:"last_synced_at"`
+	NextSyncAt      *time.Time      `json:"next_sync_at" doc:"When a failing account is tried again; null while it syncs as usual"`
 	CanManage       bool            `json:"can_manage"`
 	Unread          int             `json:"unread"`
 	HandlingEnabled bool            `json:"handling_enabled"`
