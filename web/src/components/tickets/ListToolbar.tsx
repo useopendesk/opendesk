@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { sidebarDragProps, type SidebarDragItem } from "@/lib/collab/sidebarDrag";
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, Columns2, Filter, Lock, Mail, Rows3, Search, Users, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -61,7 +62,13 @@ export function ListToolbar({
   onLayout,
   below,
   inTeam,
+  titleAction,
+  dragItem,
 }: {
+  /** What the title is as a sidebar row: dragged into the sidebar, it is added there. */
+  dragItem?: SidebarDragItem;
+  /** Beside the title and count (Add to sidebar). */
+  titleAction?: ReactNode;
   /** A row under the title (a team inbox's tabs). */
   below?: ReactNode;
   /** A team inbox: the team filter is the page itself. */
@@ -216,10 +223,13 @@ export function ListToolbar({
           </motion.div>
         ) : (
           <div className="ml-1 flex min-w-0 flex-1 items-baseline gap-2">
-            <h1 className="truncate text-[14px] font-semibold tracking-[-0.01em]">{title}</h1>
+            <h1 className="truncate text-[14px] font-semibold tracking-[-0.01em]" {...(dragItem ? sidebarDragProps(dragItem) : {})}>
+              {title}
+            </h1>
             {count !== null && count !== undefined && (
               <AnimatedNumber value={count} flash className="mono text-[11.5px] text-fg-4" />
             )}
+            {titleAction && <span className="flex self-center">{titleAction}</span>}
           </div>
         )}
         {!searchOpen && (

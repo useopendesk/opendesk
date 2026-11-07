@@ -3,10 +3,10 @@
 // customize dialog and the optimistic save read the prefs the same way. Ids the app
 // does not know are kept as they are (another client may know them) and ignored here.
 
-import type { MailAccount, MailFolder, SidebarBadge, SidebarPin, SidebarPrefs, SidebarSectionId } from "../api/types";
+import type { MailAccount, MailFolder, SidebarBadge, SidebarItem, SidebarPin, SidebarPrefs, SidebarSection, SidebarSectionId } from "../api/types";
 import { hasBox, isTabBox, type TabBox } from "./boxes";
 
-export const SECTION_IDS: readonly SidebarSectionId[] = ["favorites", "inbox", "mail", "teams", "views", "workspace"];
+export const SECTION_IDS: readonly SidebarSectionId[] = ["favorites", "inbox", "mail", "teams", "views", "pages", "workspace"];
 export const MAX_PINS = 30;
 export const MAX_TABS = 30;
 export const MAX_BADGES = 300;
@@ -24,6 +24,8 @@ export function defaultSidebarPrefs(): SidebarPrefs {
     badges: {},
     mail_tabs: [...DEFAULT_MAIL_TABS],
     auto_pins: [],
+    sections: [],
+    row_order: {},
   };
 }
 
@@ -51,7 +53,37 @@ export function normalizePrefs(p: Partial<SidebarPrefs> | null | undefined): Sid
     badges: readBadges(p.badges) ?? d.badges,
     mail_tabs: Array.isArray(p.mail_tabs) ? p.mail_tabs.filter((x): x is string => typeof x === "string") : d.mail_tabs,
     auto_pins: Array.isArray(p.auto_pins) ? p.auto_pins.filter((x): x is string => typeof x === "string") : d.auto_pins,
+    sections: Array.isArray(p.sections) ? p.sections.map(readSection).filter((x): x is SidebarSection => !!x) : d.sections,
+    row_order: readRowOrder(p.row_order) ?? d.row_order,
   };
+}
+
+const OWN_KINDS: readonly SidebarItem["kind"][] = ["ticket_folder", "team", "view", "box", "account", "folder", "page", "wiki_page", "wiki_space"];
+
+function readSection(v: unknown): SidebarSection | null {
+  if (!v || typeof v !== "object") return null;
+  const x = v as Record<string, unknown>;
+  if (typeof x.id !== "string") return null;
+  const items: SidebarItem[] = [];
+  for (const it of Array.isArray(x.items) ? x.items : []) {
+    const i = it as Record<string, unknown> | null;
+    if (!i || typeof i.id !== "string" || !(OWN_KINDS as readonly unknown[]).includes(i.kind)) continue;
+    const out: SidebarItem = { kind: i.kind as SidebarItem["kind"], id: i.id };
+    if (typeof i.name === "string" && i.name.trim()) out.name = i.name;
+    if (isBadge(i.badge)) out.badge = i.badge;
+    if (typeof i.icon === "string" && i.icon) out.icon = i.icon;
+    items.push(out);
+  }
+  const out: SidebarSection = { id: x.id, title: typeof x.title === "string" ? x.title : "", collapsed: x.collapsed === true, items };
+  if (typeof x.icon === "string" && x.icon) out.icon = x.icon;
+  return out;
+}
+
+function readRowOrder(v: unknown): Record<string, string[]> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [k, x] of Object.entries(v)) if (Array.isArray(x)) out[k] = x.filter((r): r is string => typeof r === "string");
+  return out;
 }
 
 const isSection = (id: string): id is SidebarSectionId => (SECTION_IDS as readonly string[]).includes(id);
@@ -163,7 +195,19 @@ export const hid = {
   ticketFolder: (id: string) => `ticket_folder:${id}`,
   /** The red row on top of Inbox while visitors wait in live chat with nobody on it. */
   waitingChats: "row:waiting_chats",
+  /** A part of the Pages section (PAGES_PARTS). */
+  pages: (part: PagesPart) => `pages:${part}`,
+  /** A top-level page in the Pages section. */
+  wikiPage: (id: string) => `wiki_page:${id}`,
+  /** A teamspace in the Pages section: a team's id. */
+  wikiSpace: (id: string) => `wiki_space:${id}`,
+  /** A row of the Workspace section: contacts, knowledge, wiki or reports. */
+  page: (id: string) => `page:${id}`,
 };
+
+/** The parts of the Pages section a member can hide, in the order it shows them. */
+export const PAGES_PARTS = ["workspace", "teamspaces", "private", "today", "templates", "trash"] as const;
+export type PagesPart = (typeof PAGES_PARTS)[number];
 
 // ── Numbers beside rows ──────────────────────────────────────────────────
 

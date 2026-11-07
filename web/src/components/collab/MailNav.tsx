@@ -4,12 +4,14 @@
 // (its folders unfold on request) with its own Assigned to me under it while it has some. Unread counts come from GET /v1/collab/counts, kept
 // fresh by collab.changed events.
 
+import { sidebarEdit } from "@/lib/collab/sidebarEdit";
+import { applyRowOrder } from "@/lib/collab/rowOrder";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, ChevronRight, Layers, Plus, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, ChevronRight, Layers, PencilRuler, Plus } from "lucide-react";
 import { Fragment, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivePill, Count, Label, NavTip, rowActive, rowBase, rowIdle, rowShape, Section } from "@/app/sidebarParts";
+import { ActivePill, Count, givesWay, Label, markOpener, NavTip, rowActive, rowBase, rowIdle, rowShape, Section, useOpener } from "@/app/sidebarParts";
 import { useFoldedSections, useOpenView, ViewSectionGroup } from "@/app/ViewSectionGroup";
 import { buildRow, NavItemRow, rowNumber, useMailLocation, useRowLabels, type MailHere, type RowModel } from "@/components/spaces/rows";
 import { useWaitingFor } from "@/components/tickets/useUrgentChats";
@@ -19,13 +21,14 @@ import { accountAssignedNumbers, accountNumbers, allInboxNumbers, folderNumbers,
 import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole } from "@/lib/collab/boxes";
 import { useAllFolders, useMailAccounts, useSaveSidebarPrefs } from "@/lib/collab/hooks";
 import { badgeFor, hid, livePins, pickCount, toggleExpanded, type MailBadge } from "@/lib/collab/sidebarPrefs";
-import { collabUi } from "@/lib/collab/ui";
 import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
 import { useOpenWorkspaceData } from "@/lib/spaces/hooks";
 import { findSection } from "@/lib/viewSections";
 import { AccountTags } from "./AccountTags";
 import { AccountDot, boxIcon, FolderGlyph } from "./bits";
+import { quickAdd } from "@/app/quickAdd";
+import { FavoritePageRows, useHasFavoritePages } from "@/components/wiki/PagesSection";
 import { RowMenu, type RowMenuProps } from "./RowMenu";
 
 const sectionAction =
@@ -76,6 +79,10 @@ function MailRow({
   menu?: Menu;
 }) {
   const count = shown?.count;
+  // Pinned to Favorites as well, the row clicked lights up alone (app/sidebarParts.tsx).
+  const who = useOpener();
+  const target = `mail:${link.box}:${link.account ?? ""}:${link.folder ?? ""}`;
+  const lit = active && !givesWay(who, target, "mail");
   // The menu lists what each choice would show.
   const withNums: Menu | undefined = menu?.badge && shown?.nums ? { ...menu, badge: { ...menu.badge, numbers: shown.nums } } : menu;
   return (
@@ -85,14 +92,15 @@ function MailRow({
         to="/mail/$box/{-$threadId}"
         params={{ box: link.box, threadId: undefined }}
         search={{ account: link.account, folder: link.folder }}
-        className={cn(rowBase, rowShape(rail), active ? rowActive : rowIdle)}
-        data-status={active ? "active" : undefined}
+        onClick={() => markOpener(target, "mail")}
+        className={cn(rowBase, rowShape(rail), lit ? rowActive : rowIdle)}
+        data-status={lit ? "active" : undefined}
         aria-current={active ? "page" : undefined}
         aria-label={rail ? label : undefined}
         title={rail ? undefined : title}
         style={!rail && depth ? { paddingLeft: `${8 + depth * 14}px` } : undefined}
       >
-        {active && <ActivePill />}
+        {lit && <ActivePill />}
         {icon}
         <Label rail={rail}>{label}</Label>
         {!rail && tag}
@@ -312,7 +320,8 @@ export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail:
   const folders = useAllFolders(accounts);
   const here = useMailLocation();
   const hidden = new Set(prefs.hidden);
-  const shown = (accounts ?? []).filter((a) => !hidden.has(hid.account(a.id)));
+  // In the member's order (contracts/collab.md "Row order").
+  const shown = applyRowOrder((accounts ?? []).filter((a) => !hidden.has(hid.account(a.id))), (a) => hid.account(a.id), prefs.row_order.mail);
   const unified = prefs.unified_inbox && (accounts?.length ?? 0) >= 2 && !hidden.has(hid.box("inbox"));
   // Each account shows its own assigned conversations; the row across them shows while they
   // span two accounts, or some are in an account without a row here (and always on the rail,
@@ -328,15 +337,15 @@ export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail:
       first={first}
       action={
         <span className="flex items-center gap-0.5">
-          <Tooltip content={t("nav.customize")}>
-            <button type="button" aria-label={t("nav.customize")} onClick={() => collabUi.customize(true)} className={sectionAction}>
-              <SlidersHorizontal className="size-3.5" />
+          <Tooltip content={t("edit.title")}>
+            <button type="button" aria-label={t("edit.title")} onClick={() => sidebarEdit.start()} className={sectionAction}>
+              <PencilRuler className="size-3.5" />
             </button>
           </Tooltip>
           <Tooltip content={t("nav.connect")}>
-            <Link to="/settings/mail-accounts" search={{}} aria-label={t("nav.connect")} className={sectionAction}>
+            <button type="button" aria-label={t("nav.connect")} onClick={() => quickAdd.mail()} className={sectionAction}>
               <Plus className="size-3.5" />
-            </Link>
+            </button>
           </Tooltip>
         </span>
       }
@@ -408,10 +417,10 @@ export function MailSection({ prefs, rail, first }: { prefs: SidebarPrefs; rail:
       ))}
       {accounts && accounts.length === 0 && (
         <NavTip rail={rail} label={t("nav.noAccounts")}>
-          <Link to="/settings/mail-accounts" search={{}} className={cn(rowBase, rowShape(rail), rowIdle, "text-fg-3")}>
+          <button type="button" onClick={() => quickAdd.mail()} className={cn(rowBase, rowShape(rail), rowIdle, "text-fg-3")}>
             <Plus />
             <Label rail={rail}>{t("nav.noAccounts")}</Label>
-          </Link>
+          </button>
         </NavTip>
       )}
     </Section>
@@ -432,6 +441,7 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
   const navigate = useNavigate();
   const [folded, toggle] = useFoldedSections("favorites");
   const openView = useOpenView();
+  const pages = useHasFavoritePages();
   if (!data) return null;
   // A favorite is unpinned rather than hidden, and reads Favorites' number first, then its own section's.
   const ctx = { labels, via: ["favorites"] as SidebarSectionId[], here, waiting: waitingFor };
@@ -444,7 +454,7 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
     const section = findSection(data.views ?? [], pin.id);
     return section && { kind: "section", name: section.name, views: section.views };
   });
-  if (!pins.length) return null;
+  if (!pins.length && !pages) return null;
   const menuFor = (model: RowModel, pin: SidebarPin) => (row: ReactElement) => (
     <RowMenu
       enabled
@@ -469,7 +479,7 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
         if (target.kind === "row")
           return (
             <Fragment key={`${pin.kind}:${pin.id}`}>
-              <NavItemRow model={target.model} rail={rail} prefs={prefs} menu={menuFor(target.model, pin)} />
+              <NavItemRow model={target.model} rail={rail} prefs={prefs} place="favorites" menu={menuFor(target.model, pin)} />
             </Fragment>
           );
         return (
@@ -484,7 +494,7 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
             openView={openView}
             row={(v) => {
               const model = viewRow(v);
-              return model && <NavItemRow model={model} rail={rail} prefs={prefs} nested={!rail} menu={menuFor(model, { kind: "view", id: v.id })} />;
+              return model && <NavItemRow model={model} rail={rail} prefs={prefs} nested={!rail} place="favorites" menu={menuFor(model, { kind: "view", id: v.id })} />;
             }}
             count={(v) => {
               const model = viewRow(v);
@@ -499,6 +509,8 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
           />
         );
       })}
+      {/* The member's favorite pages, the wiki's own list, after the pins. */}
+      <FavoritePageRows rail={rail} />
     </Section>
   );
 }

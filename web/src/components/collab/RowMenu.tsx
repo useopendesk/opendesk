@@ -5,7 +5,7 @@
 // or without Collab; with `enabled` false it holds the row's actions alone, and a row without
 // any is left as it is. Saved at once with PUT /v1/collab/sidebar.
 
-import { Ellipsis, EyeOff, Pin, PinOff, Settings, SlidersHorizontal } from "lucide-react";
+import { Ellipsis, EyeOff, PencilRuler, Pin, PinOff, Settings } from "lucide-react";
 import { forwardRef, useRef, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Slot } from "radix-ui";
@@ -35,7 +35,9 @@ import {
   type BadgeKind,
   type BadgeNumbers,
 } from "@/lib/collab/sidebarPrefs";
-import { collabUi } from "@/lib/collab/ui";
+import { sidebarEdit } from "@/lib/collab/sidebarEdit";
+import { AddToSidebar } from "./AddToSidebar";
+import type { OwnRow } from "@/lib/collab/ownSectionsUi";
 import { canColor, LABEL_TONES, toneHex, toneOf, useSetLabelColor } from "./labelColor";
 
 export type RowMenuProps = {
@@ -68,13 +70,15 @@ type ChoiceProps = { children: ReactNode; checked: boolean; onSelect: () => void
 
 /** The menu's parts, so the right-click menu and the ⋯ dropdown list the same things. */
 type Parts = {
+  /** The right-click menu (its submenus are its own). */
+  context: boolean;
   Label: (p: { children: ReactNode }) => ReactNode;
   Choice: (p: ChoiceProps) => ReactNode;
   Item: (p: ItemProps) => ReactNode;
   Separator: () => ReactNode;
 };
-const contextParts: Parts = { Label: ContextMenuLabel, Choice: ContextMenuChoice, Item: ContextMenuItem, Separator: ContextMenuSeparator };
-const dropdownParts: Parts = { Label: MenuLabel, Choice: MenuChoice, Item: MenuItem, Separator: MenuSeparator };
+const contextParts: Parts = { context: true, Label: ContextMenuLabel, Choice: ContextMenuChoice, Item: ContextMenuItem, Separator: ContextMenuSeparator };
+const dropdownParts: Parts = { context: false, Label: MenuLabel, Choice: MenuChoice, Item: MenuItem, Separator: MenuSeparator };
 
 /** Forwards props and ref to its one child, so it can sit inside the rail's tooltip. */
 export const RowMenu = forwardRef<HTMLElement, RowMenuProps>(function RowMenu({ enabled, prefs, badge, pin, hideId, rail, label, labelColor, action, items, settings, children, ...rest }, ref) {
@@ -96,7 +100,7 @@ export const RowMenu = forwardRef<HTMLElement, RowMenuProps>(function RowMenu({ 
   const pinned = pin ? isPinned(prefs, pin) : false;
 
   // Collab's part: the number, the label colour, pin, hide, customize.
-  const prefsBody = ({ Label, Choice, Item, Separator }: Parts) => (
+  const prefsBody = ({ context, Label, Choice, Item, Separator }: Parts) => (
     <>
       {badge && (
         <>
@@ -139,8 +143,15 @@ export const RowMenu = forwardRef<HTMLElement, RowMenuProps>(function RowMenu({ 
           {pinned ? t("rowMenu.unpin") : t("rowMenu.pin")}
         </Item>
       )}
+      {pin && pin.kind !== "view_section" && <AddToSidebar item={pin as OwnRow} inContext={context} />}
       {hideId && (
-        <Item icon={<EyeOff />} onSelect={() => change(setHidden(prefs, hideId, true))}>
+        <Item
+          icon={<EyeOff />}
+          onSelect={() => {
+            change(setHidden(prefs, hideId, true));
+            toast.undo(t("edit.hidden", { name: label ?? "" }), () => change(setHidden(prefs, hideId, false)), t("edit.undo"));
+          }}
+        >
           {t("rowMenu.hide")}
         </Item>
       )}
@@ -150,13 +161,13 @@ export const RowMenu = forwardRef<HTMLElement, RowMenuProps>(function RowMenu({ 
           {settings.label}
         </Item>
       )}
-      <Item icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
-        {t("rowMenu.customize")}
+      <Item icon={<PencilRuler />} onSelect={() => sidebarEdit.start()}>
+        {t("edit.title")}
       </Item>
     </>
   );
 
-  const body = ({ Label, Choice, Item, Separator }: Parts) => (
+  const body = ({ context, Label, Choice, Item, Separator }: Parts) => (
     <>
       {action && (
         <>
@@ -172,7 +183,7 @@ export const RowMenu = forwardRef<HTMLElement, RowMenuProps>(function RowMenu({ 
         </Item>
       ))}
       {enabled && items?.length ? <Separator /> : null}
-      {enabled && prefsBody({ Label, Choice, Item, Separator })}
+      {enabled && prefsBody({ context, Label, Choice, Item, Separator })}
     </>
   );
 

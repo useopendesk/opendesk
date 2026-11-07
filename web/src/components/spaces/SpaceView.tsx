@@ -6,7 +6,7 @@
 // its title. Section titles the person wrote read like the built-in ones and fold.
 
 import { Pencil } from "lucide-react";
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Section, SectionMarkCtx } from "@/app/sidebarParts";
 import { useWaitingFor } from "@/components/tickets/useUrgentChats";
@@ -19,15 +19,17 @@ import { findSection, orderViews } from "@/lib/viewSections";
 import { folders as ticketFolders } from "@/lib/folders";
 import { useSession } from "@/lib/session";
 import { canSeeTeam, useOverview, useWorkspacesData, type WorkspaceData } from "@/lib/spaces/hooks";
-import { isEverywhere, isSectionId, itemKey, replaceSpace, showSpace, SPACE_PAGES, updateItem, updateSection } from "@/lib/spaces/model";
+import { isEverywhere, isSectionId, itemKey, needsWiki, replaceSpace, showSpace, SPACE_PAGES, updateItem, updateSection } from "@/lib/spaces/model";
 import { spaceUi } from "@/lib/spaces/store";
 import { buildEverywhereRow, buildRow, InWorkspace, NavItemRow, useMailLocation, useRowLabels, type RowContext, type RowModel } from "./rows";
 import { RenameRow, SpaceRowMenu } from "./SpaceRowMenu";
 import { useSpaceActions } from "./actions";
 import { defaultSidebarPrefs } from "@/lib/collab/sidebarPrefs";
 
+const LazyTeamspace = lazy(() => import("@/components/wiki/PagesSection").then((m) => ({ default: m.SpaceTeamspace })));
+
 /** The open workspace's sections, in its order: the sidebar without Spaces. */
-export function SectionList({ ids, render }: { ids: SidebarSectionId[]; render: (id: SidebarSectionId, first: boolean) => ReactNode }) {
+export function SectionList<Id extends string = SidebarSectionId>({ ids, render }: { ids: Id[]; render: (id: Id, first: boolean) => ReactNode }) {
   return (
     <div className="[&>*:first-child]:!mt-0">
       {ids.map((id, i) => (
@@ -51,7 +53,7 @@ function SpaceSectionBlock({ section, first, rail, onFold, children }: { section
     );
   return (
     <SectionMarkCtx.Provider value={null}>
-      <Section id={`space-${section.id}`} label={title} rail={rail} first={first} folded={section.collapsed} onFold={onFold}>
+      <Section id={`space-${section.id}`} label={title} rail={rail} first={first} folded={section.collapsed} onFold={onFold} icon={section.icon}>
         <div className="[&>*:first-child]:!mt-0">{children}</div>
       </Section>
     </SectionMarkCtx.Provider>
@@ -96,6 +98,14 @@ function RemoteSection({ d, id, first, rail, mark, ctx }: { d: WorkspaceData; id
       // In that workspace's sidebar order, a section's views together (lib/viewSections).
       list = orderViews((d.views ?? []).filter((v) => !hidden.has(hid.view(v.id)))).map((v) => row("view", v.id));
       break;
+    case "pages":
+      // The workspace's top-level pages that workspace's sidebar shows (its teamspaces and private pages stay there).
+      if (hidden.has(hid.pages("workspace"))) break;
+      list = (d.wiki ?? [])
+        .filter((n) => !n.parent_id && !n.private && !n.team_id && !n.journal && !hidden.has(hid.wikiPage(n.id)))
+        .sort((a, b) => a.position - b.position)
+        .map((n) => row("wiki_page", n.id));
+      break;
     case "workspace":
       list = SPACE_PAGES.map((pg) => row("page", pg));
       break;
@@ -135,7 +145,8 @@ export function SpaceView({
     for (const sec of space.sections) for (const i of sec.items) if (members.has(i.workspace_id) && !out.includes(i.workspace_id)) out.push(i.workspace_id);
     return out;
   }, [space, members]);
-  const data = useWorkspacesData(wids, { folders: (w) => space.sections.some((sec) => sec.items.some((i) => i.workspace_id === w && i.kind === "folder")) });
+  const names = (w: string, kind: string) => space.sections.some((sec) => sec.items.some((i) => i.workspace_id === w && i.kind === kind));
+  const data = useWorkspacesData(wids, { folders: (w) => names(w, "folder"), wiki: (w) => needsWiki(space, w) });
   const everywhere = space.sections.some((sec) => sec.items.some(isEverywhere));
   const overview = useOverview(everywhere);
   const shown = showSpace(space, { members, collab: (w) => data.get(w)?.collab });
@@ -178,6 +189,8 @@ export function SpaceView({
         prefs={d?.prefs ?? NO_PREFS}
         own={item.badge}
         label={item.name}
+        emoji={item.icon}
+        place={`space:${section.id}`}
         ws={d && !d.open ? d.id : undefined}
         mark={d ? badgeFor(d) : null}
         menu={(row) => (
@@ -194,13 +207,25 @@ export function SpaceView({
     const blocks: ({ kind: "section"; item: SpaceItem } | { kind: "rows"; items: SpaceItem[] })[] = [];
     for (const item of items) {
       const last = blocks[blocks.length - 1];
-      if (item.kind === "section") blocks.push({ kind: "section", item });
+      // A teamspace of the open workspace is its tree of pages, like a section.
+      if (item.kind === "section" || (item.kind === "wiki_space" && data.get(item.workspace_id)?.open)) blocks.push({ kind: "section", item });
       else if (last?.kind === "rows") last.items.push(item);
       else blocks.push({ kind: "rows", items: [item] });
     }
     return blocks.map((b, bi) => {
       if (b.kind === "section") {
         const it = b.item;
+        if (it.kind === "wiki_space") {
+          const team = data.get(it.workspace_id)?.teams?.find((x) => x.id === it.id);
+          if (!team || !buildRow(it, data.get(it.workspace_id)!, { labels })) return null;
+          return (
+            <div key={itemKey(it)} className={cn("flex flex-col gap-px", bi > 0 && "mt-3")}>
+              <Suspense fallback={null}>
+                <LazyTeamspace team={team} />
+              </Suspense>
+            </div>
+          );
+        }
         if (!isSectionId(it.id)) return null;
         const d = data.get(it.workspace_id);
         if (!d) return null;
