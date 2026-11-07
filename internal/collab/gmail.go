@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/useopendesk/opendesk/internal/db"
 )
 
 // Gmail through the Gmail API (gmail.modify). Gmail keeps mail under labels: its system
@@ -601,27 +603,54 @@ func (s *service) importGmailWindow(ctx context.Context, p *pass, g *gmailProvid
 	return s.applyGmailChanges(ctx, p, g, changes, backlog)
 }
 
-// checkReads tells a batch's reads that Gmail would not answer (a 5xx past the call's own
-// waits) apart from Gmail being down. It answers nil when those are the messages' own: Gmail
-// answered another read of the batch, or a call for the profile now. It answers the error
-// that ends the pass when Gmail refuses every call, or does not answer the profile either.
-func (g *gmailProvider) checkReads(ctx context.Context, errs []error) error {
-	failed, answered := false, false
+// checkReads tells a batch's reads that Gmail would not answer (a 5xx, or a rate limit that
+// names no wait, past the call's own waits) apart from Gmail refusing the account's reads as
+// a whole. It answers nil when those are the messages' own: Gmail answered another read of
+// the batch, or answers read for a message already stored (a 5xx with none stored asks for
+// the profile). Otherwise it answers the error that ends the pass.
+func (s *service) checkReads(ctx context.Context, p *pass, g *gmailProvider, ids []string, errs []error, read func(context.Context, string) error) error {
+	refused, answered, failed := 0, 0, false
+	var first error
 	for _, err := range errs {
+		var na *notAsked
 		switch {
+		case errors.As(err, &na):
 		case isRefusing(err):
-			return err
+			refused++
+			if first == nil {
+				first = err
+			}
 		case isPassing(err):
 			failed = true
 		default:
-			answered = true
+			answered++
 		}
 	}
-	if !failed || answered {
+	switch {
+	case answered > 0 || (refused == 0 && !failed):
 		return nil
+	case refused > 0 && !mayBeOwn(first):
+		return &readsError{error: first, refused: refused}
 	}
-	_, err := g.profileHistoryID(ctx)
-	return err
+	var stored string
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT remote_id FROM collab_messages WHERE account_id = $1 AND NOT remote_id = ANY($2)
+		ORDER BY id DESC LIMIT 1`, p.a.ID, ids).Scan(&stored)
+	switch {
+	case db.IsNotFound(err) && refused > 0:
+		return &readsError{error: first, refused: refused}
+	case db.IsNotFound(err):
+		_, err = g.profileHistoryID(ctx)
+		return err
+	case err != nil:
+		return err
+	}
+	if err := read(ctx, stored); err != nil && !isNotFound(err) {
+		if first == nil {
+			return err
+		}
+		return &readsError{error: first, refused: refused + 1}
+	}
+	return nil
 }
 
 // gmailRefused reports Gmail refusing a request as invalid (a 4xx other than a missing
@@ -639,7 +668,8 @@ func gmailRefused(err error) bool {
 // At most initialMax new messages are fetched a pass: this pass's own first, the newest
 // first, then the backlog's, the newest first. It returns the backlog left: what did not
 // fit, oldest first, at most gmailBacklogMax. A message Gmail would not hand over while it
-// answers the rest goes to the backlog's old end, so the mail after it is not held up; a
+// answers the rest (checkReads), or that was not asked for once Gmail refused two, goes to
+// the backlog's old end, so the mail after it is not held up; a
 // stored one whose labels Gmail would not give keeps the ones it has until its next change.
 func (s *service) applyGmailChanges(ctx context.Context, p *pass, g *gmailProvider, changes []gmailChange, backlog []string) ([]string, error) {
 	inChanges := make(map[string]bool, len(changes))
@@ -743,7 +773,11 @@ func (s *service) applyGmailChanges(ctx context.Context, p *pass, g *gmailProvid
 			m, raw, err := gp.getRaw(ctx, id)
 			return gmailFetched{m: m, raw: raw}, err
 		})
-		if err := g.checkReads(ctx, errs); err != nil {
+		err = s.checkReads(ctx, p, g, todo, errs, func(ctx context.Context, id string) error {
+			_, _, err := g.getRaw(ctx, id)
+			return err
+		})
+		if err != nil {
 			return nil, err
 		}
 		fetched := map[string]*newMessage{}

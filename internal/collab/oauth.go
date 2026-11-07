@@ -510,6 +510,8 @@ type providerError struct {
 	code     string
 	endpoint string
 	retryAt  time.Time
+	// hint sorts the provider's own words (providerHint) without keeping them.
+	hint string
 }
 
 func (e *providerError) Error() string { return e.msg }

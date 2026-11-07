@@ -40,6 +40,9 @@ func endpointOf(provider, method, rawURL string) endpoint {
 	if !ok {
 		return endpoint{name: "other", units: 5}
 	}
+	if f := u.Query().Get("format"); f != "" && strings.HasSuffix(name, ".get") {
+		name += "." + strings.ToLower(safeCode(f)) // messages.get.raw: a read's format costs alike
+	}
 	return endpoint{name: name, units: units}
 }
 

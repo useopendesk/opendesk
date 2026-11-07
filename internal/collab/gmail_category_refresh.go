@@ -104,7 +104,11 @@ func (s *service) refreshGmailCategories(ctx context.Context, p *pass, g *gmailP
 			err := g.do(ctx, http.MethodGet, "/messages/"+url.PathEscape(id)+"?format=minimal", nil, &m)
 			return &m, err
 		})
-		if err := g.checkReads(ctx, errs); err != nil {
+		err = s.checkReads(ctx, p, g, ids, errs, func(ctx context.Context, id string) error {
+			var m gmailMessage
+			return g.do(ctx, http.MethodGet, "/messages/"+url.PathEscape(id)+"?format=minimal", nil, &m)
+		})
+		if err != nil {
 			return true, err
 		}
 		for _, err := range errs {

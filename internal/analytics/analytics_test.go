@@ -233,7 +233,8 @@ func TestCallSiteShapesKeepEveryProperty(t *testing.T) {
 		{"ai_feature_used", map[string]any{"feature": "draft_reply", "own_key": false}},
 		{"subscription_started", map[string]any{"plan": "collab", "interval": "year", "seats": 4}},
 		{"collab_sync_failed", map[string]any{"provider": "google", "kind": "rate_limited", "endpoint": "messages.get",
-			"code": "rateLimitExceeded", "status": 429, "failures": 2, "wait_seconds": 900, "shown": true}},
+			"code": "rateLimitExceeded", "status": 429, "failures": 2, "wait_seconds": 900, "shown": true, "hint": "rate_limit",
+			"refused_reads": 2, "answered_reads": 0}},
 		{"collab_messages_deferred", map[string]any{"provider": "google", "count": 1}},
 	}
 	for _, tt := range tests {

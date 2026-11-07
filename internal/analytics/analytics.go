@@ -160,6 +160,10 @@ var eventSchemas = map[string]map[string]propertyValidator{
 		"failures":     nonNegativeCountProperty,
 		"wait_seconds": nonNegativeCountProperty,
 		"shown":        boolProperty,
+		"hint": enumProperty("retry_after", "concurrent_requests", "bandwidth", "daily_limit", "project_quota", "user_rate_limit",
+			"rate_limit", "service_disabled", "backend_error", "internal_error", "precondition", "other"),
+		"refused_reads":  nonNegativeCountProperty,
+		"answered_reads": nonNegativeCountProperty,
 	},
 	"collab_messages_deferred": {
 		"provider": enumProperty("google", "microsoft", "imap"),

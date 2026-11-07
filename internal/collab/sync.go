@@ -245,7 +245,8 @@ func (s *service) recordSyncError(ctx context.Context, a *accountRow, cause erro
 		!retryAt.After(time.Now().Add(syncBackoff(quietFailures)))
 	attrs := syncFailure(a, cause, failures, !quiet)
 	s.log.Info("collab sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", msg, "reconnect", reconnect,
-		"kind", attrs["kind"], "endpoint", attrs["endpoint"], "status", attrs["status"], "code", attrs["code"])
+		"kind", attrs["kind"], "endpoint", attrs["endpoint"], "status", attrs["status"], "code", attrs["code"], "hint", attrs["hint"],
+		"refused_reads", attrs["refused_reads"])
 	s.d.Analytics.Capture("workspace:"+a.WorkspaceID.String(), a.WorkspaceID.String(), "collab_sync_failed", attrs)
 	if quiet {
 		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE collab_accounts SET sync_failures = $2, next_sync_at = $3, updated_at = now() WHERE id = $1`,
@@ -283,6 +284,13 @@ func syncFailure(a *accountRow, cause error, failures int, shown bool) map[strin
 		if !pe.retryAt.IsZero() {
 			props["wait_seconds"] = max(int(time.Until(pe.retryAt).Seconds()), 0)
 		}
+		if pe.hint != "" {
+			props["hint"] = pe.hint
+		}
+	}
+	var re *readsError
+	if errors.As(cause, &re) {
+		props["refused_reads"], props["answered_reads"] = re.refused, re.answered
 	}
 	return props
 }
