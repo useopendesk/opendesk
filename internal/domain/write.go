@@ -491,6 +491,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		if err := ClearTicketDraft(ctx, tx, nm.WorkspaceID, nm.TicketID); err != nil {
 			return Message{}, err
 		}
+		// And the author's own unsent copy of it.
+		if nm.AuthorUserID != nil {
+			if _, err := tx.Exec(ctx, `DELETE FROM ticket_reply_drafts WHERE workspace_id = $1 AND ticket_id = $2 AND user_id = $3`,
+				nm.WorkspaceID, nm.TicketID, *nm.AuthorUserID); err != nil {
+				return Message{}, err
+			}
+		}
 	}
 	if nm.ThreadID != nil {
 		if _, err := PublishThread(ctx, tx, nm.WorkspaceID, nm.TicketID, *nm.ThreadID, "thread.updated"); err != nil {

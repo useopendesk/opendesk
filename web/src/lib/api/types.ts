@@ -2198,6 +2198,14 @@ export type TicketDraft = {
   updated_at: string;
 };
 
+/** The signed-in member's own unsent reply on a ticket (contracts/api.md "Reply drafts"): private, kept on the server. */
+export type ReplyDraft = {
+  ticket_id: string;
+  body_html: string;
+  attachments: Attachment[];
+  updated_at: string;
+};
+
 /** Ollie's suggested reply on an email ticket (contracts/agent.md "Email"). */
 export type SuggestedReply = {
   id: string;

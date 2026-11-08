@@ -591,6 +591,9 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | GET | `/v1/tickets/{id}/draft` | viewer → `{draft: Draft \| null}` ("Drafts") |
 | PUT | `/v1/tickets/{id}/draft` | agent (`tickets:write`). `{body_html}` → `Draft`; replaces the ticket's draft. Sanitized like a reply, `422` when empty |
 | DELETE | `/v1/tickets/{id}/draft` | agent (`tickets:write`) → 204; idempotent |
+| GET | `/v1/tickets/{id}/reply-draft` | agent, signed-in member → `{draft: ReplyDraft \| null}`: the caller's own unsent reply on the ticket ("Reply drafts") |
+| PUT | `/v1/tickets/{id}/reply-draft` | agent (`tickets:write`), signed-in member. `{body_html, attachment_ids?}` → `{draft}`; saves the caller's own reply, replacing the one before. Sanitized like a reply; `attachment_ids` are the caller's uploads not on a message yet (`422` otherwise). No text, image or file discards it (`{draft: null}`). A hidden ticket is `404`; an API key is `403` |
+| DELETE | `/v1/tickets/{id}/reply-draft` | agent (`tickets:write`), signed-in member → 204; idempotent |
 | POST | `/v1/tickets/{id}/typing` | agent (`tickets:write`), signed-in member (an API key gets `403`) → 204. A teammate is writing a reply: on a chat ticket with a contact, the visitor's widget gets `"typing"` `{ticket_id, user: {id, name}}` (contracts/realtime.md "Live events"); on other tickets nothing happens. A ticket the caller cannot see is `404`. Clients send it at most every 2.5 s while typing |
 | GET | `/v1/tickets/{id}/threads` | viewer → `{data: Thread[]}`, oldest first ("Threads") |
 | POST | `/v1/tickets/{id}/threads` | `{to: string[] /* 1..20 */, cc?: string[], subject, body_html, attachment_ids?, mailbox_id?, include_history?: boolean, forward_attachment_ids?: string[], forward_message_id?: string}` → 201 `{thread: Thread, message: Message}` |
@@ -758,6 +761,24 @@ type Draft = { ticket_id: string; body_html: string; body_text: string;
 - This is not Ollie's suggested reply (contracts/agent.md "Email"), which answers one customer
   message and is sent as written, attributed to the agent.
 - Event: `ticket_draft.updated` (contracts/events.md) with the draft, or `null` once it is gone.
+
+#### Reply drafts
+
+A member's own unsent reply on a ticket, saved as they write so it follows them to another device
+and survives a refresh. It is the member's alone: no teammate, admin or API key reads it, and it
+sends no event. The app saves it a moment after typing stops and fills an empty reply box with it
+when the ticket opens; a reply box that already has text keeps it and replaces the saved one.
+
+```ts
+type ReplyDraft = { ticket_id: string; body_html: string; attachments: Attachment[]; updated_at: string };
+```
+
+- One per member and ticket. The member's reply going out on the ticket (`POST /v1/tickets/{id}/messages`,
+  a support channel thread or any other path through `domain.AddMessage`) clears their draft; a teammate's
+  reply does not. `PUT` with nothing in it, or `DELETE`, discards it. It goes with the ticket, or the member.
+- `attachments` are uploads (`POST /v1/attachments`) not yet on a message. The purge of stale uploads
+  (24 hours) leaves the ones a draft holds, and a draft untouched for 30 days is deleted, which frees them.
+- It is not the ticket's shared draft above, which a teammate or an AI agent stages for whoever opens the ticket.
 
 #### Labels and custom fields
 

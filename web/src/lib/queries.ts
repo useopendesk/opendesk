@@ -79,6 +79,7 @@ export const qk = {
   suggestedReply: (id: string) => w(["tickets", "suggested-reply", id] as const),
   /** The ticket's shared draft (contracts/api.md "Drafts"). */
   ticketDraft: (id: string) => w(["tickets", "draft", id] as const),
+  replyDraft: (id: string) => w(["tickets", "reply-draft", id] as const),
   get contactLists() {
     return w(["contacts", "list"] as const);
   },
@@ -393,6 +394,8 @@ export const q = {
   suggestedReply: (id: string) =>
     queryOptions({ queryKey: qk.suggestedReply(id), queryFn: async () => (await api.ai.suggestedReply.get(id)).suggested_reply }),
   ticketDraft: (id: string) => queryOptions({ queryKey: qk.ticketDraft(id), queryFn: async () => (await api.tickets.draft.get(id)).draft }),
+  replyDraft: (id: string) =>
+    queryOptions({ queryKey: qk.replyDraft(id), queryFn: async () => (await api.tickets.replyDraft.get(id)).draft, staleTime: 0, gcTime: 0 }),
   contacts: (query: { q?: string; company_id?: string }) =>
     infiniteQueryOptions({
       queryKey: qk.contacts(query),

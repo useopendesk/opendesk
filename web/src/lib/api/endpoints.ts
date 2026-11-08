@@ -591,6 +591,12 @@ export const api = {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
       discard: (id: string) => http.del(`/v1/tickets/${id}/draft`),
     },
+    /** My own unsent reply on the ticket, saved as I type (contracts/api.md "Reply drafts"). */
+    replyDraft: {
+      get: (id: string) => http.get<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`),
+      save: (id: string, b: { body_html: string; attachment_ids: string[] }) => http.put<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`, b),
+      discard: (id: string) => http.del(`/v1/tickets/${id}/reply-draft`),
+    },
     threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
     startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
     sendInThread: (id: string, threadId: string, b: { body_html: string; attachment_ids?: string[] }) =>
