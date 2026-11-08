@@ -294,7 +294,7 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
   user_hash: "<hmac from your server>",
   email: "ada@example.com",
   name: "Ada Lovelace",
-  company: { id: "acct-9", name: "Acme" },
+  company: { id: "acct-9" },
   fields: { widget_plan: "pro" },
 });`;
 
