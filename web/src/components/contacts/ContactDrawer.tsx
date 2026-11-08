@@ -33,6 +33,7 @@ import { atLeast, useRole } from "@/lib/session";
 import { useProducts } from "@/lib/products";
 import { useStartChat } from "@/components/tickets/useNewTicket";
 import { CompanyPicker } from "./CompanyPicker";
+import { ContactEmails } from "./ContactEmails";
 import { CompanyGlyph, Detail, fieldLabel, fieldsOf, fieldText, MiniStat, none } from "./bits";
 import { RecordFields, RecordLabels, useRecordFields } from "./LabelsAndFields";
 import { dropContact, patchContact, restore, snapshot } from "./cache";
@@ -138,6 +139,12 @@ export function ContactDrawer({ contactId, onClose }: { contactId: string | null
                     <CopyButton value={c.email} label={t("drawer.copyEmail")} className="size-5" />
                   </span>
                 )}
+                {c.emails.map((extra) => (
+                  <span key={extra} className="mono flex min-w-0 items-center gap-0.5 text-xs text-fg-3" data-ph-mask>
+                    <span className="truncate">{extra}</span>
+                    <CopyButton value={extra} label={t("drawer.copyEmail")} className="size-5" />
+                  </span>
+                ))}
                 {c.company && (
                   <Link
                     to="/companies/{-$companyId}"
@@ -360,6 +367,9 @@ function EditContact({ c, onDirty, onDeleted, onDone }: { c: Contact; onDirty: (
   const [blocked, setBlocked] = useState(c.blocked);
   const [error, setError] = useState<string | null>(null);
 
+  // Making another address the primary one changes the email field under the form.
+  useEffect(() => setEmail(c.email ?? ""), [c.email]);
+
   const dirty =
     name !== c.name || email !== (c.email ?? "") || phone !== c.phone || notes !== c.notes || company?.id !== c.company?.id || blocked !== c.blocked;
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
@@ -418,6 +428,7 @@ function EditContact({ c, onDirty, onDeleted, onDone }: { c: Contact; onDirty: (
         <Field label={t("field.email")}>{(p) => <TextInput {...p} type="email" className="mono" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
         <Field label={t("field.phone")}>{(p) => <TextInput {...p} value={phone} onChange={(e) => setPhone(e.target.value)} />}</Field>
       </div>
+      <ContactEmails c={c} />
       <Field label={t("field.company")}>{({ id }) => <CompanyPicker id={id} value={company} onChange={setCompany} />}</Field>
       <Field label={t("field.notes")} hint={t("field.notesHint")}>
         {(p) => <Textarea {...p} rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />}

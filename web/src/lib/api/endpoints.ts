@@ -619,6 +619,10 @@ export const api = {
     ...crud<T.Contact, Partial<Pick<T.Contact, "name" | "email" | "phone" | "notes" | "external_id" | "blocked" | "custom">> & { company_id?: string | null } & LabelWrites>("/v1/contacts"),
     search: (q: ContactListQuery) => http.get<T.Page<T.Contact>>("/v1/contacts", { query: listQuery(q) }),
     tickets: (id: string, q?: ListQuery) => http.get<T.Page<T.Ticket>>(`/v1/contacts/${id}/tickets`, { query: q }),
+    /** Extra addresses (contracts/api.md "Contact emails"); each answers with the contact. */
+    addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
+    removeEmail: (id: string, email: string) => http.del<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}`),
+    makePrimaryEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}/make-primary`),
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {

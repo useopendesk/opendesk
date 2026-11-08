@@ -325,7 +325,7 @@ export function registerTickets() {
       if (!email) throw invalid("Contact email is required");
       contact = ws.contacts.find((c) => c.email === email);
       if (!contact) {
-        contact = { id: uuid(), email, name: name || email.split("@")[0], phone: "", avatar_url: null, avatar_source: null, company: null, external_id: null, notes: "", custom: {}, tags: [], fields: {}, blocked: false, ticket_count: 0, created_at: nowIso(), updated_at: nowIso() };
+        contact = { id: uuid(), email, emails: [], name: name || email.split("@")[0], phone: "", avatar_url: null, avatar_source: null, company: null, external_id: null, notes: "", custom: {}, tags: [], fields: {}, blocked: false, ticket_count: 0, created_at: nowIso(), updated_at: nowIso() };
         ws.contacts.unshift(contact);
         publish(ws, "contact.created", { contact });
       }

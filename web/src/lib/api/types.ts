@@ -269,6 +269,8 @@ export type CompanyRef = { id: string; name: string; domain: string; avatar_url?
 export type Contact = {
   id: string;
   email: string | null;
+  /** Extra addresses beside the primary `email`: mail from them lands on this contact. */
+  emails: string[];
   name: string;
   phone: string;
   avatar_url: string | null;

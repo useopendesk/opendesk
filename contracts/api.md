@@ -92,7 +92,7 @@ type Availability = "online" | "away" | "offline";
 type Invitation = { id: string; email: string; role: Role; expires_at: string; created_at: string; invited_by: UserRef | null };
 type Team = { id: string; name: string; member_ids: string[]; created_at: string }; // full shape, brands, widgets, routing and private teams: contracts/teams.md
 
-type Contact = { id: string; email: string | null; name: string; phone: string; avatar_url: string | null; avatar_source: AvatarSource | null; company: CompanyRef | null; external_id: string | null; notes: string; custom: Record<string, unknown>; tags: TagRef[]; fields: FieldValues; blocked: boolean; ticket_count: number; chat_reachable: boolean /* a chat the team starts reaches them in some brand's widget, by the rule of POST /v1/tickets "Starting a chat"; a chat of one brand needs it in that brand */; created_at: string; updated_at: string };
+type Contact = { id: string; email: string | null; emails: string[] /* extra addresses, beside the primary email ("Contact emails") */; name: string; phone: string; avatar_url: string | null; avatar_source: AvatarSource | null; company: CompanyRef | null; external_id: string | null; notes: string; custom: Record<string, unknown>; tags: TagRef[]; fields: FieldValues; blocked: boolean; ticket_count: number; chat_reachable: boolean /* a chat the team starts reaches them in some brand's widget, by the rule of POST /v1/tickets "Starting a chat"; a chat of one brand needs it in that brand */; created_at: string; updated_at: string };
 type ContactRef = { id: string; email: string | null; name: string; avatar_url: string | null };
 type Company = { id: string; name: string; domain: string; avatar_url: string | null /* logo */; avatar_source: "upload" | "domain" | null; notes: string; custom: Record<string, unknown>; tags: TagRef[]; fields: FieldValues; contact_count: number; created_at: string; updated_at: string };
 type CompanyRef = { id: string; name: string; domain: string; avatar_url: string | null };
@@ -599,6 +599,9 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | GET | `/v1/messages/{id}/original` | → `{full_html}`: an inbound email in full (with its quoted history); for an email we sent (a reply, a side conversation's message), the copy kept when it went out: the layout, the reply, the signature and the quoted conversation, sanitized like every stored email, its inline images pointing at their attachments. A copy too large to keep (over 1 MB) is not kept. The kept copies of emails sent after a reply are dropped when that reply is deleted or purged (`message.updated`), since their quoted conversation may hold it; the body when there is none |
 | CRUD | `/v1/contacts`, `/v1/contacts/{id}` | list supports `q`, `company_id`, `tag`, `field.<key>`. Write bodies also take `tags?: string[]` (replaces), `add_tags?`, `remove_tags?` (names, as for tickets) and `fields?` (merged; null clears) |
 | GET | `/v1/contacts/{id}/tickets` | list |
+| POST | `/v1/contacts/{id}/emails` | agent (`contacts:write`). `{email}` → `201 Contact`: gives the contact an extra address ("Contact emails"). An address that belongs to any contact in the workspace, primary or extra, this contact's included, is `409`; at most 20 extras (`422`) |
+| DELETE | `/v1/contacts/{id}/emails/{email}` | agent (`contacts:write`) → `Contact`; takes an extra address off (`404` when it is not one; the primary is changed with `PATCH`) |
+| POST | `/v1/contacts/{id}/emails/{email}/make-primary` | agent (`contacts:write`) → `Contact`; swaps an extra address with the primary (`404` when it is not an extra). Customer-portal credentials end, as for any change of `email` |
 | CRUD | `/v1/companies`, `/v1/companies/{id}` | list supports `q`, `tag`, `field.<key>`; write bodies take `tags?`, `add_tags?`, `remove_tags?`, `fields?` as contacts |
 | PUT/DELETE | `/v1/contacts/{id}/avatar`, `/v1/companies/{id}/avatar` | agent (`contacts:write`). PUT multipart `file` (image, 5 MB) → `Contact` / `Company` with `avatar_source: "upload"`, which automatic sources never replace. DELETE removes it and looks up the automatic sources again. Audit `contact.avatar_updated` / `company.avatar_updated` (and `_removed`); publishes `contact.updated` / `company.updated` |
 | POST | `/v1/contacts/{id}/avatar/refresh`, `/v1/companies/{id}/avatar/refresh` | agent → 202. Looks the automatic sources up again now (no effect on an upload) |
@@ -737,6 +740,20 @@ type Thread = { id: string; ticket_id: string; subject: string; to: string[]; cc
 - Merging a ticket moves its threads to the target with their messages.
 - Events: `thread.created` and `thread.updated` (contracts/events.md); the messages themselves are
   `message.created` / `message.updated` like any note.
+
+#### Contact emails
+
+A contact has one primary email (`email`) and any number of extra addresses (`emails`). An address
+belongs to one contact in a workspace, whether primary or extra; the database holds that for every
+writer (`409` on any attempt, `PATCH` and `POST /v1/contacts` included).
+
+- Mail from an extra address lands on the contact: inbound email, `POST /v1/tickets` with `contact`
+  and imports find the contact by any of its addresses, and a new address still makes a new contact.
+- A contact is blocked at every address. `GET /v1/contacts?q=` and search find a contact by an extra address.
+- The primary address stays what replies, templates and the customer portal use: portal sign-in is by
+  the primary address alone, and a visitor's typed address never links to a contact, extra addresses
+  included (the widget keeps it as `custom.widget_email`).
+- `contact.updated` carries the contact with its `emails`.
 
 #### Drafts
 
