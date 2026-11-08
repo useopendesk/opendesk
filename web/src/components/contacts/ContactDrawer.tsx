@@ -182,8 +182,12 @@ export function ContactDrawer({ contactId, onClose }: { contactId: string | null
           <AnimatePresence mode="wait" initial={false}>
             {editing ? (
               <motion.div key="edit" {...(reduce ? {} : swap)}>
+                {/* Each change here is saved at once, apart from the form's Save. */}
+                <div className="border-b border-line-soft px-5 py-4">
+                  <ContactEmails c={c} />
+                </div>
                 <EditContact
-                  key={c.id + c.updated_at}
+                  key={c.id}
                   c={c}
                   onDirty={setDirty}
                   onDeleted={onClose}
@@ -367,7 +371,7 @@ function EditContact({ c, onDirty, onDeleted, onDone }: { c: Contact; onDirty: (
   const [blocked, setBlocked] = useState(c.blocked);
   const [error, setError] = useState<string | null>(null);
 
-  // Making another address the primary one changes the email field under the form.
+  // Another address made the primary one (ContactEmails) changes the email field under the form.
   useEffect(() => setEmail(c.email ?? ""), [c.email]);
 
   const dirty =
@@ -428,7 +432,6 @@ function EditContact({ c, onDirty, onDeleted, onDone }: { c: Contact; onDirty: (
         <Field label={t("field.email")}>{(p) => <TextInput {...p} type="email" className="mono" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
         <Field label={t("field.phone")}>{(p) => <TextInput {...p} value={phone} onChange={(e) => setPhone(e.target.value)} />}</Field>
       </div>
-      <ContactEmails c={c} />
       <Field label={t("field.company")}>{({ id }) => <CompanyPicker id={id} value={company} onChange={setCompany} />}</Field>
       <Field label={t("field.notes")} hint={t("field.notesHint")}>
         {(p) => <Textarea {...p} rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />}
