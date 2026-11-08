@@ -16,8 +16,8 @@ import (
 )
 
 // FieldPrefix starts the key of a contact field a signed-in visitor's page may set: the
-// workspace opts a field in by naming it so. An identity is signed over the user id alone,
-// so what the page sends with it is the visitor's word, never a field agents rely on.
+// workspace opts a field in by naming it so, and a field without the prefix is never written
+// from the widget.
 const FieldPrefix = "widget_"
 
 // syncProfile applies what a verified session carries beyond who the user is: the company

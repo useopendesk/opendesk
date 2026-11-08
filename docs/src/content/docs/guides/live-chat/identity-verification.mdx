@@ -125,7 +125,7 @@ opendesk('identify', {
 ```
 
 - **`company.id`** is your own id for the account. opendesk finds the company that has it, or creates one with the `name` (and `domain`, if no other company has it) the first time, and links the contact. It is never matched by name or domain, and an existing company keeps its name.
-- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The page sends these values, and the signature covers only the user id, so treat them as what the user's browser said, and keep fields agents rely on out of this prefix.
+- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The values come from your page, so keep to this prefix only the fields you want the widget to fill, such as a plan name or a seat count.
 - When something changes without a page load, call `opendesk('update', { … })` with the same `user_id` and `user_hash`. It updates the contact without starting a new chat session.
 - Visitors without a valid `user_hash` are anonymous: `company` and `fields` are ignored.
 
