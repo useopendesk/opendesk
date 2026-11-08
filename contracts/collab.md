@@ -188,6 +188,28 @@ after a connect, a reconnect, `POST .../sync` or an action. One runs per account
   images keeps its raw MIME in storage (`collab/<workspace>/<account>/<message>.eml`, deleted with
   the message) and its files are read from it. Messages over 30 MB are skipped.
 
+### Push
+
+With `COLLAB_GOOGLE_PUBSUB_TOPIC` and `COLLAB_GOOGLE_PUBSUB_SERVICE_ACCOUNT` set, Gmail pushes
+each mailbox's changes and its new mail arrives in seconds. The timer above stays as it is, so
+a push that never comes costs only the wait.
+
+- **Watch**: a sync pass of a Gmail account calls `users.watch` on the topic (100 quota units)
+  once a day (Gmail ends a watch after 7 days), at once when the topic changed, and an hour after
+  Gmail refused one. A watch never fails the sync. Stored on the account: `gmail_watch_topic`,
+  `gmail_watch_at` (the next renewal).
+- **Push**: `POST /v1/collab/google/push`, the topic's push subscription, with Pub/Sub's OIDC
+  token: issuer `https://accounts.google.com`, audience `<API_URL>/v1/collab/google/push`, the
+  configured service account as a verified `email`. Anything else is `401`; without the settings
+  the route is `404`. The message's data is Gmail's `{"emailAddress", "historyId"}`. Every Gmail
+  account of that address keeps the newest pushed history id (`gmail_push_history`), and one whose
+  synced history is older gets its sync queued, unless it waits for a reconnect, its backoff or a
+  hold, or its workspace lacks Collab. A verified push is `204` whatever it named, so Pub/Sub
+  never sends it again.
+- **During a pass**: a push that arrives while the account's sync runs cannot queue another (one
+  per account). When the pass ends behind the pushed history id and moved on, its job runs again
+  5 seconds later.
+
 ## History
 
 The first sync is quick and recent. A **history import** brings the rest: as far back as the person
