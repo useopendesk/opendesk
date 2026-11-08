@@ -204,6 +204,18 @@ curl https://api.opendesk.sh/v1/tickets/bulk \
 
 Send `{ "ids": [...], "delete": true }` to delete instead.
 
+## Your reply draft
+
+The app saves the reply a member is writing, so it comes back after a refresh or on another device. It is private to the member and one per ticket.
+
+| Method | Path | |
+| --- | --- | --- |
+| `GET` | `/v1/tickets/{id}/reply-draft` | `{ "draft": { ticket_id, body_html, attachments, updated_at } }`, or `null` |
+| `PUT` | `/v1/tickets/{id}/reply-draft` | `{ body_html, attachment_ids? }` saves it, replacing the one before. Nothing in it discards it |
+| `DELETE` | `/v1/tickets/{id}/reply-draft` | discards it (`204`) |
+
+These need a signed-in member with the agent role; an API key gets `403`. `attachment_ids` are your uploads that are not on a message yet. Sending your reply on the ticket clears the draft; a teammate's reply does not. A draft untouched for 30 days is removed.
+
 ## Merge
 
 ```sh
