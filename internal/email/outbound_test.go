@@ -282,6 +282,46 @@ func TestSendMessageSystemWithAttachments(t *testing.T) {
 	}
 }
 
+// With ticket_number_in_subject off the subject carries no "[#n]", and the customer's reply
+// still threads onto the ticket through its headers.
+func TestSendMessageWithoutSubjectTag(t *testing.T) {
+	w := newWorld(t)
+	sink, port := startSink(t, w)
+	m := w.mailbox(InboundIMAP, OutboundSMTP, func(m *mailboxRow, c *credentials) {
+		m.Config = MailboxConfig{IMAPHost: "127.0.0.1", IMAPPort: 1, IMAPTLS: TLSImplicit, IMAPUsername: "u",
+			SMTPHost: "127.0.0.1", SMTPPort: port, SMTPTLS: TLSStart, SMTPUsername: "support@acme.test"}
+		c.Password = "imap-pass"
+		c.SMTPPassword = "s3cret-pass"
+	})
+	if _, err := w.s.d.DB.Pool.Exec(w.ctx, `UPDATE workspaces SET settings = settings || '{"ticket_number_in_subject": false}' WHERE id = $1`, w.wid); err != nil {
+		t.Fatal(err)
+	}
+	from := customer()
+	in := w.receive(m, fixture(t, "new_plain.eml", "{{FROM}}", from, "{{TO}}", "", "{{ID}}", "abc"+crypto.RandomString(6)))
+	tk := w.ticket(w.messageFor(in).TicketID)
+	mid := w.agentReply(tk.ID, "Unplug it now.", "")
+	if err := w.s.sendMessage(w.ctx, w.wid, mid, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.msgs) != 1 {
+		t.Fatalf("sink got %d messages", len(sink.msgs))
+	}
+	env, err := enmime.ReadEnvelope(bytes.NewReader(sink.msgs[0].data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := env.GetHeader("Subject"); got != "Re: Printer is on fire" {
+		t.Errorf("Subject = %q", got)
+	}
+	// The customer answers on the same thread, without any tag.
+	reply := "From: " + from + "\r\nTo: " + m.Email + "\r\nSubject: Re: Printer is on fire\r\nIn-Reply-To: " + env.GetHeader("Message-Id") +
+		"\r\nMessage-ID: <r" + crypto.RandomString(6) + "@c.test>\r\n\r\nStill smoking.\r\n"
+	back := w.receive(m, reply)
+	if got := w.messageFor(back).TicketID; got != tk.ID {
+		t.Errorf("the reply opened ticket %s, not %s", got, tk.ID)
+	}
+}
+
 func TestSendTicketEmailAutoReply(t *testing.T) {
 	w := newWorld(t)
 	m := w.mailbox(InboundForwarding, OutboundSystem, nil)

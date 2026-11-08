@@ -84,6 +84,7 @@ type ticketInfo struct {
 	id             uuid.UUID
 	number         int64
 	subject        string
+	subjectTag     bool // the workspace puts "[#n]" in the subjects it sends
 	mailboxID      *uuid.UUID
 	contactEmail   *string
 	contactName    string
@@ -99,14 +100,15 @@ func loadTicketInfo(ctx context.Context, q db.Querier, wid, id uuid.UUID) (*tick
 	var blocked *bool
 	var contactName *string
 	err := q.QueryRow(ctx, `SELECT t.id, t.number, t.subject, t.mailbox_id, c.email, c.blocked, c.name, t.brand_id, t.team_id,
-		t.received_at, COALESCE(tm.name, ''), COALESCE(b.name, '')
+		t.received_at, COALESCE(tm.name, ''), COALESCE(b.name, ''), `+subjectTagSQL+`
 		FROM tickets t
+		JOIN workspaces w ON w.id = t.workspace_id
 		LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN teams tm ON tm.id = t.team_id AND tm.workspace_id = t.workspace_id
 		LEFT JOIN brands b ON b.id = t.brand_id AND b.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2 AND t.deleted_at IS NULL`, wid, id).
 		Scan(&t.id, &t.number, &t.subject, &t.mailboxID, &t.contactEmail, &blocked, &contactName, &t.brandID, &t.teamID,
-			&t.receivedAt, &t.names.Team, &t.names.Brand)
+			&t.receivedAt, &t.names.Team, &t.names.Brand, &t.subjectTag)
 	t.contactBlocked = blocked != nil && *blocked
 	if contactName != nil {
 		t.contactName = displayname.Displayable(*contactName)
@@ -486,7 +488,7 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 		if same := providerReplySubject(threadSubject); thread != nil && same != "" {
 			subject = same
 		} else {
-			subject = replySubject(firstNonEmpty(subject, t.subject), t.number, inReplyTo != "")
+			subject = replySubject(firstNonEmpty(subject, t.subject), t.number, inReplyTo != "", t.subjectTag)
 		}
 	}
 	ref := templates.Ref{WorkspaceID: wid, TicketID: &ticketID, AuthorUserID: authorID, MailboxID: &m.ID, MailboxEmail: firstNonEmpty(alias, m.Email)}
@@ -936,14 +938,14 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 		}
 		body = tc.Fill(body)
 		subject = tc.FillText(subject)
-		if strings.TrimSpace(subject) != "" {
+		if strings.TrimSpace(subject) != "" && t.subjectTag {
 			if _, ok := subjectTicketNumber(subject); !ok {
 				subject += " [#" + itoa(t.number) + "]"
 			}
 		}
 	}
 	if strings.TrimSpace(subject) == "" {
-		subject = replySubject(t.subject, t.number, inReplyTo != "")
+		subject = replySubject(t.subject, t.number, inReplyTo != "", t.subjectTag)
 	}
 	if strings.TrimSpace(text) == "" {
 		text = htmlToText(body)
