@@ -7,11 +7,11 @@ replace github.com/aymerick/douceur => ./internal/thirdparty/douceur
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/anthropics/anthropic-sdk-go v1.84.0
-	github.com/aws/aws-sdk-go-v2 v1.47.5
-	github.com/aws/aws-sdk-go-v2/config v1.33.12
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
-	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.4
+	github.com/aws/aws-sdk-go-v2 v1.47.6
+	github.com/aws/aws-sdk-go-v2/config v1.33.14
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.14
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.7
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.6
 	github.com/aymerick/douceur v0.2.0
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.21.0
@@ -27,20 +27,20 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/jhillyerd/enmime/v2 v2.5.0
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nats-io/nats-server/v2 v2.15.2
 	github.com/nats-io/nats.go v1.55.0
-	github.com/posthog/posthog-go v1.38.0
+	github.com/posthog/posthog-go v1.39.0
 	github.com/pquerna/otp v1.5.0
-	github.com/riverqueue/river v0.50.0
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.50.0
-	github.com/riverqueue/river/rivertype v0.50.0
+	github.com/riverqueue/river v0.51.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.51.0
+	github.com/riverqueue/river/rivertype v0.51.0
 	github.com/spf13/cobra v1.10.2
-	github.com/stripe/stripe-go/v87 v87.0.0
+	github.com/stripe/stripe-go/v87 v87.1.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.62.0
@@ -54,20 +54,20 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.8.0-default-no-op // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.9 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.12.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.39.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6 // indirect
-	github.com/aws/smithy-go v1.28.7 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.26 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.12.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.7 // indirect
+	github.com/aws/smithy-go v1.28.8 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
@@ -109,8 +109,8 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/riverqueue/river/riverdriver v0.50.0 // indirect
-	github.com/riverqueue/river/rivershared v0.50.0 // indirect
+	github.com/riverqueue/river/riverdriver v0.51.0 // indirect
+	github.com/riverqueue/river/rivershared v0.51.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
