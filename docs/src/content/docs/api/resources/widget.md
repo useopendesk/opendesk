@@ -45,6 +45,8 @@ curl https://api.opendesk.sh/v1/widget/session \
 | `visitor_token` | resume an existing session |
 | `email`, `name` | what the visitor told you |
 | `user_id`, `user_hash` | a [verified identity](/guides/live-chat/identity-verification/): `user_hash` is hex HMAC-SHA256 of `user_id` with the widget secret |
+| `company` | `{ id, name?, domain? }`, with a verified identity only: your own id for the user's account. The company with that id is found, or created with `name` and `domain` the first time; an existing company is never renamed |
+| `fields` | with a verified identity only: contact custom fields by key. Only keys that start with `widget_` are set; others are ignored |
 
 `ws_token` is a 5-minute `widget_ws` token for the [realtime gateway](/api/realtime/#the-chat-widget)'s widget endpoint. It lets the visitor join only their own contact topic.
 

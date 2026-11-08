@@ -312,3 +312,14 @@ func registerCompanies(d *deps.Deps, api huma.API) {
 			return nil, nil
 		})
 }
+
+// PublishCompany publishes a company event (company.created or company.updated) for
+// another area that wrote the company in its own transaction.
+func PublishCompany(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID, typ string) error {
+	c, err := loadCompany(ctx, tx, wid, id)
+	if err != nil {
+		return err
+	}
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"company": c}})
+	return err
+}
