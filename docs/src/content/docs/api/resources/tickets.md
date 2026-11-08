@@ -151,6 +151,7 @@ curl https://api.opendesk.sh/v1/tickets \
 | `widget_id` | the widget a chat opens in |
 | `body_html` | the first message |
 | `kind` | `reply` or `note` |
+| `direction` | `outbound` (default) or `inbound`: with `inbound`, a `reply` is stored as the contact's own message, as if they had emailed it, and nothing is sent. Needs a contact; takes no `cc` or `bcc` |
 | `priority`, `severity`, `assignee_id`, `team_id`, `tags`, `fields`, `status` | optional |
 
 An `email` ticket created with a `reply` sends that reply to the contact from the mailbox. When that mailbox has no way to send (`sending: "system_off"`, see [Mailboxes](/api/resources/mailboxes/#sending-through-opendesk)), the request is `422 mailbox_cannot_send` and no ticket is created.
