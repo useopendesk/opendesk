@@ -162,6 +162,12 @@ type Config struct {
 	CollabGoogleClientSecret    string
 	CollabMicrosoftClientID     string
 	CollabMicrosoftClientSecret string
+	// CollabGooglePubSubTopic (COLLAB_GOOGLE_PUBSUB_TOPIC, projects/<project>/topics/<topic>)
+	// and CollabGooglePubSubServiceAccount (COLLAB_GOOGLE_PUBSUB_SERVICE_ACCOUNT) turn on Gmail
+	// push (contracts/collab.md "Push"): Gmail accounts are watched on the topic, and its push
+	// subscription, authenticated as that service account, calls API_URL/v1/collab/google/push.
+	CollabGooglePubSubTopic          string
+	CollabGooglePubSubServiceAccount string
 	// StripePriceCollab and StripePriceCollabYear are the collab plan's recurring per-seat
 	// prices (contracts/billing.md "Collab"); without one the plan cannot be bought.
 	StripePriceCollab     string
@@ -333,6 +339,11 @@ func (c *Config) AdminOrigin() string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// CollabGooglePush reports whether Gmail accounts sync on Gmail's push as well as on a timer.
+func (c *Config) CollabGooglePush() bool {
+	return c.CollabGooglePubSubTopic != "" && c.CollabGooglePubSubServiceAccount != ""
 }
 
 // BillingEnabled reports whether plans, limits and the AI balance are enforced.
@@ -660,6 +671,8 @@ func Load() (*Config, error) {
 	if c.CollabGoogleClientID == "" {
 		c.CollabGoogleClientID, c.CollabGoogleClientSecret = c.GoogleMailboxClientID, c.GoogleMailboxClientSecret
 	}
+	c.CollabGooglePubSubTopic = env("COLLAB_GOOGLE_PUBSUB_TOPIC", "")
+	c.CollabGooglePubSubServiceAccount = env("COLLAB_GOOGLE_PUBSUB_SERVICE_ACCOUNT", "")
 	c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = env("COLLAB_MICROSOFT_CLIENT_ID", ""), env("COLLAB_MICROSOFT_CLIENT_SECRET", "")
 	if c.CollabMicrosoftClientID == "" {
 		c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret
