@@ -589,6 +589,9 @@ func postInbound(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	if err != nil {
 		return domain.Message{}, err
 	}
+	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, hd.Uploader{User: p.ActorUserID(), APIKey: p.ActorAPIKeyID()}); err != nil {
+		return domain.Message{}, err
+	}
 	nm, err := inboundMessage(ctx, tx, p, tid, *contactID, subject, b.BodyHTML, attIDs)
 	if err != nil {
 		return domain.Message{}, err
@@ -607,15 +610,13 @@ func postInbound(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 
 // inboundMessage is the message a contact's own words make: sanitized, never filled with
 // the template variables an agent's reply gets, and marked with the API key that recorded it.
+// The caller has checked the attachments.
 func inboundMessage(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid, contactID uuid.UUID, subject, rawHTML string, attIDs []uuid.UUID) (domain.NewMessage, error) {
 	wid := p.WorkspaceID
 	bodyHTML := hd.SanitizeRich(rawHTML)
 	bodyText := hd.HTMLToText(bodyHTML)
 	if bodyText == "" && len(attIDs) == 0 && !strings.Contains(bodyHTML, "<img") {
 		return domain.NewMessage{}, httpx.Validation("the message is empty")
-	}
-	if err := hd.CheckAttachments(ctx, tx, wid, attIDs, hd.Uploader{User: p.ActorUserID(), APIKey: p.ActorAPIKeyID()}); err != nil {
-		return domain.NewMessage{}, err
 	}
 	nm := domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: "reply", Direction: "inbound", AuthorType: "contact",
 		AuthorContactID: &contactID, BodyHTML: bodyHTML, BodyText: bodyText, Subject: subject, AttachmentIDs: attIDs,
