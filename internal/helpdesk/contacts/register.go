@@ -12,6 +12,7 @@ import (
 func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	registerContacts(d, api)
 	registerEmails(d, api)
+	registerMerge(d, api)
 	registerCompanies(d, api)
 	registerAvatars(d, api)
 	InstallImageHooks()

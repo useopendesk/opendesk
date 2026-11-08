@@ -601,6 +601,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | GET | `/v1/contacts/{id}/tickets` | list |
 | POST | `/v1/contacts/{id}/emails` | agent (`contacts:write`). `{email}` → `201 Contact`: gives the contact an extra address ("Contact emails"). An address that belongs to any contact in the workspace, primary or extra, this contact's included, is `409`; at most 20 extras (`422`) |
 | DELETE | `/v1/contacts/{id}/emails/{email}` | agent (`contacts:write`) → `Contact`; takes an extra address off (`404` when it is not one; the primary is changed with `PATCH`) |
+| POST | `/v1/contacts/{id}/merge` | admin (`contacts:write`). `{into: contact_id}` → `Contact` (the one that stays): merges the contact in the path into `into` ("Merging contacts"). `422` for the same contact, a blocked one with a not blocked one (`contacts_blocked_differ`), or more than 20 extra addresses together; `409 external_id_conflict` for two different external ids; `404` for an unknown contact |
 | POST | `/v1/contacts/{id}/emails/{email}/make-primary` | agent (`contacts:write`) → `Contact`; swaps an extra address with the primary (`404` when it is not an extra). Customer-portal credentials end, as for any change of `email` |
 | CRUD | `/v1/companies`, `/v1/companies/{id}` | list supports `q`, `tag`, `field.<key>`; write bodies take `tags?`, `add_tags?`, `remove_tags?`, `fields?` as contacts |
 | PUT/DELETE | `/v1/contacts/{id}/avatar`, `/v1/companies/{id}/avatar` | agent (`contacts:write`). PUT multipart `file` (image, 5 MB) → `Contact` / `Company` with `avatar_source: "upload"`, which automatic sources never replace. DELETE removes it and looks up the automatic sources again. Audit `contact.avatar_updated` / `company.avatar_updated` (and `_removed`); publishes `contact.updated` / `company.updated` |
@@ -754,6 +755,22 @@ writer (`409` on any attempt, `PATCH` and `POST /v1/contacts` included).
   the primary address alone, and a visitor's typed address never links to a contact, extra addresses
   included (the widget keeps it as `custom.widget_email`).
 - `contact.updated` carries the contact with its `emails`.
+
+#### Merging contacts
+
+`POST /v1/contacts/{id}/merge` folds one contact into another when they are one person, in one
+transaction, and cannot be undone. The contact in the path is removed; `into` stays.
+
+- Moves to the contact that stays: tickets, messages the contact wrote, calls, chat sessions, uploads and labels
+  (the union). Its primary and extra addresses become extra addresses of the one that stays ("Contact emails"), so
+  mail from any of them lands there from then on.
+- The one that stays keeps its name, phone, company, external id and primary email, and takes the removed one's where
+  it has none. Notes are joined (the stayer's first), and `custom` and `fields` merged with the stayer's winning.
+- The removed contact's customer-portal sign-in and sessions end with it.
+- Refused: the same contact; a blocked and a not blocked contact (block or unblock first); two different
+  `external_id`s, which are two identities the host product vouches for.
+- Audit entry `contact.merged` (with the removed id and the number of tickets), events `contact.deleted` (removed),
+  `contact.updated` (stayer) and `ticket.updated` for each moved ticket.
 
 #### Drafts
 

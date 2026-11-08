@@ -66,6 +66,12 @@ A person who writes from more than one address stays one contact. Besides the pr
 
 Each answers with the contact. Blocking a contact blocks every address. Customer-portal sign-in uses the primary address only, so making another address the primary ends the contact's portal sessions.
 
+## Merge two contacts
+
+`POST /v1/contacts/{id}/merge` with `{ "into": "<contact id>" }` merges the contact in the path into another one (admin role). The contact in the path is removed, and its tickets, messages, calls, chat sessions, labels and email addresses move to the one that stays; its addresses become extra addresses there. The contact that stays keeps its own name, phone, company, external id and primary email, takes the other's where it has none, joins the notes, and merges `custom` and `fields` with its own values winning. It answers with the contact that stays.
+
+A blocked and a not blocked contact (`422`), two contacts with different `external_id` values (`409`), and a result with more than 20 extra addresses (`422`) are refused. A merge cannot be undone.
+
 Writes to contacts and companies take `tags` (replaces), `add_tags`, `remove_tags` and `fields` (merged, `null` clears), with the same rules as tickets. See [Labels and custom fields](/api/resources/labels-fields/).
 
 ## Examples

@@ -88,6 +88,17 @@
     "primaryTitle": "Définir comme adresse principale ?",
     "primaryBody": "{{email}} devient l’e-mail du contact et {{old}} reste comme autre adresse. La connexion au portail client utilisera alors {{email}}."
   },
+  "merge": {
+    "title": "Fusionner {{name}} avec un autre contact",
+    "description": "Choisissez le contact qui reste. {{name}} est supprimé, et ses tickets, messages et adresses e-mail passent au contact choisi.",
+    "search": "Rechercher des contacts",
+    "merge": "Fusionner",
+    "into": "Fusionner avec {{name}}",
+    "none": "Aucun autre contact",
+    "noneHint": "Recherchez par nom ou e-mail.",
+    "warning": "Cette action est irréversible. Les informations de {{name}} complètent ce que l’autre contact n’a pas renseigné.",
+    "done": "Fusionné avec {{name}}"
+  },
   "empty": {
     "title": "Aucun contact pour le moment",
     "description": "Les contacts sont créés lorsque les clients vous écrivent par e-mail ou par chat. Vous pouvez aussi les ajouter vous-même.",
@@ -130,7 +141,8 @@
     "discard": "Abandonner",
     "discardBody": "Vos modifications de ce contact seront perdues.",
     "discardCompany": "Vos modifications de cette entreprise seront perdues.",
-    "pictureRefresh": "Recherche d’une nouvelle image. Elle apparaîtra ici dès qu’elle sera trouvée."
+    "pictureRefresh": "Recherche d’une nouvelle image. Elle apparaîtra ici dès qu’elle sera trouvée.",
+    "merge": "Fusionner avec…"
   },
   "confirm": {
     "deleteTitle": "Supprimer {{name}} ?",

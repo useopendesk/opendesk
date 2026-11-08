@@ -86,6 +86,17 @@
     "primaryTitle": "Make this the primary address?",
     "primaryBody": "{{email}} becomes the contact’s email, and {{old}} stays as another address. Signing in to the customer portal then uses {{email}}."
   },
+  "merge": {
+    "title": "Merge {{name}} into another contact",
+    "description": "Pick the contact that stays. {{name}} is removed, and their tickets, messages and email addresses move to the one you pick.",
+    "search": "Search contacts",
+    "merge": "Merge",
+    "into": "Merge into {{name}}",
+    "none": "No other contacts",
+    "noneHint": "Search by name or email.",
+    "warning": "This can’t be undone. {{name}}’s details fill in anything the other contact leaves empty.",
+    "done": "Merged into {{name}}"
+  },
   "empty": {
     "title": "No contacts yet",
     "description": "Contacts are created when customers email or chat with you. You can also add one yourself.",
@@ -128,7 +139,8 @@
     "discard": "Discard",
     "discardBody": "Your changes to this contact will be lost.",
     "discardCompany": "Your changes to this company will be lost.",
-    "pictureRefresh": "Looking for a new picture. It shows up here when one is found."
+    "pictureRefresh": "Looking for a new picture. It shows up here when one is found.",
+    "merge": "Merge into…"
   },
   "confirm": {
     "deleteTitle": "Delete {{name}}?",

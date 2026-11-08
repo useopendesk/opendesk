@@ -86,6 +86,17 @@
     "primaryTitle": "Als Hauptadresse festlegen?",
     "primaryBody": "{{email}} wird zur E-Mail-Adresse des Kontakts, {{old}} bleibt als weitere Adresse erhalten. Die Anmeldung im Kundenportal läuft dann über {{email}}."
   },
+  "merge": {
+    "title": "{{name}} mit einem anderen Kontakt zusammenführen",
+    "description": "Wähle den Kontakt, der bleibt. {{name}} wird entfernt, und Tickets, Nachrichten und E-Mail-Adressen wandern zum gewählten Kontakt.",
+    "search": "Kontakte suchen",
+    "merge": "Zusammenführen",
+    "into": "Mit {{name}} zusammenführen",
+    "none": "Keine anderen Kontakte",
+    "noneHint": "Suche nach Name oder E-Mail.",
+    "warning": "Das lässt sich nicht rückgängig machen. Die Angaben von {{name}} ergänzen, was beim anderen Kontakt fehlt.",
+    "done": "Mit {{name}} zusammengeführt"
+  },
   "empty": {
     "title": "Noch keine Kontakte",
     "description": "Kontakte entstehen, wenn Kunden dir schreiben oder mit dir chatten. Du kannst auch selbst einen hinzufügen.",
@@ -128,7 +139,8 @@
     "discard": "Verwerfen",
     "discardBody": "Deine Änderungen an diesem Kontakt gehen verloren.",
     "discardCompany": "Deine Änderungen an diesem Unternehmen gehen verloren.",
-    "pictureRefresh": "Suche nach einem neuen Bild. Es erscheint hier, sobald eines gefunden wird."
+    "pictureRefresh": "Suche nach einem neuen Bild. Es erscheint hier, sobald eines gefunden wird.",
+    "merge": "Zusammenführen mit…"
   },
   "confirm": {
     "deleteTitle": "{{name}} löschen?",
