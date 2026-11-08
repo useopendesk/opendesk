@@ -172,12 +172,18 @@ export type HelpDomain = {
 };
 export type HelpDomainProblem = "" | "txt_missing" | "cname_missing" | "domain_taken" | "certificate_pending" | "certificate_failed" | "provider_error";
 export type HelpDomainRecord = { type: "TXT" | "CNAME"; name: string; value: string; ok: boolean };
+/** How customers sign in to a brand's portal: a password, the company's identity provider, or either. */
+export type PortalAuthMode = "local" | "oidc" | "local_and_oidc";
+/** What GET /v1/brands/{id}/portal/auth returns (admin). The client secret is never returned. */
+export type PortalAuthSettings = { mode: PortalAuthMode; issuer: string; client_id: string; secret_configured: boolean; create_contacts: boolean };
+export type PortalRelinkAuthorization = { id: string; brand_id: string; contact_id: string; expires_at: string };
 export type Brand = {
   id: string;
   name: string;
   /** Names the help center's default address: <slug>.<HELP_DOMAIN>, or <base>/help/<slug> (APP_URL or API_URL). */
   slug: string;
   is_default: boolean;
+  portal_auth: { mode: PortalAuthMode };
   /** "#rrggbb", or "" for the workspace brand colour. */
   color: string;
   locale: string;

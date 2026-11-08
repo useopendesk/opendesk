@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api/client";
+import { ApiError, send } from "@/lib/api/client";
 import { config } from "@/lib/config";
 import { queryClient } from "@/lib/queryClient";
 import type { CustomerToken, CustomerLogin, PortalConfig, CustomerTicket, CustomerMessage, Page } from "./types";
@@ -32,7 +32,7 @@ export function clearCustomer() {
   identityChanged();
 }
 async function request<T>(path: string, body?: unknown, bearer = false): Promise<T> {
-  const response = await fetch(`${config.apiUrl}${path}`, {
+  const response = await send(`${config.apiUrl}${path}`, {
     method: body === undefined ? "GET" : "POST", credentials: "include", cache: "no-store", referrerPolicy: "no-referrer",
     headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(bearer && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),

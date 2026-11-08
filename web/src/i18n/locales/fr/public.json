@@ -115,6 +115,19 @@
       "on_hold": "En attente",
       "solved": "Résolu",
       "closed": "Fermé"
+    },
+    "sso": "Continuer avec l’authentification unique",
+    "or": "ou",
+    "sso_error": {
+      "email_unverified": "Votre fournisseur n’a pas confirmé votre adresse e-mail, nous ne pouvons donc pas vous connecter avec elle.",
+      "unknown_customer": "Nous n’avons trouvé aucun client avec cette adresse e-mail. Contactez l’équipe qui vous a donné l’accès.",
+      "blocked": "Ce compte ne peut pas se connecter. Contactez l’équipe pour obtenir de l’aide.",
+      "relink_required": "Votre compte chez le fournisseur a changé. Demandez à l’équipe d’autoriser une nouvelle connexion, puis réessayez.",
+      "identity_revoked": "Cette connexion a été supprimée. Contactez l’équipe pour obtenir de l’aide.",
+      "access_denied": "La connexion a été annulée.",
+      "provider_unavailable": "Nous n’avons pas pu joindre le fournisseur de connexion. Veuillez réessayer.",
+      "rate_limited": "Trop de tentatives. Patientez un instant et réessayez.",
+      "generic": "Nous n’avons pas pu vous connecter. Veuillez réessayer."
     }
   }
 }

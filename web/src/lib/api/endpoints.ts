@@ -185,6 +185,8 @@ export type TeamBody = Partial<
 >;
 export type BrandBody = Partial<Pick<T.Brand, "name" | "slug" | "color" | "locale">> & {
   help_center?: Partial<Pick<T.Brand["help_center"], "enabled" | "title">>;
+  /** Omit the secret to keep the saved one (same issuer and client id). */
+  portal_auth?: { mode: T.PortalAuthMode; issuer?: string; client_id?: string; client_secret?: string; create_contacts?: boolean };
 };
 export type WidgetBody = { brand_id?: string; name?: string; team_id?: string | null; bot_id?: string | null; settings?: Partial<T.WidgetSettings> };
 export type RoutingRuleBody = Partial<Pick<T.RoutingRule, "name" | "enabled" | "match" | "conditions" | "team_id" | "skill_ids">>;
@@ -364,6 +366,11 @@ export const api = {
     /** Checks the custom domain now; 6 a minute per brand. */
     checkHelpDomain: (id: string) => http.post<T.Brand>(`/v1/brands/${id}/help-domain/check`),
     removeHelpDomain: (id: string) => http.del(`/v1/brands/${id}/help-domain`),
+    /** The portal's provider sign-in settings (admin). */
+    portalAuth: (id: string) => http.get<T.PortalAuthSettings>(`/v1/brands/${id}/portal/auth`),
+    /** Lets one contact link a new provider identity for 15 minutes; needs a recent sign-in. */
+    authorizeRelink: (id: string, contactId: string) =>
+      http.post<T.PortalRelinkAuthorization>(`/v1/brands/${id}/portal/relink-authorizations`, { contact_id: contactId }),
   },
   widgets: {
     ...crud<T.Widget, WidgetBody>("/v1/widgets"),

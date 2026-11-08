@@ -113,6 +113,43 @@ it("offers a reset link instead of opening tickets after a weak-password login",
   container.remove();
 });
 
+async function mountLogin(authMode: "local" | "oidc" | "local_and_oidc", search = "") {
+  history.replaceState(null, "", `/portal/acme${search}`);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><AuthForm slug="acme" authMode={authMode} mode="login" resetToken="" onLogin={() => {}} /></QueryClientProvider>));
+  return { container, done: async () => { await act(async () => root.unmount()); container.remove(); history.replaceState(null, "", "/"); } };
+}
+
+it("offers the identity provider beside the password when the brand takes either", async () => {
+  const { container, done } = await mountLogin("local_and_oidc");
+  expect(container.textContent).toContain("Continue with single sign-on");
+  expect(container.textContent).toContain("or");
+  expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  await done();
+});
+
+it("shows only the password form when the brand has no identity provider", async () => {
+  const { container, done } = await mountLogin("local");
+  expect(container.textContent).not.toContain("single sign-on");
+  expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  await done();
+});
+
+it("tells a customer why the provider sign-in came back, without a password form, and drops the code from the address", async () => {
+  const { container, done } = await mountLogin("oidc", "?sso_error=unknown_customer&lang=fr");
+  expect(container.textContent).toContain("We couldn't find a customer with that email address");
+  expect(container.textContent).toContain("Continue with single sign-on");
+  expect(container.querySelector('input[type="password"]')).toBeNull();
+  expect(container.textContent).not.toContain("unknown_customer");
+  expect(location.search).toBe("?lang=fr");
+  await done();
+  const unknown = await mountLogin("oidc", "?sso_error=made_up_by_a_link");
+  expect(unknown.container.textContent).toContain("We couldn't sign you in");
+  await unknown.done();
+});
+
 
 it("shows list loading, empty, error and ticket rows", async () => {
   const container = document.createElement("div"); document.body.append(container);

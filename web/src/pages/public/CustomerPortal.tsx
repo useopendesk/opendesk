@@ -13,6 +13,7 @@ import { customerPortal, refreshCustomer, customerIdentityVersion, subscribeCust
 import { fullDate } from "@/lib/format";
 import { statusTone, tone } from "@/lib/tones";
 import { isApiError } from "@/lib/api/client";
+import { config } from "@/lib/config";
 import "@/components/help/help.css";
 
 const publicTextLink = "text-fg-2 underline underline-offset-4 hover:text-fg focus-visible:rounded-sm focus-visible:shadow-[0_0_0_3px_var(--focus)]";
@@ -38,21 +39,49 @@ export default function CustomerPortal() {
       <a href={base} className="flex items-center gap-2 font-semibold text-fg">{brand?.logo_url && <img src={brand.logo_url} alt="" width={128} height={32} className="max-h-8 max-w-32 object-contain" />}<bdi style={{ color: /^#[0-9a-f]{6}$/i.test(brand?.color ?? "") ? brand?.color : undefined }}>{brand?.title}</bdi></a>
       {signedIn && <Button variant="ghost" onClick={() => void customerPortal.logout(slug).then(() => { setSignedIn(false); window.location.assign(base); }).catch(() => setLogoutError(true))}>{t("portal.sign_out")}</Button>}
     </header>
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col py-10">{logoutError && <Notice>{t("portal.error")}</Notice>}{!loaded || isPending ? <p>{t("portal.loading")}</p> : isError || !brand ? <Notice>{t("portal.unavailable")}</Notice> : mode === "forgot" || mode === "reset" || (!signedIn && !checking) ? <AuthForm key={mode} slug={slug} mode={mode === "detail" || mode === "home" ? "login" : mode} resetToken={resetToken} onLogin={() => { setChecking(false); setSignedIn(true); }} /> : checking ? <p>{t("portal.loading")}</p> : mode === "detail" && ticketId ? <Ticket key={`${slug}:${ticketId}:${identity}`} slug={slug} id={ticketId} /> : <TicketList key={`${slug}:${identity}`} slug={slug} helpURL={brand.help_url} />}</main>
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col py-10">{logoutError && <Notice>{t("portal.error")}</Notice>}{!loaded || isPending ? <p>{t("portal.loading")}</p> : isError || !brand ? <Notice>{t("portal.unavailable")}</Notice> : mode === "forgot" || mode === "reset" || (!signedIn && !checking) ? <AuthForm key={mode} slug={slug} authMode={brand.auth_mode ?? "local"} mode={mode === "detail" || mode === "home" ? "login" : mode} resetToken={resetToken} onLogin={() => { setChecking(false); setSignedIn(true); }} /> : checking ? <p>{t("portal.loading")}</p> : mode === "detail" && ticketId ? <Ticket key={`${slug}:${ticketId}:${identity}`} slug={slug} id={ticketId} /> : <TicketList key={`${slug}:${identity}`} slug={slug} helpURL={brand.help_url} />}</main>
     <footer className="mx-auto flex h-14 w-full max-w-3xl items-center justify-end text-xs text-fg-4">{!brand?.locale_fixed && <LanguageSwitcher current={locale} />}</footer>
   </div>;
 }
-export function AuthForm({ slug, mode, resetToken, onLogin }: { slug: string; mode: "login" | "forgot" | "reset"; resetToken: string; onLogin: () => void }) {
+// The customer's way in through the brand's identity provider: the API starts it and brings them back here.
+const ssoStart = (slug: string) => `${config.apiUrl}/v1/public/help/${encodeURIComponent(slug)}/portal/sso/start?redirect_to=${encodeURIComponent(window.location.pathname)}`;
+const SSO_ERRORS = ["email_unverified", "unknown_customer", "blocked", "relink_required", "identity_revoked", "access_denied", "provider_unavailable", "rate_limited"] as const;
+const ssoReason = (code: string) => SSO_ERRORS.find((known) => known === code) ?? "generic";
+/** The code the provider sign-in came back with; read once, then dropped from the address. */
+function useSsoError(): string {
+  const [code] = useState(() => new URLSearchParams(window.location.search).get("sso_error") ?? "");
+  useEffect(() => {
+    if (!code) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("sso_error");
+    window.history.replaceState(window.history.state, "", url);
+  }, [code]);
+  return code;
+}
+function SsoSignIn({ slug, error, auto }: { slug: string; error: string; auto: boolean }) {
+  const { t } = useTranslation("public");
+  // A portal that takes only the provider goes straight there, unless it just sent the customer back with a reason.
+  const going = auto && !error;
+  useEffect(() => { if (going) window.location.assign(ssoStart(slug)); }, [going, slug]);
+  return going ? <p className="mt-6 text-fg-3" role="status">{t("portal.loading")}</p> : <>
+    {error && <Notice className="mt-6">{t(`portal.sso_error.${ssoReason(error)}`)}</Notice>}
+    <Button variant={auto ? "primary" : "secondary"} size="lg" className="mt-6 w-full" onClick={() => window.location.assign(ssoStart(slug))}>{t("portal.sso")}</Button>
+  </>;
+}
+export function AuthForm({ slug, authMode = "local", mode, resetToken, onLogin }: { slug: string; authMode?: "local" | "oidc" | "local_and_oidc"; mode: "login" | "forgot" | "reset"; resetToken: string; onLogin: () => void }) {
   const { t } = useTranslation("public");
   const base = `/portal/${encodeURIComponent(slug)}`;
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [captcha, setCaptcha] = useState<string | null>(null); const [sent, setSent] = useState(false); const [weak, setWeak] = useState(false); const [error, setError] = useState(""); const [pending, setPending] = useState(false);
   const siteKey = useTurnstileSiteKey(); const turnstile = useRef<TurnstileHandle>(null);
+  const ssoError = useSsoError();
   async function submit(e: FormEvent) { e.preventDefault(); setError(""); setPending(true); try {
     if (mode === "login") { const result = await customerPortal.login(slug, email.trim(), password, captcha ?? undefined); if (result.change_password) setWeak(true); else onLogin(); }
     else if (mode === "forgot") { await customerPortal.forgot(slug, email.trim(), captcha ?? undefined); setSent(true); }
     else { await customerPortal.reset(slug, resetToken, password, captcha ?? undefined); setSent(true); }
   } catch (err) { turnstile.current?.reset(); setError(isApiError(err, "weak_password") ? t("portal.weak_password") : isApiError(err, "invalid_token") ? t("portal.invalid_link") : t("portal.error")); } finally { setPending(false); } }
+  if (authMode === "oidc") return <div className="mx-auto w-full max-w-sm py-8"><h1 className="text-pretty text-2xl font-semibold text-fg">{t("portal.login")}</h1><SsoSignIn slug={slug} error={ssoError} auto /></div>;
   return <div className="mx-auto w-full max-w-sm py-8"><h1 className="text-pretty text-2xl font-semibold text-fg">{t(`portal.${mode}`)}</h1>
+    {authMode === "local_and_oidc" && mode === "login" && <><SsoSignIn slug={slug} error={ssoError} auto={false} /><div className="mt-6 flex items-center gap-3 text-xs text-fg-4" aria-hidden><span className="h-px flex-1 bg-line" />{t("portal.or")}<span className="h-px flex-1 bg-line" /></div></>}
     {mode === "reset" && !resetToken ? <Notice>{t("portal.invalid_link")} <a href={`${base}/forgot`} className={publicTextLink}>{t("portal.get_link")}</a></Notice> : weak ? <p className="mt-4 text-fg-3">{t("portal.password_change")} <a className={publicTextLink} href={`${base}/forgot`}>{t("portal.get_link")}</a></p> : sent ? <div className="mt-4"><p className="text-fg-3" role="status">{t(mode === "forgot" ? "portal.email_sent" : "portal.reset_done")}</p><a className={`mt-4 inline-block ${publicTextLink}`} href={base}>{t("portal.back_login")}</a></div> : <form className="mt-6 flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
       {error && <Notice>{error}</Notice>}
       {mode !== "reset" && <label className="text-sm font-medium">{t("portal.email")}<TextInput className="mt-1.5" type="email" name="email" autoComplete="email" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} /></label>}

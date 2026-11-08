@@ -536,6 +536,7 @@ function seedMargin(): WsData {
     name,
     slug,
     is_default: false,
+    portal_auth: { mode: "local" },
     color,
     locale: "en",
     help_center: { enabled: true, title: `${name} Help`, url: "", default_url: "", domain: null },

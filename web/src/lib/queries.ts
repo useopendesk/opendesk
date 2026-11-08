@@ -133,6 +133,7 @@ export const qk = {
   get brands() {
     return w(["brands"] as const);
   },
+  brandPortalAuth: (id: string) => w(["brands", "portal-auth", id] as const),
   get widgets() {
     return w(["widgets"] as const);
   },

@@ -117,6 +117,19 @@
       "on_hold": "Wstrzymane",
       "solved": "Rozwiązane",
       "closed": "Zamknięte"
+    },
+    "sso": "Kontynuuj przez logowanie jednokrotne",
+    "or": "lub",
+    "sso_error": {
+      "email_unverified": "Twój dostawca nie potwierdził Twojego adresu e-mail, więc nie możemy Cię nim zalogować.",
+      "unknown_customer": "Nie znaleźliśmy klienta z tym adresem e-mail. Skontaktuj się z zespołem, który dał Ci dostęp.",
+      "blocked": "To konto nie może się zalogować. Skontaktuj się z zespołem, aby uzyskać pomoc.",
+      "relink_required": "Twoje konto u dostawcy się zmieniło. Poproś zespół o zezwolenie na nowe logowanie i spróbuj ponownie.",
+      "identity_revoked": "To logowanie zostało usunięte. Skontaktuj się z zespołem, aby uzyskać pomoc.",
+      "access_denied": "Logowanie zostało anulowane.",
+      "provider_unavailable": "Nie udało się połączyć z dostawcą logowania. Spróbuj ponownie.",
+      "rate_limited": "Zbyt wiele prób. Poczekaj chwilę i spróbuj ponownie.",
+      "generic": "Nie udało się Cię zalogować. Spróbuj ponownie."
     }
   }
 }
