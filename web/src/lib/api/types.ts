@@ -2991,6 +2991,8 @@ export type MailAccount = {
   reconnect: boolean;
   last_error: string;
   last_synced_at: string | null;
+  /** A failing account: when it is tried again. */
+  next_sync_at: string | null;
   can_manage: boolean;
   /** Unread conversations in its inbox. */
   unread: number;

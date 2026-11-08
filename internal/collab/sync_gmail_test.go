@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,7 +89,11 @@ type fakeGmail struct {
 	failMinimalAfter int
 	profileStatus    int // the profile answers this when set
 	// unreadable are messages whose every read answers 500, as Gmail does for some.
-	unreadable      map[string]bool
+	unreadable map[string]bool
+	// refused are messages whose reads answer Gmail's 403 rate limit, which names no wait;
+	// refuseReads makes every read answer it.
+	refused         map[string]bool
+	refuseReads     bool
 	threadGets      int
 	failThreadAfter int
 	// settings is the account's sendAs and vacation (settings_test.go).
@@ -248,6 +253,12 @@ func (g *fakeGmail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(map[string]any{"messages": list[offset:end], "nextPageToken": next, "resultSizeEstimate": total})
 	case r.Method == "GET" && strings.HasPrefix(path, "/messages/"):
 		m := g.msgs[strings.TrimPrefix(path, "/messages/")]
+		if m != nil && (g.refuseReads || g.refused[m.id]) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":{"code":403,"message":"Rate Limit Exceeded","errors":[{"message":"Rate Limit Exceeded",` +
+				`"domain":"usageLimits","reason":"rateLimitExceeded"}],"status":"PERMISSION_DENIED"}}`))
+			return
+		}
 		if m != nil && g.unreadable[m.id] {
 			w.WriteHeader(500)
 			_, _ = w.Write([]byte(`{"error":{"code":500,"message":"Internal error encountered.","status":"INTERNAL"}}`))
@@ -677,12 +688,12 @@ func TestGmailSyncLabelChangesNeedNoReads(t *testing.T) {
 	}
 }
 
-// TestFetchEachStopsWhileBusy: once the provider refuses as a whole (a rate limit), the rest
-// of a batch is not asked; a 5xx to one read leaves the others asked.
+// TestFetchEachStopsWhileBusy: once the provider refuses as a whole (it asked for a wait),
+// the rest of a batch is not asked; a 5xx to one read leaves the others asked.
 func TestFetchEachStopsWhileBusy(t *testing.T) {
 	ids := make([]string, 40)
 	var calls atomic.Int32
-	limited := &providerError{msg: "Gmail is busy. We will try again.", busy: true, limited: true}
+	limited := &providerError{msg: "Gmail asked us to wait.", busy: true, limited: true, retryAt: time.Now().Add(time.Minute)}
 	_, errs := fetchEach(context.Background(), 4, ids, func() int { return 0 }, func(context.Context, int, string) (int, error) {
 		calls.Add(1)
 		return 0, limited
@@ -691,9 +702,23 @@ func TestFetchEachStopsWhileBusy(t *testing.T) {
 		t.Fatalf("%d calls after the provider was busy", c)
 	}
 	for i, err := range errs {
-		if err != limited {
+		if !errors.Is(err, limited) {
 			t.Fatalf("id %d: %v", i, err)
 		}
+	}
+
+	// A rate limit that names no wait can be one message's own: the batch stops at the second.
+	calls.Store(0)
+	_, errs = fetchEach(context.Background(), 1, ids, func() int { return 0 }, func(context.Context, int, string) (int, error) {
+		calls.Add(1)
+		return 0, &providerError{msg: "Gmail is busy. We will try again.", busy: true, limited: true, status: 403}
+	})
+	if c := calls.Load(); c != 2 {
+		t.Fatalf("%d calls, want 2", c)
+	}
+	var na *notAsked
+	if !errors.As(errs[2], &na) || errors.As(errs[1], &na) {
+		t.Fatalf("not asked: %v %v", errs[1], errs[2])
 	}
 
 	ids = []string{"a", "bad", "c", "d", "e", "f"}
@@ -751,6 +776,75 @@ func TestGmailSyncGoesOnPastAnUnreadableMessage(t *testing.T) {
 	}
 	if st := gmailStateOf(t, w.reload(a)); len(st.Backlog) != 0 {
 		t.Fatalf("backlog: %v", st.Backlog)
+	}
+}
+
+// TestGmailSyncGoesOnPastARefusedMessage: Gmail's 403 rate limit for one message, while it
+// reads the rest, leaves that message for later and the account active.
+func TestGmailSyncGoesOnPastARefusedMessage(t *testing.T) {
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	g.burst("burst", 30, a.Email)
+	g.refused = map[string]bool{"burst-0029": true} // the newest: the first one asked for
+	for pass := 1; pass <= quietFailures+1; pass++ {
+		if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+			t.Fatal(err)
+		}
+		if a = w.reload(a); a.Status != "active" || a.SyncFailures != 0 {
+			t.Fatalf("pass %d: %s %d %q", pass, a.Status, a.SyncFailures, a.LastError)
+		}
+		if got := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND remote_id LIKE 'burst-%'`, a.ID); got != 29 {
+			t.Fatalf("pass %d: %d of the readable messages", pass, got)
+		}
+		if st := gmailStateOf(t, a); !slices.Equal(st.Backlog, []string{"burst-0029"}) {
+			t.Fatalf("pass %d: backlog %v", pass, st.Backlog)
+		}
+	}
+	// Alone in its batch, it is told apart by reading a stored message again.
+	delete(g.refused, "burst-0029")
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND remote_id = 'burst-0029'`, a.ID); got != 1 {
+		t.Fatal("the message did not arrive once Gmail handed it over")
+	}
+}
+
+// TestGmailSyncStopsWhenGmailRefusesEveryRead: Gmail refusing every read ends the pass,
+// nothing moves, and the failure says which call, Gmail's reason and how many reads.
+func TestGmailSyncStopsWhenGmailRefusesEveryRead(t *testing.T) {
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	g.burst("old", 2, a.Email)
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := gmailStateOf(t, w.reload(a))
+	g.burst("burst", 10, a.Email)
+	g.refuseReads = true
+	err := w.s.runSync(w.ctx, w.reload(a))
+	if !isRefusing(err) {
+		t.Fatalf("pass: %v", err)
+	}
+	props := syncFailure(a, err, 1, false)
+	want := map[string]any{"kind": "rate_limited", "endpoint": "messages.get.raw", "status": 403, "code": "rateLimitExceeded", "hint": "rate_limit"}
+	for k, v := range want {
+		if props[k] != v {
+			t.Errorf("%s = %v, want %v", k, props[k], v)
+		}
+	}
+	if props["refused_reads"].(int) < 2 || props["answered_reads"] != 0 {
+		t.Errorf("reads: %v refused, %v answered", props["refused_reads"], props["answered_reads"])
+	}
+	if st := gmailStateOf(t, w.reload(a)); st.HistoryID != before.HistoryID || len(st.Backlog) != 0 {
+		t.Fatalf("state moved while Gmail refused every read: %+v", st)
 	}
 }
 
@@ -1166,6 +1260,58 @@ func TestGmailBusy(t *testing.T) {
 	}
 }
 
+// TestSyncNowShowsTheTry: Sync now on a failing account shows it syncing until that sync
+// sets the status again, and the account says when it is tried next; one its provider asked
+// to wait keeps its error.
+func TestSyncNowShowsTheTry(t *testing.T) {
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	srv := w.api(w.agent)
+	g.status = http.StatusServiceUnavailable
+	for range quietFailures {
+		if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := w.apiAccount(srv, w.reload(a))
+	if m.Status != "error" || m.NextSyncAt == nil || !m.NextSyncAt.After(time.Now()) {
+		t.Fatalf("failing: %s next %v", m.Status, m.NextSyncAt)
+	}
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/sync", nil, nil); st != 202 {
+		t.Fatalf("sync now: %d", st)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "syncing" || m.LastError == "" {
+		t.Fatalf("after Sync now: %s %q", m.Status, m.LastError)
+	}
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil { // still failing: back to the error
+		t.Fatal(err)
+	}
+	if a = w.reload(a); a.Status != "error" {
+		t.Fatalf("after the try: %s", a.Status)
+	}
+	g.status = 0
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "active" || m.NextSyncAt != nil {
+		t.Fatalf("synced: %s next %v", m.Status, m.NextSyncAt)
+	}
+
+	// Held, Sync now leaves the error that says until when.
+	g.limitedUntil = time.Now().Add(time.Hour)
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/sync", nil, nil); st != 202 {
+		t.Fatalf("sync now: %d", st)
+	}
+	if m = w.apiAccount(srv, w.reload(a)); m.Status != "error" || !strings.Contains(m.LastError, "wait until") || m.NextSyncAt == nil {
+		t.Fatalf("held: %s %q %v", m.Status, m.LastError, m.NextSyncAt)
+	}
+}
+
 // TestGmailRateLimitHoldsTheAccount: a rate limit that asks for a longer wait than a call
 // sits out holds the account until then, on every server: no call is made, Sync now
 // included, and the account says when it goes on.
@@ -1210,6 +1356,28 @@ func TestGmailRateLimitHoldsTheAccount(t *testing.T) {
 	}
 }
 
+func TestHTTPFailureKeepsGmailsReason(t *testing.T) {
+	body := []byte(`{"error":{"code":403,"message":"Rate Limit Exceeded for user@example.com","errors":[{"reason":"rateLimitExceeded"}],"status":"PERMISSION_DENIED"}}`)
+	var pe *providerError
+	if !errors.As(httpFailure("Gmail", 403, body), &pe) || !pe.limited || pe.code != "rateLimitExceeded" || pe.hint != "rate_limit" {
+		t.Fatalf("%+v", pe)
+	}
+	if strings.Contains(pe.msg, "example.com") {
+		t.Fatal("the provider's words reached the message")
+	}
+	for msg, want := range map[string]string{
+		"User-rate limit exceeded.  Retry after 2026-11-07T06:00:00Z": "retry_after",
+		"Too many concurrent requests for user":                       "concurrent_requests",
+		"Quota exceeded for quota metric 'Queries'":                   "project_quota",
+		"Something new": "other",
+		"":              "",
+	} {
+		if got := providerHint(msg); got != want {
+			t.Errorf("%q: %q", msg, got)
+		}
+	}
+}
+
 func TestProviderWait(t *testing.T) {
 	now := time.Date(2026, 11, 6, 17, 0, 0, 0, time.UTC)
 	h := func(v string) http.Header { return http.Header{"Retry-After": {v}} }
@@ -1239,7 +1407,8 @@ func TestEndpointOf(t *testing.T) {
 		method, url, name string
 		units             int
 	}{
-		{"GET", base + "/gmail/v1/users/me/messages/abc?format=raw", "messages.get", 5},
+		{"GET", base + "/gmail/v1/users/me/messages/abc?format=raw", "messages.get.raw", 5},
+		{"GET", base + "/gmail/v1/users/me/messages/abc?format=minimal", "messages.get.minimal", 5},
 		{"GET", base + "/gmail/v1/users/me/messages?q=after%3A1", "messages.list", 5},
 		{"GET", base + "/gmail/v1/users/me/history?startHistoryId=1", "history.list", 2},
 		{"GET", base + "/gmail/v1/users/me/profile", "profile", 1},

@@ -116,7 +116,7 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 		m := MailAccount{ID: a.ID, Provider: a.Provider, Email: a.Email, Name: a.Name, DisplayName: a.DisplayName, Color: a.Color,
 			Owner: refOf(refs, a.OwnerID), Visibility: a.Visibility, SharedWith: Audience{TeamIDs: []uuid.UUID{}, UserIDs: []uuid.UUID{}},
 			SignatureHTML: a.SignatureHTML, Status: a.Status, Reconnect: a.Reconnect, LastError: a.LastError,
-			LastSyncedAt: a.LastSyncedAt, CanManage: canManageAccount(p, a), Unread: unread[a.ID], HandlingEnabled: a.HandlingEnabled, ReplyAll: a.ReplyAll, CreatedAt: a.CreatedAt,
+			LastSyncedAt: a.LastSyncedAt, NextSyncAt: nextTry(a), CanManage: canManageAccount(p, a), Unread: unread[a.ID], HandlingEnabled: a.HandlingEnabled, ReplyAll: a.ReplyAll, CreatedAt: a.CreatedAt,
 			History: hist[a.ID], OldestMessageAt: oldest[a.ID], FoldersLeftOut: leftOut[a.ID]}
 		if m.Name == "" {
 			m.Name = a.Email
@@ -463,4 +463,17 @@ func commentsOut(ctx context.Context, q db.Querier, list []*commentRow) ([]MailC
 			Mentions: c.Mentions, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt})
 	}
 	return out, nil
+}
+
+// nextTry is when a failing account is tried again: its backoff, or the end of the wait its
+// provider asked for when that is later.
+func nextTry(a *accountRow) *time.Time {
+	if a.LastError == "" || a.Reconnect || a.NextSyncAt == nil {
+		return nil
+	}
+	next := *a.NextSyncAt
+	if a.WaitUntil != nil && a.WaitUntil.After(next) {
+		next = *a.WaitUntil
+	}
+	return &next
 }

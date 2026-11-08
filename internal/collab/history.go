@@ -311,8 +311,9 @@ const (
 
 // fetchEach runs fetch for each id, at most n at once, each with a provider
 // of its own (a token refresh writes to its account copy). It returns the results and the
-// errors in the order of ids. Once the provider refuses every call (isRefusing) past a call's
-// own waits, the ids not yet fetched get that error without a call.
+// errors in the order of ids. Once the provider refuses every call past a call's own waits
+// (it is unreachable, holds the account, or refused two reads: one refusal can be the
+// message's own), the ids not yet fetched get that error as notAsked, without a call.
 func fetchEach[P any, T any](ctx context.Context, n int, ids []string, open func() P, fetch func(context.Context, P, string) (T, error)) ([]T, []error) {
 	out := make([]T, len(ids))
 	errs := make([]error, len(ids))
@@ -320,6 +321,7 @@ func fetchEach[P any, T any](ctx context.Context, n int, ids []string, open func
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var stop error
+	refused := 0
 	for range min(n, len(ids)) {
 		wg.Add(1)
 		go func() {
@@ -330,13 +332,15 @@ func fetchEach[P any, T any](ctx context.Context, n int, ids []string, open func
 				err := stop
 				mu.Unlock()
 				if err != nil {
-					errs[i] = err
+					errs[i] = &notAsked{err}
 					continue
 				}
 				out[i], errs[i] = fetch(ctx, prov, ids[i])
 				if isRefusing(errs[i]) {
 					mu.Lock()
-					stop = errs[i]
+					if refused++; refused > 1 || !mayBeOwn(errs[i]) {
+						stop = errs[i]
+					}
 					mu.Unlock()
 				}
 			}
@@ -349,6 +353,11 @@ func fetchEach[P any, T any](ctx context.Context, n int, ids []string, open func
 	wg.Wait()
 	return out, errs
 }
+
+// notAsked is an id fetchEach left unasked once the provider refused every call.
+type notAsked struct{ error }
+
+func (e *notAsked) Unwrap() error { return e.error }
 
 // copyAccount is a copy of an account row for a fetcher of its own.
 func copyAccount(a *accountRow) *accountRow {

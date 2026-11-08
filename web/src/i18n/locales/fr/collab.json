@@ -383,6 +383,7 @@
     "you": "vous",
     "lastSync": "Synchronisé {{when}}",
     "neverSynced": "Pas encore synchronisé",
+    "nextTry": "{{last}}. Nouvel essai à {{time}}.",
     "reconnect": "Reconnecter",
     "status": {
       "syncing": "Synchronisation en cours",

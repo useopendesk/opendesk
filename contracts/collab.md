@@ -139,18 +139,24 @@ after a connect, a reconnect, `POST .../sync` or an action. One runs per account
   wait outlasts the quiet failures. A request that
   changes something is asked again only after a rate limit, which refused it before it ran. A
   rate limit or no answer at all after that ends the pass: the messages its batch has not read
-  yet are not asked for. A 5xx can be one message's own (Gmail answers some messages that way
-  however often it is asked), so it leaves the rest of the batch asked. When every read of a
-  batch failed, Gmail's profile is asked: no answer there ends the pass. Otherwise the pass goes
-  on: new mail Gmail would not hand over waits at the old end of the backlog and is asked for
+  yet are not asked for. A 5xx, or a rate limit that names no wait (Gmail's 403
+  `rateLimitExceeded`), can be one message's own: Gmail answers some messages that way however
+  often it is asked. So a 5xx leaves the rest of the batch asked, and such a rate limit stops the
+  batch only at the second one. When no read of a batch was answered, a message already stored
+  is read again (Gmail's profile is asked when none is stored and only 5xx failed): no answer
+  there ends the pass. Otherwise the pass goes on: new mail Gmail would not hand over waits at the old end of the backlog and is asked for
   again after newer mail, and a stored message keeps its labels (and its tab) until its next
   change. Such a message never stops the rest of the account's mail.
 - Failures are stored on the account (`status: "error"`, a safe `last_error`), retried with
   backoff (1 minute doubling to 1 hour). A passing failure (a busy or unreachable provider) waits
   with the backoff without changing the status for the first three in a row (about seven minutes), so a
   short outage never shows; the fourth shows. Each failed pass sends PostHog `collab_sync_failed`
-  (`provider`, `kind`, the call's Gmail method or Graph verb as `endpoint`, the provider's `status`
-  and error `code`, `failures`, `wait_seconds`, `shown`), and a pass that left messages for later
+  (`provider`, `kind`, the call's Gmail method (with a read's format, `messages.get.raw`) or Graph
+  verb as `endpoint`, the provider's `status` and most specific error `code` (Gmail's reason before
+  its status), `hint` (the kind of refusal the provider's words name, such as `rate_limit`,
+  `user_rate_limit`, `daily_limit`, `bandwidth`, `concurrent_requests` or `project_quota`, never
+  the words), `failures`, `wait_seconds`, `shown`, and for refused reads `refused_reads` and
+  `answered_reads`), and a pass that left messages for later
   `collab_messages_deferred` (`provider`, `count`), with the workspace as the group; never an
   address, a subject or the provider's words. A refused grant (`invalid_grant`, an IMAP login refused) needs a reconnect
   at once: `status: "error"`, `reconnect: true`.
@@ -644,6 +650,7 @@ interface MailAccount {
   reconnect: boolean           // the grant or password was refused: connect it again
   last_error: string
   last_synced_at: string | null
+  next_sync_at: string | null  // a failing account: when it is tried again (its backoff, or the end of a wait its provider asked for)
   can_manage: boolean
   unread: number               // unread conversations in its inbox
   imap?: { imap_host: string; imap_port: number; imap_tls: "tls" | "starttls"; imap_username: string;
@@ -1089,7 +1096,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PUT | `/v1/collab/accounts/{id}/history` | manage | `{since: string \| null, include_spam_trash?: boolean}` → `MailAccount`: starts a history import ("History"), or starts it again with this scope. `since` is RFC 3339, in the past (`422 validation_failed`); `null` imports all mail. `422 history_unavailable` for a sample account |
 | PATCH | `/v1/collab/accounts/{id}/history` | manage | `{paused: boolean}` → `MailAccount`. `404` without an import; `422 validation_failed` for one that ended |
 | DELETE | `/v1/collab/accounts/{id}/history` | manage | → `MailAccount`: stops the import (`canceled`); what it imported stays |
-| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too |
+| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too. A failing account shows `status: "syncing"` (with `collab.accounts`) until that sync sets it again, unless its provider asked to wait |
 | GET | `/v1/collab/accounts/{id}/folders` | see | `MailFolder[]`, special ones first, then by path |
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |

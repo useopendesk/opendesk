@@ -333,9 +333,10 @@ func httpFailure(label string, status int, body []byte) error {
 	}
 	_ = json.Unmarshal(body, &e)
 	var detail struct {
-		Code   any    `json:"code"`
-		Status string `json:"status"`
-		Errors []struct {
+		Code    any    `json:"code"`
+		Message string `json:"message"`
+		Status  string `json:"status"`
+		Errors  []struct {
 			Reason string `json:"reason"`
 		} `json:"errors"`
 		Details []struct {
@@ -372,6 +373,16 @@ func httpFailure(label string, status int, body []byte) error {
 			break
 		}
 	}
+	// The code kept for logs and analytics is the most specific: Gmail's reason
+	// (rateLimitExceeded) before its status (PERMISSION_DENIED).
+	kept := shown
+	for _, r := range append(reasons[2:], reasons[:2]...) {
+		if r != "" {
+			kept = safeCode(r)
+			break
+		}
+	}
+	hint := providerHint(detail.Message)
 	msg := fmt.Sprintf("%s refused the request (%d", label, status)
 	if shown != "" {
 		msg += " " + shown
@@ -379,11 +390,11 @@ func httpFailure(label string, status int, body []byte) error {
 	msg += ")."
 	switch {
 	case status == http.StatusTooManyRequests || has("rateLimitExceeded", "userRateLimitExceeded", "ApplicationThrottled"):
-		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true, limited: true, code: shown}
+		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true, limited: true, code: kept, hint: hint}
 	case status >= 500:
-		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true, code: shown}
+		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true, code: kept, hint: hint}
 	case status == http.StatusNotFound || has("ErrorItemNotFound"):
-		return &providerError{msg: msg, status: status, permanent: true, notFound: true}
+		return &providerError{msg: msg, status: status, permanent: true, notFound: true, code: kept, hint: hint}
 	case status == http.StatusForbidden && has("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "ErrorAccessDenied", "authError"):
 		return errReconnect
 	case has("ErrorSendAsDenied"):
@@ -391,7 +402,37 @@ func httpFailure(label string, status int, body []byte) error {
 		return &providerError{msg: label + " refused to send from this address. Its organization has to allow sending from aliases, " +
 			"or the address is not one of the account's (ErrorSendAsDenied).", status: status, permanent: true}
 	}
-	return &providerError{msg: msg, status: status, permanent: status >= 400 && status < 500, code: shown}
+	return &providerError{msg: msg, status: status, permanent: status >= 400 && status < 500, code: kept, hint: hint}
+}
+
+// providerHints sort a provider's words about a refusal, in order, by a phrase they hold.
+var providerHints = []struct{ phrase, hint string }{
+	{"retry after", "retry_after"},
+	{"concurrent", "concurrent_requests"},
+	{"bandwidth", "bandwidth"},
+	{"daily limit", "daily_limit"},
+	{"quota exceeded", "project_quota"},
+	{"user-rate limit", "user_rate_limit"},
+	{"user rate limit", "user_rate_limit"},
+	{"rate limit", "rate_limit"},
+	{"not enabled", "service_disabled"},
+	{"backend error", "backend_error"},
+	{"internal error", "internal_error"},
+	{"precondition", "precondition"},
+}
+
+// providerHint is the kind of refusal a provider's message names, never the message.
+func providerHint(message string) string {
+	m := strings.ToLower(message)
+	if m == "" {
+		return ""
+	}
+	for _, h := range providerHints {
+		if strings.Contains(m, h.phrase) {
+			return h.hint
+		}
+	}
+	return "other"
 }
 
 // isNotFound reports a provider 404.
@@ -413,6 +454,22 @@ func isRefusing(err error) bool {
 	var pe *providerError
 	return errors.Is(err, errProviderUnavailable) || errors.As(err, &pe) && pe.limited
 }
+
+// mayBeOwn reports a refusal that can be the one request's own: a rate limit that names no
+// wait. Gmail answers some messages' reads that way while it reads the rest.
+func mayBeOwn(err error) bool {
+	var pe *providerError
+	return errors.As(err, &pe) && pe.limited && pe.retryAt.IsZero()
+}
+
+// readsError ends a pass whose reads the provider refused across the board: the first
+// refusal, and how many reads of the batch it refused and answered.
+type readsError struct {
+	error
+	refused, answered int
+}
+
+func (e *readsError) Unwrap() error { return e.error }
 
 // isPermanent reports a failure that retrying will not fix.
 func isPermanent(err error) bool {

@@ -378,6 +378,7 @@
     "you": "you",
     "lastSync": "Synced {{when}}",
     "neverSynced": "Not synced yet",
+    "nextTry": "{{last}}. Trying again at {{time}}.",
     "reconnect": "Reconnect",
     "status": {
       "syncing": "Syncing",
