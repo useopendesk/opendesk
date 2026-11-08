@@ -3039,6 +3039,8 @@ export type CollabStatus = {
   /** Why not: not on the plan, or off on this instance. */
   reason: "plan" | "disabled" | "workspace_disabled" | null;
   providers: { google: boolean; microsoft: boolean; imap: boolean };
+  /** The OAuth client a Google Workspace admin trusts so the domain's accounts can connect; null without Google. */
+  google_client_id: string | null;
   /** Accounts the caller sees. */
   accounts: number;
   storage: CollabStorage;

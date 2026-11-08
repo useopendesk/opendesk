@@ -88,6 +88,28 @@ ten minutes. Owner-removal and storage-trash cleanup still run to enforce data r
   With Collab a workspace's mailboxes may also receive over generic IMAP while `MAILBOX_IMAP` is
   off, as long as `COLLAB_IMAP` is on.
 
+### Google Workspace
+
+A Google Workspace domain may allow only the third-party apps its admin trusts. So the web app's
+Google connect asks how first (`web/src/components/collab/ConnectAccount.tsx`):
+
+- **Sign in with Google** (recommended for Workspace): before the sign-in it shows the one-time admin
+  step: in the Admin console, Security, API controls, App access control, Configure new app, search the
+  Collab Google client id, scope it to the organization or the units with the accounts and choose
+  Trusted. `CollabStatus.google_client_id` is that client id (`COLLAB_GOOGLE_CLIENT_ID`, else the
+  mailbox client), `null` while Google is not offered. A client id is public: it is in every
+  authorization URL.
+- **App password** (offered while `COLLAB_IMAP` is on): a guided `imap` account on Gmail's own
+  servers (`imap.gmail.com:993`, `smtp.gmail.com:465`, TLS): turn on 2-Step Verification, create an
+  app password, connect. It is the way in for a personal `@gmail.com` or `@googlemail.com` address
+  (typing one in the sign-in step offers it), and works for one Workspace account whose admin allows
+  app passwords. Spaces in the password are dropped. It is an IMAP account like any other: no Gmail
+  labels as folders beyond what Gmail's IMAP shows, no settings sync.
+
+Other hosts that need an app password (iCloud, Yahoo, AOL, Fastmail, Zoho, Yandex) show their own
+steps and link in the IMAP form, from the address's preset (`web/src/lib/collab/imapPresets.ts`, the
+same links as `internal/email/mailhost` `AppPasswordURL`).
+
 ## Sync
 
 A River job per account (`collab.sync_account`, queue `email`) runs when it is due: every minute
@@ -843,6 +865,7 @@ interface CollabStatus {
   enabled: boolean
   reason: "plan" | "disabled" | "workspace_disabled" | null // instance off wins (disabled), then plan, then workspace flag
   providers: { google: boolean; microsoft: boolean; imap: boolean }
+  google_client_id: string | null  // the client a Workspace admin trusts ("Google Workspace"); null without Google
   accounts: number             // accounts the caller sees
   storage: {                   // the workspace's Collab storage ("Storage")
     used_bytes: number
