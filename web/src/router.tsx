@@ -117,6 +117,7 @@ const portalResetRoute = createRoute({
   beforeLoad: ({ location }) => ({ portalResetToken: location.pathname === initialPortalResetPath ? initialPortalResetToken : "" }),
   component: portalPage,
 });
+const portalNewRoute = createRoute({ getParentRoute: () => rootRoute, path: "/portal/$slug/new", component: portalPage });
 const portalTicketRoute = createRoute({ getParentRoute: () => rootRoute, path: "/portal/$slug/tickets/$ticketId", component: portalPage });
 
 // ─── Auth ──────────────────────────────────────────────────────────────────
@@ -1115,7 +1116,7 @@ const routeTree = rootRoute.addChildren([
   helpRoute,
   csatRoute,
   csatLegacyRoute,
-  portalRoute, portalForgotRoute, portalResetRoute, portalTicketRoute,
+  portalRoute, portalForgotRoute, portalResetRoute, portalNewRoute, portalTicketRoute,
   ticketPrintRoute,
   authLayout.addChildren([
     loginRoute,
