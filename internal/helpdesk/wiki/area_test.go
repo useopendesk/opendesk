@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
+	"github.com/useopendesk/opendesk/internal/helpdesk/widget"
 	"github.com/useopendesk/opendesk/internal/helpdesk/wiki"
 )
 
@@ -142,4 +143,39 @@ func TestPagesArea(t *testing.T) {
 	if got := areaTitles(favs.Data); !slices.Equal(got, []string{"Roadmap", "Runbook"}) {
 		t.Fatalf("favorites with Pages back %v", got)
 	}
+}
+
+// With Pages off, nothing of Pages' pages reaches a wiki reader: not as a backlink or an
+// unlinked mention of a wiki page, not as one of their files. Turned on again, all is back.
+func TestPagesOffHidesItsLinksAndFiles(t *testing.T) {
+	e := hdtest.New(t, wiki.Register, widget.Register)
+	ws := e.NewWorkspace()
+	agent := ws.Agent.As(ws)
+
+	runbook := create(t, e, agent, map[string]any{"title": "Runbook"})
+	var file struct{ ID string }
+	e.Upload("/v1/attachments", agent, "chart.png", []byte(pngBytes)).Want(t, 201).JSON(t, &file)
+	var roadmap, notes areaNode
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "Roadmap", "area": "pages",
+		"body_html": `<p>See <a data-type="page" data-id="` + runbook.ID + `" href="/wiki/` + runbook.ID + `">Runbook</a></p><img src="/v1/attachments/` + file.ID + `">`}).Want(t, 201).JSON(t, &roadmap)
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "Notes", "area": "pages", "body_html": "<p>Read the Runbook first.</p>"}).Want(t, 201).JSON(t, &notes)
+
+	check := func(on bool) {
+		t.Helper()
+		back := ids(mentions(t, e, agent, "/v1/wiki/pages/"+runbook.ID+"/backlinks"))
+		named := ids(mentions(t, e, agent, "/v1/wiki/pages/"+runbook.ID+"/mentions"))
+		if slices.Contains(back, roadmap.ID) != on || slices.Contains(named, notes.ID) != on {
+			t.Fatalf("Pages on %v: backlinks %v, unlinked mentions %v", on, back, named)
+		}
+		status := 404
+		if on {
+			status = 200
+		}
+		e.Do("GET", "/v1/attachments/"+file.ID, agent, nil).Want(t, status)
+	}
+	check(true)
+	e.SetSettings(ws, map[string]any{"pages_enabled": false})
+	check(false)
+	e.SetSettings(ws, map[string]any{"pages_enabled": true})
+	check(true)
 }

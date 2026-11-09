@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"errors"
 	"html"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/products"
 )
 
 // Files (contracts/wiki.md "Files"): an upload a page's body names (`/v1/attachments/<id>`,
@@ -90,15 +92,30 @@ func claimFiles(ctx context.Context, tx pgx.Tx, p *auth.Principal, page uuid.UUI
 }
 
 // SeesPage reports whether the principal may see a page of their workspace, in the trash
-// or not, a template or not: who reads the page's files.
+// or not, a template or not: who reads the page's files. A page of Pages is out of sight
+// while the workspace has Pages off.
 func SeesPage(ctx context.Context, q db.Querier, p *auth.Principal, page uuid.UUID) (bool, error) {
 	v, err := ViewerOf(ctx, q, p)
 	if err != nil {
 		return false, err
 	}
 	me, hidden := v.args()
-	var ok bool
-	err = q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM wiki_pages p WHERE p.workspace_id = $1 AND p.id = $2 AND `+seesSQL("p", 3, 4)+`)`,
-		p.WorkspaceID, page, me, hidden).Scan(&ok)
-	return ok, err
+	var area string
+	err = q.QueryRow(ctx, `SELECT p.area FROM wiki_pages p WHERE p.workspace_id = $1 AND p.id = $2 AND `+seesSQL("p", 3, 4),
+		p.WorkspaceID, page, me, hidden).Scan(&area)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if area != AreaPages {
+		return true, nil
+	}
+	err = products.RequirePages(ctx, q, p.WorkspaceID)
+	var disabled *products.DisabledError
+	if errors.As(err, &disabled) {
+		return false, nil
+	}
+	return err == nil, err
 }

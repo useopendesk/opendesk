@@ -203,9 +203,13 @@ func registerLinks(d *deps.Deps, api huma.API) {
 				return nil, err
 			}
 			me, hidden := v.args()
+			areas, err := areasOn(ctx, d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			rows, err := d.DB.Pool.Query(ctx, `SELECT s.id, s.parent_id, s.title, s.icon, s.body_html, s.updated_at
 				FROM wiki_links l JOIN wiki_pages s ON s.workspace_id = l.workspace_id AND s.id = l.from_id
-				WHERE l.workspace_id = $1 AND l.to_id = $2 AND `+liveSQL("s", 3, 4)+` ORDER BY s.updated_at DESC LIMIT 200`, p.WorkspaceID, id, me, hidden)
+				WHERE l.workspace_id = $1 AND l.to_id = $2 AND s.area = ANY($5) AND `+liveSQL("s", 3, 4)+` ORDER BY s.updated_at DESC LIMIT 200`, p.WorkspaceID, id, me, hidden, areas)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -235,13 +239,17 @@ func registerLinks(d *deps.Deps, api huma.API) {
 			if len(names) == 0 {
 				return &mentionsOut{httpx.Page[WikiMention]{Data: []WikiMention{}}}, nil
 			}
-			args := []any{p.WorkspaceID, id, me, hidden}
+			areas, err := areasOn(ctx, d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			args := []any{p.WorkspaceID, id, me, hidden, areas}
 			for _, n := range names {
 				args = append(args, n)
 			}
 			rows, err := d.DB.Pool.Query(ctx, `SELECT s.id, s.parent_id, s.title, s.icon, s.body_html, s.updated_at
 				FROM wiki_pages s
-				WHERE s.workspace_id = $1 AND s.id <> $2 AND s.search @@ `+phraseQuery(names, 5)+` AND `+liveSQL("s", 3, 4)+`
+				WHERE s.workspace_id = $1 AND s.id <> $2 AND s.area = ANY($5) AND s.search @@ `+phraseQuery(names, 6)+` AND `+liveSQL("s", 3, 4)+`
 				  AND NOT EXISTS (SELECT 1 FROM wiki_links l WHERE l.workspace_id = $1 AND l.from_id = s.id AND l.to_id = $2)
 				ORDER BY s.updated_at DESC LIMIT 100`, args...)
 			if err != nil {

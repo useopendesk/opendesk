@@ -18,7 +18,8 @@ can't be turned off while it is the only product on (`422 at_least_one_product_r
 While Pages is off its pages stay stored and out of reach: every operation on one of its pages or
 lists, by id or with `area=pages`, answers `403 feature_disabled` with `product: "pages"` and
 `reason: "workspace_disabled"`. Lists of both areas (favorites, search without `area`, a ticket's
-pages) leave its pages out. Links, mentions and embeds of them in wiki pages stay in the text and
+pages, a wiki page's backlinks and unlinked mentions) leave its pages out, and its pages' files
+answer `404` as files of a page out of sight do. Links, mentions and embeds of them in wiki pages stay in the text and
 show as a page you can't open. Everything comes back as it was once Pages is on.
 
 ## Areas
