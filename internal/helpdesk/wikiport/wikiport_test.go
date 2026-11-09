@@ -808,7 +808,8 @@ func FuzzMarkdown(f *testing.F) {
 }
 
 // TestPathologicalMarkdown: openers without closers and deep nesting cost time in
-// proportion to the text (a quadratic parse takes minutes here).
+// proportion to the text. A linear parse takes under a second here and a few under the race
+// detector; a quadratic one takes minutes, so the budget sits between the two.
 func TestPathologicalMarkdown(t *testing.T) {
 	for _, unit := range []string{"*a ", "_a ", "**a ", "[a", "`a ", "$a ", "[[a", "![[a", "<a ", "![", "> ", "- ", "1. "} {
 		src := strings.Repeat(unit, (1<<20)/len(unit))
@@ -816,7 +817,7 @@ func TestPathologicalMarkdown(t *testing.T) {
 		if _, err := Import([]Upload{upload("Note.md", []byte(src))}, Options{}); err != nil && !errors.Is(err, ErrEmpty) {
 			t.Fatalf("%q: %v", unit, err)
 		}
-		if d := time.Since(start); d > 5*time.Second {
+		if d := time.Since(start); d > 30*time.Second {
 			t.Errorf("%q x %d took %s", unit, len(src)/len(unit), d)
 		}
 	}
