@@ -132,7 +132,7 @@ export default function NewTicketPage() {
           {draft.subject.trim() || tr("newTicket.title")}
         </h1>
         <Button variant="primary" size="sm" loading={s.create.isPending} onClick={submit}>
-          {draft.kind === "reply" ? tr("newTicket.createSend") : tr("newTicket.create")}
+          {draft.kind === "reply" && !s.log ? tr("newTicket.createSend") : tr("newTicket.create")}
         </Button>
         <Tooltip content={panel ? tr("detail.hideDetails") : tr("detail.showDetails")} shortcut="]">
           <Button
@@ -218,7 +218,7 @@ export default function NewTicketPage() {
                 ref={editor}
                 value={draft.body}
                 onChange={(body) => set({ body })}
-                placeholder={note ? tr("newTicket.bodyNote") : s.chat ? tr("newTicket.bodyChat") : tr("newTicket.bodyReply")}
+                placeholder={note ? tr("newTicket.bodyNote") : s.chat ? tr("newTicket.bodyChat") : s.log ? tr("newTicket.bodyLog") : tr("newTicket.bodyReply")}
                 extensions={extensions}
                 onSubmit={submit}
                 contentClassName="min-h-[240px]"

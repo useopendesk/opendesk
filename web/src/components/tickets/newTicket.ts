@@ -13,8 +13,8 @@ export type NewTicketDraft = {
   subject: string;
   body: string;
   kind: "reply" | "note";
-  /** A reply goes by email, or opens a chat in the contact's widget. */
-  channel?: "email" | "chat";
+  /** A reply goes by email, opens a chat in the contact's widget, or is logged: a normal message, nothing sent. */
+  channel?: "email" | "chat" | "log";
   /** Chat: the widget it opens in; undefined lets the server pick the contact's latest. */
   widgetId?: string;
   /** The address it goes from; set to the brand's first one that can send until someone picks. */
@@ -83,6 +83,9 @@ export function pageOnlyCount(d: NewTicketDraft): number {
 /** A reply that opens a chat in the contact's widget instead of going by email. */
 export const isChat = (d: NewTicketDraft) => d.kind === "reply" && d.channel === "chat";
 
+/** A reply that only records the request: the ticket has the message as a normal one and nothing is emailed. */
+export const isLog = (d: NewTicketDraft) => d.kind === "reply" && d.channel === "log";
+
 /** What is missing before it can be created, as an inbox `newTicket.*` key. */
 export function newTicketProblem(d: NewTicketDraft, noSender: boolean): "needTo" | "needSubject" | "needBody" | "cannotSend" | "notOnChat" | null {
   if (!d.to) return "needTo";
@@ -92,7 +95,7 @@ export function newTicketProblem(d: NewTicketDraft, noSender: boolean): "needTo"
   }
   if (!d.subject.trim()) return "needSubject";
   if (!d.body) return "needBody";
-  if (noSender) return "cannotSend";
+  if (noSender && !isLog(d)) return "cannotSend";
   return null;
 }
 
@@ -126,20 +129,23 @@ export function createTicketBody(
     if (o.attachmentIds?.length) chat.attachment_ids = o.attachmentIds;
     return chat;
   }
-  const emailed = d.kind === "reply" && !!d.mailbox;
+  // A logged request has no address: it is an api ticket whose first message nobody sends.
+  const logged = isLog(d);
+  const mailbox = logged ? undefined : d.mailbox;
+  const emailed = d.kind === "reply" && !!mailbox;
   const body: CreateTicketBody = {
     subject: d.subject.trim(),
     contact_id: d.to?.contact?.id,
     contact: !d.to?.contact && d.to?.email ? { email: d.to.email, name: "" } : undefined,
     // An email ticket needs its mailbox (later replies go out through it), also when it starts as a note.
-    channel: d.mailbox ? "email" : "api",
-    mailbox_id: d.mailbox || undefined,
+    channel: mailbox ? "email" : "api",
+    mailbox_id: mailbox || undefined,
     body_html: d.body,
     kind: d.kind,
     priority: d.priority,
     assignee_id: assignee ?? undefined,
     team_id: o.hasTeams && o.teamId ? o.teamId : undefined,
-    status: d.kind === "reply" ? "pending" : "open",
+    status: d.kind === "reply" && !logged ? "pending" : "open",
   };
   if (d.severity) body.severity = d.severity;
   if (d.tags.length) body.tags = d.tags;

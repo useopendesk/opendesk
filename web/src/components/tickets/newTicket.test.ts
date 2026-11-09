@@ -132,6 +132,28 @@ describe("createTicketBody", () => {
     expect(createTicketBody({ ...d, mailbox: undefined }, o)).not.toHaveProperty("bcc");
   });
 
+  it("logs a request as a normal message with no address, and emails nothing", () => {
+    const log = draft({ kind: "reply", channel: "log", to: { contact }, subject: "Phone call", body: "<p>Printer is down</p>", mailbox: "m1", cc: ["b@example.com"] });
+    // It needs a recipient, a subject and a message, but never an address that can send.
+    expect(newTicketProblem(log, true)).toBeNull();
+    expect(newTicketProblem({ ...log, subject: " " }, false)).toBe("needSubject");
+    expect(newTicketProblem({ ...log, body: "" }, false)).toBe("needBody");
+    // A reply, so the message reads as one; no mailbox or copies, so none is sent; open, since the team still has to answer it.
+    expect(wire(createTicketBody(log, o))).toEqual({
+      subject: "Phone call",
+      contact_id: "c1",
+      channel: "api",
+      body_html: "<p>Printer is down</p>",
+      kind: "reply",
+      priority: "normal",
+      assignee_id: "u-me",
+      team_id: "t1",
+      status: "open",
+    });
+    // The same draft by email still goes from the address.
+    expect(createTicketBody({ ...log, channel: "email" }, o)).toMatchObject({ channel: "email", mailbox_id: "m1", status: "pending" });
+  });
+
   it("opens a chat only with a contact on chat, without email's address and copies", () => {
     const onChat = { ...contact, chat_reachable: true } as Contact;
     const chat = draft({ kind: "reply", channel: "chat", to: { contact }, body: "<p>Hi</p>", mailbox: "m1", cc: ["b@example.com"] });
