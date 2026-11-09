@@ -147,6 +147,52 @@ export function registerResources() {
     publish(ctx.ws, "contact.deleted", { contact_id: c.id });
     return respond(204);
   });
+  // Bulk: ids or the list's filters; one thing at a time, all or nothing, 1000 at most by filter.
+  function bulkRows<R extends Contact | Company>(ctx: Ctx, rows: R[], matches: (r: R) => boolean, what: string): R[] {
+    const ids = strArr(ctx.body.ids);
+    const hasQuery = isRecord(ctx.body.query);
+    if ((ctx.body.delete === true) === isRecord(ctx.body.patch)) throw invalid("send either patch or delete: true");
+    if ((ids?.length ?? 0) === 0 === !hasQuery) throw invalid("send either ids or query");
+    if (ids) {
+      if (ids.length > 100) throw invalid("ids: at most 100");
+      const found = ids.map((id) => rows.find((r) => r.id === id));
+      if (found.some((r) => !r)) throw notFound(what);
+      return found as R[];
+    }
+    const hit = rows.filter(matches);
+    if (hit.length > 1000) throw new HttpError(422, "too_many_records", "That filter matches more than 1000 records. Narrow it and try again.");
+    return hit;
+  }
+  post("/v1/contacts/bulk", (ctx) => {
+    const query = isRecord(ctx.body.query) ? ctx.body.query : {};
+    const needle = String(query.q ?? "").toLowerCase().trim();
+    const rows = bulkRows(
+      ctx,
+      ctx.ws.contacts,
+      (c) =>
+        (!needle || [c.name, c.email ?? "", c.company?.name ?? "", c.phone, fieldsText(c.fields)].join(" ").toLowerCase().includes(needle)) &&
+        (!query.company_id || c.company?.id === query.company_id) &&
+        (!query.tag || c.tags.some((x) => x.name.toLowerCase() === String(query.tag).toLowerCase())) &&
+        (!query.blocked || c.blocked === (query.blocked === "true")),
+      "Contact",
+    );
+    if (ctx.body.delete === true) {
+      const gone = new Set(rows.map((c) => c.id));
+      ctx.ws.contacts = ctx.ws.contacts.filter((c) => !gone.has(c.id));
+      for (const id of gone) publish(ctx.ws, "contact.deleted", { contact_id: id });
+      return { updated: 0, deleted: rows.length };
+    }
+    const patch = ctx.body.patch as Record<string, unknown>;
+    const sub = { ...ctx, body: { add_tags: patch.add_tags, remove_tags: patch.remove_tags } } as Ctx;
+    for (const c of rows) {
+      writeLabels(sub, "contacts", c);
+      if ("company_id" in patch) setCompany(ctx.ws, c, patch.company_id);
+      c.updated_at = nowIso();
+      syncContactRefs(ctx.ws, c);
+      publish(ctx.ws, "contact.updated", { contact: contactOut(ctx.ws, c) });
+    }
+    return { updated: rows.length, deleted: 0 };
+  });
   get("/v1/contacts/:id/tickets", (ctx) => {
     const c = findContact(ctx);
     const list = ctx.ws.tickets.filter((t) => t.contact?.id === c.id && !ctx.ws.deletedTickets.has(t.id));
@@ -199,6 +245,34 @@ export function registerResources() {
     for (const ct of ctx.ws.contacts) if (ct.company?.id === c.id) ct.company = null;
     publish(ctx.ws, "company.deleted", { company_id: c.id });
     return respond(204);
+  });
+
+  post("/v1/companies/bulk", (ctx) => {
+    const query = isRecord(ctx.body.query) ? ctx.body.query : {};
+    const needle = String(query.q ?? "").toLowerCase().trim();
+    const rows = bulkRows(
+      ctx,
+      ctx.ws.companies,
+      (c) =>
+        (!needle || [c.name, c.domain, fieldsText(c.fields)].join(" ").toLowerCase().includes(needle)) &&
+        (!query.tag || c.tags.some((x) => x.name.toLowerCase() === String(query.tag).toLowerCase())),
+      "Company",
+    );
+    if (ctx.body.delete === true) {
+      const gone = new Set(rows.map((c) => c.id));
+      ctx.ws.companies = ctx.ws.companies.filter((c) => !gone.has(c.id));
+      for (const ct of ctx.ws.contacts) if (ct.company && gone.has(ct.company.id)) ct.company = null;
+      for (const id of gone) publish(ctx.ws, "company.deleted", { company_id: id });
+      return { updated: 0, deleted: rows.length };
+    }
+    const patch = ctx.body.patch as Record<string, unknown>;
+    const sub = { ...ctx, body: { add_tags: patch.add_tags, remove_tags: patch.remove_tags } } as Ctx;
+    for (const c of rows) {
+      writeLabels(sub, "companies", c);
+      c.updated_at = nowIso();
+      publish(ctx.ws, "company.updated", { company: companyOut(ctx.ws, c) });
+    }
+    return { updated: rows.length, deleted: 0 };
   });
 
   crud<SavedReply>({
