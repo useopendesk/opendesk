@@ -151,6 +151,7 @@ export function registerResources() {
   post("/v1/contacts/:id/emails", (ctx) => {
     const c = findContact(ctx);
     const email = addressOf(s(ctx, "email"));
+    if (!c.email) throw invalid("give the contact an email address before adding other addresses");
     if (holder(ctx.ws, email)) throw new HttpError(409, "conflict", "A contact with this email already exists");
     if (c.emails.length >= 20) throw invalid("a contact can have at most 20 extra email addresses");
     c.emails.push(email);

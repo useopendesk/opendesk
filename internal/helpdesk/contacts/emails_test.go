@@ -76,6 +76,13 @@ func TestContactEmails(t *testing.T) {
 	}
 	e.Do("POST", base, a, map[string]any{"email": "one-more@home.example"}).Want(t, 422)
 
+	// Extras sit beside a primary: the primary can't be cleared while there are extras, and a
+	// contact without one gets no extras.
+	e.Do("PATCH", "/v1/contacts/"+jane.ID, a, map[string]any{"email": nil}).Want(t, 422)
+	var nameOnly withEmails
+	e.Do("POST", "/v1/contacts", a, map[string]any{"name": "No address"}).Want(t, 201).JSON(t, &nameOnly)
+	e.Do("POST", "/v1/contacts/"+nameOnly.ID+"/emails", a, map[string]any{"email": "noaddr@home.example"}).Want(t, 422)
+
 	// Viewers read only; another workspace's contact is not found.
 	e.Do("POST", base, ws.Viewer.As(ws), map[string]any{"email": "v@home.example"}).Want(t, 403)
 	foreign := e.NewWorkspace()

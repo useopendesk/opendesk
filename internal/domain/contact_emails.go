@@ -49,11 +49,17 @@ func ContactByAddress(ctx context.Context, q db.Querier, wid uuid.UUID, email st
 }
 
 // AddContactEmail gives the contact an extra address. An address that already belongs to a
-// contact, this one included, is a 409.
+// contact, this one included, is a 409. Extras sit beside a primary address, so a contact
+// without one gets its primary first.
 func AddContactEmail(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, email string) error {
+	var hasPrimary bool
 	var n int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM contact_emails WHERE workspace_id = $1 AND contact_id = $2`, wid, contactID).Scan(&n); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT c.email IS NOT NULL, (SELECT count(*) FROM contact_emails e WHERE e.workspace_id = c.workspace_id AND e.contact_id = c.id)
+		FROM contacts c WHERE c.workspace_id = $1 AND c.id = $2`, wid, contactID).Scan(&hasPrimary, &n); err != nil {
 		return err
+	}
+	if !hasPrimary {
+		return httpx.Validation("give the contact an email address before adding other addresses")
 	}
 	if n >= MaxContactEmails {
 		return httpx.Validation("a contact can have at most 20 extra email addresses")
