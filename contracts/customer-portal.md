@@ -95,7 +95,9 @@ Matching, in order:
 
 A provider sign-in opens a `customer_sessions` row with `method = 'oidc'` and no password row;
 the session, refresh cookie and access token are otherwise the password sign-in's. A changed
-address or a block removes the contact's sessions and live links. An `oidc` session needs its
+address or a block removes the contact's sessions and live links, and a contact that lost a
+link is marked `customer_oidc_relink_required`: its next provider sign-in, the same subject
+included, needs a relink authorization, which clears the mark. An `oidc` session needs its
 brand to still take a provider: switching it to `local` ends it at the next refresh. A brand in
 `oidc` mode refuses password sign-in, password links and resets. Audit events:
 `customer.sso.login`, `customer.sso.login.failed` (reason code only), `customer.sso.linked`.
