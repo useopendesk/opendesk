@@ -120,6 +120,8 @@ export type CreateTicketBody = {
   brand_id?: string;
   body_html: string;
   kind?: "reply" | "note";
+  /** inbound: the first message is the contact's own words, sent to no one (not on a chat). */
+  direction?: "outbound" | "inbound";
   priority?: T.Priority;
   severity?: T.Severity;
   assignee_id?: string;
@@ -601,6 +603,12 @@ export const api = {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
       discard: (id: string) => http.del(`/v1/tickets/${id}/draft`),
     },
+    /** My own unsent reply on the ticket, saved as I type (contracts/api.md "Reply drafts"). */
+    replyDraft: {
+      get: (id: string) => http.get<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`),
+      save: (id: string, b: { body_html: string; attachment_ids: string[] }) => http.put<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`, b),
+      discard: (id: string) => http.del(`/v1/tickets/${id}/reply-draft`),
+    },
     threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
     startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
     sendInThread: (id: string, threadId: string, b: { body_html: string; attachment_ids?: string[] }) =>
@@ -633,10 +641,14 @@ export const api = {
     tickets: (id: string, q?: ListQuery) => http.get<T.Page<T.Ticket>>(`/v1/contacts/${id}/tickets`, { query: q }),
     bulk: (b: DirectoryBulkTarget<ContactBulkQuery> & ({ delete: true } | { patch: { add_tags?: string[]; remove_tags?: string[]; company_id?: string | null } })) =>
       http.post<BulkResult>("/v1/contacts/bulk", b),
+    /** Extra addresses (contracts/api.md "Contact emails"); each answers with the contact. */
+    addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
+    removeEmail: (id: string, email: string) => http.del<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}`),
+    makePrimaryEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}/make-primary`),
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {
-    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
+    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "external_id" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
     search: (q: CompanyListQuery) => http.get<T.Page<T.Company>>("/v1/companies", { query: listQuery(q) }),
     bulk: (b: DirectoryBulkTarget<CompanyBulkQuery> & ({ delete: true } | { patch: { add_tags?: string[]; remove_tags?: string[] } })) =>
       http.post<BulkResult>("/v1/companies/bulk", b),
@@ -764,7 +776,7 @@ export const api = {
     update: (b: Partial<T.WidgetSettings>) => http.patch<T.WidgetSettings>("/v1/widget/settings", b),
   },
   mailboxes: {
-    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
+    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "keep_automatic_mail" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
     usage: (id: string) => http.get<T.MailboxUsage>(`/v1/mailboxes/${id}/usage`),

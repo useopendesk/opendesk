@@ -1,6 +1,7 @@
 // Contacts, companies, tags, saved replies, views, SLA, automations, the
 // knowledge base, mailboxes and the public help center / CSAT pages.
 
+import { registerPortalRoutes } from "./portal";
 import type {
   Action,
   Automation,
@@ -86,6 +87,7 @@ function syncContactRefs(ws: WsData, c: Contact) {
 }
 
 export function registerResources() {
+  registerPortalRoutes();
   // Contacts.
   get("/v1/contacts", (ctx) => {
     const q = (ctx.query.get("q") ?? "").toLowerCase().trim();
@@ -95,7 +97,7 @@ export function registerResources() {
     list = recordFilter(ctx, "contact", list);
     const blocked = ctx.query.get("blocked");
     if (blocked) list = list.filter((c) => c.blocked === (blocked === "true"));
-    if (q) list = list.filter((c) => [c.name, c.email ?? "", c.company?.name ?? "", c.phone, fieldsText(c.fields)].join(" ").toLowerCase().includes(q));
+    if (q) list = list.filter((c) => [c.name, c.email ?? "", ...c.emails, c.company?.name ?? "", c.phone, fieldsText(c.fields)].join(" ").toLowerCase().includes(q));
     const sort = ctx.query.get("sort") ?? "";
     const byName = (a: Contact, b: Contact) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     const order: Record<string, (a: Contact, b: Contact) => number> = {
@@ -115,8 +117,8 @@ export function registerResources() {
     const email = s(ctx, "email")?.trim().toLowerCase() || null;
     const name = s(ctx, "name")?.trim() || email?.split("@")[0] || "";
     if (!name) throw invalid("Name or email is required");
-    if (email && ctx.ws.contacts.some((c) => c.email === email)) throw new HttpError(409, "conflict", "A contact with this email already exists");
-    const c: Contact = { id: uuid(), email, name: name.slice(0, 80), phone: s(ctx, "phone") ?? "", avatar_url: null, avatar_source: null, company: null, external_id: s(ctx, "external_id") ?? null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, blocked: false, ticket_count: 0, created_at: nowIso(), updated_at: nowIso() };
+    if (email && holder(ctx.ws, email)) throw new HttpError(409, "conflict", "A contact with this email already exists");
+    const c: Contact = { id: uuid(), email, emails: [], name: name.slice(0, 80), phone: s(ctx, "phone") ?? "", avatar_url: null, avatar_source: null, company: null, external_id: s(ctx, "external_id") ?? null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, blocked: false, ticket_count: 0, created_at: nowIso(), updated_at: nowIso() };
     setCompany(ctx.ws, c, ctx.body.company_id);
     writeLabels(ctx, "contacts", c);
     writeFields(ctx, "contact", c);
@@ -129,7 +131,8 @@ export function registerResources() {
     if ("name" in ctx.body && !s(ctx, "name")?.trim()) throw invalid("Name can't be empty");
     if (s(ctx, "email")) {
       const email = s(ctx, "email")!.trim().toLowerCase();
-      if (ctx.ws.contacts.some((x) => x.email === email && x.id !== c.id)) throw new HttpError(409, "conflict", "Another contact already uses this email");
+      const held = holder(ctx.ws, email);
+      if (held && !(held === c && c.email === email)) throw new HttpError(409, "conflict", "Another contact already uses this email");
       c.email = email;
     }
     writeLabels(ctx, "contacts", c);
@@ -193,6 +196,42 @@ export function registerResources() {
     }
     return { updated: rows.length, deleted: 0 };
   });
+  // Extra addresses (contracts/api.md "Contact emails"): an address belongs to one contact, primary or extra.
+  const changed = (ctx: Ctx, c: Contact) => {
+    c.updated_at = nowIso();
+    syncContactRefs(ctx.ws, c);
+    publish(ctx.ws, "contact.updated", { contact: contactOut(ctx.ws, c) });
+    return contactOut(ctx.ws, c);
+  };
+  const addressOf = (raw: string | undefined) => {
+    const email = raw?.trim().toLowerCase() ?? "";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("email is not a valid address");
+    return email;
+  };
+  post("/v1/contacts/:id/emails", (ctx) => {
+    const c = findContact(ctx);
+    const email = addressOf(s(ctx, "email"));
+    if (!c.email) throw invalid("give the contact an email address before adding other addresses");
+    if (holder(ctx.ws, email)) throw new HttpError(409, "conflict", "A contact with this email already exists");
+    if (c.emails.length >= 20) throw invalid("a contact can have at most 20 extra email addresses");
+    c.emails.push(email);
+    return respond(201, changed(ctx, c));
+  });
+  del("/v1/contacts/:id/emails/:email", (ctx) => {
+    const c = findContact(ctx);
+    const email = addressOf(ctx.params.email);
+    if (!c.emails.includes(email)) throw notFound("Email");
+    c.emails = c.emails.filter((x) => x !== email);
+    return changed(ctx, c);
+  });
+  post("/v1/contacts/:id/emails/:email/make-primary", (ctx) => {
+    const c = findContact(ctx);
+    const email = addressOf(ctx.params.email);
+    if (!c.emails.includes(email)) throw notFound("Email");
+    c.emails = [...c.emails.filter((x) => x !== email), ...(c.email ? [c.email] : [])];
+    c.email = email;
+    return changed(ctx, c);
+  });
   get("/v1/contacts/:id/tickets", (ctx) => {
     const c = findContact(ctx);
     const list = ctx.ws.tickets.filter((t) => t.contact?.id === c.id && !ctx.ws.deletedTickets.has(t.id));
@@ -221,7 +260,7 @@ export function registerResources() {
   get("/v1/companies/:id", (ctx) => companyOut(ctx.ws, findCompany(ctx)));
   post("/v1/companies", (ctx) => {
     const name = required(ctx, "name").slice(0, 80);
-    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
+    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), external_id: s(ctx, "external_id")?.trim() || null, avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     ctx.ws.companies.push(c);
@@ -234,6 +273,7 @@ export function registerResources() {
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     assign(c, ctx.body, ["name", "domain", "notes", "custom"]);
+    if ("external_id" in ctx.body) c.external_id = s(ctx, "external_id")?.trim() || null;
     c.updated_at = nowIso();
     for (const ct of ctx.ws.contacts) if (ct.company?.id === c.id) ct.company = { id: c.id, name: c.name, domain: c.domain, avatar_url: c.avatar_url };
     publish(ctx.ws, "company.updated", { company: companyOut(ctx.ws, c) });
@@ -552,6 +592,7 @@ export function registerResources() {
     patchConnection(ctx, m);
     patchMailboxAI(ctx, m);
     patchFormSenders(ctx, m);
+    if (typeof ctx.body.keep_automatic_mail === "boolean") m.keep_automatic_mail = ctx.body.keep_automatic_mail;
     if ("bot_id" in ctx.body) m.bot_id = checkBotId(ctx.ws, ctx.body.bot_id);
     if (ctx.body.password || ctx.body.smtp_password) {
       m.status = "active";
@@ -916,6 +957,7 @@ export function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "disp
     aliases: [],
     alias_teams: {},
     trusted_form_senders: [],
+    keep_automatic_mail: false,
     from_name_format: "{agent} at {mailbox}",
     private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
     id: uuid(),
@@ -1052,6 +1094,10 @@ function writeAddressing(ctx: Ctx, m: Mailbox) {
   }
 }
 
+/** The contact an address belongs to, as its primary or one of its extras. */
+function holder(ws: WsData, email: string): Contact | undefined {
+  return ws.contacts.find((x) => x.email === email || x.emails.includes(email));
+}
 function findContact(ctx: Ctx): Contact {
   const c = ctx.ws.contacts.find((x) => x.id === ctx.params.id);
   if (!c) throw notFound("Contact");
