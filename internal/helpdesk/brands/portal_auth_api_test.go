@@ -1,11 +1,13 @@
 package brands_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/helpdesk/brands"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
@@ -133,5 +135,13 @@ func TestPortalOIDCOwnershipSurvivesBrandDeletion(t *testing.T) {
 		if !db.IsUniqueViolation(err, "") {
 			t.Fatalf("retained %s must prevent remapping: %v", subject, err)
 		}
+	}
+	// The originating brand is one of the identity's own workspace's brands.
+	other := e.NewWorkspace()
+	_, err := e.D.DB.Pool.Exec(e.Ctx, `INSERT INTO customer_oidc_identities (id,workspace_id,brand_id,contact_id,issuer,subject,email)
+        VALUES ($1,$2,$3,$4,'https://issuer.example','foreign-brand','other@example.com')`, ids.New(), ws.ID, other.BrandID, otherContact)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Fatalf("an identity took another workspace's brand: %v", err)
 	}
 }
