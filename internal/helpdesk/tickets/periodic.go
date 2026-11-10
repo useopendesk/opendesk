@@ -196,7 +196,7 @@ func AutoClose(ctx context.Context, d *deps.Deps) error {
 	return nil
 }
 
-// PurgeAttachmentsWorker removes uploads never attached to a message within 24h.
+// PurgeAttachmentsWorker removes uploads that no message and no wiki page took within 24h.
 type PurgeAttachmentsWorker struct {
 	river.WorkerDefaults[PurgeAttachmentsArgs]
 	D *deps.Deps
@@ -206,7 +206,8 @@ func (w *PurgeAttachmentsWorker) Work(ctx context.Context, _ *river.Job[PurgeAtt
 	return PurgeAttachments(ctx, w.D)
 }
 
-// PurgeAttachments deletes stale unattached uploads from storage and the database.
+// PurgeAttachments deletes stale unattached uploads from storage and the database. A wiki
+// page's files (contracts/wiki.md "Files") are kept while the page is.
 //
 // Uploads held by a member's unsent reply draft stay while the draft does; drafts untouched
 // for ReplyDraftRetention are deleted first, which frees their uploads.
@@ -215,7 +216,7 @@ func PurgeAttachments(ctx context.Context, d *deps.Deps) error {
 		ReplyDraftRetention.Seconds()); err != nil {
 		return err
 	}
-	rows, err := d.DB.Pool.Query(ctx, `SELECT a.id, a.storage_key FROM attachments a WHERE a.message_id IS NULL
+	rows, err := d.DB.Pool.Query(ctx, `SELECT a.id, a.storage_key FROM attachments a WHERE a.message_id IS NULL AND a.wiki_page_id IS NULL
 		AND a.created_at < now() - interval '24 hours'
 		AND NOT EXISTS (SELECT 1 FROM ticket_reply_drafts rd WHERE rd.workspace_id = a.workspace_id AND a.id = ANY(rd.attachment_ids))
 		ORDER BY a.created_at LIMIT $1`, scanBatch)
@@ -236,7 +237,7 @@ func PurgeAttachments(ctx context.Context, d *deps.Deps) error {
 	}
 	for _, a := range list {
 		// Claim the row first so an upload attached meanwhile is never removed.
-		tag, err := d.DB.Pool.Exec(ctx, `DELETE FROM attachments a WHERE a.id = $1 AND a.message_id IS NULL
+		tag, err := d.DB.Pool.Exec(ctx, `DELETE FROM attachments a WHERE a.id = $1 AND a.message_id IS NULL AND a.wiki_page_id IS NULL
 			AND NOT EXISTS (SELECT 1 FROM ticket_reply_drafts rd WHERE rd.workspace_id = a.workspace_id AND a.id = ANY(rd.attachment_ids))`, a.id)
 		if err != nil {
 			return err
