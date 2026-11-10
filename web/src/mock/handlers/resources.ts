@@ -1,6 +1,7 @@
 // Contacts, companies, tags, saved replies, views, SLA, automations, the
 // knowledge base, mailboxes and the public help center / CSAT pages.
 
+import { registerPortalRoutes } from "./portal";
 import type {
   Action,
   Automation,
@@ -86,6 +87,7 @@ function syncContactRefs(ws: WsData, c: Contact) {
 }
 
 export function registerResources() {
+  registerPortalRoutes();
   // Contacts.
   get("/v1/contacts", (ctx) => {
     const q = (ctx.query.get("q") ?? "").toLowerCase().trim();
@@ -258,7 +260,7 @@ export function registerResources() {
   get("/v1/companies/:id", (ctx) => companyOut(ctx.ws, findCompany(ctx)));
   post("/v1/companies", (ctx) => {
     const name = required(ctx, "name").slice(0, 80);
-    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
+    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), external_id: s(ctx, "external_id")?.trim() || null, avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     ctx.ws.companies.push(c);
@@ -271,6 +273,7 @@ export function registerResources() {
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     assign(c, ctx.body, ["name", "domain", "notes", "custom"]);
+    if ("external_id" in ctx.body) c.external_id = s(ctx, "external_id")?.trim() || null;
     c.updated_at = nowIso();
     for (const ct of ctx.ws.contacts) if (ct.company?.id === c.id) ct.company = { id: c.id, name: c.name, domain: c.domain, avatar_url: c.avatar_url };
     publish(ctx.ws, "company.updated", { company: companyOut(ctx.ws, c) });
@@ -589,6 +592,7 @@ export function registerResources() {
     patchConnection(ctx, m);
     patchMailboxAI(ctx, m);
     patchFormSenders(ctx, m);
+    if (typeof ctx.body.keep_automatic_mail === "boolean") m.keep_automatic_mail = ctx.body.keep_automatic_mail;
     if ("bot_id" in ctx.body) m.bot_id = checkBotId(ctx.ws, ctx.body.bot_id);
     if (ctx.body.password || ctx.body.smtp_password) {
       m.status = "active";
@@ -953,6 +957,7 @@ export function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "disp
     aliases: [],
     alias_teams: {},
     trusted_form_senders: [],
+    keep_automatic_mail: false,
     from_name_format: "{agent} at {mailbox}",
     private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
     id: uuid(),
