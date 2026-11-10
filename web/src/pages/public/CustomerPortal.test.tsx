@@ -150,6 +150,14 @@ it("tells a customer why the provider sign-in came back, without a password form
   await unknown.done();
 });
 
+it("stays on the portal after sign out instead of going straight back to the provider", async () => {
+  const { container, done } = await mountLogin("oidc", "?signed_out=1");
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.textContent).toContain("Continue with single sign-on");
+  expect(location.search).toBe("");
+  await done();
+});
+
 
 it("shows list loading, empty, error and ticket rows", async () => {
   const container = document.createElement("div"); document.body.append(container);
