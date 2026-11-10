@@ -1,6 +1,7 @@
 // Contacts, companies, tags, saved replies, views, SLA, automations, the
 // knowledge base, mailboxes and the public help center / CSAT pages.
 
+import { registerPortalRoutes } from "./portal";
 import type {
   Action,
   Automation,
@@ -86,6 +87,7 @@ function syncContactRefs(ws: WsData, c: Contact) {
 }
 
 export function registerResources() {
+  registerPortalRoutes();
   // Contacts.
   get("/v1/contacts", (ctx) => {
     const q = (ctx.query.get("q") ?? "").toLowerCase().trim();
@@ -93,8 +95,20 @@ export function registerResources() {
     let list = ctx.ws.contacts;
     if (company) list = list.filter((c) => c.company?.id === company);
     list = recordFilter(ctx, "contact", list);
+    const blocked = ctx.query.get("blocked");
+    if (blocked) list = list.filter((c) => c.blocked === (blocked === "true"));
     if (q) list = list.filter((c) => [c.name, c.email ?? "", ...c.emails, c.company?.name ?? "", c.phone, fieldsText(c.fields)].join(" ").toLowerCase().includes(q));
-    list = list.slice().sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+    const sort = ctx.query.get("sort") ?? "";
+    const byName = (a: Contact, b: Contact) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    const order: Record<string, (a: Contact, b: Contact) => number> = {
+      created: (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
+      "-created": (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+      name: byName,
+      "-name": (a, b) => byName(b, a),
+      tickets: (a, b) => a.ticket_count - b.ticket_count,
+      "-tickets": (a, b) => b.ticket_count - a.ticket_count,
+    };
+    list = list.slice().sort(order[sort] ?? ((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)));
     const page = paginate(ctx, list);
     return { ...page, data: page.data.map((c) => contactOut(ctx.ws, c)) };
   });
@@ -213,14 +227,23 @@ export function registerResources() {
     let list = ctx.ws.companies;
     list = recordFilter(ctx, "company", list);
     if (q) list = list.filter((c) => [c.name, c.domain, fieldsText(c.fields)].join(" ").toLowerCase().includes(q));
-    list = list.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const byName = (a: Company, b: Company) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    const size = (c: Company) => ctx.ws.contacts.filter((p) => p.company?.id === c.id).length;
+    const order: Record<string, (a: Company, b: Company) => number> = {
+      "-name": (a, b) => byName(b, a),
+      created: (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
+      "-created": (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+      contacts: (a, b) => size(a) - size(b),
+      "-contacts": (a, b) => size(b) - size(a),
+    };
+    list = list.slice().sort(order[ctx.query.get("sort") ?? ""] ?? byName);
     const page = paginate(ctx, list);
     return { ...page, data: page.data.map((c) => companyOut(ctx.ws, c)) };
   });
   get("/v1/companies/:id", (ctx) => companyOut(ctx.ws, findCompany(ctx)));
   post("/v1/companies", (ctx) => {
     const name = required(ctx, "name").slice(0, 80);
-    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
+    const c: Company = { id: uuid(), name, domain: (s(ctx, "domain") ?? "").toLowerCase(), external_id: s(ctx, "external_id")?.trim() || null, avatar_url: null, avatar_source: null, notes: s(ctx, "notes") ?? "", custom: isRecord(ctx.body.custom) ? ctx.body.custom : {}, tags: [], fields: {}, contact_count: 0, created_at: nowIso(), updated_at: nowIso() };
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     ctx.ws.companies.push(c);
@@ -233,6 +256,7 @@ export function registerResources() {
     writeLabels(ctx, "companies", c);
     writeFields(ctx, "company", c);
     assign(c, ctx.body, ["name", "domain", "notes", "custom"]);
+    if ("external_id" in ctx.body) c.external_id = s(ctx, "external_id")?.trim() || null;
     c.updated_at = nowIso();
     for (const ct of ctx.ws.contacts) if (ct.company?.id === c.id) ct.company = { id: c.id, name: c.name, domain: c.domain, avatar_url: c.avatar_url };
     publish(ctx.ws, "company.updated", { company: companyOut(ctx.ws, c) });
@@ -286,6 +310,14 @@ export function registerResources() {
     }
   };
 
+  /** A view section's key: its name in lower case, as views match it. */
+  const sectionKeyOf = (s: string | null | undefined) => (s ?? "").toLocaleLowerCase();
+  /** The view with its section's icon, as the API reads it. */
+  const withSectionIcon = (ws: WsData, v: View): View => {
+    v.section_icon = v.section ? (ws.viewSectionIcons?.[sectionKeyOf(v.section)] ?? null) : null;
+    return v;
+  };
+
   crud<View>({
     path: "/v1/views",
     resource: "view",
@@ -295,7 +327,7 @@ export function registerResources() {
     filter: (ctx, rows) => rows.filter((v) => !v.team_id || isAdmin(ctx.ws, db.meId) || !!teamOfId(ctx.ws, v.team_id, db.meId)),
     create: (ctx, id) => {
       const team_id = teamRef(ctx, ctx.body.team_id);
-      return { id, name: required(ctx, "name").slice(0, 60), shared: team_id ? false : ctx.body.shared === true, team_id, section: viewSection(ctx.body.section), filters: isRecord(ctx.body.filters) ? (ctx.body.filters as TicketFilters) : {}, position: typeof ctx.body.position === "number" ? ctx.body.position : ctx.ws.views.length, icon: viewIcon(ctx.body.icon) };
+      return withSectionIcon(ctx.ws, { id, name: required(ctx, "name").slice(0, 60), shared: team_id ? false : ctx.body.shared === true, team_id, section: viewSection(ctx.body.section), filters: isRecord(ctx.body.filters) ? (ctx.body.filters as TicketFilters) : {}, position: typeof ctx.body.position === "number" ? ctx.body.position : ctx.ws.views.length, icon: viewIcon(ctx.body.icon) });
     },
     update: (ctx, row) => {
       assign(row, ctx.body, ["name", "shared", "position"]);
@@ -304,7 +336,35 @@ export function registerResources() {
       if (row.team_id) row.shared = false;
       if (isRecord(ctx.body.filters)) row.filters = ctx.body.filters as TicketFilters;
       if ("icon" in ctx.body) row.icon = viewIcon(ctx.body.icon);
+      withSectionIcon(ctx.ws, row);
     },
+  });
+
+  // A view section's icon and name (contracts/api.md, PATCH /v1/view-sections): admins only.
+  patch("/v1/view-sections", (ctx) => {
+    if (!isAdmin(ctx.ws, db.meId)) throw new HttpError(403, "forbidden", "Only admins change a view section.");
+    const from = viewSection(ctx.body.section);
+    if (!from) throw invalid("section is required");
+    const to = "name" in ctx.body ? viewSection(ctx.body.name) : from;
+    if (!to) throw invalid("name is required");
+    const fromKey = sectionKeyOf(from);
+    const toKey = sectionKeyOf(to);
+    const inSection = ctx.ws.views.filter((v) => sectionKeyOf(v.section) === fromKey);
+    if (!inSection.length) throw notFound("View section");
+    const icons = (ctx.ws.viewSectionIcons ??= {});
+    const set = "icon" in ctx.body;
+    let next: ViewIcon | null = set ? viewIcon(ctx.body.icon) : (icons[fromKey] ?? null);
+    for (const v of inSection) v.section = to;
+    if (toKey !== fromKey) {
+      // Into a section with an icon of its own, without a new one: it keeps its own.
+      if (!set && icons[toKey]) next = icons[toKey];
+      delete icons[fromKey];
+    }
+    if (next) icons[toKey] = next;
+    else delete icons[toKey];
+    const named = ctx.ws.views.filter((v) => sectionKeyOf(v.section) === toKey);
+    for (const v of named) publish(ctx.ws, "view.updated", { view: withSectionIcon(ctx.ws, v) });
+    return { name: to, icon: next, views: named.length };
   });
 
   crud<SlaPolicy>({

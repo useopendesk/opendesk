@@ -67,6 +67,7 @@
     "notes": "Notizen",
     "notesHint": "Für dein Team bei jedem Ticket dieses Kontakts sichtbar.",
     "externalId": "Externe ID",
+    "companyExternalIdHint": "Die ID dieses Kontos in deinem Produkt. Angemeldete Nutzer, die das Chat-Widget mit ihr identifiziert, werden mit diesem Unternehmen verknüpft.",
     "status": "Status",
     "block": "Kontakt blockieren",
     "blockHint": "Neue E-Mails und Chats von dieser Person landen im Spam."
@@ -171,5 +172,28 @@
     "search": "um alles zu durchsuchen",
     "domains": "Unternehmen gruppieren Kontakte nach ihrer E-Mail-Domain"
   },
-  "callWith": "Mit {{provider}} anrufen"
+  "callWith": "Mit {{provider}} anrufen",
+  "filter": {
+    "labels": "Label",
+    "label": "Label: {{name}}",
+    "clearLabel": "Label-Filter entfernen",
+    "searchLabels": "Label suchen",
+    "noLabels": "Für diese Liste gibt es noch keine Labels.",
+    "blockedTitle": "Gesperrt",
+    "blockedAny": "Gesperrt oder nicht",
+    "blockedOnly": "Nur gesperrte",
+    "notBlocked": "Nicht gesperrt"
+  },
+  "sort": {
+    "label": "Sortiert nach {{by}}",
+    "title": "Sortieren nach",
+    "-created": "Neueste zuerst",
+    "created": "Älteste zuerst",
+    "name": "Name, A bis Z",
+    "-name": "Name, Z bis A",
+    "-tickets": "Meiste Tickets",
+    "tickets": "Wenigste Tickets",
+    "-contacts": "Meiste Personen",
+    "contacts": "Wenigste Personen"
+  }
 }

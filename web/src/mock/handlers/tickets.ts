@@ -343,7 +343,12 @@ export function registerTickets() {
     const mailboxId = s(ctx, "mailbox_id") ?? fallback?.id ?? null;
     const box = mailboxId ? ws.mailboxes.find((m) => m.id === mailboxId) : undefined;
     if (mailboxId && (!box || !canSendFrom(ws, box, db.meId))) throw invalid("You can't send from that address");
-    if (box && (s(ctx, "kind") ?? "reply") === "reply" && sendingOf(box) === "system_off") throw cannotSend();
+    // Inbound: the first message is the contact's own words, sent to no one.
+    const inbound = s(ctx, "direction") === "inbound";
+    if (inbound && s(ctx, "kind") === "note") throw invalid("an inbound message is a reply, not a note");
+    if (inbound && !contact) throw invalid("an inbound message needs a contact to speak for");
+    if (inbound && (strArr(ctx.body.cc)?.length || strArr(ctx.body.bcc)?.length)) throw invalid("cc and bcc are for messages sent");
+    if (box && !inbound && (s(ctx, "kind") ?? "reply") === "reply" && sendingOf(box) === "system_off") throw cannotSend();
     const t = newTicket(ws, {
       subject,
       contact: contact ? contactRef(contact) : null,
@@ -363,7 +368,9 @@ export function registerTickets() {
     if (contact) contact.ticket_count++;
     publish(ws, "ticket.created", { ticket: t });
     const body = s(ctx, "body_html");
-    if (body) {
+    if (body && inbound) {
+      addMessage(ws, t, { kind: "reply", direction: "inbound", html: body, attachments: attachmentsFor(strArr(ctx.body.attachment_ids)) }, { status: p.status, actor: userRef(db.meId) });
+    } else if (body) {
       const kind = s(ctx, "kind") === "note" ? "note" : "reply";
       // Copies go with an emailed reply only, like the API's.
       const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc) } : {};
@@ -470,6 +477,21 @@ export function registerTickets() {
     ticket(ctx);
     if ((ctx.ws.members.find((m) => m.user_id === db.meId)?.role ?? "viewer") === "viewer") throw forbidden("Viewers can't change tickets");
     return respond(204);
+  });
+
+  // The visitor's widget is not simulated: an open chat that moved in the last two hours has its
+  // visitor on the page; any other left when the conversation last moved.
+  get("/v1/tickets/:id/visitor-presence", (ctx) => {
+    const t = ticket(ctx);
+    if (t.channel !== "chat" || !t.contact) return { chat: false, present: false, last_seen_at: null, away_after_seconds: 120, email_follow_up: false };
+    const present = t.status === "open" && Date.now() - Date.parse(t.updated_at) < 2 * 3600_000;
+    return {
+      chat: true,
+      present,
+      last_seen_at: present ? nowIso() : t.updated_at,
+      away_after_seconds: 120,
+      email_follow_up: !!t.contact.email,
+    };
   });
 
   get("/v1/tickets/:id/messages", (ctx) => {

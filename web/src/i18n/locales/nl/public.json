@@ -113,6 +113,22 @@
       "on_hold": "In de wacht",
       "solved": "Opgelost",
       "closed": "Gesloten"
-    }
+    },
+    "new_request": "Nieuw verzoek",
+    "new": {
+      "title": "Nieuw verzoek",
+      "subject": "Onderwerp",
+      "message": "Waarmee kunnen we helpen?",
+      "send": "Verzoek versturen",
+      "limit": "Je hebt meerdere verzoeken kort na elkaar verstuurd. Wacht even en probeer het opnieuw.",
+      "attach": "Bestanden kiezen",
+      "drop": "Sleep bestanden hierheen of plak een schermafbeelding.",
+      "remove": "{{name}} verwijderen",
+      "too_big": "{{name}} is groter dan 10 MB.",
+      "max_files": "Je kunt maximaal 5 bestanden bijvoegen.",
+      "upload_failed": "{{name}} kon niet worden geüpload.",
+      "uploading": "Uploaden…"
+    },
+    "attachments": "Bijlagen"
   }
 }

@@ -1,33 +1,40 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowUpRight, AtSign, Building2, Copy, FolderClosed, Globe, Inbox, Lock, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2, UserRound, Users } from "lucide-react";
+import { ArrowUpRight, AtSign, Building2, Copy, FolderClosed, FolderInput, Globe, Inbox, Lock, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2, UserRound, Users, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { ViewDrawer } from "@/components/settings2/ViewDrawer";
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger } from "@/components/ui/menu";
 import { useConfirm } from "@/components/ui/confirm";
+import { toast } from "@/components/ui/toast";
 import { IconTile, ListSkeleton } from "@/components/settings2/bits";
 import { Avatar } from "@/components/ui/avatar";
 import { TagChip } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
-import { orderBy, useListMutation } from "@/components/settings2/optimistic";
-import { SortableList } from "@/components/settings2/Sortable";
+import { useListMutation } from "@/components/settings2/optimistic";
+import { ViewOrderList } from "@/components/settings2/ViewOrderList";
 import { TeamChip, useTeams } from "@/components/settings2/teams";
+import { canWriteView, viewRights } from "@/components/settings2/viewCopy";
+import { ViewIconField } from "@/components/settings2/ViewIconField";
 import { ViewIcon, viewIconTone, viewName } from "@/components/tickets/ViewIcon";
 import { viewAudience, viewAudienceHint, viewDeleteBody } from "@/components/settings2/viewAudience";
 import { splitList } from "@/components/settings2/viewFilters";
 import { useCompanyItems, useContactItems } from "@/components/settings2/pickers";
 import { ChannelIcon, PriorityIcon, SeverityChip, StatusIcon, channelLabel, priorityLabel, severityLabel, statusLabel } from "@/components/tickets/bits";
 import { api } from "@/lib/api/endpoints";
-import type { TicketFilters, View } from "@/lib/api/types";
+import { errorMessage } from "@/lib/api/client";
+import type { TicketFilters, View, ViewIcon as ViewIconValue } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
-import { atLeast, useRole } from "@/lib/session";
+import { atLeast, useRole, useUser } from "@/lib/session";
 import { cn } from "@/lib/cn";
-import { groupViews, orderViews, type ViewEntry } from "@/lib/viewSections";
+import { placeViews, sameLayout, sectionSpot, viewPatches, type Dragged, type ViewSpot } from "@/lib/viewMoves";
+import { cleanSection, clipSection, groupViews, matchSection, orderViews, sectionKey, sectionProblem, viewSections, type ViewEntry } from "@/lib/viewSections";
 
 const chip =
   "inline-flex h-5 max-w-[220px] shrink-0 items-center gap-1 rounded-sm bg-sunken px-1.5 text-[11px] text-fg-2 ring-1 ring-inset ring-line-soft [&_svg]:size-3 [&_svg]:shrink-0";
@@ -200,6 +207,9 @@ export default function Views() {
   const { t } = useTranslation("settingsInbox");
   const confirm = useConfirm();
   const [editing, setEditing] = useState<View | "new" | null>(null);
+  // A section's name and icon are written for everyone who sees it: shared-view rights.
+  const canEditSections = atLeast(role, "admin");
+  const [editingSection, setEditingSection] = useState<SectionEntry | null>(null);
   const navigate = useNavigate();
   // The copy being made: from a row's menu here, or ?duplicate=<id> (the sidebar's Duplicate).
   const [copying, setCopying] = useState<View | null>(null);
@@ -212,11 +222,15 @@ export default function Views() {
 
   // In the sidebar's order: a section's views together, at its first view's place.
   const sorted = useMemo(() => orderViews(views ?? []), [views]);
-  // What drags: a view on its own or a whole section; a section's views drag inside it.
-  const entries = useMemo(() => groupViews(views ?? []).map((e) => ({ id: e.kind === "view" ? e.view.id : `section:${e.key}`, entry: e })), [views]);
-  const idsOf = (e: ViewEntry) => (e.kind === "view" ? [e.view.id] : e.views.map((v) => v.id));
+  // The sections a view can be moved to from its menu.
+  const sections = useMemo(() => groupViews(views ?? []).flatMap((e: ViewEntry) => (e.kind === "section" ? [e] : [])), [views]);
   const { teams } = useTeams();
   const teamById = new Map(teams.map((x) => [x.id, x]));
+  // Which views the person may move: their own, a team's they lead, and any for admins.
+  const me = useUser();
+  const rights = viewRights(atLeast(role, "admin"), teams, me.id);
+  const canMove = (v: View) => canEdit && canWriteView(rights, v);
+  const [said, setSaid] = useState("");
 
   const toggleShared = useListMutation<View, { id: string; shared: boolean }>(
     qk.views,
@@ -224,16 +238,27 @@ export default function Views() {
     (rows, v) => rows.map((r) => (r.id === v.id ? { ...r, shared: v.shared } : r)),
     { errorText: t("views.updateFailed") },
   );
-  const reorder = useListMutation<View, string[]>(
+  // A view or a section moved: one PATCH per view that moved, among those the person may write
+  // (the moved view's section and position, the others' position).
+  const move = useListMutation<View, View[]>(
     qk.views,
-    async (ids) => {
-      const next = orderBy(sorted, ids);
-      const changed = next.filter((n) => sorted.find((o) => o.id === n.id)?.position !== n.position);
-      await Promise.all(changed.map((n) => api.views.update(n.id, { position: n.position })));
+    async (next) => {
+      const writable = new Set(sorted.filter(canMove).map((v) => v.id));
+      await Promise.all(viewPatches(sorted, next).flatMap(({ id, ...body }) => (writable.has(id) ? [api.views.update(id, body)] : [])));
     },
-    (rows, ids) => orderBy(rows, ids),
+    (rows, next) => rows.map((r) => next.find((n) => n.id === r.id) ?? r),
     { errorText: t("views.reorderFailed") },
   );
+  const moveTo = (dragged: Dragged, spot: ViewSpot) => {
+    const next = placeViews(sorted, dragged, spot);
+    if (sameLayout(sorted, next)) return;
+    move.mutate(next);
+    if (!("view" in dragged)) return;
+    const was = sorted.find((v) => v.id === dragged.view);
+    const now = next.find((v) => v.id === dragged.view);
+    if (!was || !now || cleanSection(was.section) === cleanSection(now.section)) return;
+    setSaid(now.section ? t("views.movedTo", { name: was.name, section: now.section }) : t("views.movedOut", { name: was.name }));
+  };
   const remove = useListMutation<View, string>(
     qk.views,
     (id) => api.views.remove(id),
@@ -267,41 +292,48 @@ export default function Views() {
             ]}
           />
         ) : (
-          <SortableList
-            items={entries}
-            disabled={!canEdit}
-            onReorder={(ids) => reorder.mutate(ids.flatMap((id) => idsOf(entries.find((x) => x.id === id)!.entry)))}
-            handleLabel={({ entry: e }) => (e.kind === "view" ? t("views.reorderAria", { name: e.view.name }) : t("views.reorderSectionAria", { name: e.name }))}
-            renderRow={({ entry: e }, handle) =>
-              e.kind === "view" ? (
-                viewRow(e.view, handle)
-              ) : (
-                <div role="group" aria-label={t("views.inSection", { name: e.name })}>
-                  <div className="group relative flex h-9 items-center gap-2 border-b border-line-soft bg-sunken/60 px-4 text-[12.5px] font-medium text-fg-2">
-                    {handle}
-                    <FolderClosed className="size-3.5 shrink-0 text-fg-3" />
-                    <span className="min-w-0 truncate">{e.name}</span>
-                    <span className="mono text-[11px] font-normal text-fg-4">{e.views.length}</span>
-                  </div>
-                  <SortableList
-                    items={e.views}
-                    disabled={!canEdit}
-                    // Inside a section only: the section keeps its place among the others.
-                    onReorder={(ids) => reorder.mutate(entries.flatMap((x) => (x.entry === e ? ids : idsOf(x.entry))))}
-                    handleLabel={(v) => t("views.reorderAria", { name: v.name })}
-                    renderRow={(v, h) => viewRow(v, h)}
-                  />
-                </div>
-              )
-            }
+          <ViewOrderList
+            views={sorted}
+            canMoveView={canMove}
+            // A section moves with every view in it.
+            canMoveSection={(e) => e.views.every(canMove)}
+            onMove={moveTo}
+            viewLabel={(v) => t("views.reorderAria", { name: v.name })}
+            sectionLabel={(e) => t("views.reorderSectionAria", { name: e.name })}
+            groupLabel={(e) => t("views.inSection", { name: e.name })}
+            renderView={viewRow}
+            renderHeader={(e, handle) => (
+              <div className="group relative flex h-9 items-center gap-2 border-b border-line-soft bg-sunken/60 px-4 text-[12.5px] font-medium text-fg-2">
+                {handle}
+                {e.icon ? <ViewIcon icon={e.icon} size={14} className="size-3.5 shrink-0 text-fg-3" /> : <FolderClosed className="size-3.5 shrink-0 text-fg-3" />}
+                <span className="min-w-0 truncate">{viewName(e)}</span>
+                <span className="mono text-[11px] font-normal text-fg-4">{e.views.length}</span>
+                {canEditSections && (
+                  <Tooltip content={t("views.sectionEdit.title")}>
+                    <button
+                      type="button"
+                      aria-label={t("views.sectionEdit.aria", { name: e.name })}
+                      onClick={() => setEditingSection(e)}
+                      className="ml-auto flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-hover hover:text-fg"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            )}
           />
         )}
+        <span className="sr-only" aria-live="polite">
+          {said}
+        </span>
       </Section>
       {copyOf ? (
         <ViewDrawer key={copyOf.id} view={null} copyOf={copyOf} views={sorted} nextPosition={sorted.length} onClose={closeCopy} />
       ) : (
         editing && <ViewDrawer view={editing === "new" ? null : editing} views={sorted} nextPosition={sorted.length} onClose={() => setEditing(null)} />
       )}
+      {editingSection && <SectionDialog key={editingSection.key} section={editingSection} views={views ?? []} onClose={() => setEditingSection(null)} />}
     </SettingsPage>
   );
 
@@ -359,6 +391,22 @@ export default function Views() {
                           <MenuItem icon={<Copy />} onSelect={() => setCopying(v)}>
                             {t("views.duplicate")}
                           </MenuItem>
+                          {canMove(v) && (cleanSection(v.section) || sections.length > 0) && (
+                            <MenuSub label={t("views.moveTo")} icon={<FolderInput />}>
+                              {cleanSection(v.section) && (
+                                <MenuItem icon={<X />} onSelect={() => moveTo({ view: v.id }, sectionSpot(sorted, v.id, null))}>
+                                  {t("views.noSection")}
+                                </MenuItem>
+                              )}
+                              {sections
+                                .filter((s) => s.key !== sectionKey(v.section ?? ""))
+                                .map((s) => (
+                                  <MenuItem key={s.key} icon={s.icon ? <ViewIcon icon={s.icon} size={14} /> : <FolderClosed />} onSelect={() => moveTo({ view: v.id }, sectionSpot(sorted, v.id, s.key))}>
+                                    {viewName(s)}
+                                  </MenuItem>
+                                ))}
+                            </MenuSub>
+                          )}
                           <MenuItem
                             icon={<ArrowUpRight />}
                             onSelect={() =>
@@ -398,3 +446,66 @@ export default function Views() {
     );
   }
 }
+
+type SectionEntry = Extract<ViewEntry, { kind: "section" }>;
+
+/**
+ * A view section's name and icon (PATCH /v1/view-sections). A new name renames the section on
+ * the views listed here, and its icon goes with it; the icon shows on every view of the
+ * section, in the sidebar of everyone who has one.
+ */
+function SectionDialog({ section, views, onClose }: { section: SectionEntry; views: View[]; onClose: () => void }) {
+  const { t } = useTranslation("settingsInbox");
+  const qc = useQueryClient();
+  const [name, setName] = useState(section.name);
+  const [icon, setIcon] = useState<ViewIconValue | null>(section.icon);
+  const [error, setError] = useState<string | null>(null);
+  // A name another section has, in any case, joins it as that section spells it.
+  const others = viewSections(views).filter((s) => sectionKey(s) !== section.key);
+  const next = matchSection(clipSection(name), others);
+  const save = useMutation({
+    mutationFn: () => api.viewSections.update({ section: section.name, ...(next !== section.name ? { name: next } : {}), icon }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.views });
+      toast.success(t("views.sectionEdit.saved"));
+      onClose();
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      size="sm"
+      title={t("views.sectionEdit.title")}
+      description={t("views.sectionEdit.description", { count: section.views.length })}
+      footer={
+        <>
+          <span className="flex-1 text-xs text-danger-fg">{error}</span>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form="view-section-form" loading={save.isPending}>
+            {t("views.sectionEdit.save")}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id="view-section-form"
+        className="flex flex-col gap-5 pb-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setError(null);
+          if (!cleanSection(name)) return setError(t("views.sectionEdit.needName"));
+          if (sectionProblem(name)) return setError(t("views.sectionChars"));
+          save.mutate();
+        }}
+      >
+        <Field label={t("views.nameLabel")}>{(p) => <TextInput {...p} autoFocus value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />}</Field>
+        <ViewIconField section value={icon} onChange={setIcon} name={next} />
+      </form>
+    </Dialog>
+  );
+}
+
