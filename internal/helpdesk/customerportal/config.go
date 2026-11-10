@@ -61,4 +61,5 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerAuth(api)
 	s.registerSSO(r)
 	s.registerTickets(api)
+	s.registerAttachments(api)
 }

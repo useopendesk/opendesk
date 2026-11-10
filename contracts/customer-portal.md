@@ -116,3 +116,17 @@ workspace is refused by the same session checks as every portal route, and the c
 ticket is written. A customer starts at most 10 requests an hour, counted for the whole instance (`429`).
 The answer is the same `CustomerTicket` the list returns.
 
+### Files
+
+`POST /v1/customer/portal/attachments` (multipart, field `file`) stores one file for the signed-in customer and
+answers `201` with the attachment (`id`, `filename`, `content_type`, `size_bytes`, `url`). It is an unattached
+upload of that contact, as the widget's is: only they can attach it, once, to a request. Programs and scripts are
+refused (`422 file_type_refused`) and active types are stored as plain text, as for every upload; a file over
+10 MB is `413`, an empty one `422`; a customer uploads at most 30 files an hour, counted for the whole instance.
+`POST /v1/customer/portal/tickets` takes `attachment_ids` (at most 5, `422 too_many_files`); a file that is not the
+customer's own unsent upload is `422`, and another customer's file is never read. The files go on the first message.
+`CustomerMessage` carries `attachments: [{id, filename, content_type, size_bytes, url}]` for the public replies the
+customer reads (never inline pictures of an email's layout, a deleted or purged message's files, or a note's).
+`url` is a link signed for one to two hours, like every attachment link, so an image can show in the page; reading
+the conversation again signs a fresh one. Replies take no files.
+
