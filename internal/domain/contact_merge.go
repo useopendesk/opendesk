@@ -11,7 +11,8 @@ import (
 )
 
 // MergeContacts folds contact src into dst and removes src: its tickets, messages, calls,
-// chat sessions, labels and addresses become dst's. dst keeps its own name, phone, company,
+// uploads, labels and addresses become dst's. src's widget sessions end with it: a browser
+// holding one proves only that it was src, so it never reads dst's conversations. dst keeps its own name, phone, company,
 // external id and primary email, taking src's where it has none; notes are joined and custom
 // values and fields merged with dst's winning. It returns the tickets that moved, for the
 // caller to announce. Two contacts with different external ids (two identities the host
@@ -103,7 +104,6 @@ func MergeContacts(ctx context.Context, tx pgx.Tx, wid, src, dst uuid.UUID) ([]u
 	for _, q := range []string{
 		`UPDATE messages SET author_contact_id = $3 WHERE workspace_id = $1 AND author_contact_id = $2`,
 		`UPDATE phone_calls SET contact_id = $3 WHERE workspace_id = $1 AND contact_id = $2`,
-		`UPDATE widget_sessions SET contact_id = $3 WHERE workspace_id = $1 AND contact_id = $2`,
 		`UPDATE attachments SET uploaded_by_contact_id = $3 WHERE workspace_id = $1 AND uploaded_by_contact_id = $2`,
 		`UPDATE api_key_requests SET contact_id = $3 WHERE workspace_id = $1 AND contact_id = $2`,
 	} {
@@ -152,7 +152,7 @@ func MergeContacts(ctx context.Context, tx pgx.Tx, wid, src, dst uuid.UUID) ([]u
 		fields = $9, email = $10, updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, dst, name, phone, company, external, notes, custom, fields, primary); err != nil {
 		return nil, err
 	}
-	// Its sign-in, sessions and reset links, labels and extra rows go with it.
+	// Its portal sign-in, sessions and reset links, widget sessions, labels and extra rows go with it.
 	if _, err := tx.Exec(ctx, `DELETE FROM contacts WHERE workspace_id = $1 AND id = $2`, wid, src); err != nil {
 		return nil, err
 	}

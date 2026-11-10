@@ -787,12 +787,14 @@ writer (`409` on any attempt, `PATCH` and `POST /v1/contacts` included).
 `POST /v1/contacts/{id}/merge` folds one contact into another when they are one person, in one
 transaction, and cannot be undone. The contact in the path is removed; `into` stays.
 
-- Moves to the contact that stays: tickets, messages the contact wrote, calls, chat sessions, uploads and labels
+- Moves to the contact that stays: tickets, messages the contact wrote, calls, uploads and labels
   (the union). Its primary and extra addresses become extra addresses of the one that stays ("Contact emails"), so
   mail from any of them lands there from then on.
 - The one that stays keeps its name, phone, company, external id and primary email, and takes the removed one's where
-  it has none. Notes are joined (the stayer's first), and `custom` and `fields` merged with the stayer's winning.
-- The removed contact's customer-portal sign-in and sessions end with it.
+  it has none (its primary address then becomes the stayer's primary). Notes are joined (the stayer's first), and
+  `custom` and `fields` merged with the stayer's winning.
+- The removed contact's customer-portal sign-in and sessions, and its chat widget sessions, end with it: a browser
+  holding one never reads the stayer's conversations.
 - Refused: the same contact; a blocked and a not blocked contact (block or unblock first); two different
   `external_id`s, which are two identities the host product vouches for.
 - Audit entry `contact.merged` (with the removed id and the number of tickets), events `contact.deleted` (removed),

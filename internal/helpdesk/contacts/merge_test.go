@@ -37,8 +37,8 @@ func TestMergeContacts(t *testing.T) {
 	for _, c := range []merged{keep, gone, gone} {
 		e.Do("POST", "/v1/tickets", a, map[string]any{"subject": "T " + uuid.NewString()[:4], "contact_id": c.ID, "body_html": "<p>x</p>"}).Want(t, 201)
 	}
-	// Chat sessions and uploads of the contact that goes follow to the one that stays.
-	e.Exec(`INSERT INTO widget_sessions (id, workspace_id, contact_id, token_hash) VALUES ($1, $2, $3, 'h')`, uuid.New(), ws.ID, uuid.MustParse(gone.ID))
+	// Uploads of the contact that goes follow to the one that stays; its widget sessions end.
+	e.Exec(`INSERT INTO widget_sessions (id, workspace_id, contact_id, token_hash) VALUES ($1, $2, $3, uuid_send($1))`, uuid.New(), ws.ID, uuid.MustParse(gone.ID))
 	e.Exec(`INSERT INTO attachments (id, workspace_id, filename, size_bytes, storage_key, uploaded_by_contact_id) VALUES ($1, $2, 'a.txt', 1, 'k', $3)`,
 		uuid.New(), ws.ID, uuid.MustParse(gone.ID))
 	_, seq := e.Events(ws.ID, 0)
@@ -59,9 +59,11 @@ func TestMergeContacts(t *testing.T) {
 		t.Fatalf("details after merge: %+v", got)
 	}
 	e.Do("GET", "/v1/contacts/"+gone.ID, a, nil).Want(t, 404)
-	if n := countRows(t, e, `SELECT (SELECT count(*) FROM widget_sessions WHERE contact_id = $1) + (SELECT count(*) FROM attachments WHERE uploaded_by_contact_id = $1)`,
-		uuid.MustParse(keep.ID)); n != 2 {
-		t.Fatalf("sessions and uploads on the kept contact: %d", n)
+	if n := countRows(t, e, `SELECT count(*) FROM attachments WHERE uploaded_by_contact_id = $1`, uuid.MustParse(keep.ID)); n != 1 {
+		t.Fatalf("uploads on the kept contact: %d", n)
+	}
+	if n := countRows(t, e, `SELECT count(*) FROM widget_sessions WHERE workspace_id = $1`, ws.ID); n != 0 {
+		t.Fatalf("widget sessions after merge: %d", n)
 	}
 	if n := countRows(t, e, `SELECT count(*) FROM tickets WHERE contact_id = $1`, uuid.MustParse(keep.ID)); n != 3 {
 		t.Fatalf("tickets on the kept contact: %d", n)
