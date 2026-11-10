@@ -319,7 +319,8 @@ counts as away.
 
 The email goes out like an email reply: from the ticket's reply address, else the brand's address whose
 default team is the ticket's team, else the brand's oldest active address that is not another private
-team's (none: no email), with the address's
+team's (none: no email, and the ticket gets a `follow_up_skipped{message_id, reason: "no_mailbox"}`
+activity by "system"), with the address's
 `from_name_format` and the team's or address's signature. The message's `delivery_status` becomes
 `pending`, then `sent` or `failed`, and it records its `mailbox_id`, From address and name; a chat with
 no reply address takes that one. Follow-ups thread with each other (`In-Reply-To`, `References`, the
