@@ -8,12 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/useopendesk/opendesk/internal/db"
-	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
-	"github.com/useopendesk/opendesk/internal/helpdesk/contacts"
-	"github.com/useopendesk/opendesk/internal/ids"
-	"github.com/useopendesk/opendesk/internal/images"
 )
 
 // FieldPrefix starts the key of a contact field a signed-in visitor's page may set: the
@@ -21,14 +16,14 @@ import (
 // from the widget.
 const FieldPrefix = "widget_"
 
-// syncProfile applies what a verified session carries beyond who the user is: the company
-// they belong to, found or created by the host product's own id, and the opted-in contact
-// fields. A value that does not fit its field is skipped, so one bad attribute never keeps a
-// visitor from the chat.
+// syncProfile applies what a verified session carries beyond who the user is: a link to the
+// company the user belongs to, when the workspace already has it, and the opted-in contact
+// fields. Nothing here creates or changes a company, and a value that does not fit is
+// skipped, so one bad attribute never keeps a visitor from the chat.
 func syncProfile(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, company *widgetCompany, fields map[string]any) error {
 	changed := false
-	if company != nil && strings.TrimSpace(company.ID) != "" {
-		linked, err := linkCompany(ctx, tx, wid, contactID, *company)
+	if company != nil {
+		linked, err := linkCompany(ctx, tx, wid, contactID, company.ID)
 		if err != nil {
 			return err
 		}
@@ -47,63 +42,23 @@ func syncProfile(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, compa
 	return nil
 }
 
-// linkCompany points the contact at the company with the product's account id, creating the
-// company the first time. An existing company is never renamed or re-domained from here, and
-// is found only by that id, so a page cannot attach a contact to a company by naming it.
-func linkCompany(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, in widgetCompany) (bool, error) {
-	extID := strings.TrimSpace(in.ID)
-	var companyID uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT id FROM companies WHERE workspace_id = $1 AND external_id = $2`, wid, extID).Scan(&companyID)
-	if db.IsNotFound(err) {
-		if companyID, err = createCompany(ctx, tx, wid, extID, in); err != nil {
-			return false, err
-		}
-	} else if err != nil {
+// linkCompany points the contact at the workspace's company whose external_id is the host
+// product's account id. The user_hash covers only user_id, so the page's company id is a
+// claim, not a proof: it links only to a company the workspace gave that id, and an unknown
+// id links nothing.
+func linkCompany(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, externalID string) (bool, error) {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
+		return false, nil
+	}
+	tag, err := tx.Exec(ctx, `UPDATE contacts c SET company_id = co.id, updated_at = now()
+		FROM companies co
+		WHERE c.workspace_id = $1 AND c.id = $2 AND co.workspace_id = $1 AND co.external_id = $3
+			AND c.company_id IS DISTINCT FROM co.id`, wid, contactID, externalID)
+	if err != nil {
 		return false, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE contacts SET company_id = $3, updated_at = now()
-		WHERE workspace_id = $1 AND id = $2 AND company_id IS DISTINCT FROM $3`, wid, contactID, companyID)
-	return tag.RowsAffected() > 0, err
-}
-
-func createCompany(ctx context.Context, tx pgx.Tx, wid uuid.UUID, extID string, in widgetCompany) (uuid.UUID, error) {
-	name := displayname.Clean(in.Name, displayname.Workspace)
-	if name == "" {
-		name = displayname.Clean(extID, displayname.Workspace)
-	}
-	if name == "" {
-		name = "Company"
-	}
-	domainName := strings.ToLower(strings.TrimSpace(in.Domain))
-	domainName = strings.TrimPrefix(strings.TrimPrefix(domainName, "https://"), "http://")
-	domainName = strings.TrimPrefix(strings.TrimRight(domainName, "/"), "www.")
-	if !images.ValidDomain(domainName) {
-		domainName = ""
-	}
-	if domainName != "" {
-		var taken bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM companies WHERE workspace_id = $1 AND domain = $2)`, wid, domainName).Scan(&taken); err != nil {
-			return uuid.Nil, err
-		}
-		if taken {
-			domainName = ""
-		}
-	}
-	id := ids.New()
-	tag, err := tx.Exec(ctx, `INSERT INTO companies (id, workspace_id, name, domain, external_id) VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT DO NOTHING`, id, wid, name, domainName, extID)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	if tag.RowsAffected() == 0 {
-		// Another request created it first.
-		err := tx.QueryRow(ctx, `SELECT id FROM companies WHERE workspace_id = $1 AND external_id = $2`, wid, extID).Scan(&id)
-		return id, err
-	}
-	if err := contacts.PublishCompany(ctx, tx, wid, id, "company.created"); err != nil {
-		return uuid.Nil, err
-	}
-	return id, nil
+	return tag.RowsAffected() > 0, nil
 }
 
 // setFields writes the opted-in contact fields the visitor's page sent and reports whether any changed.

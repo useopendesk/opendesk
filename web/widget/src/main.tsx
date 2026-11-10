@@ -13,7 +13,7 @@
  *
  *   window.opendesk = window.opendesk || function () { (opendesk.q = opendesk.q || []).push(arguments) };
  *   opendesk("identify", { user_id, user_hash, email, name }); // user_hash = hex HMAC-SHA256(widget secret, user_id)
- *   opendesk("update", { user_id, user_hash, company: { id, name }, fields: { widget_plan: "pro" } }); // again, with new values
+ *   opendesk("update", { user_id, user_hash, company: { id }, fields: { widget_plan: "pro" } }); // again, with new values
  *   opendesk("open" | "close" | "toggle");
  *   opendesk("locale", "fr");            // force a language (BCP 47)
  *   opendesk("shutdown");                 // forget the visitor and remove the widget

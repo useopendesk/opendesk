@@ -627,7 +627,7 @@ export const api = {
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {
-    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
+    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "external_id" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
     search: (q: CompanyListQuery) => http.get<T.Page<T.Company>>("/v1/companies", { query: listQuery(q) }),
     ...pictureRoutes<T.Company>("/v1/companies"),
   },

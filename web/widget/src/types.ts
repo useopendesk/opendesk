@@ -179,8 +179,8 @@ export type SessionIdentity = {
   user_hash?: string;
   email?: string;
   name?: string;
-  /** The user's account in the host product: `id` is the host's own id for it. */
-  company?: { id: string; name?: string; domain?: string };
+  /** The user's account in the host product: `id` is the host's own id for it, linked to the workspace's company with that external id. */
+  company?: { id: string };
   /** Contact custom fields by key; only fields whose key starts with `widget_` are set. */
   fields?: Record<string, string | number | boolean | null>;
   avatar_url?: string;

@@ -293,6 +293,8 @@ export type Company = {
   id: string;
   name: string;
   domain: string;
+  /** The workspace's own id for the account; the widget's verified identify links people by it. */
+  external_id: string | null;
   /** The company logo. */
   avatar_url: string | null;
   avatar_source: "upload" | "domain" | null;

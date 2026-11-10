@@ -267,11 +267,12 @@ type widgetSessionInput struct {
 	}
 }
 
-// widgetCompany is the account a signed-in user belongs to in the host product.
+// widgetCompany is the account a signed-in user belongs to in the host product. Only the id
+// is read; other keys a page sends along (a name, a domain) are accepted and ignored, so the
+// session never fails over them.
 type widgetCompany struct {
-	ID     string `json:"id" minLength:"1" maxLength:"200" doc:"Your own id for the account. The company with this id is found, or created"`
-	Name   string `json:"name,omitempty" maxLength:"200" doc:"Used when the company is created; an existing company keeps its name"`
-	Domain string `json:"domain,omitempty" maxLength:"253" doc:"Used when the company is created and no other company has the domain"`
+	_  struct{} `additionalProperties:"true"`
+	ID string   `json:"id" maxLength:"200" doc:"Your own id for the account. The contact is linked to the workspace's company with this external_id; an unknown id links nothing. A company is never created or changed from here"`
 }
 
 type widgetSession struct {
