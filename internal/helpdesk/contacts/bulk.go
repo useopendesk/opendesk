@@ -276,7 +276,7 @@ func contactIDsByQuery(ctx context.Context, tx pgx.Tx, p *auth.Principal, f cont
 	q := strings.TrimSpace(f.Q)
 	rows, err := tx.Query(ctx, `SELECT ct.id FROM contacts ct WHERE ct.workspace_id = $1
 		AND ($2 = '' OR ct.search @@ websearch_to_tsquery('simple', $2) OR ct.fields_search @@ websearch_to_tsquery('simple', $2)
-			OR ct.email::text ILIKE $3 OR ct.name ILIKE $3)
+			OR ct.email::text ILIKE $3 OR ct.name ILIKE $3 OR `+domain.ExtraEmailLikeSQL("lower($3)")+`)
 		AND ($4::uuid IS NULL OR ct.company_id = $4)`+extra+` ORDER BY ct.id LIMIT `+strconv.Itoa(maxBulkQuery+1),
 		append([]any{p.WorkspaceID, q, likePrefix(q), companyID}, args...)...)
 	if err != nil {

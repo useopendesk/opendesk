@@ -121,6 +121,33 @@ func TestBulkContactsLimits(t *testing.T) {
 	}
 }
 
+// A search selects what the People list finds for it, extra addresses included.
+func TestBulkContactsByExtraAddress(t *testing.T) {
+	e := hdtest.New(t, contacts.Register)
+	ws := e.NewWorkspace()
+	a := ws.Agent.As(ws)
+	var ann, bob withEmails
+	e.Do("POST", "/v1/contacts", a, map[string]any{"email": "ann@work.example", "name": "Ann"}).Want(t, 201).JSON(t, &ann)
+	e.Do("POST", "/v1/contacts/"+ann.ID+"/emails", a, map[string]any{"email": "ann@home.example"}).Want(t, 201)
+	e.Do("POST", "/v1/contacts", a, map[string]any{"email": "bob@work.example", "name": "Bob"}).Want(t, 201).JSON(t, &bob)
+
+	var list struct {
+		Data []withEmails `json:"data"`
+	}
+	e.Do("GET", "/v1/contacts?q=ann@home", a, nil).Want(t, 200).JSON(t, &list)
+	if len(list.Data) != 1 || list.Data[0].ID != ann.ID {
+		t.Fatalf("list found %+v", list.Data)
+	}
+	var out bulkOut
+	e.Do("POST", "/v1/contacts/bulk", a, map[string]any{"query": map[string]any{"q": "ann@home"}, "delete": true}).Want(t, 200).JSON(t, &out)
+	if out.Deleted != 1 {
+		t.Fatalf("bulk by an extra address deleted %d", out.Deleted)
+	}
+	if count(e, `SELECT count(*) FROM contacts WHERE id = $1`, ann.ID) != 0 || count(e, `SELECT count(*) FROM contacts WHERE id = $1`, bob.ID) != 1 {
+		t.Fatal("bulk by an extra address deleted the wrong contact")
+	}
+}
+
 func TestBulkCompanies(t *testing.T) {
 	e := hdtest.New(t, contacts.Register)
 	ws := e.NewWorkspace()
