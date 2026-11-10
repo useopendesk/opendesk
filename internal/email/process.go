@@ -175,7 +175,8 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	}
 	receivedAt := receivedAddress(m, pm, rcpt)
 	var blocked bool
-	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts WHERE workspace_id = $1 AND email = $2 AND blocked)`,
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts c WHERE c.workspace_id = $1 AND c.blocked AND (c.email = $2
+			OR EXISTS (SELECT 1 FROM contact_emails e WHERE e.workspace_id = c.workspace_id AND e.contact_id = c.id AND e.email = $2)))`,
 		wid, sender).Scan(&blocked); err != nil {
 		return err
 	}
