@@ -634,11 +634,12 @@ no severity to filter on, set or create with.
 | --- | --- | --- |
 | `search_tickets` | `tickets:read` | filters (status, assignee, team, label, priority, text, dates), at most 50 |
 | `get_ticket` | `tickets:read` | a ticket with its thread (notes included), team, brand, `received_at` and the reply address |
+| `list_custom_fields` | `tickets:read` | custom field definitions (`GET /v1/custom-fields`): key, name, entity, type, options (id, label), `required_on_solve`; optional `entity`, archived left out unless `include_archived` |
 | `reply_to_ticket` | `tickets:write` | a public reply (`body` markdown) |
 | `draft_reply` | `tickets:write` | stages the ticket's shared draft (`body` markdown) without sending; a teammate sends it from the composer (`contracts/api.md` "Drafts") |
 | `add_note` | `tickets:write` | an internal note |
-| `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels |
-| `create_ticket` | `tickets:write` | a ticket for a contact email |
+| `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels, `fields` (custom field values by key, merged; null clears one); returns the ticket with its `fields` |
+| `create_ticket` | `tickets:write` | a ticket for a contact email, with optional `fields`; returns the ticket with its `fields` |
 | `search_contacts` / `get_contact` | `contacts:read` | |
 | `search_knowledge` | `kb:read` | KB articles and knowledge sources |
 | `create_kb_draft` | `kb:write` | a draft article |
