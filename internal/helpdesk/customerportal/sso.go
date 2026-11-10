@@ -203,8 +203,9 @@ func (s *service) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		s.ssoFailed(ctx, hc, contact, ri, code)
 		s.ssoDone(w, r, hc.Slug, "", code, clear)
 	}
+	// A limited callback writes nothing, so the audit log grows no faster than the limit.
 	if !s.d.Limiter.Allow("customer-sso:callback:"+ri.IP, 60, 15*time.Minute) {
-		fail("rate_limited", uuid.Nil)
+		s.ssoDone(w, r, hc.Slug, "", "rate_limited", clear)
 		return
 	}
 	if products.RequireTickets(ctx, s.d.DB.Pool, hc.WorkspaceID) != nil {
