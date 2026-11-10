@@ -601,6 +601,12 @@ export const api = {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
       discard: (id: string) => http.del(`/v1/tickets/${id}/draft`),
     },
+    /** My own unsent reply on the ticket, saved as I type (contracts/api.md "Reply drafts"). */
+    replyDraft: {
+      get: (id: string) => http.get<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`),
+      save: (id: string, b: { body_html: string; attachment_ids: string[] }) => http.put<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`, b),
+      discard: (id: string) => http.del(`/v1/tickets/${id}/reply-draft`),
+    },
     threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
     startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
     sendInThread: (id: string, threadId: string, b: { body_html: string; attachment_ids?: string[] }) =>
@@ -633,6 +639,10 @@ export const api = {
     tickets: (id: string, q?: ListQuery) => http.get<T.Page<T.Ticket>>(`/v1/contacts/${id}/tickets`, { query: q }),
     bulk: (b: DirectoryBulkTarget<ContactBulkQuery> & ({ delete: true } | { patch: { add_tags?: string[]; remove_tags?: string[]; company_id?: string | null } })) =>
       http.post<BulkResult>("/v1/contacts/bulk", b),
+    /** Extra addresses (contracts/api.md "Contact emails"); each answers with the contact. */
+    addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
+    removeEmail: (id: string, email: string) => http.del<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}`),
+    makePrimaryEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}/make-primary`),
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {
