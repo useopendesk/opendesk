@@ -128,6 +128,14 @@
       "provider_unavailable": "Nous n’avons pas pu joindre le fournisseur de connexion. Veuillez réessayer.",
       "rate_limited": "Trop de tentatives. Patientez un instant et réessayez.",
       "generic": "Nous n’avons pas pu vous connecter. Veuillez réessayer."
+    },
+    "new_request": "Nouvelle demande",
+    "new": {
+      "title": "Nouvelle demande",
+      "subject": "Objet",
+      "message": "Comment pouvons-nous vous aider ?",
+      "send": "Envoyer la demande",
+      "limit": "Vous avez envoyé plusieurs demandes à la suite. Patientez un moment et réessayez."
     }
   }
 }

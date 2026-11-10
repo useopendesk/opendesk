@@ -128,6 +128,14 @@
       "provider_unavailable": "Non siamo riusciti a raggiungere il provider di accesso. Riprova.",
       "rate_limited": "Troppi tentativi. Attendi un momento e riprova.",
       "generic": "Non siamo riusciti a farti accedere. Riprova."
+    },
+    "new_request": "Nuova richiesta",
+    "new": {
+      "title": "Nuova richiesta",
+      "subject": "Oggetto",
+      "message": "Come possiamo aiutarti?",
+      "send": "Invia richiesta",
+      "limit": "Hai inviato diverse richieste di seguito. Attendi un po’ e riprova."
     }
   }
 }

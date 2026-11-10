@@ -126,6 +126,14 @@
       "provider_unavailable": "Wir konnten den Anmeldeanbieter nicht erreichen. Bitte versuchen Sie es erneut.",
       "rate_limited": "Zu viele Versuche. Warten Sie einen Moment und versuchen Sie es erneut.",
       "generic": "Wir konnten Sie nicht anmelden. Bitte versuchen Sie es erneut."
+    },
+    "new_request": "Neue Anfrage",
+    "new": {
+      "title": "Neue Anfrage",
+      "subject": "Betreff",
+      "message": "Wie können wir helfen?",
+      "send": "Anfrage senden",
+      "limit": "Sie haben mehrere Anfragen hintereinander gesendet. Warten Sie eine Weile und versuchen Sie es erneut."
     }
   }
 }

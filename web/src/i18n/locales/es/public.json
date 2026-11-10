@@ -128,6 +128,14 @@
       "provider_unavailable": "No pudimos conectar con el proveedor de inicio de sesión. Inténtalo de nuevo.",
       "rate_limited": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
       "generic": "No pudimos iniciar tu sesión. Inténtalo de nuevo."
+    },
+    "new_request": "Nueva solicitud",
+    "new": {
+      "title": "Nueva solicitud",
+      "subject": "Asunto",
+      "message": "¿Cómo podemos ayudarte?",
+      "send": "Enviar solicitud",
+      "limit": "Has enviado varias solicitudes seguidas. Espera un rato e inténtalo de nuevo."
     }
   }
 }

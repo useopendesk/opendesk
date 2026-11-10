@@ -130,6 +130,14 @@
       "provider_unavailable": "Nie udało się połączyć z dostawcą logowania. Spróbuj ponownie.",
       "rate_limited": "Zbyt wiele prób. Poczekaj chwilę i spróbuj ponownie.",
       "generic": "Nie udało się Cię zalogować. Spróbuj ponownie."
+    },
+    "new_request": "Nowe zgłoszenie",
+    "new": {
+      "title": "Nowe zgłoszenie",
+      "subject": "Temat",
+      "message": "W czym możemy pomóc?",
+      "send": "Wyślij zgłoszenie",
+      "limit": "Wysłano kilka zgłoszeń z rzędu. Poczekaj chwilę i spróbuj ponownie."
     }
   }
 }

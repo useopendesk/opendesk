@@ -126,6 +126,14 @@
       "provider_unavailable": "We couldn't reach the sign-in provider. Please try again.",
       "rate_limited": "Too many attempts. Wait a moment and try again.",
       "generic": "We couldn't sign you in. Please try again."
+    },
+    "new_request": "New request",
+    "new": {
+      "title": "New request",
+      "subject": "Subject",
+      "message": "How can we help?",
+      "send": "Send request",
+      "limit": "You have sent several requests in a row. Wait a while and try again."
     }
   }
 }

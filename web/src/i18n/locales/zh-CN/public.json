@@ -124,6 +124,14 @@
       "provider_unavailable": "无法连接到登录提供商。请重试。",
       "rate_limited": "尝试次数过多。请稍候再试。",
       "generic": "无法为您登录。请重试。"
+    },
+    "new_request": "新请求",
+    "new": {
+      "title": "新请求",
+      "subject": "主题",
+      "message": "我们能帮您什么？",
+      "send": "发送请求",
+      "limit": "您连续发送了多个请求。请稍候再试。"
     }
   }
 }

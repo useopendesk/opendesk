@@ -126,6 +126,14 @@
       "provider_unavailable": "Giriş provayderinə qoşula bilmədik. Yenidən cəhd edin.",
       "rate_limited": "Çox cəhd. Bir az gözləyin və yenidən cəhd edin.",
       "generic": "Sizi daxil edə bilmədik. Yenidən cəhd edin."
+    },
+    "new_request": "Yeni sorğu",
+    "new": {
+      "title": "Yeni sorğu",
+      "subject": "Mövzu",
+      "message": "Sizə necə kömək edə bilərik?",
+      "send": "Sorğunu göndər",
+      "limit": "Ardıcıl bir neçə sorğu göndərdiniz. Bir az gözləyin və yenidən cəhd edin."
     }
   }
 }

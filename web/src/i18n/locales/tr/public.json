@@ -126,6 +126,14 @@
       "provider_unavailable": "Oturum açma sağlayıcısına ulaşamadık. Lütfen tekrar deneyin.",
       "rate_limited": "Çok fazla deneme. Biraz bekleyip tekrar deneyin.",
       "generic": "Oturumunuzu açamadık. Lütfen tekrar deneyin."
+    },
+    "new_request": "Yeni talep",
+    "new": {
+      "title": "Yeni talep",
+      "subject": "Konu",
+      "message": "Size nasıl yardımcı olabiliriz?",
+      "send": "Talebi gönder",
+      "limit": "Art arda birkaç talep gönderdiniz. Bir süre bekleyip tekrar deneyin."
     }
   }
 }

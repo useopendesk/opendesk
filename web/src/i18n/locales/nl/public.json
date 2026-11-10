@@ -126,6 +126,14 @@
       "provider_unavailable": "We konden de aanmeldprovider niet bereiken. Probeer het opnieuw.",
       "rate_limited": "Te veel pogingen. Wacht even en probeer het opnieuw.",
       "generic": "We konden je niet aanmelden. Probeer het opnieuw."
+    },
+    "new_request": "Nieuw verzoek",
+    "new": {
+      "title": "Nieuw verzoek",
+      "subject": "Onderwerp",
+      "message": "Waarmee kunnen we helpen?",
+      "send": "Verzoek versturen",
+      "limit": "Je hebt meerdere verzoeken kort na elkaar verstuurd. Wacht even en probeer het opnieuw."
     }
   }
 }
