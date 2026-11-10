@@ -49,6 +49,8 @@ func TestInboundDirection(t *testing.T) {
 	e.Do("POST", "/v1/tickets", ws.Agent.As(ws), map[string]any{"subject": "No contact", "direction": "inbound", "body_html": "x"}).Want(t, 422)
 	e.Do("POST", "/v1/tickets", ws.Agent.As(ws), map[string]any{"subject": "Note", "contact": contact, "direction": "inbound",
 		"kind": "note", "body_html": "x"}).Want(t, 422)
+	e.Do("POST", "/v1/tickets", ws.Agent.As(ws), map[string]any{"subject": "Chat", "channel": "chat", "contact_id": tk.Contact.ID.String(),
+		"direction": "inbound", "body_html": "x"}).Want(t, 422)
 	e.Do("POST", "/v1/tickets", ws.Viewer.As(ws), map[string]any{"subject": "x", "contact": contact, "direction": "inbound", "body_html": "y"}).Want(t, 403)
 	e.Do("POST", "/v1/tickets", hdtest.Auth{}, map[string]any{"subject": "x", "direction": "inbound"}).Want(t, 401)
 }

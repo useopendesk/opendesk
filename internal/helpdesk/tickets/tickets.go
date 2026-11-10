@@ -726,6 +726,8 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 			return domain.Ticket{}, httpx.Validation("an inbound message needs a contact to speak for")
 		case len(b.Cc)+len(b.Bcc) > 0:
 			return domain.Ticket{}, httpx.Validation("cc and bcc are for messages sent")
+		case nt.Channel == domain.ChannelChat:
+			return domain.Ticket{}, httpx.Validation("a chat's visitor writes their own messages in the widget")
 		}
 	}
 	if nt.Channel != domain.ChannelChat && b.WidgetID != "" {

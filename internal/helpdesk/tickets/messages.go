@@ -577,10 +577,13 @@ func postInbound(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	if strings.TrimSpace(b.MailboxID) != "" || strings.TrimSpace(b.FromNoteID) != "" || b.FromAccount != nil || len(b.Cc)+len(b.Bcc) > 0 {
 		return domain.Message{}, httpx.Validation("an inbound message takes no mailbox_id, from_note_id, from_account, cc or bcc")
 	}
-	var subject string
+	var subject, channel string
 	var contactID *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT subject, contact_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, tid).Scan(&subject, &contactID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT subject, channel, contact_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, tid).Scan(&subject, &channel, &contactID); err != nil {
 		return domain.Message{}, err
+	}
+	if channel == domain.ChannelChat {
+		return domain.Message{}, httpx.Validation("a chat's visitor writes their own messages in the widget")
 	}
 	if contactID == nil {
 		return domain.Message{}, httpx.Validation("this ticket has no contact to speak for")
