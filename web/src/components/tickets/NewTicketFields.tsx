@@ -1,5 +1,6 @@
 // The fields a new ticket starts from, the same in the dialog and on the page:
-// email, chat or log internally, who it goes to, and the address or widget it goes from.
+// email, chat, log the customer's request or log internally, who it goes to, and the
+// address or widget it goes from.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -110,9 +111,9 @@ export function NewTicketFrom({ s }: { s: NewTicketState }) {
       {({ id }) => (
         <Select
           id={id}
-          value={s.log ? undefined : s.draft.mailbox}
+          value={s.draft.mailbox}
           onChange={(mailbox) => s.set({ mailbox })}
-          disabled={s.draft.kind === "note" || s.log || !s.fromChoices.length}
+          disabled={s.draft.kind === "note" || !s.fromChoices.length}
           placeholder={tr("newTicket.noMailbox")}
           options={s.fromChoices.map((m) => ({ value: m.id, label: addressLabel(m), icon: <TeamDot team={s.teams.team(m.team_id)} /> }))}
         />

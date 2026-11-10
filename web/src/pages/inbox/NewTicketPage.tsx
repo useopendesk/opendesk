@@ -42,7 +42,7 @@ export default function NewTicketPage() {
   const [panel, setPanel] = useState(readPanel);
   const editor = useRef<RichEditorHandle>(null);
   const note = draft.kind === "note";
-  const emailed = draft.kind === "reply" && !!draft.mailbox && !s.chat;
+  const emailed = draft.kind === "reply" && !!draft.mailbox && !s.chat && !s.log;
   const recipient = draft.to?.contact?.email ?? draft.to?.email;
   useDocumentTitle(tr("newTicket.title"));
 
@@ -88,6 +88,9 @@ export default function NewTicketPage() {
   membersRef.current = members ?? [];
   repliesRef.current = replies;
   kindRef.current = draft.kind;
+  // A logged request is the customer's own words: no variables are filled in it.
+  const fillsRef = useRef(false);
+  fillsRef.current = draft.kind === "reply" && !s.log;
   knownRef.current = catalog.loading ? null : catalog.known;
   varItemsRef.current = varItems;
   catalogRef.current = catalog;
@@ -105,7 +108,7 @@ export default function NewTicketPage() {
         known: () => knownRef.current,
         items: (query) => matchVars(varItemsRef.current, query, (g) => g),
         filters: () => catalogRef.current.filters,
-        enabled: () => kindRef.current === "reply",
+        enabled: () => fillsRef.current,
       }),
     ],
     [],

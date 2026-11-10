@@ -13,7 +13,7 @@ export type NewTicketDraft = {
   subject: string;
   body: string;
   kind: "reply" | "note";
-  /** A reply goes by email, opens a chat in the contact's widget, or is logged: a normal message, nothing sent. */
+  /** A reply goes by email, opens a chat in the contact's widget, or logs the customer's own request: nothing is sent. */
   channel?: "email" | "chat" | "log";
   /** Chat: the widget it opens in; undefined lets the server pick the contact's latest. */
   widgetId?: string;
@@ -83,7 +83,7 @@ export function pageOnlyCount(d: NewTicketDraft): number {
 /** A reply that opens a chat in the contact's widget instead of going by email. */
 export const isChat = (d: NewTicketDraft) => d.kind === "reply" && d.channel === "chat";
 
-/** A reply that only records the request: the ticket has the message as a normal one and nothing is emailed. */
+/** The customer's own request, logged by the team (a call, a conversation): stored as their message, nothing is sent. */
 export const isLog = (d: NewTicketDraft) => d.kind === "reply" && d.channel === "log";
 
 /** What is missing before it can be created, as an inbox `newTicket.*` key. */
@@ -129,24 +129,26 @@ export function createTicketBody(
     if (o.attachmentIds?.length) chat.attachment_ids = o.attachmentIds;
     return chat;
   }
-  // A logged request has no address: it is an api ticket whose first message nobody sends.
+  // A logged request is the customer's own message: stored as theirs and sent to no one, on a
+  // ticket whose later replies go by email from its address like any other.
   const logged = isLog(d);
-  const mailbox = logged ? undefined : d.mailbox;
-  const emailed = d.kind === "reply" && !!mailbox;
+  const emailed = d.kind === "reply" && !!d.mailbox && !logged;
   const body: CreateTicketBody = {
     subject: d.subject.trim(),
     contact_id: d.to?.contact?.id,
     contact: !d.to?.contact && d.to?.email ? { email: d.to.email, name: "" } : undefined,
     // An email ticket needs its mailbox (later replies go out through it), also when it starts as a note.
-    channel: mailbox ? "email" : "api",
-    mailbox_id: mailbox || undefined,
+    channel: d.mailbox ? "email" : "api",
+    mailbox_id: d.mailbox || undefined,
     body_html: d.body,
     kind: d.kind,
     priority: d.priority,
     assignee_id: assignee ?? undefined,
     team_id: o.hasTeams && o.teamId ? o.teamId : undefined,
+    // The team still has to answer a logged request.
     status: d.kind === "reply" && !logged ? "pending" : "open",
   };
+  if (logged) body.direction = "inbound";
   if (d.severity) body.severity = d.severity;
   if (d.tags.length) body.tags = d.tags;
   if (Object.keys(d.fields).length) body.fields = d.fields;

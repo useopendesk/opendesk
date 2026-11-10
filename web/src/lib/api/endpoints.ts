@@ -113,6 +113,8 @@ export type CreateTicketBody = {
   brand_id?: string;
   body_html: string;
   kind?: "reply" | "note";
+  /** inbound: the first message is the contact's own words, sent to no one (not on a chat). */
+  direction?: "outbound" | "inbound";
   priority?: T.Priority;
   severity?: T.Severity;
   assignee_id?: string;

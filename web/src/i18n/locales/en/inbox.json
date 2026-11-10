@@ -784,7 +784,7 @@
     "needBody": "Write a message.",
     "cannotSend": "This address can't send email yet. Pick another, or ask an admin to connect a way to send.",
     "log": "Log request",
-    "logHint": "Nothing is emailed. The message is saved as a normal one the customer can read in the portal.",
+    "logHint": "Nothing is emailed now. The message is saved as the customer's, and your replies go out from this address.",
     "bodyLog": "Write the request as it came in"
   },
   "contact": {

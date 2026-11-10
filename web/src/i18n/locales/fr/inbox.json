@@ -765,7 +765,7 @@
     "needBody": "Rédigez un message.",
     "cannotSend": "Cette adresse ne peut pas encore envoyer d’e-mails. Choisissez-en une autre ou demandez à un administrateur de configurer un mode d’envoi.",
     "log": "Consigner la demande",
-    "logHint": "Rien n’est envoyé par e-mail. Le message est enregistré comme un message normal que le client peut lire dans le portail.",
+    "logHint": "Rien n’est envoyé par e-mail pour l’instant. Le message est enregistré comme celui du client, et vos réponses partent de cette adresse.",
     "bodyLog": "Rédigez la demande telle qu’elle est arrivée"
   },
   "contact": {
