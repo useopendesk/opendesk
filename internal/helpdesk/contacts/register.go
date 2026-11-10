@@ -14,6 +14,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	registerEmails(d, api)
 	registerMerge(d, api)
 	registerCompanies(d, api)
+	registerBulk(d, api)
 	registerAvatars(d, api)
 	InstallImageHooks()
 }
