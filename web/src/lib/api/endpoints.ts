@@ -115,6 +115,8 @@ export type CreateTicketBody = {
   brand_id?: string;
   body_html: string;
   kind?: "reply" | "note";
+  /** inbound: the first message is the contact's own words, sent to no one (not on a chat). */
+  direction?: "outbound" | "inbound";
   priority?: T.Priority;
   severity?: T.Severity;
   assignee_id?: string;
@@ -639,7 +641,7 @@ export const api = {
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {
-    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
+    ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "external_id" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
     search: (q: CompanyListQuery) => http.get<T.Page<T.Company>>("/v1/companies", { query: listQuery(q) }),
     ...pictureRoutes<T.Company>("/v1/companies"),
   },
@@ -765,7 +767,7 @@ export const api = {
     update: (b: Partial<T.WidgetSettings>) => http.patch<T.WidgetSettings>("/v1/widget/settings", b),
   },
   mailboxes: {
-    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
+    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "keep_automatic_mail" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
     usage: (id: string) => http.get<T.MailboxUsage>(`/v1/mailboxes/${id}/usage`),

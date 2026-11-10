@@ -403,7 +403,7 @@ function seedMargin(): WsData {
   ws.sla = sla;
 
   // Every address belongs to a brand; the brand ids are filled in once the brands exist (below).
-  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null, brand_id: "", aliases: [] as string[], alias_teams: {} as Record<string, string>, trusted_form_senders: [] as string[], from_name_format: "{agent} at {mailbox}", private: false };
+  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null, brand_id: "", aliases: [] as string[], alias_teams: {} as Record<string, string>, trusted_form_senders: [] as string[], keep_automatic_mail: false, from_name_format: "{agent} at {mailbox}", private: false };
   const support: Mailbox = {
     ...mbBase,
     id: uuid(),
@@ -719,6 +719,7 @@ function seedMargin(): WsData {
     id: uuid(),
     name: c.name,
     domain: c.domain,
+    external_id: null,
     // Most companies have a website icon, one uploaded its logo, a few have nothing usable.
     avatar_url: i % 4 === 3 ? null : logoMark(c.name),
     avatar_source: i % 4 === 3 ? null : i === 0 ? "upload" : "domain",
