@@ -182,10 +182,12 @@ export function ContactDrawer({ contactId, onClose }: { contactId: string | null
           <AnimatePresence mode="wait" initial={false}>
             {editing ? (
               <motion.div key="edit" {...(reduce ? {} : swap)}>
-                {/* Each change here is saved at once, apart from the form's Save. */}
-                <div className="border-b border-line-soft px-5 py-4">
-                  <ContactEmails c={c} />
-                </div>
+                {/* Each change here is saved at once, apart from the form's Save. Extras sit beside a primary address. */}
+                {c.email && (
+                  <div className="border-b border-line-soft px-5 py-4">
+                    <ContactEmails c={c} />
+                  </div>
+                )}
                 <EditContact
                   key={c.id}
                   c={c}

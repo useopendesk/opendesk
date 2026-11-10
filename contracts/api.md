@@ -777,6 +777,8 @@ writer (`409` on any attempt, `PATCH` and `POST /v1/contacts` included).
 - The primary address stays what replies, templates and the customer portal use: portal sign-in is by
   the primary address alone, and a visitor's typed address never links to a contact, extra addresses
   included (the widget keeps it as `custom.widget_email`).
+- Extras sit beside a primary address: a contact without one gets no extras, and the primary of a
+  contact with extras can't be cleared (`422`; make an extra the primary instead).
 - `contact.updated` carries the contact with its `emails`.
 
 #### Drafts
