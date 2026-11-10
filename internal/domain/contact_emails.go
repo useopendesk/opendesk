@@ -14,7 +14,7 @@ import (
 
 // A contact has one primary email (contacts.email) and any number of extra addresses
 // (contact_emails). An address belongs to one contact in a workspace, primary or extra: the
-// triggers of migration 000722 hold that for every writer. Mail from an extra address lands on
+// triggers of migration 000733 hold that for every writer. Mail from an extra address lands on
 // the contact (UpsertContactByEmail); a contact is blocked, and signs in to the customer
 // portal, by its primary address alone.
 
