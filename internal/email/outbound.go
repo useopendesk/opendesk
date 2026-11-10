@@ -283,6 +283,33 @@ func messageIDFor(prefix string, id uuid.UUID, number int64, m *mailboxRow) stri
 	return "<" + prefix + "_" + id.String() + ".t" + itoa(number) + "@" + domainPart + ">"
 }
 
+// subjectTagNeeded reports an email from m whose subject keeps "[#n]" even where the
+// workspace leaves the ticket number out (ticket_number_in_subject false), because the
+// customer's answer would have nothing else to find the ticket by: the email continues no
+// earlier email of the ticket (no In-Reply-To, so its References carry no id we know), and
+// the id it reaches the customer with is not one we record. stored is whether the sent
+// Message-ID is stored on a message (replies; not auto-replies or surveys).
+func (s *service) subjectTagNeeded(m *mailboxRow, inReplyTo string, stored bool) bool {
+	return inReplyTo == "" && !s.recordsMessageID(m, stored)
+}
+
+// recordsMessageID reports a mailbox whose email reaches the customer with a Message-ID
+// we record: SMTP sends ours as written (the mailbox's own server, or the platform's unless
+// that is Amazon SES, which replaces it), and Gmail, for a stored message, when the grant
+// reads the sent message back for the id Gmail gave it. Microsoft Graph stamps an id of its
+// own and does not return it.
+func (s *service) recordsMessageID(m *mailboxRow, stored bool) bool {
+	switch m.OutboundKind {
+	case OutboundSMTP:
+		return true
+	case OutboundSystem:
+		return s.d.Cfg.MailDriver != "ses"
+	case KindGoogle:
+		return stored && !m.sendOnly()
+	}
+	return false
+}
+
 // deliver encodes and sends out through the mailbox's outbound kind. It returns the
 // Message-ID the recipient sees.
 func (s *service) deliver(ctx context.Context, m *mailboxRow, out *outMessage, envFrom string) (string, error) {
@@ -485,10 +512,11 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 		bodyText = htmlToText(bodyHTML)
 	}
 	if strings.TrimSpace(subject) == "" || !subjectTagRe.MatchString(subject) {
-		if same := providerReplySubject(threadSubject); thread != nil && same != "" {
+		needed := s.subjectTagNeeded(m, inReplyTo, true)
+		if same := providerReplySubject(threadSubject); thread != nil && same != "" && !needed {
 			subject = same
 		} else {
-			subject = replySubject(firstNonEmpty(subject, t.subject), t.number, inReplyTo != "", t.subjectTag)
+			subject = replySubject(firstNonEmpty(subject, t.subject), t.number, inReplyTo != "", t.subjectTag || needed)
 		}
 	}
 	ref := templates.Ref{WorkspaceID: wid, TicketID: &ticketID, AuthorUserID: authorID, MailboxID: &m.ID, MailboxEmail: firstNonEmpty(alias, m.Email)}
@@ -938,14 +966,14 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 		}
 		body = tc.Fill(body)
 		subject = tc.FillText(subject)
-		if strings.TrimSpace(subject) != "" && t.subjectTag {
+		if strings.TrimSpace(subject) != "" && (t.subjectTag || s.subjectTagNeeded(m, inReplyTo, false)) {
 			if _, ok := subjectTicketNumber(subject); !ok {
 				subject += " [#" + itoa(t.number) + "]"
 			}
 		}
 	}
 	if strings.TrimSpace(subject) == "" {
-		subject = replySubject(t.subject, t.number, inReplyTo != "", t.subjectTag)
+		subject = replySubject(t.subject, t.number, inReplyTo != "", t.subjectTag || s.subjectTagNeeded(m, inReplyTo, false))
 	}
 	if strings.TrimSpace(text) == "" {
 		text = htmlToText(body)

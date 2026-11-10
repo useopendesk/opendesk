@@ -67,7 +67,7 @@ export type WorkspaceSettings = {
   send_and_finish_button?: boolean;
   /** Heartbeats count toward each member's online time, shown in the agents report. Default true; false records and shows none. */
   agent_online_time?: boolean;
-  /** Emails to customers carry the ticket number in their subject as "[#n]". Default true; false leaves it out, and replies still thread by their headers. */
+  /** Emails to customers carry the ticket number in their subject as "[#n]". Default true; false leaves it out and replies thread by their headers, except that an email starting a ticket's conversation keeps it where the mailbox's sending changes or hides its Message-ID. */
   ticket_number_in_subject?: boolean;
   /** Tickets have a severity beside their priority. Default true; false leaves it out of the app, and AI never sets it. The API still reads and writes it. */
   severity_enabled?: boolean;
