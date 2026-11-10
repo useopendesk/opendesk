@@ -58,7 +58,7 @@ func registerMerge(d *deps.Deps, api huma.API) {
 				}
 				// Their tickets now show the other contact.
 				for _, id := range moved {
-					if err := domain.PublishTicketUpdated(ctx, tx, p.WorkspaceID, id, []string{"contact"}); err != nil {
+					if err := domain.PublishTicketUpdated(ctx, tx, p.WorkspaceID, id, []string{"contact_id"}); err != nil {
 						return err
 					}
 				}

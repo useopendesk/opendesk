@@ -125,6 +125,15 @@ func TestMergeContactsRefusals(t *testing.T) {
 		t.Fatalf("external id after merge: %v", ext)
 	}
 
+	// A contact without an address takes the other's primary as its own, and the rest as extras.
+	nameOnly := mk(map[string]any{"name": "Name only"})
+	withExtra := mk(map[string]any{"email": "first@example.com", "name": "With extra"})
+	e.Do("POST", "/v1/contacts/"+withExtra.ID+"/emails", admin, map[string]any{"email": "second@example.com"}).Want(t, 201)
+	merge(withExtra.ID, nameOnly.ID).Want(t, 200).JSON(t, &got)
+	if got.Email == nil || *got.Email != "first@example.com" || !slices.Equal(got.Emails, []string{"second@example.com"}) {
+		t.Fatalf("addresses after merging into a contact without one: %v %v", got.Email, got.Emails)
+	}
+
 	// Too many addresses for one contact.
 	many := mk(map[string]any{"email": "many@example.com", "name": "Many"})
 	full := mk(map[string]any{"email": "full@example.com", "name": "Full"})

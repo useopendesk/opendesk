@@ -182,7 +182,10 @@ export function registerResources() {
     if (from.blocked !== into.blocked) throw new HttpError(422, "contacts_blocked_differ", "A blocked contact can't be merged with one that is not blocked.");
     if (from.external_id && into.external_id && from.external_id !== into.external_id) throw new HttpError(409, "external_id_conflict", "These contacts have different external ids.");
     const addresses = [...(from.email ? [from.email] : []), ...from.emails];
+    // A contact without a primary address takes the other's first one as its primary.
+    const primary = into.email ?? addresses.shift() ?? null;
     if (into.emails.length + addresses.length > 20) throw invalid("the merged contact would have more than 20 extra email addresses");
+    into.email = primary;
     into.emails.push(...addresses);
     into.name ||= from.name;
     into.phone ||= from.phone;

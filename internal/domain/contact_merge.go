@@ -70,6 +70,12 @@ func MergeContacts(ctx context.Context, tx pgx.Tx, wid, src, dst uuid.UUID) ([]u
 		return nil, err
 	}
 	addrs = append(addrs, extra...)
+	// A stayer without a primary address takes src's first one as its primary: extras sit
+	// beside a primary.
+	primary := into.email
+	if primary == nil && len(addrs) > 0 {
+		primary, addrs = &addrs[0], addrs[1:]
+	}
 	var have int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM contact_emails WHERE workspace_id = $1 AND contact_id = $2`, wid, dst).Scan(&have); err != nil {
 		return nil, err
@@ -143,7 +149,7 @@ func MergeContacts(ctx context.Context, tx pgx.Tx, wid, src, dst uuid.UUID) ([]u
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE contacts SET name = $3, phone = $4, company_id = $5, external_id = $6, notes = $7, custom = $8,
-		fields = $9, updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, dst, name, phone, company, external, notes, custom, fields); err != nil {
+		fields = $9, email = $10, updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, dst, name, phone, company, external, notes, custom, fields, primary); err != nil {
 		return nil, err
 	}
 	// Its sign-in, sessions and reset links, labels and extra rows go with it.
