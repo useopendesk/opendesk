@@ -11,7 +11,7 @@ CREATE TABLE customer_oidc_identities (
     id uuid PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     -- Origin is optional metadata; ownership and tombstones survive brand deletion.
-    brand_id uuid,
+    brand_id uuid REFERENCES brands(id) ON DELETE SET NULL,
     contact_id uuid NOT NULL,
     issuer text NOT NULL CHECK (issuer <> ''),
     subject text NOT NULL CHECK (subject <> ''),
@@ -20,10 +20,22 @@ CREATE TABLE customer_oidc_identities (
     updated_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     UNIQUE (workspace_id, issuer, subject),
-    FOREIGN KEY (workspace_id, brand_id) REFERENCES brands(workspace_id, id) ON DELETE SET NULL (brand_id),
     FOREIGN KEY (workspace_id, contact_id) REFERENCES contacts(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX customer_oidc_identities_contact_idx ON customer_oidc_identities(workspace_id, contact_id);
+CREATE INDEX customer_oidc_identities_brand_idx ON customer_oidc_identities(brand_id);
+-- An identity's originating brand is one of its own workspace's brands.
+CREATE FUNCTION customer_oidc_identity_brand_check() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.brand_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM brands WHERE id = NEW.brand_id AND workspace_id = NEW.workspace_id) THEN
+        RAISE EXCEPTION 'brand % is not in the identity''s workspace', NEW.brand_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER customer_oidc_identities_brand BEFORE INSERT OR UPDATE OF workspace_id, brand_id ON customer_oidc_identities
+    FOR EACH ROW EXECUTE FUNCTION customer_oidc_identity_brand_check();
 CREATE TABLE customer_oidc_relink_authorizations (
     id uuid PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
