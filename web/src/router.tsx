@@ -220,6 +220,13 @@ const onboardingRoute = createRoute({
   component: page(() => import("./pages/onboarding/Workspace")),
   staticData: { title: "createAWorkspace" },
 });
+const onboardingProductsRoute = createRoute({
+  getParentRoute: () => authLayout,
+  path: "/onboarding/products",
+  beforeLoad: ({ location }) => requireWorkspace(location.href),
+  component: page(() => import("./pages/onboarding/Products")),
+  staticData: { title: "whatIsItFor" },
+});
 const onboardingMailboxRoute = createRoute({
   getParentRoute: () => authLayout,
   path: "/onboarding/mailbox",
@@ -252,7 +259,9 @@ const appLayout = createRoute({
     void qc.prefetchQuery(q.notifications());
     // Collab's mail sections join the sidebar when the workspace has it.
     void qc.prefetchQuery(q.collabStatus());
-    return Promise.all([qc.ensureQueryData(q.counts()), qc.ensureQueryData(q.views())]);
+    // Ticket counts only while the workspace has Tickets: with it off, Mail, Pages and settings still load.
+    const counts = qc.ensureQueryData(q.workspace()).then((ws) => (productsOf(ws).tickets ? qc.ensureQueryData(q.counts()) : null));
+    return Promise.all([counts, qc.ensureQueryData(q.views())]);
   },
   component: AppLayout,
 });
@@ -893,7 +902,12 @@ const sMailboxDetail = createRoute({
 const sMailAccounts = createRoute({
   getParentRoute: () => settingsLayout,
   path: "/mail-accounts",
-  validateSearch: (s: Record<string, unknown>): { connected?: string; error?: string } => ({ connected: str(s.connected), error: str(s.error) }),
+  // connect=1 opens the Connect dialog (first run for a shared inbox).
+  validateSearch: (s: Record<string, unknown>): { connected?: string; error?: string; connect?: string } => ({
+    connected: str(s.connected),
+    error: str(s.error),
+    connect: s.connect === "1" || s.connect === 1 ? "1" : undefined,
+  }),
   loader: async ({ context }) => {
     const qc = context.queryClient;
     const status = await qc.ensureQueryData(q.collabStatus());
@@ -1129,6 +1143,7 @@ const routeTree = rootRoute.addChildren([
     unsubscribeRoute,
     oauthConsentRoute,
     onboardingRoute,
+    onboardingProductsRoute,
     onboardingMailboxRoute,
   ]),
   appLayout.addChildren([

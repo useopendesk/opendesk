@@ -170,7 +170,7 @@ export function registerResources() {
     if (!c.emails.includes(email)) throw notFound("Email");
     c.emails = [...c.emails.filter((x) => x !== email), ...(c.email ? [c.email] : [])];
     c.email = email;
-    return respond(200, changed(ctx, c));
+    return changed(ctx, c);
   });
   // Merging a contact into another (contracts/api.md "Merging contacts"): admins only.
   post("/v1/contacts/:id/merge", (ctx) => {
