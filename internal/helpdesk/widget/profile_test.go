@@ -53,6 +53,15 @@ func TestSessionCompanyAndFields(t *testing.T) {
 		t.Fatalf("update: %d %q %v", companies, name, fields)
 	}
 
+	// A domain that is not a domain name is left out; the company is still created.
+	signed["company"] = map[string]any{"id": "acct-10", "name": "Other", "domain": "not a domain/<b>"}
+	start(t, e, signed)
+	e.Scalar(`SELECT coalesce(domain::text, '') FROM companies WHERE workspace_id = $1 AND external_id = 'acct-10'`, &domainName, ws.ID)
+	if domainName != "" {
+		t.Fatalf("stored domain %q", domainName)
+	}
+	e.Exec(`DELETE FROM companies WHERE workspace_id = $1 AND external_id = 'acct-10'`, ws.ID)
+
 	// Without a verified identity none of it is applied.
 	anon := start(t, e, map[string]any{"key": ws.WidgetKey, "company": map[string]any{"id": "acct-evil", "name": "Evil"},
 		"fields": map[string]any{"widget_plan": "enterprise"}})

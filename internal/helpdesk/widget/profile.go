@@ -13,6 +13,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/contacts"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/images"
 )
 
 // FieldPrefix starts the key of a contact field a signed-in visitor's page may set: the
@@ -74,6 +75,11 @@ func createCompany(ctx context.Context, tx pgx.Tx, wid uuid.UUID, extID string, 
 		name = "Company"
 	}
 	domainName := strings.ToLower(strings.TrimSpace(in.Domain))
+	domainName = strings.TrimPrefix(strings.TrimPrefix(domainName, "https://"), "http://")
+	domainName = strings.TrimPrefix(strings.TrimRight(domainName, "/"), "www.")
+	if !images.ValidDomain(domainName) {
+		domainName = ""
+	}
 	if domainName != "" {
 		var taken bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM companies WHERE workspace_id = $1 AND domain = $2)`, wid, domainName).Scan(&taken); err != nil {
