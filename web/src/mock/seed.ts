@@ -756,6 +756,7 @@ function seedMargin(): WsData {
     return {
       id: uuid(),
       email,
+      emails: i === 0 && company ? [`${local}@gmail.com`] : [],
       name,
       phone: chance(0.4) ? `+49 30 ${int(1000000, 9999999)}` : "",
       // Roughly a third have a picture: the verified chat widget's for most, an agent's upload for
@@ -1507,6 +1508,7 @@ function seedLumen(): WsData {
   ws.contacts = names.map((name) => ({
     id: uuid(),
     email: `${name.split(" ")[0].toLowerCase()}@example.com`,
+    emails: [],
     name,
     phone: "",
     avatar_url: null,
@@ -1611,6 +1613,7 @@ function seedHarbor(): WsData {
   ws.contacts = names.map((name) => ({
     id: uuid(),
     email: `${name.split(" ")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}@example.com`,
+    emails: [],
     name,
     phone: "",
     avatar_url: null,
@@ -1676,6 +1679,7 @@ function seedPressroom(): WsData {
   ws.contacts = names.map((name) => ({
     id: uuid(),
     email: `${name.split(" ")[0].toLowerCase()}@newsroom.example`,
+    emails: [],
     name,
     phone: "",
     avatar_url: null,
