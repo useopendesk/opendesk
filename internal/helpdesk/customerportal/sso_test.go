@@ -349,13 +349,21 @@ func TestSSOSessionEndsWithTheContactsAddressOrBlock(t *testing.T) {
 	}
 	e.Exec(`UPDATE contacts SET blocked=false WHERE id=$1`, cid)
 
-	refresh = browserSignIn(t, e, ws, p, claimsFor("s-end", email), nil).mustSucceed(t, ws)
+	// A contact that lost its link links again only with an admin's authorization.
+	relinked := func(subject string) string {
+		t.Helper()
+		browserSignIn(t, e, ws, p, claimsFor(subject, email), nil).mustFail(t, "relink_required")
+		e.Exec(`INSERT INTO customer_oidc_relink_authorizations(id,workspace_id,brand_id,contact_id,expires_at) VALUES($1,$2,$3,$4,now()+interval '15 minutes')`,
+			ids.New(), ws.ID, ws.BrandID, cid)
+		return browserSignIn(t, e, ws, p, claimsFor(subject, email), nil).mustSucceed(t, ws)
+	}
+	refresh = relinked("s-end")
 	e.Exec(`UPDATE contacts SET email=$2 WHERE id=$1`, cid, "moved-"+uuid.NewString()+"@example.com")
 	sessionWorks(t, e, ws, refresh, 401)
 
 	// Turning the provider off ends its sessions at the next refresh.
 	e.Exec(`UPDATE contacts SET email=$2 WHERE id=$1`, cid, email)
-	refresh = browserSignIn(t, e, ws, p, claimsFor("s-back", email), nil).mustSucceed(t, ws)
+	refresh = relinked("s-back")
 	sessionWorks(t, e, ws, refresh, 200)
 	e.Exec(`UPDATE brands SET portal_auth_mode='local', portal_oidc_issuer='', portal_oidc_client_id='', portal_oidc_client_secret_enc=NULL WHERE id=$1`, ws.BrandID)
 	sessionWorks(t, e, ws, refresh, 401)
