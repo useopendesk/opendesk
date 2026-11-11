@@ -834,7 +834,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 		})
 
 	register(s, api, huma.Operation{OperationID: "rotate-widget-secret-by-id", Method: http.MethodPost, Path: "/v1/widgets/{id}/secret/rotate",
-		Summary: "Rotate a chat widget's identity secret", Description: "Answers the new secret once; the previous one stops verifying user_hash.",
+		Summary: "Rotate a chat widget's identity secret", Description: "Answers the new secret once; the previous one stops verifying user_hash and user_token.",
 		Tags: []string{"Widget"}},
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`

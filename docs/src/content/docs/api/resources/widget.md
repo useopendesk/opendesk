@@ -32,7 +32,7 @@ curl "https://api.opendesk.sh/v1/widget/config?key=<widget_key>"
 ```sh
 curl https://api.opendesk.sh/v1/widget/session \
   -H "Content-Type: application/json" \
-  -d '{ "key": "<widget_key>", "user_id": "42", "user_hash": "<hex hmac>", "email": "ana@example.com", "name": "Ana" }'
+  -d '{ "key": "<widget_key>", "user_token": "<jwt signed with the widget secret>", "email": "ana@example.com", "name": "Ana" }'
 ```
 
 ```json
@@ -44,7 +44,8 @@ curl https://api.opendesk.sh/v1/widget/session \
 | `key` | the workspace's public widget key, required |
 | `visitor_token` | resume an existing session |
 | `email`, `name` | what the visitor told you |
-| `user_id`, `user_hash` | a [verified identity](/guides/live-chat/identity-verification/): `user_hash` is hex HMAC-SHA256 of `user_id` with the widget secret |
+| `user_token` | a [verified identity](/guides/live-chat/identity-verification/) that expires: an HS256 JWT signed with the widget secret, with `user_id` and an `exp` at most the widget's `user_token_max_hours` ahead (24 by default). An expired token answers `401 user_token_expired`, except when it resumes the session it verified, with that session's `visitor_token` |
+| `user_id`, `user_hash` | a [verified identity](/guides/live-chat/identity-verification/#use-a-user-hash): `user_hash` is hex HMAC-SHA256 of `user_id` with the widget secret. Refused with `401 user_token_required` while the widget has `require_user_token` on. With `user_token`, `user_id` is optional and must be the token's, and `user_hash` is not read |
 | `company` | `{ id }`, with a verified identity only: your own id for the user's account. The contact is linked to the company whose `external_id` it is. A company is never created or changed from here, and an unknown id is ignored |
 | `fields` | with a verified identity only: contact custom fields by key. Only keys that start with `widget_` are set; others are ignored |
 
@@ -61,4 +62,4 @@ curl https://api.opendesk.sh/v1/widget/conversations \
 
 ## Settings (admin)
 
-`GET` and `PATCH /v1/widget/settings` with `{ greeting, require_email, enabled, allowed_origins }`, from the agent side. Rotate the widget secret with `POST /v1/workspace/widget-secret/rotate`.
+`GET` and `PATCH /v1/widget/settings` with `{ greeting, require_email, enabled, allowed_origins, require_user_token, user_token_max_hours }`, from the agent side. `require_user_token` (default `false`) verifies signed-in visitors with `user_token` alone and refuses `user_hash`; `user_token_max_hours` (1 to 720, default 24) is how far ahead a token's `exp` may be. Rotate the widget secret with `POST /v1/workspace/widget-secret/rotate`.

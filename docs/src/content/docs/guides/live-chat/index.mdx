@@ -85,7 +85,7 @@ With **Reply by email when they leave**, on by default, a visitor who left an em
 
 ## Identify signed-in users
 
-If your visitors are signed in to your product, pass their user id, email and name to the widget so conversations attach to the right contact and follow them across devices. To stop anyone posing as another user, sign the user id with this widget's secret. See [Identity verification](/guides/live-chat/identity-verification/).
+If your visitors are signed in to your product, pass their user id, email and name to the widget so conversations attach to the right contact and follow them across devices. To stop anyone posing as another user, your server signs a token for the user with this widget's secret, and the token expires within 24 hours unless you set another lifetime. Turn on **Require an expiring token** to accept nothing else. See [Identity verification](/guides/live-chat/identity-verification/).
 
 <Screenshot src="/guides/chat/identify" alt="The Identify signed-in users section: the identify snippet ringed as 1, and the Widget secret with Rotate secret ringed as 2" />
 

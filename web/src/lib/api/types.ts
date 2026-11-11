@@ -2091,6 +2091,10 @@ export type WidgetSettings = {
   voice_messages: boolean;
   /** The longest voice message, 5 to 300 seconds. */
   voice_max_seconds: number;
+  /** Signed-in visitors are verified only with an expiring user_token; user_hash is refused. */
+  require_user_token: boolean;
+  /** How far ahead a user_token's exp may be, 1 to 720 hours; default 24. */
+  user_token_max_hours: number;
 };
 /** GET /v1/widget/config: what the widget renders. */
 export type WidgetConfig = {

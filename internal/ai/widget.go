@@ -141,7 +141,7 @@ func (s *Service) loadAgentConv(ctx context.Context, wid, tid uuid.UUID) (*agent
 		ac.visitor.ContactID = t.Contact.ID
 		var external *string
 		var verified bool
-		// Verified only by a session of the conversation's own widget, which checked user_hash
+		// Verified only by a session of the conversation's own widget, which checked user_hash or user_token
 		// with that widget's secret (contracts/teams.md "Widget identity").
 		if err := s.d.DB.Pool.QueryRow(ctx, `SELECT c.external_id, EXISTS (SELECT 1 FROM widget_sessions s
 			WHERE s.workspace_id = c.workspace_id AND s.contact_id = c.id AND s.verified

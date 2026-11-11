@@ -260,10 +260,11 @@ type widgetSessionInput struct {
 		Email        string         `json:"email,omitempty" maxLength:"254"`
 		Name         string         `json:"name,omitempty" maxLength:"200"`
 		UserID       string         `json:"user_id,omitempty" maxLength:"200"`
-		UserHash     string         `json:"user_hash,omitempty" maxLength:"128"`
-		AvatarURL    string         `json:"avatar_url,omitempty" maxLength:"2000" doc:"https picture of the signed-in user; used only with a valid user_hash"`
-		Company      *widgetCompany `json:"company,omitempty" doc:"The signed-in user's account in your product; used only with a valid user_hash"`
-		Fields       map[string]any `json:"fields,omitempty" doc:"Contact custom fields to set, by key; used only with a valid user_hash, and only fields whose key starts with widget_ (anything else is ignored)"`
+		UserHash     string         `json:"user_hash,omitempty" maxLength:"128" doc:"hex HMAC-SHA256(widget secret, user_id); refused while the widget has require_user_token on"`
+		UserToken    string         `json:"user_token,omitempty" maxLength:"4096" doc:"An HS256 JWT signed with the widget secret, with user_id and exp at most user_token_max_hours ahead; user_hash is then not read"`
+		AvatarURL    string         `json:"avatar_url,omitempty" maxLength:"2000" doc:"https picture of the signed-in user; used only with a verified identity"`
+		Company      *widgetCompany `json:"company,omitempty" doc:"The signed-in user's account in your product; used only with a verified identity"`
+		Fields       map[string]any `json:"fields,omitempty" doc:"Contact custom fields to set, by key; used only with a verified identity, and only fields whose key starts with widget_ (anything else is ignored)"`
 	}
 }
 
@@ -378,7 +379,9 @@ func (h *handler) registerPublic(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "widget-session", Method: http.MethodPost, Path: "/v1/widget/session",
 		Summary: "Start or resume a chat widget session", Tags: []string{"Widget"}, Security: []map[string][]string{},
 		Description: "Returns a visitor token for the widget API and a short-lived realtime token. " +
-			"user_hash = hex HMAC-SHA256(widget_secret, user_id) marks the visitor verified.",
+			"user_hash = hex HMAC-SHA256(widget_secret, user_id), or user_token, an HS256 JWT signed with widget_secret " +
+			"that carries user_id and exp, marks the visitor verified. An expired user_token answers 401 user_token_expired, " +
+			"except when it resumes that user's verified session with its visitor_token.",
 		Middlewares: huma.Middlewares{h.withClientIP}},
 		h.session)
 
@@ -395,27 +398,6 @@ func (h *handler) registerPublic(api huma.API) {
 			}
 			return nil, nil
 		})
-}
-
-// errInvalidHash answers a user_hash that does not verify.
-var errInvalidHash = httpx.E(http.StatusUnauthorized, "invalid_user_hash", "The user_hash does not match user_id.")
-
-// verifyUser checks user_hash with the identity secret of the widget the session is for.
-func (h *handler) verifyUser(w widgetRow, userID, userHash string) error {
-	if userID == "" || userHash == "" {
-		return httpx.Validation("user_id and user_hash must be sent together")
-	}
-	if len(w.SecretEnc) == 0 {
-		return errInvalidHash
-	}
-	secret, err := h.d.Box.Open(w.SecretEnc)
-	if err != nil {
-		return err
-	}
-	if !crypto.EqualHex(crypto.HMACHex(secret, userID), strings.ToLower(strings.TrimSpace(userHash))) {
-		return errInvalidHash
-	}
-	return nil
 }
 
 func normalizeEmail(s string) (string, error) {
@@ -444,14 +426,11 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 		return nil, err
 	}
 	b := in.Body
-	userID := strings.TrimSpace(b.UserID)
-	verified := false
-	if userID != "" || b.UserHash != "" {
-		if err := h.verifyUser(g, userID, b.UserHash); err != nil {
-			return nil, httpx.Wrap(err)
-		}
-		verified = true
+	ident, err := h.identify(g, b.UserID, b.UserHash, b.UserToken, time.Now())
+	if err != nil {
+		return nil, httpx.Wrap(err)
 	}
+	userID, verified := ident.userID, ident.verified
 	email, err := normalizeEmail(b.Email)
 	if err != nil {
 		return nil, err
@@ -462,6 +441,8 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 	err = h.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		var contactID uuid.UUID
 		token := ""
+		// resumed: this request carries on a session already verified for userID.
+		resumed := false
 		if t := strings.TrimSpace(b.VisitorToken); t != "" {
 			var sessContact uuid.UUID
 			var sessWidget *uuid.UUID
@@ -490,7 +471,7 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 					contactID = sessContact
 				}
 			default:
-				contactID, token = sessContact, t
+				contactID, token, resumed = sessContact, t, verified && sessVerified
 				if verified && !sessVerified {
 					if _, err := tx.Exec(ctx, `UPDATE widget_sessions SET verified = true WHERE workspace_id = $1 AND token_hash = $2`,
 						wid, crypto.HashToken(t)); err != nil {
@@ -502,6 +483,11 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 					return err
 				}
 			}
+		}
+		// An expired user_token only carries on the session it already verified on this
+		// browser: starting a session, or verifying one, takes a token that has not expired.
+		if ident.expired && !resumed {
+			return errTokenExpired
 		}
 
 		if contactID == uuid.Nil {

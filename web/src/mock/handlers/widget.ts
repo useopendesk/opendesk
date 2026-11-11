@@ -49,6 +49,11 @@ const CHECKS: Partial<Record<keyof WidgetSettings, Check>> = {
     if (typeof v !== "number" || !Number.isInteger(v) || v < 5 || v > 300) throw invalid("voice_max_seconds must be a whole number of seconds from 5 to 300");
     return v;
   },
+  require_user_token: bool("require_user_token"),
+  user_token_max_hours: (v) => {
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 720) throw invalid("user_token_max_hours must be 1 to 720");
+    return v;
+  },
   attachment_types: (v) => {
     if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || !ALL_FILE_TYPES.includes(x))) throw invalid("attachment_types must be file types of the catalog");
     return ALL_FILE_TYPES.filter((id) => v.includes(id));

@@ -226,7 +226,8 @@ type Sealer interface {
 }
 
 // NewWidgetSecret returns a widget's identity secret and its sealed form. The widget
-// verifies user_hash = hex(HMAC-SHA256(secret, user_id)) with the plaintext as key.
+// verifies user_hash = hex(HMAC-SHA256(secret, user_id)), and the HS256 signature of a
+// user_token, with the plaintext as key.
 func NewWidgetSecret(box Sealer) (string, []byte, error) {
 	secret := "wsec_" + crypto.RandomToken(32)
 	sealed, err := box.Seal([]byte(secret))

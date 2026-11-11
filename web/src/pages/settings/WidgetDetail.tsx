@@ -18,6 +18,7 @@ import { Textarea, TextInput } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Picker } from "@/components/ui/picker";
+import { Select } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/tabs";
 import { CopyField } from "@/components/ui/copy-button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -110,7 +111,15 @@ function withDefaults(s: WS): WS {
     attachment_types: s.attachment_types ?? [],
     voice_messages: s.voice_messages ?? false,
     voice_max_seconds: s.voice_max_seconds ?? 60,
+    require_user_token: s.require_user_token ?? false,
+    user_token_max_hours: s.user_token_max_hours ?? 24,
   };
+}
+
+/** The user_token lifetimes offered, in hours, with the widget's own when the API set another. */
+const TOKEN_LIFETIMES = [1, 6, 12, 24, 72, 168, 720];
+function tokenLifetimes(current: number): number[] {
+  return TOKEN_LIFETIMES.includes(current) ? TOKEN_LIFETIMES : [...TOKEN_LIFETIMES, current].sort((a, b) => a - b);
 }
 
 // limitTypes: files are held to settings.attachment_types; off, any file but a program is taken.
@@ -290,8 +299,13 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
   const set = (p: Partial<WS>) => setDraft((d) => ({ ...d, settings: { ...d.settings, ...p } }));
   const snippet = widgetSnippet(widget.key);
   const identify = `window.opendesk('identify', {
-  user_id: "42",
-  user_hash: "<hmac from your server>",
+${
+  s.require_user_token
+    ? `  user_token: "<jwt from your server>",
+  refresh_user_token: () => fetch("/opendesk-token").then((r) => r.text()),`
+    : `  user_id: "42",
+  user_hash: "<hmac from your server>",`
+}
   email: "ada@example.com",
   name: "Ada Lovelace",
   company: { id: "acct-9" },
@@ -662,8 +676,24 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
             <div className="flex flex-col gap-3 py-3">
               <CopyField value={identify} multiline />
               <p className="text-[12.5px] leading-5 text-fg-3">{t("widget.identifyBody")}</p>
+              <p className="text-[12.5px] leading-5 text-fg-3">{t("widget.identifyTokenBody")}</p>
               <RotateSecret widget={widget} />
             </div>
+            <Row label={t("widget.requireToken")} description={t("widget.requireTokenHint")}>
+              <Switch checked={s.require_user_token} onCheckedChange={(require_user_token) => set({ require_user_token })} aria-label={t("widget.requireToken")} />
+            </Row>
+            <Row label={t("widget.tokenLifetime")} description={t("widget.tokenLifetimeHint")}>
+              <Select<string>
+                value={String(s.user_token_max_hours)}
+                onChange={(v) => set({ user_token_max_hours: Number(v) })}
+                options={tokenLifetimes(s.user_token_max_hours).map((h) => ({
+                  value: String(h),
+                  label: h > 24 && h % 24 === 0 ? t("widget.tokenDays", { count: h / 24 }) : t("widget.tokenHours", { count: h }),
+                }))}
+                aria-label={t("widget.tokenLifetime")}
+                className="w-[124px]"
+              />
+            </Row>
           </Section>
 
           <Section title={tt("widget.danger")} danger>

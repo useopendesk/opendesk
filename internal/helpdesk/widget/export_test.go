@@ -4,4 +4,5 @@ package widget
 var (
 	Comeback       = comeback
 	PresenceEvents = presenceEvents
+	ParseUserToken = parseUserToken
 )

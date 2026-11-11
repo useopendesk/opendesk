@@ -201,6 +201,8 @@ export function defaultWidget(): WidgetSettings {
     attachment_types: [],
     voice_messages: false,
     voice_max_seconds: 60,
+    require_user_token: false,
+    user_token_max_hours: 24,
   };
 }
 

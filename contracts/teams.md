@@ -154,8 +154,18 @@ shown to visitors.
 
 ### Widget identity
 
-A visitor signed in with `user_id` and `user_hash` is verified only by the widget whose secret signed
-it: each widget session is verified, or not, with that widget's own secret, and the AI agent treats a
+A host page proves its signed-in user with the widget secret in one of two ways: `user_hash`, the hex
+HMAC-SHA256 of `user_id`, valid until the secret is rotated; or `user_token`, an HS256 JWT carrying
+`user_id` and an `exp` at most the widget's `user_token_max_hours` (default 24) ahead
+(contracts/api.md `POST /v1/widget/session`). An expired token starts nothing: it only carries on,
+with its `visitor_token`, a live session that the same user already verified with this widget, so a
+copied token is of use only until its `exp`. A widget with `require_user_token` on refuses `user_hash`
+(`401 user_token_required`), including on sessions it verified before; anonymous visitors are not
+affected. The widget renews its token through the host page's `refresh_user_token` before it expires
+and when the API answers `user_token_expired`.
+
+A visitor signed in with `user_id` and `user_hash`, or a `user_token`, is verified only by the widget
+whose secret signed it: each widget session is verified, or not, with that widget's own secret, and the AI agent treats a
 visitor as verified only through a verified session of the conversation's own widget. A visitor token
 from another widget of the workspace carries the contact over only when it is anonymous (no
 `external_id`) or this request verified the same `user_id` with this widget's secret; otherwise the

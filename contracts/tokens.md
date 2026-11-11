@@ -79,6 +79,22 @@ and a consumer accepts exactly one purpose. `exp` is required.
 The gateway never touches the database: everything it needs to authorize a join is
 in the claims.
 
+## Widget user tokens (signed by the customer)
+
+A `user_token` (contracts/teams.md "Widget identity") is a JWT the host page's server signs, not
+opendesk: HS256 only, keyed with one widget's identity secret (sealed in `widgets.secret_enc`), never
+`AUTH_SECRET`, so it carries no `purpose` and is accepted only by `POST /v1/widget/session` for that
+widget. The API checks the signature first and the claims after, so only a token that secret signed
+is ever reported as expired.
+
+```jsonc
+{ "user_id": "<the host's id for the user>" /* or an integer */, "exp": 0 /* required, at most user_token_max_hours ahead */,
+  "iat": 0, "nbf": 0 /* optional; after now refuses it */ }
+```
+
+Two minutes are allowed for the signing server's clock. Rotating the widget secret refuses every
+token signed with the previous one at once.
+
 ## Opaque credentials (Go API only, stored hashed with SHA-256)
 
 | credential      | format                          | where                                            |

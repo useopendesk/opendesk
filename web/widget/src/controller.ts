@@ -6,13 +6,14 @@ import { WidgetApi, WidgetError, type Fetcher } from "./api";
 import { isAiAnswer, keyBot } from "./ai";
 import { pageUrl, readBotRef, resolveConfig } from "./config";
 import { t } from "./i18n";
+import { expiresSoon } from "./identity";
 import { dropLive, liveMessage, reduceLive } from "./live";
 import { plainText } from "./markdown";
 import { Live, type SocketFactory } from "./realtime";
 import { chime } from "./sound";
 import { load, save } from "./storage";
 import { Store } from "./store";
-import type { AIAction, Attachment, Envelope, LiveEvent, Message, Rating, SessionIdentity, UiMessage, WidgetConfig } from "./types";
+import type { AIAction, Attachment, Envelope, IdentifyArgs, LiveEvent, Message, Rating, SessionIdentity, UiMessage, WidgetConfig } from "./types";
 
 export type Env = {
   base: string;
@@ -41,6 +42,10 @@ export class Controller {
   readonly store: Store;
   private live: Live | null = null;
   private identity: SessionIdentity = {};
+  /** The host page's way to sign a new user_token (identify's `refresh_user_token`). */
+  private renewToken: (() => string | Promise<string>) | null = null;
+  /** The renewal in flight, shared by every request that needs it. */
+  private renewing: Promise<boolean> | null = null;
   private listeners: Record<EventName, Set<Listener>> = { message: new Set(), open: new Set(), close: new Set() };
   private typingTimers: Record<string, ReturnType<typeof setTimeout>> = {};
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
@@ -101,17 +106,50 @@ export class Controller {
   }
 
   private async session() {
+    const { user_token, user_hash } = this.identity;
+    // A token that is missing or about to expire is renewed first, when the page gave a way to.
+    if (this.renewToken && (user_token ? expiresSoon(user_token, Date.now()) : !user_hash)) await this.renewUserToken();
+    try {
+      return await this.sessionOnce();
+    } catch (e) {
+      // It expired anyway (a clock that is off, or a token read late): renew once and try again.
+      if (isTokenExpired(e) && (await this.renewUserToken())) return this.sessionOnce();
+      throw e;
+    }
+  }
+
+  private async sessionOnce() {
     try {
       return await this.api.session(this.identity);
     } catch (e) {
-      // A stale or revoked visitor token: start over as a new visitor.
-      if (e instanceof WidgetError && (e.status === 401 || e.status === 403 || e.status === 404) && this.api.visitorToken) {
+      // A stale or revoked visitor token: start over as a new visitor. An expired user_token
+      // says nothing about the visitor token: a fresh one carries on the same session.
+      if (e instanceof WidgetError && (e.status === 401 || e.status === 403 || e.status === 404) && !isTokenExpired(e) && this.api.visitorToken) {
         this.api.visitorToken = null;
         this.remember(null);
         return this.api.session(this.identity);
       }
       throw e;
     }
+  }
+
+  /** Asks the host page for a new user_token; false when it gave no way to, or that failed. */
+  private renewUserToken(): Promise<boolean> {
+    const renew = this.renewToken;
+    if (!renew) return Promise.resolve(false);
+    this.renewing ??= Promise.resolve()
+      .then(() => renew())
+      .then((t) => {
+        const token = typeof t === "string" ? t.trim() : "";
+        if (!token || this.renewToken !== renew) return false;
+        this.identity = { ...this.identity, user_token: token };
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        this.renewing = null;
+      });
+    return this.renewing;
   }
 
   async startSession() {
@@ -151,8 +189,19 @@ export class Controller {
     await this.loadConversations();
   }
 
-  async identify(identity: SessionIdentity) {
-    this.identity = { ...this.identity, ...identity };
+  async identify(args: IdentifyArgs) {
+    const { refresh_user_token: renew, ...identity } = args;
+    // Another user: the previous one's way to renew their token is not theirs.
+    if (identity.user_id !== undefined && identity.user_id !== this.identity.user_id) this.renewToken = null;
+    if (typeof renew === "function") this.renewToken = renew;
+    const next = { ...this.identity, ...identity };
+    // A call that brings a user_token or a user_hash replaces both, so a page that moves from
+    // one to the other never sends the old one along.
+    if (identity.user_token !== undefined || identity.user_hash !== undefined) {
+      if (!identity.user_token) delete next.user_token;
+      if (!identity.user_hash) delete next.user_hash;
+    }
+    this.identity = next;
     if (this.s.booting) return; // boot picks it up
     try {
       await this.startSession();
@@ -581,6 +630,8 @@ export class Controller {
     void this.api.endSession().catch(() => {});
     this.remember(null);
     this.api.visitorToken = null;
+    this.identity = {};
+    this.renewToken = null;
   }
 
   /** Stop the connection and timers (the preview's destroy). */
@@ -592,6 +643,11 @@ export class Controller {
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisible);
     Object.values(this.typingTimers).forEach(clearTimeout);
   }
+}
+
+/** The API refused the user_token for its `exp` alone: a new one is all it takes. */
+function isTokenExpired(e: unknown): boolean {
+  return e instanceof WidgetError && e.code === "user_token_expired";
 }
 
 function upsert(list: UiMessage[], m: Message): UiMessage[] {

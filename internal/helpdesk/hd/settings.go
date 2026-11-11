@@ -57,6 +57,11 @@ type WidgetSettings struct {
 	// VoiceMessages lets visitors record voice messages of up to VoiceMaxSeconds.
 	VoiceMessages   bool `json:"voice_messages"`
 	VoiceMaxSeconds int  `json:"voice_max_seconds"`
+	// Identity (contracts/teams.md "Widget identity"). A user_token is accepted only while its
+	// exp is at most UserTokenMaxHours ahead. RequireUserToken refuses user_hash, so a signed-in
+	// visitor is verified by an expiring user_token alone.
+	RequireUserToken  bool `json:"require_user_token"`
+	UserTokenMaxHours int  `json:"user_token_max_hours"`
 }
 
 // The range of a widget's longest voice message, in seconds.
@@ -65,12 +70,20 @@ const (
 	MaxVoiceSeconds = 300
 )
 
+// The range of how far ahead a user_token's exp may be, in hours: from one hour to the 30 days
+// a verified session lives.
+const (
+	MinUserTokenHours     = 1
+	MaxUserTokenHours     = 720
+	DefaultUserTokenHours = 24
+)
+
 // DefaultWidgetSettings are the settings of a workspace that never changed them.
 func DefaultWidgetSettings() WidgetSettings {
 	return WidgetSettings{Greeting: "Hi! How can we help?", Enabled: true, AllowedOrigins: []string{},
 		Theme: "auto", Position: "right", OffsetX: 20, OffsetY: 20, Launcher: "icon", Radius: "soft",
 		ChatWelcome: true, ShowTeam: true, Suggestions: []string{}, Topics: []WidgetTopic{}, EmailFollowUp: true, Attachments: true,
-		AttachmentTypes: []string{}, VoiceMaxSeconds: 60}
+		AttachmentTypes: []string{}, VoiceMaxSeconds: 60, UserTokenMaxHours: DefaultUserTokenHours}
 }
 
 // UnmarshalJSON fills keys missing from a stored document with their defaults.
@@ -113,6 +126,9 @@ func (w *WidgetSettings) normalize() {
 	}
 	if w.VoiceMaxSeconds < MinVoiceSeconds || w.VoiceMaxSeconds > MaxVoiceSeconds {
 		w.VoiceMaxSeconds = d.VoiceMaxSeconds
+	}
+	if w.UserTokenMaxHours < MinUserTokenHours || w.UserTokenMaxHours > MaxUserTokenHours {
+		w.UserTokenMaxHours = d.UserTokenMaxHours
 	}
 	// Ids this version does not know are dropped; a list of only those stays, and takes
 	// nothing, rather than opening the widget to any file.

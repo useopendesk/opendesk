@@ -14,7 +14,7 @@ import (
 // widget can show it to, and only when the widget proves who that is. Two kinds of contact
 // qualify, not blocked either way:
 //
-//   - a verified identity (external_id, from the host page's user_hash): any brand's widget
+//   - a verified identity (external_id, from the host page's user_hash or user_token): any brand's widget
 //     shows it to them once the host page signs them in;
 //   - an anonymous visitor, by their live session in a widget that is on, of the chat's brand,
 //     whose contact holds only what came through the widget: every ticket of theirs is a chat

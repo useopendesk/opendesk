@@ -51,6 +51,9 @@ type widgetSettingsPatch struct {
 	AttachmentTypes *[]string  `json:"attachment_types,omitempty" maxItems:"50" doc:"Ids of the file type catalog (contracts/api.md); [] takes any file but a program or a script"`
 	VoiceMessages   *bool      `json:"voice_messages,omitempty"`
 	VoiceMaxSeconds *int       `json:"voice_max_seconds,omitempty" minimum:"5" maximum:"300" doc:"The longest voice message, in seconds"`
+	// RequireUserToken refuses user_hash; UserTokenMaxHours bounds how far ahead a user_token's exp may be.
+	RequireUserToken  *bool `json:"require_user_token,omitempty" doc:"Verify signed-in visitors only with an expiring user_token; user_hash is refused"`
+	UserTokenMaxHours *int  `json:"user_token_max_hours,omitempty" minimum:"1" maximum:"720" doc:"How far ahead a user_token's exp may be, in hours; default 24"`
 }
 
 type topicIn struct {
@@ -229,6 +232,17 @@ func applyPatch(ctx context.Context, q db.Querier, wid uuid.UUID, w hd.WidgetSet
 		}
 		w.VoiceMaxSeconds = *b.VoiceMaxSeconds
 		fields = append(fields, "voice_max_seconds")
+	}
+	if b.RequireUserToken != nil {
+		w.RequireUserToken = *b.RequireUserToken
+		fields = append(fields, "require_user_token")
+	}
+	if b.UserTokenMaxHours != nil {
+		if *b.UserTokenMaxHours < hd.MinUserTokenHours || *b.UserTokenMaxHours > hd.MaxUserTokenHours {
+			return w, nil, httpx.Validation(fmt.Sprintf("user_token_max_hours must be %d to %d", hd.MinUserTokenHours, hd.MaxUserTokenHours))
+		}
+		w.UserTokenMaxHours = *b.UserTokenMaxHours
+		fields = append(fields, "user_token_max_hours")
 	}
 	if b.OfflineMessage != nil {
 		m, err := cleanText("offline_message", *b.OfflineMessage, 300)

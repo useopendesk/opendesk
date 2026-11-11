@@ -1,22 +1,21 @@
 ---
 title: Identity verification
-description: Sign your users' ids with HMAC-SHA256 so the chat widget can trust who they are.
+description: Prove who your signed-in users are with an expiring token signed by your server, so the chat widget can trust them.
 ---
 
 import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
 import Screenshot from '../../../../components/Screenshot.astro';
 
-When a signed-in user opens the widget, you can tell opendesk who they are. Without verification, anyone could claim to be any user. With it, opendesk accepts the identity only when it comes with a signature that only your server can produce.
+When a signed-in user opens the widget, you can tell opendesk who they are. Without verification, anyone could claim to be any user. With it, opendesk accepts the identity only when it comes with a proof that only your server can produce.
 
 Each chat widget has its own secret. Sign with the secret of the widget that runs on that site: a session is verified only by the widget whose secret signed it.
 
-The signature is:
+Your server can prove a user's identity in two ways:
 
-```
-user_hash = hex( HMAC-SHA256( key = widget_secret, message = user_id ) )
-```
+- **`user_token`**: a JWT signed with the widget secret that carries the user's id and an expiry. It stops working at its `exp`, at most 24 hours ahead by default, so a token copied from a page is of no use for long.
+- **`user_hash`**: an HMAC of the user's id. It stays valid until you rotate the widget's secret.
 
-A session that sends a valid `user_hash` for its `user_id` is marked **verified**, and its conversations attach to the contact with that external id.
+Both keep working side by side. New setups should use `user_token`, and a widget can be set to accept nothing else (see [Require an expiring token](#require-an-expiring-token)).
 
 <Steps>
 
@@ -24,21 +23,181 @@ A session that sends a valid `user_hash` for its `user_id` is marked **verified*
 
    <Screenshot src="/guides/chat/identify" alt="The Identify signed-in users section of a widget: the identify snippet ringed as 1, and the Widget secret with Rotate secret ringed as 2" />
 
-   Rotating needs the admin role, two-factor authentication and a sign-in from the last 12 hours. The old secret stops working at once: every hash signed with it is refused until your server uses the new one. Chats already open keep working.
+   Rotating needs the admin role, two-factor authentication and a sign-in from the last 12 hours. The old secret stops working at once: every token and hash signed with it is refused until your server uses the new one. Chats already open keep working.
 
    <Screenshot src="/guides/chat/rotate" alt="The Rotate the widget secret dialog: the current secret for Marketing site stops working at once, with Cancel and Rotate secret" />
 
-2. **Compute the hash on your server** for the signed-in user, with one of the examples below.
+2. **Sign a token on your server** for the signed-in user, with one of the [examples below](#sign-a-user-token).
 
-3. **Pass `user_id` and `user_hash` to the widget**, together with the optional `email` and `name`, as in the identify snippet on the widget's page. The widget sends them when it starts a session (`POST /v1/widget/session`).
+3. **Pass `user_token` to the widget**, together with the optional `email` and `name`, and a `refresh_user_token` function that gets a new token from your server. The widget sends them when it starts a session (`POST /v1/widget/session`).
 
 </Steps>
 
 <Aside type="danger" title="Keep the secret on the server">
-Never put the widget secret in browser code, a mobile app or a public repository. Compute the hash on your server and send only the result to the page.
+Never put the widget secret in browser code, a mobile app or a public repository. Sign tokens on your server and send only the result to the page.
 </Aside>
 
-## Examples
+## Sign a user token
+
+A `user_token` is a JWT signed with **HS256**, keyed with the widget secret, with these claims:
+
+| Claim | |
+| --- | --- |
+| `user_id` | your stable id for the user, a string (an integer is read as its digits), up to 200 characters. Required |
+| `exp` | when the token stops working, in Unix seconds. Required, and at most the widget's **Longest token lifetime** ahead: 24 hours unless you change it |
+| `iat`, `nbf` | optional. A token issued or valid only after now is refused |
+
+opendesk allows two minutes for a difference between your server's clock and its own.
+
+<Tabs syncKey="lang">
+<TabItem label="Node">
+
+```js
+import jwt from 'jsonwebtoken';
+
+export function userToken(userId) {
+  return jwt.sign({ user_id: String(userId) }, process.env.OPENDESK_WIDGET_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '24h',
+  });
+}
+```
+
+</TabItem>
+<TabItem label="Python">
+
+```python
+import os
+import time
+
+import jwt  # PyJWT
+
+def user_token(user_id: str) -> str:
+    now = int(time.time())
+    return jwt.encode(
+        {"user_id": str(user_id), "iat": now, "exp": now + 24 * 3600},
+        os.environ["OPENDESK_WIDGET_SECRET"],
+        algorithm="HS256",
+    )
+```
+
+</TabItem>
+<TabItem label="Go">
+
+```go
+package widget
+
+import (
+	"os"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+func UserToken(userID string) (string, error) {
+	now := time.Now()
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID,
+		"iat":     now.Unix(),
+		"exp":     now.Add(24 * time.Hour).Unix(),
+	}).SignedString([]byte(os.Getenv("OPENDESK_WIDGET_SECRET")))
+}
+```
+
+</TabItem>
+<TabItem label="PHP">
+
+```php
+<?php
+use Firebase\JWT\JWT;
+
+function user_token(string $userId): string {
+    $now = time();
+    return JWT::encode(
+        ['user_id' => $userId, 'iat' => $now, 'exp' => $now + 24 * 3600],
+        getenv('OPENDESK_WIDGET_SECRET'),
+        'HS256'
+    );
+}
+```
+
+</TabItem>
+<TabItem label="Ruby">
+
+```ruby
+require "jwt"
+
+def user_token(user_id)
+  now = Time.now.to_i
+  JWT.encode({ user_id: user_id.to_s, iat: now, exp: now + 24 * 3600 }, ENV.fetch("OPENDESK_WIDGET_SECRET"), "HS256")
+end
+```
+
+</TabItem>
+</Tabs>
+
+## Pass it to the widget
+
+```js
+opendesk('identify', {
+  user_token: '<token from your server>',
+  // Optional: a function that answers a new token from your server.
+  refresh_user_token: () => fetch('/opendesk-token').then((r) => r.text()),
+  email: 'ada@example.com',
+  name: 'Ada Lovelace',
+});
+```
+
+`user_id` can be left out: the token carries it. When you send it too, it must be the token's. With a `user_token`, a `user_hash` sent along is not read.
+
+`refresh_user_token` is called by the widget, never by opendesk, so it can use your page's own sign-in to reach your server. The widget calls it:
+
+- before it starts or resumes a session, when its token expires within a minute, or when you passed `refresh_user_token` without a `user_token`;
+- when the API answers `401 user_token_expired`, and then tries again once with the new token.
+
+## When a token expires
+
+A token starts a verified session; it does not have to stay valid for the session to carry on. When the page sends an expired token together with the visitor token of the session that token verified on that browser, for the same user, the session continues, up to the 30 days a verified session lives. So a page that stays open for longer than its token keeps its chat, even without `refresh_user_token`.
+
+Anything else needs a token that has not expired, and answers `401 user_token_expired` otherwise: starting a session in a new browser, verifying an anonymous session, or switching the session to another user. A copied token is therefore of use only until its `exp`.
+
+## Require an expiring token
+
+Under **Identify signed-in users**, turn on **Require an expiring token** once every page that loads the widget sends `user_token`. From then on the widget refuses `user_hash` with `401 user_token_required`, on new sessions and on sessions it verified before, and signed-in users are verified only by tokens. Anonymous visitors are not affected.
+
+**Longest token lifetime**, next to it, sets how far ahead a token's `exp` may be, from 1 hour to 30 days. A token whose `exp` is further ahead is refused with `401 invalid_user_token`. Keep it short: it is how long a copied token can start a session.
+
+## Send the user's company and attributes
+
+With a verified identity you can also send the account the user belongs to and a few attributes, so agents see who a chat comes from without asking:
+
+```js
+opendesk('identify', {
+  user_token: '<token from your server>',
+  email: 'ada@example.com',
+  company: { id: 'acct-9' },
+  fields: { widget_plan: 'pro', widget_seats: 12 },
+});
+```
+
+- **`company.id`** is your own id for the account. opendesk links the contact to the company whose external id it is. Set that id on the company first, with `external_id` in the [companies API](/api/resources/contacts/). The widget never creates a company or changes its name or domain, since the token or hash proves only who the user is, and an id no company has is ignored.
+- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The values come from your page, so keep to this prefix only the fields you want the widget to fill, such as a plan name or a seat count.
+- When something changes without a page load, call `opendesk('update', { … })` with the new values. It updates the contact without starting a new chat session. The widget keeps the `user_token` or `user_hash` it has, so you only need to send one again when it changed.
+- Visitors without a verified identity are anonymous: `company` and `fields` are ignored.
+
+## Use a user hash
+
+A `user_hash` needs no JWT library, and it is what earlier setups use. It is:
+
+```
+user_hash = hex( HMAC-SHA256( key = widget_secret, message = user_id ) )
+```
+
+A session that sends a valid `user_hash` for its `user_id` is marked **verified**, and its conversations attach to the contact with that external id. Pass both to the widget:
+
+```js
+opendesk('identify', { user_id: '42', user_hash: '<hmac from your server>', email: 'ada@example.com' });
+```
 
 <Tabs syncKey="lang">
 <TabItem label="Node">
@@ -110,32 +269,22 @@ end
 </TabItem>
 </Tabs>
 
-## Send the user's company and attributes
-
-With a verified identity you can also send the account the user belongs to and a few attributes, so agents see who a chat comes from without asking:
-
-```js
-opendesk('identify', {
-  user_id: '42',
-  user_hash: '<hmac from your server>',
-  email: 'ada@example.com',
-  company: { id: 'acct-9' },
-  fields: { widget_plan: 'pro', widget_seats: 12 },
-});
-```
-
-- **`company.id`** is your own id for the account. opendesk links the contact to the company whose external id it is. Set that id on the company first, with `external_id` in the [companies API](/api/resources/contacts/). The widget never creates a company or changes its name or domain, since `user_hash` proves only who the user is, and an id no company has is ignored.
-- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The values come from your page, so keep to this prefix only the fields you want the widget to fill, such as a plan name or a seat count.
-- When something changes without a page load, call `opendesk('update', { … })` with the same `user_id` and `user_hash`. It updates the contact without starting a new chat session.
-- Visitors without a valid `user_hash` are anonymous: `company` and `fields` are ignored.
-
-## Check your hash
-
 For the secret `test-secret` and user id `42`, every example above must return the same 64-character lowercase hex string. Compare your output across languages, or with:
 
 ```sh
 printf '42' | openssl dgst -sha256 -hmac 'test-secret'
 ```
+
+A hash has no expiry: it proves the user's id until you rotate the secret. To move to tokens, send `user_token` from every page, then turn on [Require an expiring token](#require-an-expiring-token).
+
+## Errors
+
+| Code | Status | When |
+| --- | --- | --- |
+| `invalid_user_token` | 401 | The token is not an HS256 JWT signed with this widget's secret, lacks `user_id` or `exp`, has an `exp` further ahead than the widget allows, is not valid yet, or carries another `user_id` than the one sent |
+| `user_token_expired` | 401 | The token's `exp` has passed, and the request would start or verify a session. Sign a new one |
+| `user_token_required` | 401 | The widget requires an expiring token and the request sent `user_id` or `user_hash` without one |
+| `invalid_user_hash` | 401 | The hash does not match `user_id` with this widget's secret |
 
 ## Several widgets
 
@@ -148,6 +297,7 @@ All the widgets of a workspace share one set of user ids: a verified `user_id` i
 ## Tips
 
 - Use a stable id that never changes for the user, such as your database primary key, not an email address.
-- Send the id as a string. The hash is computed over its exact bytes.
+- Send the id as a string. A hash is computed over its exact bytes.
+- Sign tokens when the page loads, or from `refresh_user_token`, never ahead of time in bulk.
 - When a user signs out of your product, call `opendesk("shutdown")`. It ends the widget session on the server too, so the next visitor on the same browser does not see their conversations.
-- A verified session is never picked up again without a `user_hash`: a page that loads the widget without one starts an anonymous visitor. A verified session also ends 30 days after it started, and the next page that verifies the user starts a new one without asking them anything.
+- A verified session is never picked up again without a token or hash: a page that loads the widget without one starts an anonymous visitor. A verified session also ends 30 days after it started, and the next page that verifies the user starts a new one without asking them anything.

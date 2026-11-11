@@ -29,6 +29,7 @@ See [Email security and data controls](/security/email-data-controls/) for attac
 - Logout, password change, member removal and session revocation revoke the sessions **and** close their live connections.
 - Session cookies are HttpOnly, Secure and SameSite=Lax, and carry the `__Host-` prefix, so only the server's own host can set them. Refresh cookies are honoured only on requests from the app's own origin, and the admin panel's only on its own.
 - API keys, visitor tokens and one-time email links are random, at least 32 bytes, and stored only as hashes.
+- A chat widget accepts a signed-in visitor's identity only with proof signed by that widget's secret on the customer's server. A `user_token` (HS256) is refused once its `exp` passes, and its `exp` may be at most the widget's longest token lifetime ahead, 24 hours by default. An expired token only continues the session it verified, in the same browser. A widget can require tokens and refuse the `user_hash`, which does not expire. See [Identity verification](/guides/live-chat/identity-verification/).
 
 ## Access control
 

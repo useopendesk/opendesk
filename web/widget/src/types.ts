@@ -173,10 +173,13 @@ export type LiveEvent =
       data: { reply_id: string; ticket_id: string; message_id: string | null; handoff: boolean; action_id: string | null };
     };
 
-/** What the host page tells the widget about its signed-in user. `company` and `fields` count only with a valid `user_hash`. */
+/** What the host page tells the widget about its signed-in user. `company` and `fields` count only with a valid `user_token` or `user_hash`. */
 export type SessionIdentity = {
   user_id?: string;
+  /** hex HMAC-SHA256(widget secret, user_id). It never expires; a widget may refuse it for `user_token`. */
   user_hash?: string;
+  /** A JWT the host's server signs with the widget secret (HS256), with `user_id` and `exp`. */
+  user_token?: string;
   email?: string;
   name?: string;
   /** The user's account in the host product: `id` is the host's own id for it, linked to the workspace's company with that external id. */
@@ -184,4 +187,14 @@ export type SessionIdentity = {
   /** Contact custom fields by key; only fields whose key starts with `widget_` are set. */
   fields?: Record<string, string | number | boolean | null>;
   avatar_url?: string;
+};
+
+/** What `opendesk("identify")` and `opendesk("update")` take: the identity, and a way to renew its `user_token`. */
+export type IdentifyArgs = SessionIdentity & {
+  /**
+   * Answers a new `user_token` from the host's server. Called before a session request when
+   * the widget has no token or its token expires within a minute, and when the API answers
+   * `user_token_expired`.
+   */
+  refresh_user_token?: () => string | Promise<string>;
 };

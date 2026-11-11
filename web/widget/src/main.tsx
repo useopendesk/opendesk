@@ -13,6 +13,8 @@
  *
  *   window.opendesk = window.opendesk || function () { (opendesk.q = opendesk.q || []).push(arguments) };
  *   opendesk("identify", { user_id, user_hash, email, name }); // user_hash = hex HMAC-SHA256(widget secret, user_id)
+ *   opendesk("identify", { user_token, refresh_user_token }); // or a JWT signed with the widget secret, with user_id and exp;
+ *                                         // refresh_user_token() answers a new one when it expires (optional)
  *   opendesk("update", { user_id, user_hash, company: { id }, fields: { widget_plan: "pro" } }); // again, with new values
  *   opendesk("open" | "close" | "toggle");
  *   opendesk("locale", "fr");            // force a language (BCP 47)
@@ -27,7 +29,7 @@ import { phoenixFactory } from "./realtime";
 import { browserLanguages, matchLocale, pickLocale, setLocale } from "./i18n";
 import { css } from "./styles";
 import { App } from "./ui";
-import type { SessionIdentity } from "./types";
+import type { IdentifyArgs } from "./types";
 
 type Cmd = (cmd: string, ...args: unknown[]) => void;
 type Stub = Cmd & { q?: ArrayLike<unknown>[]; loaded?: boolean };
@@ -114,7 +116,7 @@ function start(key: string, base: string, fetcher: (u: string, i: RequestInit) =
       }
       case "identify":
       case "update": // the same call again, with new values, for pages that change without reloading
-        void c.identify((args[0] ?? {}) as SessionIdentity);
+        void c.identify((args[0] ?? {}) as IdentifyArgs);
         break;
       case "open":
         c.open();
