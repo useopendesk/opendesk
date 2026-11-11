@@ -84,7 +84,7 @@ By default opendesk reads the inbox. When your server's rules file support mail 
 2. Click **Choose folders**. opendesk signs in to the server and lists its folders.
 3. Tick the folders to read, up to 10, and click **Save changes**. Untick **Inbox** to stop reading the inbox.
 
-Each folder is read from the point you add it, as the inbox was when you connected: the last 7 days, or only new mail when the mailbox started with new mail. A message filed in several of the folders becomes one ticket message. Sent mail, drafts, trash and spam are marked in the list: reading them would turn your own replies and junk into tickets. If a folder is renamed or removed on the server, the mailbox shows the error with the folder's name until you choose again. Changing the IMAP server or account keeps your choice, and each folder is read again as on a new connection.
+Each folder is read from the point you add it, as the inbox was when you connected: the last 7 days, or only new mail when the mailbox started with new mail. A message filed in several of the folders becomes one ticket message. Sent mail, drafts, trash, spam and Gmail's All mail are marked in the list: reading them would turn your own replies and junk into tickets. The inbox is always read first. If a folder is renamed or removed on the server, opendesk keeps reading the other folders and the mailbox names the folder it could not open until you choose again. A folder you untick and tick again later, the inbox included, is read as a new one. Changing the IMAP server or account keeps your choice, and each folder is read again as on a new connection.
 
 ### Keep sent email on the server
 

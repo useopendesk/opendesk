@@ -505,6 +505,17 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
             </div>
           </div>
         )}
+        {!off && mailbox.status === "active" && mailbox.last_error && (
+          <div className={cn("-mx-4 border-b px-4 py-3", tone.amber.soft, tone.amber.line)} role="status">
+            <div className="flex items-start gap-2.5 text-[12.5px]">
+              <TriangleAlert className={cn("mt-0.5 size-3.5 shrink-0", tone.amber.text)} aria-hidden />
+              <div className="min-w-0">
+                <div className="font-medium">{t("detail.foldersSkipped")}</div>
+                <div className="mono mt-0.5 break-words text-xs text-fg-2">{mailbox.last_error}</div>
+              </div>
+            </div>
+          </div>
+        )}
         {!off && quiet && (
           <div className={cn("-mx-4 border-b px-4 py-3", tone.amber.soft, tone.amber.line)} role="status">
             <div className="flex items-start gap-2.5 text-[12.5px]">

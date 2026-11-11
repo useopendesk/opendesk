@@ -159,6 +159,7 @@
     "connection": "Connexion",
     "testConnection": "Tester la connexion",
     "lastSyncFailed": "Échec de la dernière synchronisation",
+    "foldersSkipped": "Certains dossiers n’ont pas été lus",
     "lastSynced": "Dernière synchronisation",
     "never": "Jamais",
     "forwardingInstant": "Le courrier transféré arrive dès son envoi.",
@@ -1036,7 +1037,8 @@
       "sent": "Envoyés",
       "drafts": "Brouillons",
       "trash": "Corbeille",
-      "junk": "Spam"
+      "junk": "Spam",
+      "all": "Tous les messages"
     }
   },
   "sentCopy": {

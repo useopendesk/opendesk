@@ -41,8 +41,9 @@ func (m *mailboxRow) folders() []string {
 }
 
 // normalizeFolders checks and tidies a requested folder list: names trimmed, INBOX in any
-// case spelled INBOX, duplicates dropped, order kept. A list of INBOX alone is stored empty,
-// the default. It answers a safe validation error for a list it refuses.
+// case spelled INBOX and read first, duplicates dropped, the other folders' order kept. A
+// list of INBOX alone is stored empty, the default. It answers a safe validation error for a
+// list it refuses.
 func normalizeFolders(in []string) ([]string, error) {
 	out := []string{}
 	for _, raw := range in {
@@ -63,6 +64,9 @@ func normalizeFolders(in []string) ([]string, error) {
 	}
 	if len(out) > maxIMAPFolders {
 		return nil, httpx.Validation("A mailbox can read at most 10 folders.")
+	}
+	if i := slices.Index(out, inboxFolder); i > 0 {
+		out = slices.Insert(slices.Delete(out, i, i+1), 0, inboxFolder)
 	}
 	if len(out) == 1 && out[0] == inboxFolder {
 		return []string{}, nil
@@ -87,10 +91,12 @@ func (s *service) loadFolderCursor(ctx context.Context, m *mailboxRow, name stri
 	return c, err
 }
 
-// saveFolderCursor stores how far a folder other than INBOX was read.
+// saveFolderCursor stores how far a folder other than INBOX was read, while the mailbox
+// still reads it: a pass that raced the folder's removal stores nothing.
 func (s *service) saveFolderCursor(ctx context.Context, m *mailboxRow, name string, c folderCursor) error {
 	_, err := s.d.DB.Pool.Exec(ctx, `INSERT INTO mailbox_imap_folders (mailbox_id, workspace_id, name, uid_validity, last_uid)
-		VALUES ($2, $1, $3, $4, $5)
+		SELECT m.id, m.workspace_id, $3, $4, $5 FROM mailboxes m
+		WHERE m.workspace_id = $1 AND m.id = $2 AND $3 = ANY(m.imap_folders)
 		ON CONFLICT (mailbox_id, name) DO UPDATE SET uid_validity = EXCLUDED.uid_validity, last_uid = EXCLUDED.last_uid`,
 		m.WorkspaceID, m.ID, name, c.validity, c.lastUID)
 	return err
@@ -98,11 +104,24 @@ func (s *service) saveFolderCursor(ctx context.Context, m *mailboxRow, name stri
 
 // forgetFolderCursors drops the cursors of folders the mailbox no longer reads, or all of
 // them (every: the mailbox moved to another account or server), in the update's transaction.
+// INBOX's cursor is dropped too while the mailbox does not read it, so ticking it again reads
+// it as a new connection does (config.sync_start), not everything that arrived in between.
 func forgetFolderCursors(ctx context.Context, tx pgx.Tx, m *mailboxRow, every bool) error {
-	_, err := tx.Exec(ctx, `DELETE FROM mailbox_imap_folders WHERE workspace_id = $1 AND mailbox_id = $2
-		AND ($3 OR NOT (name = ANY($4)))`, m.WorkspaceID, m.ID, every, m.folders())
+	if _, err := tx.Exec(ctx, `DELETE FROM mailbox_imap_folders WHERE workspace_id = $1 AND mailbox_id = $2
+		AND ($3 OR NOT (name = ANY($4)))`, m.WorkspaceID, m.ID, every, m.folders()); err != nil {
+		return err
+	}
+	if slices.Contains(m.folders(), inboxFolder) {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE mailboxes SET imap_uid_validity = 0, imap_last_uid = 0
+		WHERE workspace_id = $1 AND id = $2`, m.WorkspaceID, m.ID)
 	return err
 }
+
+// readsInboxSQL is true while a mailboxes row reads INBOX: a pass stores INBOX's cursor only
+// then, so one that raced INBOX's removal does not bring the old cursor back.
+const readsInboxSQL = `(imap_folders = '{}' OR 'INBOX' = ANY(imap_folders))`
 
 // IMAPFolder is a folder on the mailbox's IMAP server that it can read.
 type IMAPFolder struct {

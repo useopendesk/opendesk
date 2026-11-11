@@ -653,20 +653,25 @@ func (s *service) setSyncError(ctx context.Context, m *mailboxRow, msg string) e
 	})
 }
 
-// setSyncOK records a successful sync; it publishes mailbox.updated only when the
-// mailbox leaves the error state.
-func (s *service) setSyncOK(ctx context.Context, m *mailboxRow, validity, lastUID int64) error {
+// setSyncOK records a successful sync. warning is what the pass skipped (a folder the
+// server refused to open), kept in last_error while the mailbox stays active; "" clears it.
+// It publishes mailbox.updated only when the mailbox leaves the error state or the warning
+// changed.
+func (s *service) setSyncOK(ctx context.Context, m *mailboxRow, validity, lastUID int64, warning string) error {
+	warning = truncate(warning, 300)
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var prevStatus string
+		var prevStatus, prevErr string
 		err := tx.QueryRow(ctx, `UPDATE mailboxes m SET status = CASE WHEN m.status = 'error' THEN 'active' ELSE m.status END,
-			last_error = '', sync_failures = 0, next_sync_at = NULL, last_synced_at = now(),
-			imap_uid_validity = $3, imap_last_uid = $4, updated_at = now()
-			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR NO KEY UPDATE) old
-			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status`, m.WorkspaceID, m.ID, validity, lastUID).Scan(&prevStatus)
+			last_error = $5, sync_failures = 0, next_sync_at = NULL, last_synced_at = now(),
+			imap_uid_validity = CASE WHEN `+readsInboxSQL+` THEN $3 ELSE 0 END,
+			imap_last_uid = CASE WHEN `+readsInboxSQL+` THEN $4 ELSE 0 END, updated_at = now()
+			FROM (SELECT status, last_error FROM mailboxes WHERE id = $2 FOR NO KEY UPDATE) old
+			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status, old.last_error`,
+			m.WorkspaceID, m.ID, validity, lastUID, warning).Scan(&prevStatus, &prevErr)
 		if err != nil {
 			return err
 		}
-		if prevStatus == "error" {
+		if prevStatus == "error" || prevErr != warning {
 			return s.publishMailbox(ctx, tx, m.WorkspaceID, m.ID, "mailbox.updated")
 		}
 		return nil
@@ -676,7 +681,8 @@ func (s *service) setSyncOK(ctx context.Context, m *mailboxRow, validity, lastUI
 // saveProgress persists the UID cursor mid-pass so a failure later in the batch
 // does not re-fetch what was already ingested.
 func (s *service) saveProgress(ctx context.Context, m *mailboxRow, validity, lastUID int64) error {
-	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE mailboxes SET imap_uid_validity = $3, imap_last_uid = $4 WHERE workspace_id = $1 AND id = $2`,
+	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE mailboxes SET imap_uid_validity = $3, imap_last_uid = $4
+		WHERE workspace_id = $1 AND id = $2 AND `+readsInboxSQL,
 		m.WorkspaceID, m.ID, validity, lastUID)
 	return err
 }
