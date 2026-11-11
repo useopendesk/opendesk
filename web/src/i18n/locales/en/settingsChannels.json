@@ -157,6 +157,7 @@
     "connection": "Connection",
     "testConnection": "Test connection",
     "lastSyncFailed": "Last sync failed",
+    "foldersSkipped": "Some folders were not read",
     "lastSynced": "Last synced",
     "never": "Never",
     "forwardingInstant": "Forwarded mail arrives as soon as it is sent.",
@@ -1056,7 +1057,8 @@
       "sent": "Sent mail",
       "drafts": "Drafts",
       "trash": "Trash",
-      "junk": "Spam"
+      "junk": "Spam",
+      "all": "All mail"
     }
   }
 }

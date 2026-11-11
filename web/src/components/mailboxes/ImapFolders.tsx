@@ -24,9 +24,9 @@ export const foldersOf = (value: string[]) => (value.length ? value : [INBOX]);
 /** What to store: INBOX alone is the default, stored empty. */
 const toValue = (chosen: string[]) => (chosen.length === 1 && chosen[0] === INBOX ? [] : chosen);
 
-/** Folders a server keeps for itself: reading them would turn sent mail, drafts or spam into tickets. */
-type NotMail = "sent" | "drafts" | "trash" | "junk";
-const NOT_MAIL: readonly NotMail[] = ["sent", "drafts", "trash", "junk"];
+/** Folders a server keeps for itself: reading them would turn sent mail, drafts or spam into tickets. All mail (Gmail's) holds the sent mail too. */
+type NotMail = "sent" | "drafts" | "trash" | "junk" | "all";
+const NOT_MAIL: readonly NotMail[] = ["sent", "drafts", "trash", "junk", "all"];
 const notMail = (s: ImapFolder["special"]): s is NotMail => (NOT_MAIL as readonly string[]).includes(s);
 
 export function ImapFoldersField({

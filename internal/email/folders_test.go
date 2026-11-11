@@ -78,15 +78,79 @@ func TestIMAPSyncFolders(t *testing.T) {
 		t.Fatalf("second pass: %d inbound emails, want 3", n)
 	}
 
-	// A folder that is gone: the error names it, and INBOX's progress is kept.
-	mustExec(t, w.d, `UPDATE mailboxes SET imap_folders = '{INBOX,Gone}' WHERE id = $1`, m.ID)
+	// A folder that is gone is skipped and named: the folders after it are still read and the
+	// mailbox stays active, with no backoff.
+	mustExec(t, w.d, `UPDATE mailboxes SET imap_folders = '{INBOX,Gone,Support/Billing}' WHERE id = $1`, m.ID)
 	appendTo(t, u, "INBOX", testMail(customer(), "new in the inbox"), time.Now())
+	appendTo(t, u, "Support/Billing", testMail(customer(), "third billing"), time.Now())
 	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
 		t.Fatal(err)
 	}
 	m2, _ = loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID)
-	if m2.Status != "error" || !strings.Contains(m2.LastError, "the folder Gone") || m2.LastUID != 3 || inbound() != 4 {
+	if m2.Status != "active" || !strings.Contains(m2.LastError, "the folder Gone") || m2.LastUID != 3 || inbound() != 5 ||
+		w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND sync_failures = 0 AND next_sync_at IS NULL`, m.ID) != 1 {
 		t.Fatalf("missing folder: %s %q cursor %d inbound %d", m2.Status, m2.LastError, m2.LastUID, inbound())
+	}
+	// Once the folder opens again, the warning clears.
+	if err := u.Create("Gone", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m2, _ = loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID); m2.Status != "active" || m2.LastError != "" {
+		t.Fatalf("after the folder came back: %s %q", m2.Status, m2.LastError)
+	}
+
+	// A pass that races a folder's removal does not bring its cursor back.
+	mustExec(t, w.d, `UPDATE mailboxes SET imap_folders = '{INBOX}' WHERE id = $1`, m.ID)
+	mustExec(t, w.d, `DELETE FROM mailbox_imap_folders WHERE mailbox_id = $1`, m.ID)
+	if err := w.s.saveFolderCursor(w.ctx, m2, "Support/Billing", folderCursor{7, 9}); err != nil {
+		t.Fatal(err)
+	}
+	if w.count(`SELECT count(*) FROM mailbox_imap_folders WHERE mailbox_id = $1`, m.ID) != 0 {
+		t.Fatal("cursor stored for a folder the mailbox no longer reads")
+	}
+}
+
+// TestIMAPFoldersInboxDropped: unticking INBOX forgets its cursor, so ticking it again reads
+// it as a new connection does, not everything that arrived in between.
+func TestIMAPFoldersInboxDropped(t *testing.T) {
+	w := newWorld(t)
+	u, m := imapFolderBox(t, w)
+	srv := w.api(w.admin)
+	url := srv.URL + "/v1/mailboxes/" + m.ID.String()
+	mustExec(t, w.d, `UPDATE mailboxes SET config = config || '{"sync_start":"new"}' WHERE id = $1`, m.ID)
+	appendTo(t, u, "INBOX", testMail(customer(), "before"), time.Now())
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"imap_folders": []string{"Archive"}}, nil); code != http.StatusOK {
+		t.Fatalf("untick INBOX: %d", code)
+	}
+	if w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND imap_uid_validity = 0 AND imap_last_uid = 0`, m.ID) != 1 {
+		t.Fatal("INBOX cursor kept after unticking it")
+	}
+	appendTo(t, u, "INBOX", testMail(customer(), "while not read"), time.Now())
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND imap_uid_validity = 0`, m.ID) != 1 {
+		t.Fatal("a pass without INBOX stored its cursor")
+	}
+	// Choosing folders again also clears an error and its backoff.
+	mustExec(t, w.d, `UPDATE mailboxes SET status = 'error', last_error = 'x', sync_failures = 5, next_sync_at = now() + interval '1 hour' WHERE id = $1`, m.ID)
+	if code := doJSON(t, http.MethodPatch, url, map[string]any{"imap_folders": []string{"Archive", "INBOX"}}, nil); code != http.StatusOK {
+		t.Fatalf("tick INBOX again: %d", code)
+	}
+	if w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND last_error = '' AND sync_failures = 0 AND next_sync_at IS NULL`, m.ID) != 1 {
+		t.Fatal("backoff kept after the folders changed")
+	}
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.count(`SELECT count(*) FROM inbound_emails WHERE mailbox_id = $1`, m.ID); n != 0 {
+		t.Fatalf("%d inbound emails, want 0: INBOX read again as new with sync_start new", n)
 	}
 }
 
@@ -117,7 +181,7 @@ func TestMailboxIMAPFoldersAPI(t *testing.T) {
 	if code := doJSON(t, http.MethodPatch, url, map[string]any{"imap_folders": []string{" Support/Billing ", "inbox", "INBOX", ""}}, &out); code != http.StatusOK {
 		t.Fatalf("patch: %d", code)
 	}
-	if !slices.Equal(out.IMAPFolders, []string{"Support/Billing", "INBOX"}) {
+	if !slices.Equal(out.IMAPFolders, []string{"INBOX", "Support/Billing"}) {
 		t.Fatalf("stored %v", out.IMAPFolders)
 	}
 	if w.count(`SELECT count(*) FROM audit_logs WHERE workspace_id = $1 AND action = 'mailbox.updated' AND data->'changes' ? 'imap_folders' AND data->'imap_folders' IS NOT NULL`, w.wid) != 1 {
@@ -169,6 +233,9 @@ func TestNormalizeFolders(t *testing.T) {
 	got, err := normalizeFolders([]string{"Inbox", " Sales ", "Sales", "", "INBOX"})
 	if err != nil || !slices.Equal(got, []string{"INBOX", "Sales"}) {
 		t.Fatalf("%v %v", got, err)
+	}
+	if got, err := normalizeFolders([]string{"Sales", "Archive", "inbox"}); err != nil || !slices.Equal(got, []string{"INBOX", "Sales", "Archive"}) {
+		t.Fatalf("INBOX first: %v %v", got, err)
 	}
 	if got, err := normalizeFolders([]string{"inbox"}); err != nil || len(got) != 0 {
 		t.Fatalf("inbox alone: %v %v", got, err)

@@ -157,6 +157,7 @@
     "connection": "Verbindung",
     "testConnection": "Verbindung testen",
     "lastSyncFailed": "Letzte Synchronisierung fehlgeschlagen",
+    "foldersSkipped": "Einige Ordner wurden nicht gelesen",
     "lastSynced": "Zuletzt synchronisiert",
     "never": "Nie",
     "forwardingInstant": "Weitergeleitete E-Mails kommen an, sobald sie gesendet werden.",
@@ -1028,7 +1029,8 @@
       "sent": "Gesendet",
       "drafts": "Entwürfe",
       "trash": "Papierkorb",
-      "junk": "Spam"
+      "junk": "Spam",
+      "all": "Alle Nachrichten"
     }
   }
 }

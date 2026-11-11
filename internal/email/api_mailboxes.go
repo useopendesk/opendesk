@@ -438,7 +438,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					imap_folders = $30, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 					p.WorkspaceID, id, m.Name, m.Email, m.DisplayName, m.OutboundKind, m.Config, sealed, m.TeamID,
 					m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
-					reactivate || resetSync || contains(changes, "credentials"), resetSync,
+					reactivate || resetSync || contains(changes, "credentials") || contains(changes, "imap_folders"), resetSync,
 					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID,
 					m.InboundKind, m.AliasTeams, m.AliasSettings, m.PersonalReplies, m.KeepAutomaticMail, m.IMAPFolders)
 				if err != nil {
