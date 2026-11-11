@@ -27,7 +27,12 @@ func TestArticleAddresses(t *testing.T) {
 	}
 	slug := path[strings.LastIndex(path, "/")+1:]
 
-	// Links from before: /a/<slug> leads to the article in its topic.
+	// Links from before: /a/<slug> leads to the article in its topic through the redirect the
+	// migration recorded for it; an /a/ address no article had is not guessed.
+	if r := s.get(t, "app.test", base+"/a/"+slug); r.status != 404 {
+		t.Fatalf("/a/ with no redirect: %d", r.status)
+	}
+	s.Exec(`INSERT INTO kb_redirects (workspace_id, path, article_id) VALUES ($1, $2, $3)`, s.ws.ID, "/a/"+slug, s.article)
 	moved("/a/"+slug, path)
 
 	// A new slug: the old address leads to the new one.

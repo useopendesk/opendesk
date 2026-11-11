@@ -19,3 +19,8 @@ CREATE TABLE kb_redirects (
 );
 CREATE INDEX kb_redirects_article_idx ON kb_redirects (article_id) WHERE article_id IS NOT NULL;
 CREATE INDEX kb_redirects_collection_idx ON kb_redirects (collection_id) WHERE collection_id IS NOT NULL;
+
+-- Articles in a collection lived at /a/<slug> until now: that address keeps leading to them.
+INSERT INTO kb_redirects (workspace_id, path, article_id)
+SELECT workspace_id, '/a/' || slug, id FROM kb_articles WHERE collection_id IS NOT NULL
+ON CONFLICT (workspace_id, path) DO NOTHING;

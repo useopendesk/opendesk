@@ -811,7 +811,11 @@ export function registerResources() {
   });
   get("/v1/public/help/:slug/articles/:aslug", (ctx) => {
     const { ws, brand } = publicBrand(ctx);
-    const a = publicArticles(ws, brand).find((x) => x.slug === ctx.params.aslug);
+    // Slugs are unique per collection: `collection` picks one, else the one in no collection, else the first.
+    const cslug = ctx.query.get("collection");
+    const col = cslug ? ws.collections.find((c) => c.slug === cslug) : undefined;
+    const same = publicArticles(ws, brand).filter((x) => x.slug === ctx.params.aslug);
+    const a = cslug ? same.find((x) => col && x.collection_id === col.id) : (same.find((x) => !x.collection_id) ?? same[0]);
     if (!a) throw notFound("Article");
     a.views++;
     return a;

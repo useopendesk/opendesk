@@ -484,8 +484,8 @@ zone holds that no domain does. Every status change publishes `brand.updated`.
 - An article lives where its topic is (`KbArticle.path`, contracts/api.md "Knowledge base"). An address that is no
   longer one answers `301` to where the article or topic is now, keeping `?lang=`: an article's address before its
   slug or topic changed, a topic's before its slug changed (and its articles' under it), an article's in a topic
-  that was deleted, and `/a/<slug>` for an article in a topic (the address articles had before they lived in their
-  topic; with several, the oldest). Anything else is a `404` page. The sitemap and canonical URLs use `path`.
+  that was deleted, and `/a/<slug>` for an article that was in a topic when articles moved under their topic (the
+  address it had before, recorded then). Anything else is a `404` page. The sitemap and canonical URLs use `path`.
 - `<slug>.<HELP_DOMAIN>` and `/help/<slug>/*` on the instance's own hosts answer `301` to the help center's `url` when that
   is elsewhere (`/help/<slug>/c/x` → `/c/x`). A brand whose help center is off, or an unknown host or
   path, is a `404` page.

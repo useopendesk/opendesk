@@ -347,28 +347,22 @@ func (s *Server) serveSite(w http.ResponseWriter, r *http.Request, hc kb.HelpCen
 type notFound struct{}
 
 // moved is where an article or topic address that is not one any more leads: a recorded
-// move (a slug or topic change), an article of a topic whose slug changed, or, for an address
-// from before articles lived in their topic (/a/<slug>), the article with that slug.
+// move (a slug or topic change, or the /a/<slug> an article in a topic had before articles
+// lived in their topic), or an article of a topic whose slug changed.
 func (s *Server) moved(ctx context.Context, hc kb.HelpCenter, sub string) (string, bool, error) {
 	q := s.d.DB.Pool
 	if to, ok, err := kb.Moved(ctx, q, hc, sub); err != nil || ok {
 		return to, ok, err
 	}
-	switch {
-	case strings.HasPrefix(sub, "/c/"):
-		parts := strings.Split(sub[3:], "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", false, nil
-		}
-		id, err := kb.MovedCollectionID(ctx, q, hc, parts[0])
-		if err != nil || id == nil {
-			return "", false, err
-		}
-		return kb.ArticleInCollection(ctx, q, hc, *id, parts[1])
-	case strings.HasPrefix(sub, "/a/") && !strings.Contains(sub[3:], "/") && sub != "/a/":
-		return kb.FlatArticle(ctx, q, hc, sub[3:])
+	parts := strings.Split(strings.TrimPrefix(sub, "/c/"), "/")
+	if !strings.HasPrefix(sub, "/c/") || len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", false, nil
 	}
-	return "", false, nil
+	id, err := kb.MovedCollectionID(ctx, q, hc, parts[0])
+	if err != nil || id == nil {
+		return "", false, err
+	}
+	return kb.ArticleInCollection(ctx, q, hc, *id, parts[1])
 }
 
 func (notFound) Error() string { return "not found" }

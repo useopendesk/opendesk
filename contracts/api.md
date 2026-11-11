@@ -1097,7 +1097,7 @@ characters and validated; malformed or incomplete cursors return `400`.
 | --- | --- | --- |
 | GET | `/v1/public/help/{workspace_slug}` | `{title, collections: KbCollection[], featured: KbArticle[], locale, logo_url: string \| null, favicon_url: string \| null}` published only. `{workspace_slug}` is a brand slug (the default brand's is the workspace slug); 404 unless that brand's help center is on. Lists only the brand's collections and articles and those of every brand. `title` is the brand's help center title, else its name; `locale` the brand's, else the workspace's; `logo_url` its help center logo, else its logo, else the workspace logo; `favicon_url` its help center favicon |
 | GET | `/v1/public/help/{workspace_slug}/collections/{slug}` | `{collection, articles}`, the brand's and shared only |
-| GET | `/v1/public/help/{workspace_slug}/articles/{slug}` | `KbArticle`, increments views; the brand's and shared only |
+| GET | `/v1/public/help/{workspace_slug}/articles/{slug}` | `?collection=` (a collection slug) → `KbArticle`, increments the views of that one article; the brand's and shared only. Slugs are unique per collection: `collection` picks the article in that collection; without it, the article in no collection, else the oldest with that slug |
 | GET | `/v1/public/help/{workspace_slug}/search?q=` | `KbArticle[]`, the brand's and shared only |
 | GET | `/v1/public/help/{workspace_slug}/changelog` | `{data: ChangelogEntry[], next_cursor}`: published entries dated now or earlier, newest first, the brand's and shared only; `?category=`, `?limit=` (default 20, max 50), `?cursor=` |
 | GET | `/v1/public/help/{workspace_slug}/changelog/{slug}` | `ChangelogEntry`, the same entries only |

@@ -166,16 +166,3 @@ func ArticleInCollection(ctx context.Context, q db.Querier, hc HelpCenter, colle
 	}
 	return to, err == nil, err
 }
-
-// FlatArticle is where an address from before articles lived in their collection
-// (/a/<slug>) leads: the published article with that slug the help center shows, the oldest
-// when several collections have one.
-func FlatArticle(ctx context.Context, q db.Querier, hc HelpCenter, slug string) (string, bool, error) {
-	var to string
-	err := q.QueryRow(ctx, `SELECT `+articlePath+` FROM kb_articles a WHERE a.workspace_id = $1 AND a.slug = $2
-		AND a.status = 'published' AND `+forBrand(3)+` ORDER BY a.created_at, a.id LIMIT 1`, hc.WorkspaceID, slug, hc.BrandID).Scan(&to)
-	if db.IsNotFound(err) {
-		return "", false, nil
-	}
-	return to, err == nil, err
-}
