@@ -673,6 +673,7 @@ export function registerResources() {
     patchMailboxAI(ctx, m);
     patchFormSenders(ctx, m);
     patchImapFolders(ctx, m);
+    patchSentFolder(ctx, m);
     if (typeof ctx.body.keep_automatic_mail === "boolean") m.keep_automatic_mail = ctx.body.keep_automatic_mail;
     if ("bot_id" in ctx.body) m.bot_id = checkBotId(ctx.ws, ctx.body.bot_id);
     if (ctx.body.password || ctx.body.smtp_password) {
@@ -965,6 +966,19 @@ const MOCK_IMAP_FOLDERS: ImapFolder[] = [
   { name: "Trash", path: "Trash", special: "trash" },
 ];
 
+/** imap_sent_folder: "" keeps no copy; a folder (not INBOX) for a mailbox that reads over IMAP and sends over SMTP or through opendesk. */
+function patchSentFolder(ctx: Ctx, m: Mailbox) {
+  if (!("imap_sent_folder" in ctx.body)) return;
+  if (typeof ctx.body.imap_sent_folder !== "string") throw invalid("imap_sent_folder must be text");
+  const name = ctx.body.imap_sent_folder.trim();
+  if ([...name].length > 255 || /\p{Cc}/u.test(name)) throw invalid("A folder name must be plain text of at most 255 characters.");
+  if (name.toUpperCase() === "INBOX") throw invalid("Keep sent email in a folder other than the inbox.");
+  if (name === (m.imap_sent_folder ?? "")) return;
+  if (name && !(readsImap(m) && (m.outbound_kind === "smtp" || m.outbound_kind === "system")))
+    throw invalid("Only a mailbox that reads its inbox over IMAP and sends over SMTP or through opendesk keeps sent email in a folder.");
+  m.imap_sent_folder = name;
+}
+
 /** imap_folders: at most 10 names, INBOX in any case is INBOX, INBOX alone is stored empty. */
 function patchImapFolders(ctx: Ctx, m: Mailbox) {
   if (!("imap_folders" in ctx.body)) return;
@@ -1082,6 +1096,7 @@ export function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "disp
     trusted_form_senders: [],
     keep_automatic_mail: false,
     imap_folders: [],
+    imap_sent_folder: "",
     from_name_format: "{agent} at {mailbox}",
     private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
     id: uuid(),

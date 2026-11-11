@@ -1038,5 +1038,12 @@
       "trash": "Corbeille",
       "junk": "Spam"
     }
+  },
+  "sentCopy": {
+    "title": "Garder les e-mails envoyés sur le serveur",
+    "hint": "Enregistre une copie de chaque e-mail envoyé par cette boîte dans un dossier de votre serveur IMAP, comme votre logiciel de messagerie, pour que votre boîte contienne toute la conversation.",
+    "folder": "Dossier des e-mails envoyés",
+    "choose": "Choisir un dossier",
+    "loading": "Chargement des dossiers…"
   }
 }

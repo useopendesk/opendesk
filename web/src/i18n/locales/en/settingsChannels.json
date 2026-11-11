@@ -1058,5 +1058,12 @@
       "trash": "Trash",
       "junk": "Spam"
     }
+  },
+  "sentCopy": {
+    "title": "Keep sent email on the server",
+    "hint": "Save a copy of each email this mailbox sends in a folder on your IMAP server, as your mail app does, so your mailbox has the whole conversation.",
+    "folder": "Folder for sent email",
+    "choose": "Choose a folder",
+    "loading": "Loading folders…"
   }
 }

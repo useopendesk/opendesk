@@ -64,6 +64,16 @@ type SyncMailboxArgs struct {
 
 func (SyncMailboxArgs) Kind() string { return "email.sync_mailbox" }
 
+// SentCopyArgs stores a copy of an email a mailbox sent in its IMAP sent folder (IMAP
+// APPEND). StorageKey holds the message as it went out; the job removes it. Owner: email.
+type SentCopyArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MailboxID   uuid.UUID `json:"mailbox_id"`
+	StorageKey  string    `json:"storage_key"`
+}
+
+func (SentCopyArgs) Kind() string { return "email.sent_copy" }
+
 // Provider tidy-up actions (ProviderTidyArgs.Action).
 const (
 	// ProviderImported: an email read through the provider's API became a ticket message.

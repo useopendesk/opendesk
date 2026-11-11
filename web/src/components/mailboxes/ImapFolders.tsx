@@ -1,14 +1,18 @@
 // The IMAP folders a mailbox takes mail from (contracts/api.md "Mailboxes"): INBOX unless
-// the admin picks others, such as folders the server's own rules file mail into.
+// the admin picks others, such as folders the server's own rules file mail into. And the
+// folder it keeps a copy of what it sends in, as a mail app does.
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderOpen, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Row } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, type SelectOption } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
@@ -120,5 +124,79 @@ export function ImapFoldersField({
         </div>
       )}
     </div>
+  );
+}
+
+/** The folder a sent copy goes to by default: the server's Sent folder, else one named so. */
+export function defaultSentFolder(folders: ImapFolder[]): string {
+  return folders.find((f) => f.special === "sent")?.name ?? folders.find((f) => /^sent\b/i.test(f.path.split("/").pop() ?? ""))?.name ?? "Sent";
+}
+
+/**
+ * Whether the mailbox keeps a copy of what it sends on its IMAP server, and in which
+ * folder (imap_sent_folder; "" keeps none). Turning it on picks the server's Sent folder.
+ */
+export function SentFolderField({ mailboxId, value, onChange, blocked }: { mailboxId: string; value: string; onChange: (v: string) => void; blocked?: string }) {
+  const { t } = useTranslation("settingsChannels");
+  const on = value !== "";
+  // Switched on before the folders arrived: the default is picked when they do.
+  const [picking, setPicking] = useState(false);
+  const list = useQuery({
+    queryKey: qk.mailboxImapFolders(mailboxId),
+    queryFn: () => api.mailboxes.imapFolders(mailboxId),
+    enabled: (on || picking) && !blocked,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const folders = list.data?.folders;
+  useEffect(() => {
+    if (picking && folders) {
+      setPicking(false);
+      onChange(defaultSentFolder(folders));
+    }
+  }, [picking, folders, onChange]);
+  const toggle = (next: boolean) => {
+    if (!next) {
+      setPicking(false);
+      onChange("");
+    } else if (folders) onChange(defaultSentFolder(folders));
+    else setPicking(true);
+  };
+  const options: SelectOption<string>[] = (folders ?? []).filter((f) => f.name !== INBOX).map((f) => ({ value: f.name, label: f.path }));
+  if (on && !options.some((o) => o.value === value)) options.unshift({ value, label: value });
+
+  return (
+    <>
+      <Row label={t("sentCopy.title")} description={t("sentCopy.hint")}>
+        {(on || picking) && !blocked && (
+          <Select
+            size="sm"
+            className="w-44"
+            value={on ? value : undefined}
+            onChange={onChange}
+            options={options}
+            placeholder={list.isPending ? t("sentCopy.loading") : t("sentCopy.choose")}
+            disabled={!folders}
+            aria-label={t("sentCopy.folder")}
+          />
+        )}
+        <Tooltip content={blocked}>
+          <span className="inline-flex">
+            <Switch aria-label={t("sentCopy.title")} checked={on || picking} disabled={!!blocked} onCheckedChange={toggle} />
+          </span>
+        </Tooltip>
+      </Row>
+      {(on || picking) && list.isError && (
+        <div className="flex items-start justify-between gap-3 pb-3.5" role="alert">
+          <div className="min-w-0 text-[12.5px]">
+            <div className="font-medium text-tone-red">{t("folders.failed")}</div>
+            <div className="mono mt-0.5 break-words text-xs text-fg-2">{errorMessage(list.error)}</div>
+          </div>
+          <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={list.isFetching} onClick={() => void list.refetch()}>
+            {t("folders.retry")}
+          </Button>
+        </div>
+      )}
+    </>
   );
 }

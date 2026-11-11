@@ -1030,5 +1030,12 @@
       "trash": "Papierkorb",
       "junk": "Spam"
     }
+  },
+  "sentCopy": {
+    "title": "Gesendete E-Mails auf dem Server behalten",
+    "hint": "Speichert eine Kopie jeder E-Mail, die dieses Postfach sendet, in einem Ordner auf Ihrem IMAP-Server, wie Ihr E-Mail-Programm, damit Ihr Postfach die ganze Unterhaltung enthält.",
+    "folder": "Ordner für gesendete E-Mails",
+    "choose": "Ordner wählen",
+    "loading": "Ordner werden geladen…"
   }
 }

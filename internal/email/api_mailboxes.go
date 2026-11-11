@@ -106,6 +106,7 @@ type updateMailboxInput struct {
 		BrandID        *string                        `json:"brand_id,omitempty" doc:"Move the address to another brand of the workspace"`
 		Aliases        *[]string                      `json:"aliases,omitempty" maxItems:"20" doc:"Replaces the aliases"`
 		IMAPFolders    *[]string                      `json:"imap_folders,omitempty" maxItems:"10" doc:"Replaces the IMAP folders the mailbox takes mail from (a mailbox that reads over IMAP); [] reads INBOX alone"`
+		IMAPSentFolder *string                        `json:"imap_sent_folder,omitempty" maxLength:"255" doc:"The IMAP folder a copy of each email the mailbox sends is kept in (a mailbox that reads over IMAP and sends over SMTP or through opendesk); \"\" keeps none"`
 		AliasTeams     *map[string]uuid.UUID          `json:"alias_teams,omitempty" doc:"Replaces them: an alias to the team its new tickets go to. Removing an alias drops its entry"`
 		AliasSettings  *map[string]aliasSettingsInput `json:"alias_settings,omitempty" doc:"Replaces each alias's From name, signature and brand (an alias left out has none of its own); signature_html and send_as left out are kept. Removing an alias drops its entry"`
 		FromNameFormat *string                        `json:"from_name_format,omitempty" maxLength:"200" doc:"\"\" resets to \"{agent} at {mailbox}\""`
@@ -370,6 +371,19 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 						changes = append(changes, "imap_folders")
 					}
 				}
+				if in.Body.IMAPSentFolder != nil {
+					folder, err := normalizeSentFolder(*in.Body.IMAPSentFolder)
+					if err != nil {
+						return err
+					}
+					if folder != m.IMAPSentFolder {
+						if folder != "" && !m.sentCopyPossible() {
+							return httpx.Validation("Only a mailbox that reads its inbox over IMAP and sends over SMTP or through opendesk keeps sent email in a folder.")
+						}
+						m.IMAPSentFolder = folder
+						changes = append(changes, "imap_sent_folder")
+					}
+				}
 				if in.Body.Config.turnsTidyOn() && !m.readsAPI() {
 					return httpx.Validation("Gmail and Outlook options are only for a mailbox that reads its inbox through Google or Microsoft.")
 				}
@@ -435,12 +449,12 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					ai_answers = $17, ai_answers_mode = $18, ai_answers_outside_hours = $19,
 					brand_id = $20, aliases = $21, from_name_format = $22, trusted_form_senders = $23, bot_id = $24,
 					alias_teams = $26, alias_settings = $27, personal_replies = $28, keep_automatic_mail = $29,
-					imap_folders = $30, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+					imap_folders = $30, imap_sent_folder = $31, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 					p.WorkspaceID, id, m.Name, m.Email, m.DisplayName, m.OutboundKind, m.Config, sealed, m.TeamID,
 					m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
 					reactivate || resetSync || contains(changes, "credentials"), resetSync,
 					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID,
-					m.InboundKind, m.AliasTeams, m.AliasSettings, m.PersonalReplies, m.KeepAutomaticMail, m.IMAPFolders)
+					m.InboundKind, m.AliasTeams, m.AliasSettings, m.PersonalReplies, m.KeepAutomaticMail, m.IMAPFolders, m.IMAPSentFolder)
 				if err != nil {
 					return err
 				}
@@ -473,6 +487,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				}
 				if contains(changes, "imap_folders") {
 					data["imap_folders"] = m.IMAPFolders
+				}
+				if contains(changes, "imap_sent_folder") {
+					data["imap_sent_folder"] = m.IMAPSentFolder
 				}
 				if contains(changes, "bot_id") {
 					data["bot_id"] = m.BotID

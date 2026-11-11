@@ -1011,6 +1011,8 @@ export type Mailbox = {
   keep_automatic_mail?: boolean;
   /** The IMAP folders a mailbox that reads over IMAP takes mail from; empty reads INBOX alone (admins only). */
   imap_folders?: string[];
+  /** The IMAP folder a copy of each email the mailbox sends over SMTP or through opendesk is kept in; "" keeps none (admins only). */
+  imap_sent_folder?: string;
   signature_html: string;
   auto_reply_enabled: boolean;
   auto_reply_subject: string;
