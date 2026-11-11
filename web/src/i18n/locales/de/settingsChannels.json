@@ -1012,5 +1012,23 @@
       "step4": "Hake die Ereignisse für Zusammenfassungen und Transkripte an (sie brauchen Voys Intelligence) und klicke auf Opslaan.",
       "step5": "Mache einen Testanruf: Die Verbindung zeigt Empfängt Anrufe, sobald er ankommt."
     }
+  },
+  "folders": {
+    "title": "Ordner",
+    "description": "opendesk holt E-Mails aus diesen Ordnern Ihres IMAP-Servers. Wählen Sie die Ordner, in die die Regeln Ihres Servers Support-E-Mails ablegen, etwa E-Mails an einen Alias. Eine Nachricht in mehreren davon wird eine Ticketnachricht.",
+    "inbox": "Posteingang",
+    "choose": "Ordner wählen",
+    "done": "Fertig",
+    "failed": "Die Ordner konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
+    "hint": "Wählen Sie bis zu {{max}} Ordner. Änderungen gelten nach dem Speichern.",
+    "full": "Ein Postfach liest höchstens {{max}} Ordner. Entfernen Sie einen, um einen anderen zu wählen.",
+    "saveFirst": "Speichern Sie zuerst die Servereinstellungen und wählen Sie dann die Ordner.",
+    "special": {
+      "sent": "Gesendet",
+      "drafts": "Entwürfe",
+      "trash": "Papierkorb",
+      "junk": "Spam"
+    }
   }
 }

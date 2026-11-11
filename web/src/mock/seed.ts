@@ -403,7 +403,7 @@ function seedMargin(): WsData {
   ws.sla = sla;
 
   // Every address belongs to a brand; the brand ids are filled in once the brands exist (below).
-  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null, brand_id: "", aliases: [] as string[], alias_teams: {} as Record<string, string>, trusted_form_senders: [] as string[], keep_automatic_mail: false, from_name_format: "{agent} at {mailbox}", private: false };
+  const mbBase = { signature_html: "", auto_reply_enabled: false, auto_reply_subject: "", auto_reply_html: "", ai_answers: false, ai_answers_mode: "draft" as const, ai_answers_outside_hours: false, last_error: "", team_id: null as string | null, brand_id: "", aliases: [] as string[], alias_teams: {} as Record<string, string>, trusted_form_senders: [] as string[], keep_automatic_mail: false, imap_folders: [] as string[], from_name_format: "{agent} at {mailbox}", private: false };
   const support: Mailbox = {
     ...mbBase,
     id: uuid(),
@@ -460,6 +460,8 @@ function seedMargin(): WsData {
     outbound_kind: "smtp",
     forwarding_address: "margin-partners-q81z@in.opendesk.sh",
     config: { imap_host: "imap.fastmail.com", imap_port: 993, imap_username: "partners@margin.app", imap_tls: "tls", smtp_host: "smtp.fastmail.com", smtp_port: 465, smtp_username: "partners@margin.app", smtp_tls: "tls" },
+    // The server files mail to partnerships@ into its own folder, read beside the inbox.
+    imap_folders: ["INBOX", "Support.Partners"],
     status: "error",
     last_error: "IMAP login failed: [AUTHENTICATIONFAILED] Invalid credentials",
     last_synced_at: ago(2 * DAY),

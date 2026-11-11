@@ -230,6 +230,9 @@ type Mailbox struct {
 	BrandID uuid.UUID `json:"brand_id"`
 	// Aliases are other addresses that deliver into this mailbox.
 	Aliases []string `json:"aliases"`
+	// IMAPFolders are the folders a mailbox that reads over IMAP takes mail from; empty
+	// reads INBOX alone. Admins only.
+	IMAPFolders []string `json:"imap_folders" doc:"The IMAP folders the mailbox takes mail from; empty reads INBOX alone"`
 	// AliasTeams are the aliases whose new tickets go to a team of their own instead of TeamID.
 	AliasTeams map[string]uuid.UUID `json:"alias_teams" doc:"An alias to the team its new tickets go to, instead of team_id"`
 	// AliasSettings are each alias's own identity; every alias has an entry.
@@ -312,7 +315,7 @@ const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kin
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
 	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
 	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams,
-	last_received_at, alias_settings, provider_send_as, personal_replies, keep_automatic_mail`
+	last_received_at, alias_settings, provider_send_as, personal_replies, keep_automatic_mail, imap_folders`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
@@ -321,7 +324,7 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
 		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
 		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams, &m.LastReceivedAt,
-		&m.AliasSettings, &m.sendAs, &m.PersonalReplies, &m.KeepAutomaticMail)
+		&m.AliasSettings, &m.sendAs, &m.PersonalReplies, &m.KeepAutomaticMail, &m.IMAPFolders)
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +334,9 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	}
 	if m.TrustedFormSenders == nil {
 		m.TrustedFormSenders = []string{}
+	}
+	if m.IMAPFolders == nil {
+		m.IMAPFolders = []string{}
 	}
 	if m.AliasTeams == nil {
 		m.AliasTeams = map[string]uuid.UUID{}
@@ -547,6 +553,7 @@ func (s *service) api(m *mailboxRow, withConfig bool, a access) Mailbox {
 	if !withConfig {
 		out.Config = MailboxConfig{}
 		out.TrustedFormSenders = []string{}
+		out.IMAPFolders = []string{}
 	}
 	return out
 }
