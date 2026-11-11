@@ -12,7 +12,7 @@ Each chat widget has its own secret. Sign with the secret of the widget that run
 
 Your server can prove a user's identity in two ways:
 
-- **`user_token`**: a JWT signed with the widget secret that carries the user's id and an expiry. It stops working at its `exp`, at most 24 hours ahead by default, so a token copied from a page is of no use for long.
+- **`user_token`**: a JWT that your server signs with the widget secret, carrying the user's id and an expiry. opendesk verifies it with the same secret. It stops working at its `exp`, at most 24 hours ahead by default, so a token copied from a page is of no use for long.
 - **`user_hash`**: an HMAC of the user's id. It stays valid until you rotate the widget's secret.
 
 Both keep working side by side. New setups should use `user_token`, and a widget can be set to accept nothing else (see [Require an expiring token](#require-an-expiring-token)).
@@ -39,7 +39,9 @@ Never put the widget secret in browser code, a mobile app or a public repository
 
 ## Sign a user token
 
-A `user_token` is a JWT signed with **HS256**, keyed with the widget secret, with these claims:
+A `user_token` is a JWT signed with **HS256**, keyed with the widget secret. Your server signs it, and opendesk verifies the signature with the same secret, which it stores encrypted, before it reads any claim. A token signed with another widget's secret, with a secret you have since rotated, or with any algorithm but HS256 is refused with `invalid_user_token`.
+
+The token carries these claims:
 
 | Claim | |
 | --- | --- |
