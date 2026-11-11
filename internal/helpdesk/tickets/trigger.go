@@ -710,7 +710,9 @@ func (r *triggerRun) addMessage(ctx context.Context, act hd.Action, f facts) err
 		if err != nil || !ok {
 			return err
 		}
-		nm.To = []string{*f.contactEmail}
+		if nm.To, err = domain.ReplyRecipients(ctx, r.tx, r.wid, r.tid, f.contactEmail, []string{*f.contactEmail}); err != nil {
+			return err
+		}
 		nm.FromEmail, nm.FromName = str(mbEmail), str(mbName)
 		nm.DeliveryStatus = "pending"
 	}

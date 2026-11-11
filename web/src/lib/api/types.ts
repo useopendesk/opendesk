@@ -520,6 +520,8 @@ export type Message = {
   mailbox_id?: string | null;
   /** Inbound email: the Reply-To it named when that differs from from_email, else "". Agents only. */
   reply_to?: string;
+  /** Inbound email: where replies to it go instead of from_email (its reply_to, at the sender's own organisation), else "". Agents only. */
+  reply_address?: string;
   /** Inbound email: its From failed DMARC at a trusted receiving server. Shown as unverified. Agents only. */
   auth_failed?: boolean;
   /** Inbound email: the trusted contact form address it came through; from_email is then the visitor. Agents only. */

@@ -126,10 +126,11 @@ type Message = {
   ai_action: AIAction | null; // an action the agent asks the visitor to confirm (contracts/agent.md "Visitor actions"); public
   ai_rating: "up" | "down" | null; // the visitor's rating of an agent reply (contracts/agent.md "Ratings")
   reply_to: string; // inbound email: the Reply-To it named when that differs from from_email, else ""
+  reply_address: string; // inbound email: where replies to it go instead of from_email (its reply_to, at the same organisation as from_email, from a sender that passed authentication; "Inbound email"), else ""
   auth_failed: boolean; // inbound email: its From failed DMARC at a trusted receiving server ("Inbound email"); shown as unverified
   form_sender: string; // inbound email: the trusted contact form address it came through (from_email is then the visitor), else ""
   received_at: string; // inbound email: the address of ours it was written to (its mailbox's address or an alias, lowercased; contracts/teams.md "Routing"), else ""
-  // reply_to, auth_failed, form_sender and received_at are for agents: the widget and public events always carry "", false, "" and "".
+  // reply_to, reply_address, auth_failed, form_sender and received_at are for agents: the widget and public events always carry "", "", false, "" and "".
   thread_id: string | null; // the third-party thread a note belongs to ("Threads"), else null; public views always carry null
   from_account: { account_id: string; email: string; reply_to: string } | null; // an email reply sent from a member's own Collab address (contracts/collab.md "Answering tickets"): the account, the address and the Reply-To it asked for ("address", "mailbox" or an address); else null; public views always carry null
   created_at: string; edited_at: string | null; // edited_at is set only when an internal note was edited
@@ -1325,8 +1326,12 @@ ticket is routed (contracts/teams.md "Routing"); every inbound message records t
 at (`mailbox_id`).
 
 - **Identity.** The customer is the `From` address: the contact, the message author and every
-  threading check use it. `Reply-To` is kept on the message (`reply_to`); replies to the customer go
-  to it only when it is at the same domain as `From`.
+  threading check use it. `Reply-To` is kept on the message (`reply_to`). When it is at the same
+  organisation as `From` (one registrable domain: `alerts@updates.acme.com` and `jane@acme.com`)
+  and the message did not fail sender authentication, it is the message's `reply_address`, and
+  every email to the customer goes there while it is their latest: agent replies, automation
+  replies, auto-replies and surveys. Their contact stays the `From` address. A `Reply-To` at
+  another organisation is only shown to agents.
 - **Contact forms.** A website form sends `From` the site with the visitor in `Reply-To`. When `From`
   matches the receiving mailbox's `trusted_form_senders` (an exact address, or `@domain` for that
   domain only) **and** the message passed DMARC at a trusted receiving server (below), the
