@@ -60,7 +60,7 @@ export function PortalAccessSection({ contact, canEdit }: { contact: Contact; ca
     data.status === "active"
       ? data.last_sign_in_at
         ? t("portal.lastSignIn", { when: relLong(data.last_sign_in_at) })
-        : t("portal.neverSignedIn")
+        : t("portal.noRecentSignIn")
       : data.status === "invited" && data.invite_expires_at
         ? t("portal.linkOpen", { date: fullDate(data.invite_expires_at) })
         : t("portal.noAccessHint");

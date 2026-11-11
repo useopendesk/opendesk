@@ -24,8 +24,10 @@ A team member (agent role, or an API key with `contacts:write`) invites a contac
 the contact gets a one-time link to choose a password, worded as an invitation and valid for 7 days. It is
 a password link like the ones the portal sends, with the same rules: a random token stored only as a hash,
 bound to its workspace, contact and email snapshot, and single use; it stops working after a password reset,
-an email change, a block or a deletion. Links sent to one contact, requested or invited, are limited to 5 an hour, and one
-member's invitations to 200 an hour.
+an email change, a block or a deletion. Links sent to one contact, requested or invited, are limited to 5 an hour, one
+member's (or API key's) invitations to 200 an hour and one workspace's to 500 an hour, the last two counted for the
+whole instance (`d.Limiter.Shared`). Each limit answers with its own `429` code: `rate_limited` (the contact),
+`sender_rate_limited`, `workspace_rate_limited`; a bulk invitation counts the contacts it skipped under the same keys.
 
 The invitation comes from a brand whose help center is on: the one asked for, else the default brand, else
 the only one. A brand whose customers sign in only through its identity provider (`oidc`) has no password to
@@ -35,7 +37,8 @@ contacts, which also skips contacts who already have access.
 
 A contact's access, as members see it, is read from what exists: `active` with a password or a live provider
 sign-in, `invited` with an open password link, otherwise `none`, with the newest open link and the last
-sign-in. Removing access deletes the password, revokes every portal session and closes every open link in one
+sign-in among the portal sessions still kept (ended sessions are deleted 30 days on, so an active contact can have
+none; the app then says no recent sign-in). Removing access deletes the password, revokes every portal session and closes every open link in one
 transaction. A provider sign-in is left as it is: a customer who signs in through the brand's identity provider
 can sign in again there, and blocking the contact keeps them out. Invitations and removals are audited
 (`contact.portal_invited` with the brand, `contact.portal_access_removed`), never with a link or token.

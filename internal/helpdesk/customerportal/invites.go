@@ -31,6 +31,8 @@ const (
 	linksPerContactHour = 5
 	// invitesPerMemberHour bounds the invitations one member (or API key) sends.
 	invitesPerMemberHour = 200
+	// invitesPerWorkspaceHour bounds the invitations one workspace sends.
+	invitesPerWorkspaceHour = 500
 	// bulkInviteMax bounds the contacts one bulk invitation names.
 	bulkInviteMax = 100
 )
@@ -118,6 +120,10 @@ func (s *service) registerInvites(api huma.API) {
 					return httpx.E(http.StatusUnprocessableEntity, "contact_blocked", "This contact is blocked. Unblock them first.")
 				case why == skipRateLimited:
 					return httpx.E(http.StatusTooManyRequests, "rate_limited", "Several links went to this contact in the last hour. Try again later.")
+				case why == skipSenderLimited:
+					return httpx.E(http.StatusTooManyRequests, "sender_rate_limited", "You sent many invitations in the last hour. Try again later.")
+				case why == skipWorkspaceLimited:
+					return httpx.E(http.StatusTooManyRequests, "workspace_rate_limited", "Your workspace sent many invitations in the last hour. Try again later.")
 				}
 				out, err = s.portalAccess(ctx, tx, p.WorkspaceID, cid)
 				return err
@@ -130,7 +136,7 @@ func (s *service) registerInvites(api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "invite-contacts-to-portal", Method: http.MethodPost, Path: "/v1/contacts/portal/invite",
 		Summary: "Invite contacts to the customer portal", Tags: tags,
-		Description: "Invites up to 100 contacts at once, as the single invitation does. Contacts without an email address, blocked ones, ones who already have access and ones who had several links in the last hour are skipped and counted."},
+		Description: "Invites up to 100 contacts at once, as the single invitation does. Contacts without an email address, blocked ones, ones who already have access and ones who had several links in the last hour are skipped and counted, as are the rest once the sender's or the workspace's hourly invitation limit is reached."},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				IDs     []uuid.UUID `json:"ids" minItems:"1" maxItems:"100"`
@@ -223,7 +229,7 @@ func (s *service) registerInvites(api huma.API) {
 
 type bulkInviteResult struct {
 	Sent    int            `json:"sent"`
-	Skipped map[string]int `json:"skipped" doc:"Contacts left out, by reason: no_email, blocked, active (already has access), rate_limited, not_found"`
+	Skipped map[string]int `json:"skipped" doc:"Contacts left out, by reason: no_email, blocked, active (already has access), rate_limited (the contact's links), sender_rate_limited, workspace_rate_limited, not_found"`
 }
 
 // Why an invitation was not sent (bulkInviteResult.Skipped keys).
@@ -233,6 +239,10 @@ const (
 	skipBlocked     = "blocked"
 	skipActive      = "active"
 	skipRateLimited = "rate_limited"
+	// skipSenderLimited and skipWorkspaceLimited: the member's (or API key's) or the
+	// workspace's invitations in the last hour reached their limit.
+	skipSenderLimited    = "sender_rate_limited"
+	skipWorkspaceLimited = "workspace_rate_limited"
 )
 
 // inviteBrand is the brand an invitation is from: the one asked for, else the default
@@ -309,8 +319,11 @@ func (s *service) invite(ctx context.Context, tx pgx.Tx, p *auth.Principal, bran
 	if sender == uuid.Nil {
 		sender = p.APIKeyID
 	}
-	if !s.d.Limiter.Allow("portal-invite:"+sender.String(), invitesPerMemberHour, time.Hour) {
-		return skipRateLimited, nil
+	if !s.d.Limiter.Shared(ctx, "portal-invite:"+sender.String(), invitesPerMemberHour, time.Hour) {
+		return skipSenderLimited, nil
+	}
+	if !s.d.Limiter.Shared(ctx, "portal-invite:ws:"+p.WorkspaceID.String(), invitesPerWorkspaceHour, time.Hour) {
+		return skipWorkspaceLimited, nil
 	}
 	hc, err := kb.HelpCenterBySlug(ctx, tx, brand.Slug)
 	if err != nil {
