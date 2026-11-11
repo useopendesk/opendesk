@@ -29,6 +29,10 @@ import (
 // sentCopyAttempts bounds how often a copy is tried before it is given up.
 const sentCopyAttempts = 5
 
+// sentCopyQueueTimeout bounds storing and queuing a copy inside the send job, so a slow
+// store cannot use up the time the send has left to record its delivery.
+const sentCopyQueueTimeout = 20 * time.Second
+
 // keepsSentCopy reports a mailbox that stores a copy of what it sends in an IMAP folder.
 func (m *mailboxRow) keepsSentCopy() bool {
 	return m.IMAPSentFolder != "" && m.sentCopyPossible()
@@ -57,17 +61,21 @@ func normalizeSentFolder(v string) (string, error) {
 }
 
 // keepSentCopy queues a copy of raw, the email as it went out, for the mailbox's sent
-// folder. The email is already sent: a failure here is logged and never returned.
+// folder. The email is already sent: a failure here is logged and never returned, and it
+// runs on its own short deadline, apart from the send job's.
 func (s *service) keepSentCopy(ctx context.Context, m *mailboxRow, raw []byte) {
 	if !m.keepsSentCopy() || len(raw) == 0 || len(raw) > maxRawBytes {
 		return
 	}
+	sentAt := timeNow()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sentCopyQueueTimeout)
+	defer cancel()
 	key := "workspaces/" + m.WorkspaceID.String() + "/sent-copies/" + ids.New().String() + ".eml"
 	if err := s.d.Storage.Put(ctx, key, bytes.NewReader(raw), int64(len(raw)), "message/rfc822"); err != nil {
 		s.log.Warn("sent copy not stored", "mailbox_id", m.ID, "err", err)
 		return
 	}
-	args := jobs.SentCopyArgs{WorkspaceID: m.WorkspaceID, MailboxID: m.ID, StorageKey: key}
+	args := jobs.SentCopyArgs{WorkspaceID: m.WorkspaceID, MailboxID: m.ID, StorageKey: key, SentAt: sentAt}
 	if _, err := s.d.Jobs.Insert(ctx, args, &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: sentCopyAttempts}); err != nil {
 		s.log.Warn("sent copy not queued", "mailbox_id", m.ID, "err", err)
 		_ = s.d.Storage.Delete(ctx, key)
@@ -87,16 +95,20 @@ func (w *sentCopyWorker) Work(ctx context.Context, job *river.Job[jobs.SentCopyA
 	last := job.Attempt >= job.MaxAttempts
 	err := w.s.storeSentCopy(ctx, job.Args)
 	if err == nil || last || errors.Is(err, errSentCopyGone) {
-		// Done, given up, or nothing left to store: the stored message goes.
-		if e := w.s.d.Storage.Delete(ctx, job.Args.StorageKey); e != nil && !errors.Is(e, storage.ErrNotFound) {
+		// Done, given up, or nothing left to store: the stored message goes, even when the
+		// job's own time ran out.
+		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		if e := w.s.d.Storage.Delete(dctx, job.Args.StorageKey); e != nil && !errors.Is(e, storage.ErrNotFound) {
 			w.s.log.Warn("sent copy not removed", "mailbox_id", job.Args.MailboxID, "err", e)
 		}
+		cancel()
 	}
 	if errors.Is(err, errSentCopyGone) {
 		return nil
 	}
 	if err != nil && last {
-		w.s.log.Info("sent copy given up", "mailbox_id", job.Args.MailboxID, "reason", safeError(err))
+		w.s.log.Warn("sent copy given up", "workspace_id", job.Args.WorkspaceID, "mailbox_id", job.Args.MailboxID,
+			"attempts", job.Attempt, "reason", safeError(err))
 		return nil
 	}
 	return err
@@ -143,7 +155,11 @@ func (s *service) storeSentCopy(ctx context.Context, a jobs.SentCopyArgs) error 
 		return err
 	}
 	defer sess.Close()
-	cmd := sess.c.Append(m.IMAPSentFolder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagSeen}, Time: time.Now()})
+	sentAt := a.SentAt
+	if sentAt.IsZero() {
+		sentAt = timeNow() // a job queued before sent_at was recorded
+	}
+	cmd := sess.c.Append(m.IMAPSentFolder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagSeen}, Time: sentAt})
 	if _, err := cmd.Write(raw); err != nil {
 		_ = cmd.Close()
 		return opError("saving a copy in "+m.IMAPSentFolder, err)

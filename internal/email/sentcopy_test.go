@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
@@ -61,6 +62,24 @@ func queuedSentCopy(t *testing.T, w *world, attempt int) *river.Job[jobs.SentCop
 	return &river.Job[jobs.SentCopyArgs]{JobRow: &rivertype.JobRow{Attempt: attempt, MaxAttempts: sentCopyAttempts}, Args: a}
 }
 
+// sentCopyDate is the internal date of the first message in the mailbox's Sent folder.
+func sentCopyDate(t *testing.T, w *world, m *mailboxRow) time.Time {
+	t.Helper()
+	sess, err := w.s.dialIMAP(w.ctx, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	if _, err := sess.c.Select("Sent", &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := sess.c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{InternalDate: true}).Collect()
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("fetch: %v %d", err, len(msgs))
+	}
+	return msgs[0].InternalDate
+}
+
 func stored(w *world, key string) bool {
 	rc, err := w.d.Storage.Get(w.ctx, key)
 	if err == nil {
@@ -90,11 +109,20 @@ func TestSentCopy(t *testing.T) {
 	if !stored(w, job.Args.StorageKey) || !strings.HasPrefix(job.Args.StorageKey, "workspaces/"+w.wid.String()+"/") {
 		t.Fatalf("message not stored under the workspace: %s", job.Args.StorageKey)
 	}
+	if time.Since(job.Args.SentAt) > time.Minute {
+		t.Fatalf("sent_at not recorded: %v", job.Args.SentAt)
+	}
+	// The copy is dated when the email went out, not when the job ran.
+	sentAt := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	job.Args.SentAt = sentAt
 	if err := worker.Work(w.ctx, job); err != nil {
 		t.Fatal(err)
 	}
 	if all, unseen := folderCounts(t, u, "Sent"); all != 1 || unseen != 0 {
 		t.Fatalf("Sent: %d messages, %d unread", all, unseen)
+	}
+	if got := sentCopyDate(t, w, m); !got.Equal(sentAt) {
+		t.Fatalf("copy dated %v, want %v", got, sentAt)
 	}
 	if stored(w, job.Args.StorageKey) {
 		t.Fatal("stored message kept after the copy")

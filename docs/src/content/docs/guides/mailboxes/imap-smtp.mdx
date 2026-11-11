@@ -94,7 +94,9 @@ When replies go out through your SMTP server, or through opendesk, the mail serv
 2. Turn on **Keep sent email on the server**. opendesk picks the server's Sent folder; choose another folder if you like.
 3. Click **Save changes**.
 
-Each email goes into the folder, marked read, a moment after it is sent: replies, side conversations, auto-replies and satisfaction surveys. If the server refuses the folder, opendesk tries again a few times and then gives that copy up; the email itself was sent either way. Mailboxes that send with Google or Microsoft already keep their sent email, so they do not offer this.
+Each email goes into the folder, marked read and dated when it was sent, a moment after it is sent: replies, side conversations, auto-replies and satisfaction surveys. opendesk signs in to the IMAP server briefly for each copy. If the server refuses the folder, opendesk tries again a few times and then gives that copy up; the email itself was sent either way. Mailboxes that send with Google or Microsoft already keep their sent email, so they do not offer this.
+
+Some SMTP servers save what they send in the Sent folder themselves, such as Gmail's SMTP (`smtp.gmail.com`) and Microsoft 365 (`smtp.office365.com`). Leave this off for those, or each email is kept twice.
 
 ## Providers
 
