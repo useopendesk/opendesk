@@ -261,6 +261,7 @@
     "everyoneMatching": "tous les résultats",
     "records_one": "{{count}} fiche",
     "records_other": "{{count}} fiches",
+    "records_many": "{{count}} fiches",
     "clearField": "Vider le champ",
     "applyField": "Définir le champ",
     "findField": "Rechercher un champ",
