@@ -87,6 +87,7 @@ export const qk = {
   contacts: (q: { q?: string; company_id?: string; tag?: string; blocked?: "true" | "false"; sort?: string }) => w(["contacts", "list", q] as const),
   contact: (id: string) => w(["contacts", "detail", id] as const),
   contactTickets: (id: string) => w(["contacts", "tickets", id] as const),
+  contactPortal: (id: string) => w(["contacts", "portal", id] as const),
   contactPicker: (q: string) => w(["contacts", "picker", q] as const),
   get companyLists() {
     return w(["companies", "list"] as const);
@@ -463,6 +464,7 @@ export const q = {
     }),
   contact: (id: string) => queryOptions({ queryKey: qk.contact(id), queryFn: () => api.contacts.get(id) }),
   contactTickets: (id: string) => list(qk.contactTickets(id), () => api.contacts.tickets(id, { limit: 20 })),
+  contactPortal: (id: string) => queryOptions({ queryKey: qk.contactPortal(id), queryFn: () => api.contacts.portal(id) }),
   companies: (query: { q?: string; tag?: string; sort?: CompanySort }) =>
     infiniteQueryOptions({
       queryKey: qk.companies(query),

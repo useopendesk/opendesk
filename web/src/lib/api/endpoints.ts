@@ -656,6 +656,14 @@ export const api = {
     addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
     removeEmail: (id: string, email: string) => http.del<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}`),
     makePrimaryEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}/make-primary`),
+    /** Customer portal access (contracts/customer-portal.md "Invitations"). */
+    portal: (id: string) => http.get<T.PortalAccess>(`/v1/contacts/${id}/portal`),
+    /** Emails a one-time link to choose a portal password, valid 7 days (422 no_email, contact_blocked, help_center_off, brand_required, password_sign_in_off; 429). */
+    invitePortal: (id: string, brandId?: string) => http.post<T.PortalAccess>(`/v1/contacts/${id}/portal/invite`, brandId ? { brand_id: brandId } : {}),
+    /** Up to 100 contacts at once; who could not be invited is counted, not refused. */
+    invitePortalBulk: (ids: string[], brandId?: string) => http.post<T.PortalBulkInvite>("/v1/contacts/portal/invite", brandId ? { ids, brand_id: brandId } : { ids }),
+    /** Removes the portal password, ends portal sessions and closes open links. */
+    removePortal: (id: string) => http.del<void>(`/v1/contacts/${id}/portal`),
     ...pictureRoutes<T.Contact>("/v1/contacts"),
   },
   companies: {

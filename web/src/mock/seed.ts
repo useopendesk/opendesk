@@ -1,5 +1,6 @@
 // Builds the mock database: the Margin workspace (rich) and Lumen Labs (small).
 
+import { seedPortalAccess } from "./handlers/portalInvites";
 import { normalizeAliases, setGmailSendAs } from "./aliases";
 import { applyDecisions, severityFor } from "./decisions";
 import type {
@@ -1717,4 +1718,6 @@ export function seed() {
   db.workspaces.push(seedHarbor());
   // Spaces (contracts/spaces.md): a third workspace of Maya's, without Collab.
   db.workspaces.push(seedPressroom());
+  // One customer with portal access and one invited (contracts/customer-portal.md "Invitations").
+  seedPortalAccess(db.workspaces[0]);
 }

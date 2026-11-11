@@ -183,6 +183,21 @@ export type HelpDomainRecord = { type: "TXT" | "CNAME"; name: string; value: str
 export type PortalAuthMode = "local" | "oidc" | "local_and_oidc";
 /** What GET /v1/brands/{id}/portal/auth returns (admin). The client secret is never returned. */
 export type PortalAuthSettings = { mode: PortalAuthMode; issuer: string; client_id: string; secret_configured: boolean; create_contacts: boolean };
+/** A brand whose help center is on: where a portal invitation can lead (contracts/customer-portal.md "Invitations"). */
+export type PortalBrand = { id: string; name: string; slug: string; auth_mode: PortalAuthMode; default: boolean };
+/** A contact's customer portal access, as members see it. */
+export type PortalAccess = {
+  /** active: a password or a provider sign-in; invited: a password link that is still open; none: neither. */
+  status: "none" | "invited" | "active";
+  password: boolean;
+  sso: boolean;
+  invited_at: string | null;
+  invite_expires_at: string | null;
+  last_sign_in_at: string | null;
+  brands: PortalBrand[];
+};
+/** What one bulk invitation did: skipped counts by reason (no_email, blocked, active, rate_limited, not_found). */
+export type PortalBulkInvite = { sent: number; skipped: Partial<Record<"no_email" | "blocked" | "active" | "rate_limited" | "not_found", number>> };
 export type PortalRelinkAuthorization = { id: string; brand_id: string; contact_id: string; expires_at: string };
 export type Brand = {
   id: string;
