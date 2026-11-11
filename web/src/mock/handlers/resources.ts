@@ -538,9 +538,16 @@ export function registerResources() {
       assign(row, ctx.body, ["name", "description", "position"]);
       if (s(ctx, "slug")) row.slug = uniqueSlug(ctx.ws.collections.filter((c) => c !== row), slugify(s(ctx, "slug")!));
       if ("brand_id" in ctx.body) row.brand_id = kbBrandRef(ctx, ctx.body.brand_id);
+      for (const a of ctx.ws.articles) if (a.collection_id === row.id) a.path = articlePath(ctx.ws, a);
     },
     beforeDelete: (ctx, row) => {
-      for (const a of ctx.ws.articles) if (a.collection_id === row.id) a.collection_id = null;
+      // Its articles leave it one at a time, each at a slug free outside any collection.
+      for (const a of ctx.ws.articles)
+        if (a.collection_id === row.id) {
+          a.slug = uniqueSlug(sameCollection(ctx.ws, null, a), a.slug);
+          a.collection_id = null;
+          a.path = articlePath(ctx.ws, a);
+        }
     },
   });
 
@@ -570,7 +577,7 @@ export function registerResources() {
       brand_id: kbBrandRef(ctx, ctx.body.brand_id),
       collection_id: s(ctx, "collection_id") ?? null,
       title,
-      slug: uniqueSlug(ctx.ws.articles, slugify(s(ctx, "slug") || title)),
+      slug: uniqueSlug(sameCollection(ctx.ws, s(ctx, "collection_id") ?? null), slugify(s(ctx, "slug") || title)),
       excerpt: s(ctx, "excerpt") ?? "",
       body_html: s(ctx, "body_html") ?? "",
       status,
@@ -578,6 +585,7 @@ export function registerResources() {
       views: 0,
       published_at: status === "published" ? nowIso() : null,
       updated_at: nowIso(),
+      path: "",
     };
     ctx.ws.articles.unshift(a);
     recountCollections(ctx.ws);
@@ -588,9 +596,15 @@ export function registerResources() {
     const a = findArticle(ctx);
     if ("title" in ctx.body && !s(ctx, "title")?.trim()) throw invalid("Title can't be empty");
     assign(a, ctx.body, ["title", "excerpt", "body_html"]);
-    if ("collection_id" in ctx.body) a.collection_id = s(ctx, "collection_id") || null;
+    if ("collection_id" in ctx.body) {
+      const to = s(ctx, "collection_id") || null;
+      // Moving keeps the slug, so it must be free in the collection it moves to.
+      if (to !== a.collection_id && !s(ctx, "slug") && sameCollection(ctx.ws, to, a).some((x) => x.slug === a.slug))
+        throw new HttpError(409, "conflict", "another article in that collection already uses this slug: change the slug as you move it");
+      a.collection_id = to;
+    }
     if ("brand_id" in ctx.body) a.brand_id = kbBrandRef(ctx, ctx.body.brand_id);
-    if (s(ctx, "slug")) a.slug = uniqueSlug(ctx.ws.articles.filter((x) => x !== a), slugify(s(ctx, "slug")!));
+    if (s(ctx, "slug")) a.slug = uniqueSlug(sameCollection(ctx.ws, a.collection_id ?? null, a), slugify(s(ctx, "slug")!));
     const status = s(ctx, "status");
     if (status === "published" || status === "draft") {
       if (status === "published" && a.status !== "published") a.published_at = nowIso();
@@ -906,7 +920,18 @@ export function uniqueSlug(rows: { slug: string }[], base: string): string {
 
 export function recountCollections(ws: WsData) {
   for (const c of ws.collections) c.article_count = ws.articles.filter((a) => a.collection_id === c.id).length;
+  for (const a of ws.articles) a.path = articlePath(ws, a);
 }
+
+/** Where an article lives on a help center (contracts/api.md "Knowledge base"). */
+export function articlePath(ws: WsData, a: Pick<KbArticle, "slug" | "collection_id">): string {
+  const col = a.collection_id ? ws.collections.find((c) => c.id === a.collection_id) : undefined;
+  return col ? `/c/${col.slug}/${a.slug}` : `/a/${a.slug}`;
+}
+
+/** The articles a slug must be unique among: those of the same collection (or of none). */
+export const sameCollection = (ws: WsData, collection: string | null, except?: KbArticle) =>
+  ws.articles.filter((x) => (x.collection_id ?? null) === collection && x !== except);
 
 /** Ollie's email answers on a mailbox (contracts/agent.md "Email"): only while AI is on. */
 function patchMailboxAI(ctx: Ctx, m: Mailbox) {

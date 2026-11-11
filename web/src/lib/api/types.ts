@@ -1043,6 +1043,8 @@ export type KbArticle = {
   views: number;
   published_at: string | null;
   updated_at: string;
+  /** Its address on a help center, after the help center's own: /c/<collection slug>/<slug>, or /a/<slug> in no collection. */
+  path: string;
 };
 
 /** A product update the help center publishes at /changelog (contracts/api.md "Changelog"). */

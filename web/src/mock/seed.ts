@@ -1232,6 +1232,7 @@ function seedMargin(): WsData {
       views: a.views,
       published_at: a.status === "published" ? ago((90 - i * 4) * DAY) : null,
       updated_at: updated,
+      path: `/c/${col.slug}/${slugify(a.title)}`,
     };
   });
 
