@@ -482,7 +482,7 @@
     "agentOff": "The AI agent is off",
     "agentHint": "Name, instructions, tools and guardrails are in AI agent settings.",
     "identifyBody": "Compute user_hash on your server as the hex HMAC-SHA256 of the user_id, keyed with your widget secret. Never put the secret in browser code. Sessions without a valid hash still work, but are marked unverified. With a valid hash, company links the user to the company with that external id, if there is one, and fields sets contact fields whose key starts with widget_. Call opendesk('update', …) again when they change.",
-    "identifyTokenBody": "For an identity that expires, sign a user_token on your server instead: a JWT (HS256) keyed with your widget secret, carrying user_id and exp. Pass refresh_user_token, a function that gets a new token from your server, and the widget renews it before it runs out.",
+    "identifyTokenBody": "Optionally, send a user_token in place of user_hash, with the same user_id: a JWT (HS256) your server signs with the widget secret, carrying user_id and exp, which stops working when it expires. Pass refresh_user_token, a function that gets a new token from your server, and the widget renews it before it runs out.",
     "requireToken": "Require an expiring token",
     "requireTokenHint": "Verify signed-in users with user_token only and refuse user_hash. A user_hash never expires, so anyone who copies one can open that user's chats. Turn this on once your pages send user_token.",
     "tokenLifetime": "Longest token lifetime",

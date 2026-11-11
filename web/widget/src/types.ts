@@ -178,7 +178,7 @@ export type SessionIdentity = {
   user_id?: string;
   /** hex HMAC-SHA256(widget secret, user_id). It never expires; a widget may refuse it for `user_token`. */
   user_hash?: string;
-  /** A JWT the host's server signs with the widget secret (HS256), with `user_id` and `exp`. */
+  /** A JWT the host's server signs with the widget secret (HS256), with `user_id` and `exp`. Sent with `user_id`, which must be the token's. */
   user_token?: string;
   email?: string;
   name?: string;

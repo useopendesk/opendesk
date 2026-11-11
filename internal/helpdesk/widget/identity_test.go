@@ -98,7 +98,7 @@ func TestSessionUserToken(t *testing.T) {
 	}
 
 	good := tok(jwt.MapClaims{"user_id": "user-42", "exp": exp(time.Hour)})
-	s := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": good, "email": "u42@example.com", "name": "Uma"})
+	s := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": good, "email": "u42@example.com", "name": "Uma"})
 	var verified bool
 	var ext string
 	e.Scalar(`SELECT verified FROM widget_sessions WHERE contact_id = $1`, &verified, s.Contact.ID)
@@ -110,20 +110,22 @@ func TestSessionUserToken(t *testing.T) {
 	if h := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_hash": crypto.HMACHex([]byte("s3cret"), "user-42")}); h.Contact.ID != s.Contact.ID {
 		t.Fatal("user_hash and user_token gave two contacts")
 	}
-	// A user_id beside the token must be its own; a user_hash beside it is not read.
+	// user_id comes with the token, as with a user_hash, and must be the one it carries; a
+	// user_hash beside the token is not read.
 	if r := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": good, "user_id": "user-42", "user_hash": "00ff"}); r.Contact.ID != s.Contact.ID {
 		t.Fatal(r)
 	}
+	e.Do("POST", "/v1/widget/session", hdtest.Auth{}, map[string]any{"key": ws.WidgetKey, "user_token": good}).Want(t, 422)
 	refused(map[string]any{"user_token": good, "user_id": "user-7"}, "invalid_user_token")
-	refused(map[string]any{"user_token": signUserToken(t, "other", jwt.SigningMethodHS256, jwt.MapClaims{"user_id": "user-42", "exp": exp(time.Hour)})}, "invalid_user_token")
+	refused(map[string]any{"user_id": "user-42", "user_token": signUserToken(t, "other", jwt.SigningMethodHS256, jwt.MapClaims{"user_id": "user-42", "exp": exp(time.Hour)})}, "invalid_user_token")
 	// No longer than the widget allows: 24 hours unless it says otherwise.
 	long := tok(jwt.MapClaims{"user_id": "user-42", "exp": exp(48 * time.Hour)})
-	refused(map[string]any{"user_token": long}, "invalid_user_token")
+	refused(map[string]any{"user_id": "user-42", "user_token": long}, "invalid_user_token")
 	e.SetWidgetSettings(ws, uuid.Nil, map[string]any{"user_token_max_hours": 72})
-	start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": long})
+	start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": long})
 	// No secret configured: nothing verifies.
 	ws2 := e.NewWorkspace()
-	e.Do("POST", "/v1/widget/session", hdtest.Auth{}, map[string]any{"key": ws2.WidgetKey, "user_token": good}).Want(t, 401)
+	e.Do("POST", "/v1/widget/session", hdtest.Auth{}, map[string]any{"key": ws2.WidgetKey, "user_id": "user-42", "user_token": good}).Want(t, 401)
 }
 
 func TestSessionExpiredUserToken(t *testing.T) {
@@ -139,25 +141,25 @@ func TestSessionExpiredUserToken(t *testing.T) {
 		}
 	}
 
-	s := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": tok("user-42", time.Hour)})
+	s := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": tok("user-42", time.Hour)})
 	old := tok("user-42", -time.Hour)
 	// A copied token that expired starts nothing: not a session of its own, and not one on
 	// another browser's anonymous session.
-	expired(map[string]any{"user_token": old})
+	expired(map[string]any{"user_id": "user-42", "user_token": old})
 	anon := start(t, e, map[string]any{"key": ws.WidgetKey})
-	expired(map[string]any{"user_token": old, "visitor_token": anon.VisitorToken})
+	expired(map[string]any{"user_id": "user-42", "user_token": old, "visitor_token": anon.VisitorToken})
 	// Nor another user's session.
-	other := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": tok("user-7", time.Hour)})
-	expired(map[string]any{"user_token": old, "visitor_token": other.VisitorToken})
+	other := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-7", "user_token": tok("user-7", time.Hour)})
+	expired(map[string]any{"user_id": "user-42", "user_token": old, "visitor_token": other.VisitorToken})
 	// The browser whose session it verified carries on with it, until that session ends.
-	r := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": old, "visitor_token": s.VisitorToken})
+	r := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": old, "visitor_token": s.VisitorToken})
 	if r.VisitorToken != s.VisitorToken || r.Contact.ID != s.Contact.ID {
 		t.Fatal(r)
 	}
 	e.Exec(`UPDATE widget_sessions SET created_at = now() - interval '31 days' WHERE token_hash = $1`, crypto.HashToken(s.VisitorToken))
-	expired(map[string]any{"user_token": old, "visitor_token": s.VisitorToken})
+	expired(map[string]any{"user_id": "user-42", "user_token": old, "visitor_token": s.VisitorToken})
 	// A fresh token starts the next one, for the same contact.
-	if n := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": tok("user-42", time.Hour), "visitor_token": s.VisitorToken}); n.Contact.ID != s.Contact.ID || n.VisitorToken == s.VisitorToken {
+	if n := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": tok("user-42", time.Hour), "visitor_token": s.VisitorToken}); n.Contact.ID != s.Contact.ID || n.VisitorToken == s.VisitorToken {
 		t.Fatal(n)
 	}
 }
@@ -188,7 +190,7 @@ func TestRequireUserToken(t *testing.T) {
 		}
 	}
 	// A user_token verifies, and anonymous visitors are not affected.
-	if r := start(t, e, map[string]any{"key": ws.WidgetKey, "user_token": token, "visitor_token": s.VisitorToken}); r.VisitorToken != s.VisitorToken {
+	if r := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-42", "user_token": token, "visitor_token": s.VisitorToken}); r.VisitorToken != s.VisitorToken {
 		t.Fatal("token resume", r)
 	}
 	start(t, e, map[string]any{"key": ws.WidgetKey})

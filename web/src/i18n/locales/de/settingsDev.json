@@ -477,7 +477,7 @@
     "agentOff": "Der KI-Agent ist ausgeschaltet",
     "agentHint": "Name, Anweisungen, Tools und Leitplanken findest du in den Einstellungen des KI-Agenten.",
     "identifyBody": "Berechne user_hash auf deinem Server als hexadezimalen HMAC-SHA256 der user_id, mit deinem Widget-Secret als Schlüssel. Füge das Secret nie in Browser-Code ein. Sitzungen ohne gültigen Hash funktionieren trotzdem, werden aber als nicht verifiziert markiert. Mit gültigem Hash verknüpft company den Nutzer mit dem Unternehmen, das diese externe ID hat, falls es eines gibt, und fields setzt Kontaktfelder, deren Schlüssel mit widget_ beginnt. Rufe opendesk('update', …) erneut auf, wenn sie sich ändern.",
-    "identifyTokenBody": "Für eine Identität, die abläuft, signiere stattdessen ein user_token auf deinem Server: ein JWT (HS256) mit deinem Widget-Secret als Schlüssel, das user_id und exp enthält. Übergib refresh_user_token, eine Funktion, die ein neues Token von deinem Server holt, und das Widget erneuert es, bevor es abläuft.",
+    "identifyTokenBody": "Optional kannst du statt user_hash ein user_token mit derselben user_id senden: ein JWT (HS256), das dein Server mit dem Widget-Secret signiert, mit user_id und exp, und das nach Ablauf nicht mehr gilt. Übergib refresh_user_token, eine Funktion, die ein neues Token von deinem Server holt, und das Widget erneuert es, bevor es abläuft.",
     "requireToken": "Ablaufendes Token verlangen",
     "requireTokenHint": "Angemeldete Nutzer nur mit user_token verifizieren und user_hash ablehnen. Ein user_hash läuft nie ab, wer einen kopiert, kann also die Chats dieses Nutzers öffnen. Schalte das ein, sobald deine Seiten user_token senden.",
     "tokenLifetime": "Längste Token-Laufzeit",

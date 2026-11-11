@@ -32,7 +32,7 @@ curl "https://api.opendesk.sh/v1/widget/config?key=<widget_key>"
 ```sh
 curl https://api.opendesk.sh/v1/widget/session \
   -H "Content-Type: application/json" \
-  -d '{ "key": "<widget_key>", "user_token": "<jwt signed with the widget secret>", "email": "ana@example.com", "name": "Ana" }'
+  -d '{ "key": "<widget_key>", "user_id": "42", "user_hash": "<hex hmac>", "email": "ana@example.com", "name": "Ana" }'
 ```
 
 ```json
@@ -44,8 +44,8 @@ curl https://api.opendesk.sh/v1/widget/session \
 | `key` | the workspace's public widget key, required |
 | `visitor_token` | resume an existing session |
 | `email`, `name` | what the visitor told you |
-| `user_token` | a [verified identity](/guides/live-chat/identity-verification/) that expires: an HS256 JWT signed with the widget secret, with `user_id` and an `exp` at most the widget's `user_token_max_hours` ahead (24 by default). An expired token answers `401 user_token_expired`, except when it resumes the session it verified, with that session's `visitor_token` |
-| `user_id`, `user_hash` | a [verified identity](/guides/live-chat/identity-verification/#use-a-user-hash): `user_hash` is hex HMAC-SHA256 of `user_id` with the widget secret. Refused with `401 user_token_required` while the widget has `require_user_token` on. With `user_token`, `user_id` is optional and must be the token's, and `user_hash` is not read |
+| `user_id`, `user_hash` | a [verified identity](/guides/live-chat/identity-verification/#compute-the-user-hash): `user_hash` is hex HMAC-SHA256 of `user_id` with the widget secret. `user_hash` is refused with `401 user_token_required` while the widget has `require_user_token` on |
+| `user_token` | optional, an alternative to `user_hash`, sent with `user_id`: a [verified identity that expires](/guides/live-chat/identity-verification/#use-an-expiring-token-instead), an HS256 JWT signed with the widget secret whose `user_id` claim is the `user_id` sent and whose `exp` is at most the widget's `user_token_max_hours` ahead (24 by default). Without `user_id`: `422`. An expired token answers `401 user_token_expired`, except when it resumes the session it verified, with that session's `visitor_token`. With `user_token`, `user_hash` is not read |
 | `company` | `{ id }`, with a verified identity only: your own id for the user's account. The contact is linked to the company whose `external_id` it is. A company is never created or changed from here, and an unknown id is ignored |
 | `fields` | with a verified identity only: contact custom fields by key. Only keys that start with `widget_` are set; others are ignored |
 

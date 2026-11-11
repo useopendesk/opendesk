@@ -299,12 +299,12 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
   const set = (p: Partial<WS>) => setDraft((d) => ({ ...d, settings: { ...d.settings, ...p } }));
   const snippet = widgetSnippet(widget.key);
   const identify = `window.opendesk('identify', {
+  user_id: "42",
 ${
   s.require_user_token
     ? `  user_token: "<jwt from your server>",
   refresh_user_token: () => fetch("/opendesk-token").then((r) => r.text()),`
-    : `  user_id: "42",
-  user_hash: "<hmac from your server>",`
+    : `  user_hash: "<hmac from your server>",`
 }
   email: "ada@example.com",
   name: "Ada Lovelace",

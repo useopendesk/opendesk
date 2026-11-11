@@ -261,7 +261,7 @@ type widgetSessionInput struct {
 		Name         string         `json:"name,omitempty" maxLength:"200"`
 		UserID       string         `json:"user_id,omitempty" maxLength:"200"`
 		UserHash     string         `json:"user_hash,omitempty" maxLength:"128" doc:"hex HMAC-SHA256(widget secret, user_id); refused while the widget has require_user_token on"`
-		UserToken    string         `json:"user_token,omitempty" maxLength:"4096" doc:"An HS256 JWT signed with the widget secret, with user_id and exp at most user_token_max_hours ahead; user_hash is then not read"`
+		UserToken    string         `json:"user_token,omitempty" maxLength:"4096" doc:"An HS256 JWT signed with the widget secret, with user_id and exp at most user_token_max_hours ahead; sent with user_id, which must be the token's; user_hash is then not read"`
 		AvatarURL    string         `json:"avatar_url,omitempty" maxLength:"2000" doc:"https picture of the signed-in user; used only with a verified identity"`
 		Company      *widgetCompany `json:"company,omitempty" doc:"The signed-in user's account in your product; used only with a verified identity"`
 		Fields       map[string]any `json:"fields,omitempty" doc:"Contact custom fields to set, by key; used only with a verified identity, and only fields whose key starts with widget_ (anything else is ignored)"`

@@ -44,7 +44,8 @@ type identity struct {
 }
 
 // identify checks what the request says about the signed-in user. Without user_id, user_hash
-// or user_token the visitor is anonymous. With a user_token, user_hash is not read.
+// or user_token the visitor is anonymous. user_id names the user and comes with its proof,
+// user_hash or user_token; with a user_token, user_hash is not read.
 func (h *handler) identify(w widgetRow, userID, userHash, userToken string, now time.Time) (identity, error) {
 	userID = strings.TrimSpace(userID)
 	if userToken = strings.TrimSpace(userToken); userToken != "" {
@@ -78,8 +79,11 @@ func (h *handler) verifyUser(w widgetRow, userID, userHash string) error {
 }
 
 // verifyToken checks a user_token with the identity secret of the widget the session is for.
-// A user_id sent beside it must be the one it carries.
+// The user_id sent beside it must be the one it carries.
 func (h *handler) verifyToken(w widgetRow, userID, raw string, now time.Time) (identity, error) {
+	if userID == "" {
+		return identity{}, httpx.Validation("user_id and user_token must be sent together")
+	}
 	secret, err := h.widgetSecret(w)
 	if err != nil {
 		return identity{}, err
@@ -92,7 +96,7 @@ func (h *handler) verifyToken(w widgetRow, userID, raw string, now time.Time) (i
 	if err != nil {
 		return identity{}, err
 	}
-	if userID != "" && userID != id {
+	if userID != id {
 		return identity{}, httpx.E(http.StatusUnauthorized, "invalid_user_token", "The user_id does not match the user_token.")
 	}
 	return identity{userID: id, verified: true, expired: expired}, nil

@@ -75,11 +75,12 @@ describe("a signed-in user with a user_token", () => {
     const { c, sent, mock } = tokenApi();
     const fresh = token({ user_id: "42", exp: seconds() + 86_400 });
     const renew = vi.fn(async () => fresh);
-    void c.identify({ user_token: token({ user_id: "42", exp: seconds() + 30 }), refresh_user_token: renew, email: "ada@example.com" });
+    void c.identify({ user_id: "42", user_token: token({ user_id: "42", exp: seconds() + 30 }), refresh_user_token: renew, email: "ada@example.com" });
     await boot(c);
 
     expect(renew).toHaveBeenCalledTimes(1);
     expect(sent).toHaveLength(1);
+    expect(sent[0].user_id).toBe("42");
     expect(sent[0].user_token).toBe(fresh);
     expect(sent[0].email).toBe("ada@example.com");
     expect("refresh_user_token" in sent[0]).toBe(false);
@@ -91,10 +92,10 @@ describe("a signed-in user with a user_token", () => {
   it("gets the first token from refresh_user_token when the page gives none", async () => {
     const { c, sent, mock } = tokenApi();
     const fresh = token({ user_id: "42", exp: seconds() + 3600 });
-    void c.identify({ refresh_user_token: () => fresh });
+    void c.identify({ user_id: "42", refresh_user_token: () => fresh });
     await boot(c);
 
-    expect(sent.map((b) => b.user_token)).toEqual([fresh]);
+    expect(sent.map((b) => [b.user_id, b.user_token])).toEqual([["42", fresh]]);
     c.stop();
     mock.dispose();
   });
@@ -105,7 +106,7 @@ describe("a signed-in user with a user_token", () => {
     const { c, sent, mock } = tokenApi(refused);
     const second = token({ user_id: "42", exp: seconds() + 7200 });
     const renew = vi.fn(() => Promise.resolve(second));
-    void c.identify({ user_token: first, refresh_user_token: renew });
+    void c.identify({ user_id: "42", user_token: first, refresh_user_token: renew });
     await boot(c);
     expect(renew).not.toHaveBeenCalled();
     expect(c.api.visitorToken).toBe("od_vis_mock");
@@ -131,7 +132,7 @@ describe("a signed-in user with a user_token", () => {
     const first = token({ user_id: "42", exp: seconds() + 3600 });
     const refused = new Set<string>();
     const { c, sent, mock } = tokenApi(refused);
-    void c.identify({ user_token: first });
+    void c.identify({ user_id: "42", user_token: first });
     await boot(c);
 
     refused.add(first);
@@ -151,7 +152,7 @@ describe("a signed-in user with a user_token", () => {
     const first = token({ user_id: "42", exp: seconds() + 3600 });
     const { c, sent, mock } = tokenApi(refused);
     const renew = vi.fn(() => Promise.reject(new Error("signed out")));
-    void c.identify({ user_token: first, refresh_user_token: renew });
+    void c.identify({ user_id: "42", user_token: first, refresh_user_token: renew });
     await boot(c);
 
     refused.add(first);

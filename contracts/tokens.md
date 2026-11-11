@@ -88,7 +88,7 @@ widget. The API checks the signature first and the claims after, so only a token
 is ever reported as expired.
 
 ```jsonc
-{ "user_id": "<the host's id for the user>" /* or an integer */, "exp": 0 /* required, at most user_token_max_hours ahead */,
+{ "user_id": "<the host's id for the user>" /* or an integer; must be the user_id sent with the token */, "exp": 0 /* required, at most user_token_max_hours ahead */,
   "iat": 0, "nbf": 0 /* optional; after now refuses it */ }
 ```
 

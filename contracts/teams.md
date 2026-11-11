@@ -154,8 +154,8 @@ shown to visitors.
 
 ### Widget identity
 
-A host page proves its signed-in user with the widget secret in one of two ways: `user_hash`, the hex
-HMAC-SHA256 of `user_id`, valid until the secret is rotated; or `user_token`, an HS256 JWT carrying
+A host page sends its signed-in user's `user_id` with one of two proofs made with the widget secret: `user_hash`, the hex
+HMAC-SHA256 of `user_id`, valid until the secret is rotated; or, optionally, `user_token`, an HS256 JWT carrying
 `user_id` and an `exp` at most the widget's `user_token_max_hours` (default 24) ahead
 (contracts/api.md `POST /v1/widget/session`). An expired token starts nothing: it only carries on,
 with its `visitor_token`, a live session that the same user already verified with this widget, so a

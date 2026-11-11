@@ -21,7 +21,7 @@ opendesk ships with secure defaults. This checklist covers what is up to you as 
 - Behind a proxy of your own, set `TRUSTED_PROXY_HOPS` to the number of proxies that append to `X-Forwarded-For`, and publish opendesk's ports only to them, so client IPs used for rate limits and audit logs cannot be spoofed. `TRUST_PROXY=true` is only for a proxy that sets the headers itself, like the bundled Caddy. See [Your own reverse proxy](/self-hosting/reverse-proxy/#client-addresses).
 - Set `CHECK_ORIGINS` on the gateway to the origin of your opendesk web app. The chat widget uses its own endpoint, which takes only widget tokens.
 - Set the widget's allowed origins in settings.
-- Verify signed-in chat visitors with an expiring `user_token`, and turn on **Require an expiring token** on each widget once your pages send one. See [Identity verification](/guides/live-chat/identity-verification/).
+- To verify signed-in chat visitors only with proofs that expire, send `user_token` in place of `user_hash`, with the same `user_id`, and turn on **Require an expiring token** on each widget once your pages send it. See [Identity verification](/guides/live-chat/identity-verification/#use-an-expiring-token-instead).
 
 ## Secrets
 

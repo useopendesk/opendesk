@@ -13,7 +13,7 @@
  *
  *   window.opendesk = window.opendesk || function () { (opendesk.q = opendesk.q || []).push(arguments) };
  *   opendesk("identify", { user_id, user_hash, email, name }); // user_hash = hex HMAC-SHA256(widget secret, user_id)
- *   opendesk("identify", { user_token, refresh_user_token }); // or a JWT signed with the widget secret, with user_id and exp;
+ *   opendesk("identify", { user_id, user_token, refresh_user_token }); // or a JWT signed with the widget secret, with user_id and exp;
  *                                         // refresh_user_token() answers a new one when it expires (optional)
  *   opendesk("update", { user_id, user_hash, company: { id }, fields: { widget_plan: "pro" } }); // again, with new values
  *   opendesk("open" | "close" | "toggle");
