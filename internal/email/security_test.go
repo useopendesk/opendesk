@@ -170,6 +170,25 @@ func TestReplyToIsNotIdentity(t *testing.T) {
 	if len(rcpts) != 1 || rcpts[0] != john {
 		t.Fatalf("automatic email went to %v", rcpts)
 	}
+
+	// A recipient the agent chose is sent as written.
+	var chosen uuid.UUID
+	if err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+		cm, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, domain.NewMessage{WorkspaceID: w.wid, TicketID: sub.TicketID, Kind: "reply",
+			Direction: "outbound", AuthorType: "user", AuthorUserID: &w.uid, BodyHTML: "<p>To the sender</p>", BodyText: "To the sender",
+			To: []string{alerts}, DeliveryStatus: "pending"})
+		chosen = cm.ID
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rcpts = nil
+	if err := w.s.sendMessage(w.ctx, w.wid, chosen, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(rcpts) != 1 || rcpts[0] != alerts {
+		t.Fatalf("a chosen recipient went to %v", rcpts)
+	}
 }
 
 func TestDMARCTrustedAuthservOnly(t *testing.T) {

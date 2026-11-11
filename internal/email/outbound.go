@@ -479,10 +479,9 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 		if t.contactEmail == nil || *t.contactEmail == "" {
 			return "", nil, permanent("The customer has no email address.")
 		}
-		to = []string{*t.contactEmail}
-	}
-	if to, err = domain.ReplyRecipients(ctx, s.d.DB.Pool, wid, ticketID, t.contactEmail, to); err != nil {
-		return "", nil, err
+		if to, err = domain.ReplyRecipients(ctx, s.d.DB.Pool, wid, ticketID, t.contactEmail, []string{*t.contactEmail}); err != nil {
+			return "", nil, err
+		}
 	}
 	alias := m.alias(t.receivedAt)
 	names := t.names

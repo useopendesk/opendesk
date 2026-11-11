@@ -565,7 +565,7 @@ export function registerTickets() {
     const msg = addMessage(
       ctx.ws,
       t,
-      { kind, direction: "outbound", html, user: myRef, cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc), attachments: attachmentsFor(strArr(ctx.body.attachment_ids)), delivery: "pending" },
+      { kind, direction: "outbound", html, user: myRef, to: kind === "reply" && t.channel === "email" && strArr(ctx.body.to)?.length ? strArr(ctx.body.to) : undefined, cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc), attachments: attachmentsFor(strArr(ctx.body.attachment_ids)), delivery: "pending" },
       { status, actor: myRef },
     );
     if (msg.delivery_status === "pending") simulateDelivery(ctx.ws, t, msg.id);

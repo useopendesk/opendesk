@@ -28,6 +28,7 @@ import { canSeeTicket, defaultBrand, teamRole } from "./teams";
 import { applyLabels, checkRequiredOnSolve, fieldDefs, fieldFiltersFromQuery, fieldsText, fieldSortValue, matchFields, mergeFields, type FieldFilterIn } from "./labels";
 import { MIN, nowIso, parseUUID, preview, stripHtml, uuid } from "./util";
 import { botForTicket, botRefFor } from "./bots";
+import { replyRecipient } from "@/components/tickets/detail/replyRecipient";
 
 export const OPENISH: TicketStatus[] = ["open", "pending", "on_hold"];
 
@@ -520,6 +521,8 @@ export type NewMessage = {
   ai_rating?: Message["ai_rating"];
   /** Inbound email: the Reply-To it named when that differs from From. */
   reply_to?: string;
+  /** Outbound email: who it goes to; left out, the customer's reply address. */
+  to?: string[];
   /** Inbound email: its From failed DMARC; it does not reopen the ticket. */
   auth_failed?: boolean;
   /** Inbound email: the trusted contact form it came through (the contact is the visitor). */
@@ -558,7 +561,7 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     from_email: inbound ? (contact?.email ?? "") : sentFrom ? sendAs(t, sentFrom) : "",
     from_name: inbound ? (contact?.name ?? "") : sentFrom ? fromName(ws, t, sentFrom, botLabel ?? m.user?.name ?? null) : (botLabel ?? m.user?.name ?? brand),
     // Inbound: the address it was written to (an alias or the mailbox's own).
-    to: inbound ? (isEmail && (t.received_at || mailbox) ? [t.received_at || mailbox!.email] : []) : contact?.email ? [contact.email] : [],
+    to: inbound ? (isEmail && (t.received_at || mailbox) ? [t.received_at || mailbox!.email] : []) : (m.to ?? (contact?.email ? [replyRecipient(contact.email, ws.messages.filter((x) => x.ticket_id === t.id))] : [])),
     // Inbound: where it arrived (email only); outbound: the address it went from.
     mailbox_id: inbound ? (isEmail ? (t.origin_mailbox_id ?? t.mailbox_id) : null) : (sentFrom?.id ?? null),
     cc: m.cc ?? [],

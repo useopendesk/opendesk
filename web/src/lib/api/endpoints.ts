@@ -142,6 +142,8 @@ export type CreateTicketBody = {
 export type SendMessageBody = {
   kind: "reply" | "note";
   body_html: string;
+  /** Email replies: who it goes to; left out, the customer's reply address. */
+  to?: string[];
   cc?: string[];
   bcc?: string[];
   attachment_ids?: string[];
