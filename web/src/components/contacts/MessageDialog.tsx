@@ -69,7 +69,8 @@ export function MessageDialog({
   // Only the reasons that apply: "1 without an email address, 2 blocked".
   const leftOut = [noEmail > 0 && t("message.noEmail", { count: noEmail }), blocked > 0 && t("message.blockedCount", { count: blocked })].filter(Boolean).join(", ");
 
-  const empty = !html.replace(/<[^>]*>/g, "").trim() && !html.includes("<img");
+  // The editor gives "" while nothing is written; the server checks the body again.
+  const empty = !html.trim();
   const ready = !!chosen && !!subject.trim() && !empty && !!label.trim() && (reach.data?.reaches ?? 0) > 0;
   const previewBody = useMemo(() => ({ kind: "notice" as const, subject, body_html: html, mailbox_id: chosen }), [subject, html, chosen]);
 

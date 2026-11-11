@@ -6,7 +6,7 @@ import type { Contact, ContactMessage, NoticePreview } from "@/lib/api/types";
 import { db, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, dispatch, get, invalid, notFound, post, respond, type Ctx } from "../router";
-import { isRecord, nowIso, uuid } from "../util";
+import { isRecord, nowIso, stripHtml, uuid } from "../util";
 import { canSendFrom } from "../tickets";
 
 const CHUNK = 5;
@@ -99,7 +99,7 @@ export function registerContactMessageRoutes() {
     const label = typeof b.label === "string" ? b.label.trim() : "";
     const status = b.status === "open" || b.status === "pending" ? b.status : "solved";
     if (!subject) throw invalid("subject is required");
-    if (!html.replace(/<[^>]*>/g, "").trim() && !html.includes("<img")) throw invalid("body_html is required");
+    if (!stripHtml(html).trim() && !html.includes("<img")) throw invalid("body_html is required");
     if (!label || label.length > 50 || !/^[\p{L}\p{N} _\-./:&+#]+$/u.test(label)) throw invalid("label must be 1 to 50 characters of letters, numbers and - _ . / : & + #");
     const box = ws.mailboxes.find((m) => m.id === b.mailbox_id);
     if (!box) throw invalid("mailbox_id must be an address of the workspace");
