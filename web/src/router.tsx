@@ -1031,6 +1031,9 @@ const sWebhookDetail = createRoute({
 const sAudit = settingsPage("/audit-log", "auditLog", () => import("./pages/settings/AuditLog"), (qc) =>
   qc.ensureInfiniteQueryData(q.auditLogs()),
 );
+const sTrash = settingsPage("/trash", "trash", () => import("./pages/settings/Trash"), (qc) =>
+  qc.ensureInfiniteQueryData(q.deletedTickets()),
+);
 
 const sBilling = createRoute({
   getParentRoute: () => settingsLayout,
@@ -1221,6 +1224,7 @@ const routeTree = rootRoute.addChildren([
       sWebhooks,
       sWebhookDetail,
       sAudit,
+      sTrash,
       sBilling,
       sAi,
       sAgent,
