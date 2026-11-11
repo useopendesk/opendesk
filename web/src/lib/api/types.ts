@@ -974,6 +974,17 @@ export type ProviderSendAs = {
 export type AliasSettingsInput = { display_name?: string; signature_html?: string; brand_id?: string | null; send_as?: AliasSendAs };
 /** accounts: any of the member's addresses, shared accounts only, or addresses at the mailbox's own domains. */
 export type MailboxPersonalReplies = { enabled: boolean | null; reply_to: "address" | "mailbox" | null; accounts: "any" | "shared" | "domain" };
+/** A folder on a mailbox's IMAP server it can read (GET /v1/mailboxes/{id}/imap-folders). */
+export type ImapFolder = {
+  /** The folder's name on the server, as imap_folders takes it. */
+  name: string;
+  /** The name with / between levels, for showing. */
+  path: string;
+  /** What the server says the folder is for (SPECIAL-USE), or "". */
+  special: "" | "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "flagged" | "important";
+};
+export type ImapFolders = { folders: ImapFolder[]; selected: string[] };
+
 export type Mailbox = {
   id: string;
   name: string;
@@ -1015,6 +1026,8 @@ export type Mailbox = {
   trusted_form_senders?: string[];
   /** Mail marked automatic (Auto-Submitted, Precedence: bulk) is taken in instead of dropped; nothing automatic answers it. */
   keep_automatic_mail?: boolean;
+  /** The IMAP folders a mailbox that reads over IMAP takes mail from; empty reads INBOX alone (admins only). */
+  imap_folders?: string[];
   signature_html: string;
   auto_reply_enabled: boolean;
   auto_reply_subject: string;

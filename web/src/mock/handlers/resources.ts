@@ -11,6 +11,7 @@ import type {
   Condition,
   Contact,
   FieldValues,
+  ImapFolder,
   KbArticle,
   KbCollection,
   Mailbox,
@@ -708,6 +709,7 @@ export function registerResources() {
     patchConnection(ctx, m);
     patchMailboxAI(ctx, m);
     patchFormSenders(ctx, m);
+    patchImapFolders(ctx, m);
     if (typeof ctx.body.keep_automatic_mail === "boolean") m.keep_automatic_mail = ctx.body.keep_automatic_mail;
     if ("bot_id" in ctx.body) m.bot_id = checkBotId(ctx.ws, ctx.body.bot_id);
     if (ctx.body.password || ctx.body.smtp_password) {
@@ -730,6 +732,11 @@ export function registerResources() {
     checkSendAs(m, nowIso());
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return respond(200, m);
+  });
+  get("/v1/mailboxes/:id/imap-folders", (ctx) => {
+    const m = findMailbox(ctx);
+    if (!readsImap(m)) throw new HttpError(422, "not_imap", "Only a mailbox that reads its inbox over IMAP has folders to choose.");
+    return respond(200, { folders: MOCK_IMAP_FOLDERS, selected: m.imap_folders?.length ? m.imap_folders : ["INBOX"] });
   });
   get("/v1/mailboxes/:id/usage", (ctx) => {
     const m = findMailbox(ctx);
@@ -978,6 +985,43 @@ function patchFormSenders(ctx: Ctx, m: Mailbox) {
   m.trusted_form_senders = clean;
 }
 
+/** A mailbox that reads its inbox over IMAP: generic IMAP, or a Google or Microsoft sync (not the API). */
+const readsImap = (m: Mailbox) =>
+  m.inbound_kind === "imap" || ((m.inbound_kind === "google" || m.inbound_kind === "microsoft") && m.config.oauth_grant !== "api");
+
+/** The folders the mock's IMAP servers have (contracts/api.md "Mailboxes"). */
+const MOCK_IMAP_FOLDERS: ImapFolder[] = [
+  { name: "INBOX", path: "INBOX", special: "inbox" },
+  { name: "Archive", path: "Archive", special: "archive" },
+  { name: "Drafts", path: "Drafts", special: "drafts" },
+  { name: "Junk", path: "Junk", special: "junk" },
+  { name: "Sent", path: "Sent", special: "sent" },
+  { name: "Support", path: "Support", special: "" },
+  { name: "Support.Billing", path: "Support/Billing", special: "" },
+  { name: "Support.Partners", path: "Support/Partners", special: "" },
+  { name: "Trash", path: "Trash", special: "trash" },
+];
+
+/** imap_folders: at most 10 names, INBOX in any case is INBOX, INBOX alone is stored empty. */
+function patchImapFolders(ctx: Ctx, m: Mailbox) {
+  if (!("imap_folders" in ctx.body)) return;
+  const list = strArr(ctx.body.imap_folders);
+  if (!list) throw invalid("imap_folders must be a list");
+  const clean: string[] = [];
+  for (const raw of list) {
+    let name = raw.trim();
+    if (!name) continue;
+    if (name.toUpperCase() === "INBOX") name = "INBOX";
+    if ([...name].length > 255 || /\p{Cc}/u.test(name)) throw invalid("A folder name must be plain text of at most 255 characters.");
+    if (!clean.includes(name)) clean.push(name);
+  }
+  if (clean.length > 10) throw invalid("A mailbox can read at most 10 folders.");
+  const next = clean.length === 1 && clean[0] === "INBOX" ? [] : clean;
+  if (JSON.stringify(next) === JSON.stringify(m.imap_folders ?? [])) return;
+  if (!readsImap(m)) throw invalid("Only a mailbox that reads its inbox over IMAP has folders to choose.");
+  m.imap_folders = next;
+}
+
 /** Mailbox passwords, write-only as in the API: the mock checks sign-ins against them. */
 const mailboxSecrets = new Map<string, { password: string; smtp: string }>();
 
@@ -1074,6 +1118,7 @@ export function mailbox(ws: WsData, init: Pick<Mailbox, "name" | "email" | "disp
     alias_teams: {},
     trusted_form_senders: [],
     keep_automatic_mail: false,
+    imap_folders: [],
     from_name_format: "{agent} at {mailbox}",
     private: !!init.team_id && !!ws.teams.find((t) => t.id === init.team_id)?.private,
     id: uuid(),

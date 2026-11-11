@@ -124,6 +124,7 @@ export const qk = {
   get mailboxes() {
     return w(["mailboxes"] as const);
   },
+  mailboxImapFolders: (id: string) => w(["mailboxes", id, "imap-folders"] as const),
   get members() {
     return w(["members"] as const);
   },

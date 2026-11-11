@@ -58,6 +58,7 @@ import {
 } from "@/components/mailboxes/addressing";
 import { useBrands, useTeams } from "@/components/settings2/teams";
 import { ContactFormsField } from "@/components/settings/ContactFormsField";
+import { ImapFoldersField } from "@/components/mailboxes/ImapFolders";
 import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Mailbox, MailboxConfig, MailboxPersonalReplies, MailboxTest, SyncStart, TemplatePreviewBody, TemplateProblem, TlsMode } from "@/lib/api/types";
@@ -79,6 +80,7 @@ type Draft = {
   alias_settings: Record<string, AliasDraft>;
   trusted_form_senders: string[];
   keep_automatic_mail: boolean;
+  imap_folders: string[];
   from_name_format: string;
   signature_html: string;
   auto_reply_enabled: boolean;
@@ -123,6 +125,7 @@ function toDraft(m: Mailbox): Draft {
     alias_settings: aliasDraftsFor(m),
     trusted_form_senders: [...(m.trusted_form_senders ?? [])],
     keep_automatic_mail: m.keep_automatic_mail ?? false,
+    imap_folders: [...(m.imap_folders ?? [])],
     from_name_format: m.from_name_format ?? "",
     signature_html: m.signature_html,
     auto_reply_enabled: m.auto_reply_enabled,
@@ -297,6 +300,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         ...(aliasSettings ? { alias_settings: aliasSettings } : {}),
         ...(!sameJSON(draft.trusted_form_senders, base.trusted_form_senders) ? { trusted_form_senders: draft.trusted_form_senders } : {}),
         ...(draft.keep_automatic_mail !== base.keep_automatic_mail ? { keep_automatic_mail: draft.keep_automatic_mail } : {}),
+        ...(!sameJSON(draft.imap_folders, base.imap_folders) ? { imap_folders: draft.imap_folders } : {}),
         ...(draft.from_name_format !== base.from_name_format ? { from_name_format: draft.from_name_format.trim() } : {}),
         signature_html: draft.signature_html,
         auto_reply_enabled: draft.auto_reply_enabled,
@@ -437,6 +441,8 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   };
 
   const off = notReceiving(mailbox);
+  // Folders are for a mailbox that reads over IMAP while the instance still does.
+  const readsFolders = receivesOverImap(mailbox) && !direct && !off && (mailbox.inbound_kind === "imap" ? imapReceiving : syncReceiving);
   const quiet = quietFor(mailbox);
   const sendingOnly = sendOnly(mailbox);
   // A forwarding mailbox sending through opendesk or SMTP can connect its provider to send as itself.
@@ -488,6 +494,17 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
               <span className="mt-1.5 size-1.5 shrink-0 animate-pulse-soft rounded-full bg-tone-red-solid motion-reduce:animate-none" />
               <div className="min-w-0">
                 <div className="font-medium text-tone-red">{t("detail.lastSyncFailed")}</div>
+                <div className="mono mt-0.5 break-words text-xs text-fg-2">{mailbox.last_error}</div>
+              </div>
+            </div>
+          </div>
+        )}
+        {!off && mailbox.status === "active" && mailbox.last_error && (
+          <div className={cn("-mx-4 border-b px-4 py-3", tone.amber.soft, tone.amber.line)} role="status">
+            <div className="flex items-start gap-2.5 text-[12.5px]">
+              <TriangleAlert className={cn("mt-0.5 size-3.5 shrink-0", tone.amber.text)} aria-hidden />
+              <div className="min-w-0">
+                <div className="font-medium">{t("detail.foldersSkipped")}</div>
                 <div className="mono mt-0.5 break-words text-xs text-fg-2">{mailbox.last_error}</div>
               </div>
             </div>
@@ -604,6 +621,17 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           </div>
         )}
       </Section>
+
+      {readsFolders && (
+        <Section title={t("folders.title")} description={t("folders.description")}>
+          <ImapFoldersField
+            mailboxId={mailbox.id}
+            value={draft.imap_folders}
+            onChange={(v) => set("imap_folders", v)}
+            blocked={imapChanged ? t("folders.saveFirst") : undefined}
+          />
+        </Section>
+      )}
 
       {direct && <ProviderTidySection provider={mailbox.inbound_kind === "microsoft" ? "microsoft" : "google"} config={draft.config} onChange={setCfg} />}
 
