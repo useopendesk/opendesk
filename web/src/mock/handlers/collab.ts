@@ -1191,6 +1191,11 @@ function applyAction(ws: WsData, t: ThreadMeta, action: MailThreadAction, folder
     t.snoozedUntil = until;
     return;
   }
+  // Out of Spam into the inbox of an account with handling on: in Needs action again, as new mail (contracts/collab.md "Conversations").
+  if ((action === "not_spam" || action === "inbox") && a.visibility === "shared" && a.handling_enabled && ms.some((m) => !m.draft && m.folder_ids.includes(rid("spam")))) {
+    t.needsAction = true;
+    t.snoozedUntil = undefined;
+  }
   for (const m of ms) {
     switch (action) {
       case "read":
@@ -1366,9 +1371,24 @@ export function registerCollab() {
       a.defaultFrom = b.default_from.trim().toLowerCase() === a.email.toLowerCase() ? "" : b.default_from.trim().toLowerCase();
     }
     if (b.visibility === "private" || b.visibility === "shared") a.visibility = b.visibility;
+    const wasHandling = a.handling_enabled;
     if (typeof b.handling_enabled === "boolean") {
       if (a.visibility !== "shared") throw invalid("Handling state is available on shared accounts.");
       a.handling_enabled = b.handling_enabled;
+    }
+    // Only with handling turning on: the inbox now, mail from the last 30 days, except what the account answered last (GH#430).
+    if (b.mark_inbox_needs_action === true) {
+      if (wasHandling || !a.handling_enabled) throw invalid("mark_inbox_needs_action goes with turning handling_enabled on.");
+      const s = state(ctx.ws);
+      const inbox = roleIdOf(s, a.id, "inbox");
+      const sent = roleIdOf(s, a.id, "sent");
+      for (const t of s.threads.values()) {
+        if (t.account_id !== a.id || t.needsAction || t.snoozedUntil) continue;
+        const ms = msgsOf(s, t.id).filter((m) => !m.draft);
+        const last = ms.at(-1);
+        const recent = !!last && Date.parse(last.sent_at) > Date.now() - 30 * DAY;
+        if (last && recent && ms.some((m) => !!inbox && m.folder_ids.includes(inbox)) && !(sent && last.folder_ids.includes(sent))) t.needsAction = true;
+      }
     }
     if (typeof b.reply_all === "boolean") a.reply_all = b.reply_all;
     if (b.shared_with !== undefined) a.shared_with = audienceFrom(b.shared_with);
