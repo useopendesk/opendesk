@@ -96,13 +96,16 @@ function bulkQuery(q: TicketBulkQuery) {
 	return { ...q, spam: q.spam === true ? "true" : q.spam === false ? "false" : q.spam, merged: q.merged === true ? "true" : q.merged === false ? "false" : q.merged };
 }
 
-export type ContactSort = "-created" | "created" | "name" | "-name" | "-tickets" | "tickets";
-export type CompanySort = "name" | "-name" | "created" | "-created" | "contacts" | "-contacts";
+export type ContactSort = "-created" | "created" | "name" | "-name" | "-tickets" | "tickets" | "-updated" | "updated";
+export type CompanySort = "name" | "-name" | "created" | "-created" | "contacts" | "-contacts" | "-updated" | "updated";
 export type ContactListQuery = ListQuery & { q?: string; company_id?: string; tag?: string; blocked?: "true" | "false"; sort?: ContactSort; fields?: T.FieldFilter[] };
 /** What POST /v1/contacts/bulk and /v1/companies/bulk act on: ids (up to 100) or the list's filters. */
 export type DirectoryBulkTarget<Q> = { ids: string[] } | { query: Q };
-export type ContactBulkQuery = { q?: string; company_id?: string; tag?: string; blocked?: "true" | "false" };
-export type CompanyBulkQuery = { q?: string; tag?: string };
+/** The People list's filters; `company_id: "none"` is the people without a company. */
+export type ContactBulkQuery = { q?: string; company_id?: string; tag?: string; blocked?: "true" | "false"; fields?: T.FieldFilter[] };
+export type CompanyBulkQuery = { q?: string; tag?: string; fields?: T.FieldFilter[] };
+/** A bulk patch's custom fields, merged into each record; null clears one. */
+export type DirectoryBulkPatch = { add_tags?: string[]; remove_tags?: string[]; fields?: T.FieldValuesPatch };
 export type BulkResult = { updated: number; deleted: number };
 export type CompanyListQuery = ListQuery & { q?: string; tag?: string; sort?: CompanySort; fields?: T.FieldFilter[] };
 
@@ -650,7 +653,7 @@ export const api = {
     tickets: (id: string, q?: ListQuery) => http.get<T.Page<T.Ticket>>(`/v1/contacts/${id}/tickets`, { query: q }),
     /** Merges the contact into another (admin): its tickets, messages and addresses become `into`'s, and it is removed. */
     merge: (id: string, into: string) => http.post<T.Contact>(`/v1/contacts/${id}/merge`, { into }),
-    bulk: (b: DirectoryBulkTarget<ContactBulkQuery> & ({ delete: true } | { patch: { add_tags?: string[]; remove_tags?: string[]; company_id?: string | null } })) =>
+    bulk: (b: DirectoryBulkTarget<ContactBulkQuery> & ({ delete: true } | { patch: DirectoryBulkPatch & { company_id?: string | null } })) =>
       http.post<BulkResult>("/v1/contacts/bulk", b),
     /** Extra addresses (contracts/api.md "Contact emails"); each answers with the contact. */
     addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
@@ -661,7 +664,7 @@ export const api = {
   companies: {
     ...crud<T.Company, Partial<Pick<T.Company, "name" | "domain" | "external_id" | "notes" | "custom">> & LabelWrites>("/v1/companies"),
     search: (q: CompanyListQuery) => http.get<T.Page<T.Company>>("/v1/companies", { query: listQuery(q) }),
-    bulk: (b: DirectoryBulkTarget<CompanyBulkQuery> & ({ delete: true } | { patch: { add_tags?: string[]; remove_tags?: string[] } })) =>
+    bulk: (b: DirectoryBulkTarget<CompanyBulkQuery> & ({ delete: true } | { patch: DirectoryBulkPatch })) =>
       http.post<BulkResult>("/v1/companies/bulk", b),
     ...pictureRoutes<T.Company>("/v1/companies"),
   },

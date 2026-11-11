@@ -9,6 +9,7 @@ import type {
   Company,
   Condition,
   Contact,
+  FieldValues,
   KbArticle,
   KbCollection,
   Mailbox,
@@ -26,7 +27,7 @@ import { viewIconDef } from "@/components/tickets/viewIcons";
 import { chatReachable, db, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
-import { applyLabels, canCreateLabels, fieldFiltersFromQuery, fieldsText, matchFields, mergeFields } from "../labels";
+import { applyLabels, canCreateLabels, fieldFiltersFromQuery, fieldsText, matchFields, mergeFields, type FieldFilterIn } from "../labels";
 import { addActivity, publishTicketUpdated, sortTickets } from "../tickets";
 import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { aiOff } from "./ai";
@@ -82,6 +83,27 @@ function recordFilter<R extends Contact | Company>(ctx: Ctx, entity: "contact" |
   return list.filter((r) => (!tag || r.tags.some((x) => x.name.toLowerCase() === tag)) && matchFields(ctx.ws, entity, r.fields, ff));
 }
 
+/** A bulk request's `query.fields`, read as the list reads `field.<key>[op]`. */
+function bulkFieldFilters(ws: WsData, entity: "contact" | "company", query: Record<string, unknown>): FieldFilterIn[] {
+  const params = new URLSearchParams();
+  for (const f of Array.isArray(query.fields) ? query.fields : []) if (isRecord(f)) params.append(`field.${String(f.key)}[${String(f.op)}]`, String(f.value ?? ""));
+  return fieldFiltersFromQuery(ws, entity, params);
+}
+
+/** A bulk patch's custom fields for every row, checked before any row changes (all or nothing). */
+function bulkFields<R extends Contact | Company>(ws: WsData, entity: "contact" | "company", rows: R[], patch: Record<string, unknown>): Map<R, FieldValues> {
+  const out = new Map<R, FieldValues>();
+  if (!isRecord(patch.fields) || Object.keys(patch.fields).length === 0) return out;
+  for (const r of rows) out.set(r, mergeFields(ws, entity, r.fields, patch.fields as Record<string, unknown>).next);
+  return out;
+}
+
+/** Whether a bulk patch changes nothing: no labels, no fields and no company. */
+function emptyPatch(p: Record<string, unknown>): boolean {
+  const none = (v: unknown) => v === undefined || (Array.isArray(v) && v.length === 0) || (isRecord(v) && Object.keys(v).length === 0);
+  return none(p.add_tags) && none(p.remove_tags) && none(p.fields) && !("company_id" in p);
+}
+
 function syncContactRefs(ws: WsData, c: Contact) {
   for (const t of ws.tickets) if (t.contact?.id === c.id) t.contact = { id: c.id, email: c.email, name: c.name, avatar_url: c.avatar_url };
 }
@@ -93,7 +115,7 @@ export function registerResources() {
     const q = (ctx.query.get("q") ?? "").toLowerCase().trim();
     const company = ctx.query.get("company_id");
     let list = ctx.ws.contacts;
-    if (company) list = list.filter((c) => c.company?.id === company);
+    if (company) list = list.filter((c) => (company === "none" ? !c.company : c.company?.id === company));
     list = recordFilter(ctx, "contact", list);
     const blocked = ctx.query.get("blocked");
     if (blocked) list = list.filter((c) => c.blocked === (blocked === "true"));
@@ -107,8 +129,10 @@ export function registerResources() {
       "-name": (a, b) => byName(b, a),
       tickets: (a, b) => a.ticket_count - b.ticket_count,
       "-tickets": (a, b) => b.ticket_count - a.ticket_count,
+      updated: (a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at),
+      "-updated": (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
     };
-    list = list.slice().sort(order[sort] ?? ((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)));
+    list = list.slice().sort(order[sort] ?? order["-created"]);
     const page = paginate(ctx, list);
     return { ...page, data: page.data.map((c) => contactOut(ctx.ws, c)) };
   });
@@ -156,6 +180,7 @@ export function registerResources() {
     const hasQuery = isRecord(ctx.body.query);
     if ((ctx.body.delete === true) === isRecord(ctx.body.patch)) throw invalid("send either patch or delete: true");
     if ((ids?.length ?? 0) === 0 === !hasQuery) throw invalid("send either ids or query");
+    if (isRecord(ctx.body.patch) && emptyPatch(ctx.body.patch)) throw invalid("the patch changes nothing");
     if (ids) {
       if (ids.length > 100) throw invalid("ids: at most 100");
       const found = ids.map((id) => rows.find((r) => r.id === id));
@@ -169,12 +194,14 @@ export function registerResources() {
   post("/v1/contacts/bulk", (ctx) => {
     const query = isRecord(ctx.body.query) ? ctx.body.query : {};
     const needle = String(query.q ?? "").toLowerCase().trim();
+    const ff = bulkFieldFilters(ctx.ws, "contact", query);
     const rows = bulkRows(
       ctx,
       ctx.ws.contacts,
       (c) =>
         (!needle || [c.name, c.email ?? "", ...c.emails, c.company?.name ?? "", c.phone, fieldsText(c.fields)].join(" ").toLowerCase().includes(needle)) &&
-        (!query.company_id || c.company?.id === query.company_id) &&
+        (!query.company_id || (query.company_id === "none" ? !c.company : c.company?.id === query.company_id)) &&
+        matchFields(ctx.ws, "contact", c.fields, ff) &&
         (!query.tag || c.tags.some((x) => x.name.toLowerCase() === String(query.tag).toLowerCase())) &&
         (!query.blocked || c.blocked === (query.blocked === "true")),
       "Contact",
@@ -187,8 +214,10 @@ export function registerResources() {
     }
     const patch = ctx.body.patch as Record<string, unknown>;
     const sub = { ...ctx, body: { add_tags: patch.add_tags, remove_tags: patch.remove_tags } } as Ctx;
+    const fields = bulkFields(ctx.ws, "contact", rows, patch);
     for (const c of rows) {
       writeLabels(sub, "contacts", c);
+      c.fields = fields.get(c) ?? c.fields;
       if ("company_id" in patch) setCompany(ctx.ws, c, patch.company_id);
       c.updated_at = nowIso();
       syncContactRefs(ctx.ws, c);
@@ -281,6 +310,8 @@ export function registerResources() {
       "-created": (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
       contacts: (a, b) => size(a) - size(b),
       "-contacts": (a, b) => size(b) - size(a),
+      updated: (a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at),
+      "-updated": (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
     };
     list = list.slice().sort(order[ctx.query.get("sort") ?? ""] ?? byName);
     const page = paginate(ctx, list);
@@ -332,11 +363,13 @@ export function registerResources() {
   post("/v1/companies/bulk", (ctx) => {
     const query = isRecord(ctx.body.query) ? ctx.body.query : {};
     const needle = String(query.q ?? "").toLowerCase().trim();
+    const ff = bulkFieldFilters(ctx.ws, "company", query);
     const rows = bulkRows(
       ctx,
       ctx.ws.companies,
       (c) =>
         (!needle || [c.name, c.domain, fieldsText(c.fields)].join(" ").toLowerCase().includes(needle)) &&
+        matchFields(ctx.ws, "company", c.fields, ff) &&
         (!query.tag || c.tags.some((x) => x.name.toLowerCase() === String(query.tag).toLowerCase())),
       "Company",
     );
@@ -349,8 +382,10 @@ export function registerResources() {
     }
     const patch = ctx.body.patch as Record<string, unknown>;
     const sub = { ...ctx, body: { add_tags: patch.add_tags, remove_tags: patch.remove_tags } } as Ctx;
+    const fields = bulkFields(ctx.ws, "company", rows, patch);
     for (const c of rows) {
       writeLabels(sub, "companies", c);
+      c.fields = fields.get(c) ?? c.fields;
       c.updated_at = nowIso();
       publish(ctx.ws, "company.updated", { company: companyOut(ctx.ws, c) });
     }
