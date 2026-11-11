@@ -545,3 +545,12 @@ func (WikiTrashPurgeArgs) Kind() string { return "wiki.trash_purge" }
 type WikiRemindersArgs struct{}
 
 func (WikiRemindersArgs) Kind() string { return "wiki.reminders" }
+
+// ContactMessageArgs creates the next few tickets of a message sent to many customers, then
+// queues itself again until every customer was reached. Owner: helpdesk.
+type ContactMessageArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MessageID   uuid.UUID `json:"message_id"`
+}
+
+func (ContactMessageArgs) Kind() string { return "helpdesk.contact_message" }
