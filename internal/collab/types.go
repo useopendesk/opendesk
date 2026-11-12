@@ -276,6 +276,8 @@ type ThreadAIDraft struct {
 	Snippet string `json:"snippet"`
 	// To is who it goes to.
 	To []Address `json:"to"`
+	// RecordID is its AI draft record, which feedback on it names; null when none was kept.
+	RecordID *uuid.UUID `json:"record_id"`
 }
 
 type MailMessage struct {
@@ -362,6 +364,15 @@ type MailThreadDetail struct {
 	// Ticket is the ticket the conversation answered or was answered from, when the caller
 	// sees it ("Answering tickets").
 	Ticket *ThreadTicket `json:"ticket"`
+	// UnusedAIDrafts are the conversation's AI drafts that were discarded, replaced or
+	// abandoned and are gone, so feedback on them stays reachable ("AI draft outcomes").
+	UnusedAIDrafts []UnusedAIDraft `json:"unused_ai_drafts"`
+}
+
+// UnusedAIDraft is an AI draft a person did not use, with when that was known.
+type UnusedAIDraft struct {
+	AIDraftRef
+	OutcomeAt time.Time `json:"outcome_at"`
 }
 
 // ThreadTicket names a conversation's ticket.

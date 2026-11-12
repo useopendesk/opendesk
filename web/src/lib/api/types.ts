@@ -3323,6 +3323,8 @@ export type MailThreadAIDraft = {
   /** Its first lines. */
   snippet: string;
   to: MailAddress[];
+  /** Its AI draft record (feedback names it once the draft is discarded); null when none was kept. */
+  record_id: string | null;
 };
 
 export type MailAttachment = {
@@ -3455,6 +3457,8 @@ export type MailThreadDetail = {
   can_act: boolean;
   /** The ticket it answered or was answered from, when you see it (contracts/collab.md "Answering tickets"). */
   ticket?: { id: string; number: number; subject: string } | null;
+  /** AI drafts discarded, replaced or abandoned and gone, oldest first (contracts/collab.md "AI draft outcomes"). */
+  unused_ai_drafts?: (AIDraftRef & { outcome_at: string })[];
 };
 
 /** One address across the conversations you see (contracts/collab.md "People"). */
