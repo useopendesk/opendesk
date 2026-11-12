@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { PeopleSearch } from "@/lib/directorySort";
@@ -15,7 +15,10 @@ beforeAll(() => {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 });
+// Unmounted after each test, so no timer a component started (a debounced search) fires after it.
+const roots: Root[] = [];
 afterEach(() => {
+  act(() => roots.splice(0).forEach((r) => r.unmount()));
   document.body.innerHTML = "";
 });
 
@@ -23,6 +26,7 @@ async function render(node: React.ReactNode) {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
+  roots.push(root);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>{node}</TooltipProvider></QueryClientProvider>));
   return host;
