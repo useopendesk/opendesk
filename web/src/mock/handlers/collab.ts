@@ -788,6 +788,7 @@ function accountOut(ws: WsData, a: Account): MailAccount {
     ...rest,
     owner: userRef(ownerId),
     can_manage: manage,
+    shared_with: manage ? a.shared_with : { ...a.shared_with, invited: undefined },
     unread: unreadInbox(ws, a.id),
     imap: manage ? a.imap : undefined,
     identities: identitiesOut(ws, a),
@@ -1174,9 +1175,14 @@ function requireManage(ws: WsData, a: Account) {
   if (!((!!a.ownerId && a.ownerId === db.meId) || (a.visibility === "shared" && isAdmin(ws, db.meId)))) throw new HttpError(403, "forbidden", "Only whoever connected this account can change it.");
 }
 
-function audienceFrom(v: unknown): MailAudience {
+function audienceFrom(v: unknown, ws?: WsData): MailAudience {
   if (!isRecord(v)) return emptyAudience();
-  return { everyone: v.everyone === true, team_ids: strArr(v.team_ids) ?? [], user_ids: strArr(v.user_ids) ?? [] };
+  const out: MailAudience = { everyone: v.everyone === true, team_ids: strArr(v.team_ids) ?? [], user_ids: strArr(v.user_ids) ?? [] };
+  // Pending invitations an account is shared with (GH#447); dropped with Everyone, as on the server.
+  const invited = Array.isArray(v.invited) ? v.invited.filter(isRecord).map((x) => String(x.id)) : [];
+  const pending = ws && !out.everyone ? ws.invitations.filter((i) => invited.includes(i.id)).map((i) => ({ id: i.id, email: i.email })) : [];
+  if (pending.length) out.invited = pending;
+  return out;
 }
 
 function applyAction(ws: WsData, t: ThreadMeta, action: MailThreadAction, folderId?: string, until?: string) {
@@ -1302,7 +1308,7 @@ export function registerCollab() {
       owner: userRef(me),
       ownerId: me,
       visibility: b.visibility === "shared" ? "shared" : "private",
-      shared_with: b.visibility === "shared" ? audienceFrom(b.shared_with) : emptyAudience(),
+      shared_with: b.visibility === "shared" ? audienceFrom(b.shared_with, ctx.ws) : emptyAudience(),
       handling_enabled: false,
       reply_all: false,
       signature_html: "",
@@ -1397,7 +1403,7 @@ export function registerCollab() {
       }
     }
     if (typeof b.reply_all === "boolean") a.reply_all = b.reply_all;
-    if (b.shared_with !== undefined) a.shared_with = audienceFrom(b.shared_with);
+    if (b.shared_with !== undefined) a.shared_with = audienceFrom(b.shared_with, ctx.ws);
     if (a.visibility === "private") {
       a.shared_with = emptyAudience();
       a.handling_enabled = false;
