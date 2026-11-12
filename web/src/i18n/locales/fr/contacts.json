@@ -354,6 +354,12 @@
     "noEmail_many": "{{count}} sans adresse e-mail",
     "blockedCount_one": "{{count}} bloqué",
     "blockedCount_other": "{{count}} bloqués",
-    "blockedCount_many": "{{count}} bloqués"
+    "blockedCount_many": "{{count}} bloqués",
+    "confirmTitle_one": "Envoyer à {{count}} client ?",
+    "confirmTitle_other": "Envoyer à {{count}} clients ?",
+    "confirmTitle_many": "Envoyer à {{count}} clients ?",
+    "confirmBody_one": "{{count}} client reçoit cet e-mail, dans un ticket à lui. Vous pouvez arrêter l’envoi en cours, mais les e-mails déjà partis ne peuvent pas être repris.",
+    "confirmBody_other": "{{count}} clients reçoivent chacun cet e-mail, dans un ticket à eux. Vous pouvez arrêter l’envoi en cours, mais les e-mails déjà partis ne peuvent pas être repris.",
+    "confirmBody_many": "{{count}} clients reçoivent chacun cet e-mail, dans un ticket à eux. Vous pouvez arrêter l’envoi en cours, mais les e-mails déjà partis ne peuvent pas être repris."
   }
 }

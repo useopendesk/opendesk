@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useConfirm } from "@/components/ui/confirm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
@@ -44,6 +45,7 @@ export function MessageDialog({
   const { t } = useTranslation("contacts");
   const qc = useQueryClient();
   const teams = useTeamsCtx();
+  const confirm = useConfirm();
   const { data: mailboxes } = useQuery(q.mailboxes());
   const from = (mailboxes ?? []).filter((m) => m.status !== "disabled" && m.sending !== "system_off" && teams.canSendFrom(m));
   const [mailbox, setMailbox] = useState<string | undefined>(undefined);
@@ -122,7 +124,19 @@ export function MessageDialog({
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
               {t("message.cancel")}
             </Button>
-            <Button variant="primary" icon={<Send className="size-3.5" />} loading={send.isPending} disabled={!ready} onClick={() => send.mutate()}>
+            <Button
+              variant="primary"
+              icon={<Send className="size-3.5" />}
+              loading={send.isPending}
+              disabled={!ready}
+              onClick={() => {
+                const count = reach.data?.reaches ?? 0;
+                confirm.show(t("message.confirmBody", { count }), () => send.mutateAsync(), {
+                  title: t("message.confirmTitle", { count }),
+                  confirmLabel: t("message.send", { count }),
+                });
+              }}
+            >
               {t("message.send", { count: reach.data?.reaches ?? 0 })}
             </Button>
           </div>

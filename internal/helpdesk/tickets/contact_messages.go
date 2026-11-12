@@ -299,7 +299,9 @@ func publishContactMessage(ctx context.Context, tx pgx.Tx, m ContactMessage) err
 func createContactMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal, in noticeInput) (ContactMessage, error) {
 	wid := p.WorkspaceID
 	subject := strings.TrimSpace(in.Subject)
-	html := hd.SanitizeRich(in.BodyHTML)
+	// Kept with its template tags, also inside links: each ticket fills them for its customer and
+	// cleans the result again, as a reply with tags is (hd.FillReply).
+	html := hd.SanitizeRichTemplate(in.BodyHTML)
 	if subject == "" {
 		return ContactMessage{}, httpx.Validation("subject is required")
 	}
@@ -381,7 +383,10 @@ func createContactMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.
 	id := ids.New()
 	if _, err := tx.Exec(ctx, `INSERT INTO contact_messages (id, workspace_id, created_by, mailbox_id, subject, body_html, label, status, contact_ids, total, skipped)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, id, wid, p.UserID, mailbox, subject, html, label, status, reach, len(reach), skipped); err != nil {
-		return ContactMessage{}, httpx.Wrap(err)
+		if db.IsUniqueViolation(err, "contact_messages_sending_idx") {
+			return ContactMessage{}, httpx.E(http.StatusConflict, "message_in_progress", "Another message to many customers is still being sent. Wait for it to finish or stop it.")
+		}
+		return ContactMessage{}, err
 	}
 	if _, err := d.Jobs.InsertTx(ctx, tx, jobs.ContactMessageArgs{WorkspaceID: wid, MessageID: id}, nil); err != nil {
 		return ContactMessage{}, err
@@ -410,7 +415,9 @@ func (w *ContactMessageWorker) Work(ctx context.Context, job *river.Job[jobs.Con
 
 // ContinueContactMessage creates the next noticeChunk tickets of a message, as its sender, each
 // in a savepoint so one customer's failure leaves the rest. It queues itself again until
-// everyone was reached, and stops when the message was cancelled.
+// everyone was reached, and stops when the message was cancelled. A run whose NextIndex is not
+// where the message stands (a retry of a run that already went through) does nothing, so the
+// message is followed by one job at a time.
 func ContinueContactMessage(ctx context.Context, d *deps.Deps, a jobs.ContactMessageArgs) error {
 	return d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		var by, mailbox *uuid.UUID
@@ -419,7 +426,7 @@ func ContinueContactMessage(ctx context.Context, d *deps.Deps, a jobs.ContactMes
 		var next int
 		err := tx.QueryRow(ctx, `SELECT created_by, mailbox_id, subject, body_html, label, status, state, contact_ids, next_index FROM contact_messages
 			WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, a.WorkspaceID, a.MessageID).Scan(&by, &mailbox, &subject, &html, &label, &status, &state, &contactIDs, &next)
-		if db.IsNotFound(err) || (err == nil && state != "sending") {
+		if db.IsNotFound(err) || (err == nil && (state != "sending" || next != a.NextIndex)) {
 			return nil
 		}
 		if err != nil {
@@ -481,6 +488,7 @@ func ContinueContactMessage(ctx context.Context, d *deps.Deps, a jobs.ContactMes
 			return err
 		}
 		if !done {
+			a.NextIndex = end
 			if _, err := d.Jobs.InsertTx(ctx, tx, a, &river.InsertOpts{ScheduledAt: time.Now().Add(noticePause)}); err != nil {
 				return err
 			}

@@ -1,7 +1,7 @@
-// How the latest message to many customers is going (contracts/api.md "Messages to many
-// customers"): a strip over the People list while it sends, with a way to stop it, and a
-// line once it is done with a link to the replies. The server tells it as it goes, over the
-// realtime connection; nothing polls.
+// How the latest message to many customers the member sent is going (contracts/api.md "Messages
+// to many customers"): a strip over the People list while it sends, with a way to stop it, and a
+// line once it is done with a link to the replies. The server tells its sender alone as it goes,
+// over the realtime connection; nothing polls.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -13,9 +13,7 @@ import { toast } from "@/components/ui/toast";
 import type { ContactMessage } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { q, qk } from "@/lib/queries";
-
-/** The inbox folder a message's tickets start in. */
-const folderOf = (s: ContactMessage["status"]) => (s === "solved" ? "solved" : s === "pending" ? "pending" : "open");
+import { useSession } from "@/lib/session";
 
 export function MessageProgress() {
   const { t } = useTranslation("contacts");
@@ -23,7 +21,8 @@ export function MessageProgress() {
   const navigate = useNavigate();
   const { data } = useQuery({ ...q.contactMessages(), retry: false });
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const m = data?.[0];
+  const me = useSession((s) => s.user?.id);
+  const m = me ? data?.find((x) => x.created_by === me) : undefined;
   const stop = useMutation({
     mutationFn: (id: string) => api.contactMessages.cancel(id),
     onSuccess: (next) => qc.setQueryData<ContactMessage[]>(qk.contactMessages, (old) => [next, ...(old ?? []).filter((x) => x.id !== next.id)]),
@@ -68,7 +67,8 @@ export function MessageProgress() {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: folderOf(m.status), ticketId: undefined }, search: { tag: m.label } })}
+          // A customer who answers reopens their ticket, so the replies are in Open whatever the tickets started as.
+          onClick={() => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "open", ticketId: undefined }, search: { tag: m.label } })}
         >
           {t("message.replies")}
         </Button>

@@ -336,6 +336,10 @@
     "noEmail_one": "{{count}} ohne E-Mail-Adresse",
     "noEmail_other": "{{count}} ohne E-Mail-Adresse",
     "blockedCount_one": "{{count}} gesperrt",
-    "blockedCount_other": "{{count}} gesperrt"
+    "blockedCount_other": "{{count}} gesperrt",
+    "confirmTitle_one": "An {{count}} Person senden?",
+    "confirmTitle_other": "An {{count}} Personen senden?",
+    "confirmBody_one": "{{count}} Person erhält diese E-Mail als eigenes Ticket. Sie können das Senden stoppen, aber bereits verschickte E-Mails lassen sich nicht zurückholen.",
+    "confirmBody_other": "{{count}} Personen erhalten diese E-Mail, jede als eigenes Ticket. Sie können das Senden stoppen, aber bereits verschickte E-Mails lassen sich nicht zurückholen."
   }
 }

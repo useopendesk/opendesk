@@ -302,11 +302,12 @@ A member sends one message to the contacts a People selection names: a ticket fo
 customer's own ticket and no customer sees another's address, all with one label so the team can follow the replies.
 `POST /v1/contacts/message` records it (`contact_messages`, the customers it reaches in `contact_ids`) and a job
 (`helpdesk.contact_message`) makes the tickets 20 at a time, 2 seconds apart, so a send of 1000 takes a few minutes and
-spares the address's sending limits. The job runs as the member who sent it, with the checks of that moment: a member
-who left, was suspended or lost the agent role, or an address that was removed, ends the send with `state: "cancelled"`
+spares the address's sending limits. Each run's args carry the index it starts from (`next_index`); a run that finds the
+message elsewhere (a retry of a run that went through) does nothing, so one chain of jobs follows a message. The job
+runs as the member who sent it, with the checks of that moment: a member who left, was suspended or lost the agent role, or an address that was removed, ends the send with `state: "cancelled"`
 and the reason in `last_error`. Each ticket is made in a savepoint: a customer whose ticket cannot be made is counted in
 `failed` and the rest go on. Contacts deleted or blocked after it was recorded are not skipped again; their ticket is made
-or fails like any other.
+or fails like any other. One sends at a time per workspace: another start answers `409 message_in_progress`.
 
 ```ts
 type ContactMessage = { id: string; subject: string; label: string; status: "open" | "pending" | "solved";

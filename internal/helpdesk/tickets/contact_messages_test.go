@@ -32,7 +32,9 @@ func runNotice(t *testing.T, e *hdtest.Env, ws hdtest.WS, id uuid.UUID) int {
 		if state != "sending" {
 			return runs
 		}
-		if err := tickets.ContinueContactMessage(e.Ctx, e.D, jobs.ContactMessageArgs{WorkspaceID: ws.ID, MessageID: id}); err != nil {
+		var next int
+		e.Scalar(`SELECT next_index FROM contact_messages WHERE id = $1`, &next, id)
+		if err := tickets.ContinueContactMessage(e.Ctx, e.D, jobs.ContactMessageArgs{WorkspaceID: ws.ID, MessageID: id, NextIndex: next}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,8 +198,18 @@ func TestContactMessageChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.Do("GET", "/v1/contact-messages/"+m.ID.String(), as, nil).Want(t, 200).JSON(t, &m)
-	if m.Sent != 20 || m.State != "sending" || countRows(t, e, `SELECT count(*) FROM river_job WHERE kind = 'helpdesk.contact_message' AND scheduled_at > now()`) < 1 {
+	if m.Sent != 20 || m.State != "sending" || countRows(t, e, `SELECT count(*) FROM river_job WHERE kind = 'helpdesk.contact_message' AND scheduled_at > now()
+		AND (args->>'next_index')::int = 20`) != 1 {
 		t.Fatalf("after one run: %+v, next job queued: %d", m, countRows(t, e, `SELECT count(*) FROM river_job WHERE kind = 'helpdesk.contact_message'`))
+	}
+	// The same run again, as a retry would: it finds the message moved on and does nothing.
+	if err := tickets.ContinueContactMessage(e.Ctx, e.D, args); err != nil {
+		t.Fatal(err)
+	}
+	e.Do("GET", "/v1/contact-messages/"+m.ID.String(), as, nil).Want(t, 200).JSON(t, &m)
+	if m.Sent != 20 || countRows(t, e, `SELECT count(*) FROM tickets WHERE workspace_id = $1`, ws.ID) != 20 ||
+		countRows(t, e, `SELECT count(*) FROM river_job WHERE kind = 'helpdesk.contact_message' AND scheduled_at > now()`) != 1 {
+		t.Fatalf("a repeated run sent again or queued a second job: %+v", m)
 	}
 	// The address is removed part way: the rest is not sent, and the message says why.
 	e.Exec(`DELETE FROM mailboxes WHERE id = $1`, mailbox)
@@ -205,5 +217,32 @@ func TestContactMessageChunks(t *testing.T) {
 	e.Do("GET", "/v1/contact-messages/"+m.ID.String(), as, nil).Want(t, 200).JSON(t, &m)
 	if m.State != "cancelled" || m.Sent != 20 || m.LastError == "" || countRows(t, e, `SELECT count(*) FROM tickets WHERE workspace_id = $1`, ws.ID) != 20 {
 		t.Fatalf("after the address went: %+v", m)
+	}
+}
+
+// TestContactMessageLinks: a link made of template tags reaches each customer filled for them,
+// and a filled link is cleaned like any other.
+func TestContactMessageLinks(t *testing.T) {
+	e, ws := newEnv(t)
+	mailbox := addMailbox(t, e, ws)
+	as := ws.Agent.As(ws)
+	ana := addContact(e, ws, "Ana Silva", "ana-"+ids.New().String()[24:]+"@example.com", false)
+	odd := addContact(e, ws, "javascript:alert(1) Odd", "odd-"+ids.New().String()[24:]+"@example.com", false)
+	html := `<p>Hi, <a href="https://status.example.com/?for={{ contact.first_name | url_encode }}">see your status</a> or <a href="{{ contact.first_name }}">here</a>.</p>`
+	var m tickets.ContactMessage
+	e.Do("POST", "/v1/contacts/message", as, map[string]any{"ids": []uuid.UUID{ana, odd}, "mailbox_id": mailbox, "subject": "Your status page",
+		"body_html": html, "label": "Status"}).Want(t, 202).JSON(t, &m)
+	runNotice(t, e, ws, m.ID)
+	body := func(contact uuid.UUID) string {
+		var html string
+		e.Scalar(`SELECT m.body_html FROM messages m JOIN tickets t ON t.id = m.ticket_id WHERE t.workspace_id = $1 AND t.contact_id = $2 AND m.direction = 'outbound'`,
+			&html, ws.ID, contact)
+		return html
+	}
+	if got := body(ana); !strings.Contains(got, `href="https://status.example.com/?for=Ana"`) || !strings.Contains(got, `href="Ana"`) {
+		t.Fatalf("Ana's links not filled: %s", got)
+	}
+	if got := body(odd); strings.Contains(got, `href="javascript`) {
+		t.Fatalf("a filled link was not cleaned: %s", got)
 	}
 }

@@ -336,6 +336,10 @@
     "noEmail_one": "{{count}} without an email address",
     "noEmail_other": "{{count}} without an email address",
     "blockedCount_one": "{{count}} blocked",
-    "blockedCount_other": "{{count}} blocked"
+    "blockedCount_other": "{{count}} blocked",
+    "confirmTitle_one": "Send to {{count}} customer?",
+    "confirmTitle_other": "Send to {{count}} customers?",
+    "confirmBody_one": "{{count}} customer gets this email, as a ticket of their own. You can stop it while it sends, but emails that went out cannot be taken back.",
+    "confirmBody_other": "{{count}} customers each get this email, as a ticket of their own. You can stop it while it sends, but emails that went out cannot be taken back."
   }
 }
