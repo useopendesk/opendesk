@@ -2876,7 +2876,7 @@ export type BotBody = { name: string; role?: string; language?: string; look?: B
 export type BotDraft = { name?: string; role?: string; language?: string; personality?: Partial<BotPersonality> };
 
 // History imports (contracts/imports.md).
-export type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "front" | "csv";
+export type ImportSource = "zendesk" | "helpscout" | "freescout" | "freshdesk" | "intercom" | "front" | "csv";
 export type ImportStatus = "running" | "paused" | "completed" | "failed" | "canceled" | "undoing" | "undone";
 export type ImportCounts = {
   tickets: number;
