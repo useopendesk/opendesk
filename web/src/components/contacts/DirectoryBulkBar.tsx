@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { Building2, ListFilter, Send, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { Building2, ListFilter, MessageSquarePlus, Send, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatedNumber } from "@/components/motion";
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Picker } from "@/components/ui/picker";
+import { Tooltip } from "@/components/ui/tooltip";
+import { MessageDialog } from "./MessageDialog";
 import { toast } from "@/components/ui/toast";
 import { useDebounced } from "@/components/contacts/hooks";
 import { CompanyGlyph } from "@/components/contacts/bits";
@@ -64,6 +66,9 @@ export function DirectoryBulkBar(props: Props) {
   const n = selection.ids.length;
   const shown = n > 0 || selection.allMatching;
   const [settingField, setSettingField] = useState(false);
+  const [messaging, setMessaging] = useState(false);
+  // A message goes to the rows ticked (at most 100 by id) or to everyone the filters match.
+  const canMessage = scope === "contacts" && (selection.allMatching || n <= 100);
 
   const apply = useMutation({
     mutationFn: (action: { delete: true } | { patch: Patch }) => run(props, action),
@@ -139,6 +144,15 @@ export function DirectoryBulkBar(props: Props) {
             </Button>
             {scope === "contacts" && <CompanyAction onPick={(company_id) => apply.mutate({ patch: { company_id } })} />}
             {scope === "contacts" && !selection.allMatching && <InviteAction ids={selection.ids} onDone={selection.clear} />}
+            {scope === "contacts" && (
+              <Tooltip content={canMessage ? undefined : t("message.tooMany")}>
+                <span className="inline-flex">
+                  <Button variant="ghost" size="sm" icon={<MessageSquarePlus className="size-3.5" />} disabled={!canMessage} onClick={() => setMessaging(true)}>
+                    {t("bulk.message")}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
             <Button variant="ghost" size="sm" icon={<Trash2 className="size-3.5" />} onClick={remove} className="text-danger-fg">
               {t("bulk.delete")}
             </Button>
@@ -147,6 +161,15 @@ export function DirectoryBulkBar(props: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+      {props.scope === "contacts" && (
+        <MessageDialog
+          key={messaging ? "open" : "closed"}
+          open={messaging}
+          onOpenChange={setMessaging}
+          target={selection.allMatching ? { query: props.query } : { ids: selection.ids }}
+          onSent={selection.clear}
+        />
+      )}
       <SetFieldDialog
         key={settingField ? "open" : "closed"}
         kind={scope === "contacts" ? "contact" : "company"}
