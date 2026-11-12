@@ -184,4 +184,6 @@ export type SessionIdentity = {
   /** Contact custom fields by key; only fields whose key starts with `widget_` are set. */
   fields?: Record<string, string | number | boolean | null>;
   avatar_url?: string;
+  /** The user's phone number, set only while the contact has none (a verified identity only). */
+  phone?: string;
 };

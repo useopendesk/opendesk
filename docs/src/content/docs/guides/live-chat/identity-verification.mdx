@@ -119,15 +119,18 @@ opendesk('identify', {
   user_id: '42',
   user_hash: '<hmac from your server>',
   email: 'ada@example.com',
+  phone: '+34 600 111 222',
   company: { id: 'acct-9' },
-  fields: { widget_plan: 'pro', widget_seats: 12 },
+  fields: { widget_plan: 'pro', widget_seats: 12, widget_signed_up: '2024-05-14' },
 });
 ```
 
+- **`phone`** is the user's phone number. It is set only while the contact has none, so a number a teammate typed is never replaced by what a page says, and a number longer than 50 characters is ignored.
+
 - **`company.id`** is your own id for the account. opendesk links the contact to the company whose external id it is. Set that id on the company first, with `external_id` in the [companies API](/api/resources/contacts/). The widget never creates a company or changes its name or domain, since `user_hash` proves only who the user is, and an id no company has is ignored.
-- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The values come from your page, so keep to this prefix only the fields you want the widget to fill, such as a plan name or a seat count.
+- **`fields`** set the contact's [custom fields](/guides/labels-and-custom-fields/) by key. Only fields whose key starts with `widget_` are set: create `widget_plan` as a contact field first, and anything else, or a value that does not fit its field, is ignored. The values come from your page, so keep to this prefix only the fields you want the widget to fill, such as a plan name, a seat count or the date the user signed up (create `widget_signed_up` as a date field and send `YYYY-MM-DD`). Contacts have no field of their own for a sign-up date in your product, so a `widget_` field is where it goes.
 - When something changes without a page load, call `opendesk('update', { … })` with the same `user_id` and `user_hash`. It updates the contact without starting a new chat session.
-- Visitors without a valid `user_hash` are anonymous: `company` and `fields` are ignored.
+- Visitors without a valid `user_hash` are anonymous: `phone`, `company` and `fields` are ignored.
 
 ## Check your hash
 

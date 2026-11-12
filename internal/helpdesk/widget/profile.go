@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,11 +18,19 @@ import (
 const FieldPrefix = "widget_"
 
 // syncProfile applies what a verified session carries beyond who the user is: a link to the
-// company the user belongs to, when the workspace already has it, and the opted-in contact
-// fields. Nothing here creates or changes a company, and a value that does not fit is
-// skipped, so one bad attribute never keeps a visitor from the chat.
-func syncProfile(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, company *widgetCompany, fields map[string]any) error {
+// company the user belongs to, when the workspace already has it, the opted-in contact
+// fields, and a phone number for a contact that has none. Nothing here creates or changes a
+// company, and a value that does not fit is skipped, so one bad attribute never keeps a
+// visitor from the chat.
+func syncProfile(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, company *widgetCompany, fields map[string]any, phone string) error {
 	changed := false
+	if phone = cleanPhone(phone); phone != "" {
+		set, err := setPhone(ctx, tx, wid, contactID, phone)
+		if err != nil {
+			return err
+		}
+		changed = changed || set
+	}
 	if company != nil {
 		linked, err := linkCompany(ctx, tx, wid, contactID, company.ID)
 		if err != nil {
@@ -40,6 +49,32 @@ func syncProfile(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, compa
 		return publishContact(ctx, tx, wid, contactID, "contact.updated")
 	}
 	return nil
+}
+
+// cleanPhone is the phone number as it is kept: trimmed, at most 50 characters, none of them
+// a control character; "" for anything else, which is then ignored.
+func cleanPhone(s string) string {
+	s = strings.TrimSpace(s)
+	if len([]rune(s)) > 50 {
+		return ""
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return s
+}
+
+// setPhone gives a contact a phone number only while it has none: a number a teammate typed
+// is never replaced by what a page says, and the page's own later changes wait for a teammate
+// to clear it.
+func setPhone(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID, phone string) (bool, error) {
+	tag, err := tx.Exec(ctx, `UPDATE contacts SET phone = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2 AND phone = ''`, wid, contactID, phone)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // linkCompany points the contact at the workspace's company whose external_id is the host
