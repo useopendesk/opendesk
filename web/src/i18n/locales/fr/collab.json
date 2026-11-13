@@ -158,7 +158,18 @@
     "spamHint_one": "{{count}} conversation non lue dans les spams. Les spams n’arrivent jamais dans À traiter : vérifiez qu’elle ne vient pas d’un client.",
     "spamHint_other": "{{count}} conversations non lues dans les spams. Les spams n’arrivent jamais dans À traiter : vérifiez qu’aucune ne vient d’un client.",
     "spamHint_many": "{{count}} conversations non lues dans les spams. Les spams n’arrivent jamais dans À traiter : vérifiez qu’aucune ne vient d’un client.",
-    "spamOpen": "Ouvrir les spams"
+    "spamOpen": "Ouvrir les spams",
+    "selecting": "Sélection de toutes les conversations",
+    "pageSelected_one": "La {{count}} conversation chargée est sélectionnée.",
+    "pageSelected_other": "Les {{count}} conversations chargées sont toutes sélectionnées.",
+    "pageSelected_many": "Les {{count}} conversations chargées sont toutes sélectionnées.",
+    "selectEvery": "Sélectionner toutes les conversations de {{scope}}",
+    "folderSelected_one": "La {{count}} conversation de {{scope}} est sélectionnée.",
+    "folderSelected_other": "Les {{count}} conversations de {{scope}} sont toutes sélectionnées.",
+    "folderSelected_many": "Les {{count}} conversations de {{scope}} sont toutes sélectionnées.",
+    "firstSelected_one": "La première conversation ({{count}}) de {{scope}} est sélectionnée.",
+    "firstSelected_other": "Les {{count}} premières conversations de {{scope}} sont sélectionnées.",
+    "firstSelected_many": "Les {{count}} premières conversations de {{scope}} sont sélectionnées."
   },
   "action": {
     "archive": "Archiver",

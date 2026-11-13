@@ -47,3 +47,22 @@ it("updates inbox/sidebar together, refreshes overview without realtime, and rol
     setWorkspaceId(null);
   }
 });
+
+it("sends a long selection a hundred conversations at a time", async () => {
+  installMock();
+  setWorkspaceId(db.workspaces[0].workspace.id);
+  const qc = new QueryClient();
+  let run: ReturnType<typeof useThreadAction>["mutateAsync"] | undefined;
+  function View() { run = useThreadAction().mutateAsync; return null; }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(<QueryClientProvider client={qc}><View /></QueryClientProvider>));
+  const sent: number[] = [];
+  const spy = vi.spyOn(api.collab.threads, "action").mockImplementation(async (b) => { sent.push(b.thread_ids.length); return { threads: [] }; });
+  try {
+    await act(async () => { await run?.({ ids: Array.from({ length: 250 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`), action: "spam" }); });
+    expect(sent).toEqual([100, 100, 50]);
+  } finally {
+    spy.mockRestore();
+    await act(async () => root.unmount());
+  }
+});

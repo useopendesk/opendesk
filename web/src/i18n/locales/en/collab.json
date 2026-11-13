@@ -164,7 +164,15 @@
     "searchImport": "Import older mail",
     "storageFull": "New mail is waiting at the provider: the workspace's Collab storage is full.",
     "storageFullAdmin": "Add seats or ask for a larger allowance to make room.",
-    "billing": "Billing"
+    "billing": "Billing",
+    "selecting": "Selecting every conversation",
+    "pageSelected_one": "The {{count}} conversation loaded is selected.",
+    "pageSelected_other": "All {{count}} conversations loaded are selected.",
+    "selectEvery": "Select every conversation in {{scope}}",
+    "folderSelected_one": "The {{count}} conversation in {{scope}} is selected.",
+    "folderSelected_other": "All {{count}} conversations in {{scope}} are selected.",
+    "firstSelected_one": "The first {{count}} conversation in {{scope}} is selected.",
+    "firstSelected_other": "The first {{count}} conversations in {{scope}} are selected."
   },
   "action": {
     "archive": "Archive",

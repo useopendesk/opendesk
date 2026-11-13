@@ -102,13 +102,26 @@ export function useCanAct(): boolean {
   return atLeast(useRole(), "agent");
 }
 
+/** The most conversations one POST /v1/collab/threads/actions takes. */
+export const ACTION_MAX = 100;
+
+/** One request per hundred conversations, so a whole folder selected can be acted on at once. */
+async function actInChunks(v: ThreadActionVars): Promise<{ threads: MailThread[] }> {
+  const threads: MailThread[] = [];
+  for (let i = 0; i < v.ids.length; i += ACTION_MAX) {
+    const r = await api.collab.threads.action({ thread_ids: v.ids.slice(i, i + ACTION_MAX), action: v.action, folder_id: v.folderId, category: v.category, until: v.until });
+    threads.push(...(r?.threads ?? []));
+  }
+  return { threads };
+}
+
 export type ThreadActionVars = { ids: string[]; action: MailThreadAction; folderId?: string; category?: string; until?: string };
 
 /** Applies an action to conversations: in the cache (and the sidebar's numbers) at once, then the API; a refusal puts everything back. */
 export function useThreadAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: ThreadActionVars) => api.collab.threads.action({ thread_ids: v.ids, action: v.action, folder_id: v.folderId, category: v.category, until: v.until }),
+    mutationFn: actInChunks,
     onMutate: async (v) => {
       await Promise.all([qc.cancelQueries({ queryKey: qk.mailThreadLists }), qc.cancelQueries({ queryKey: qk.mailCounts })]);
       const snap = snapshotThreads(qc, v.ids);
@@ -121,8 +134,10 @@ export function useThreadAction() {
       dropFromLists(qc, ids, v.action, v.folderId, v.category);
       return { snap };
     },
-    onError: (_e, _v, ctx) => {
+    onError: (_e, v, ctx) => {
       if (ctx) restore(qc, ctx.snap);
+      // Later requests of a long selection may have been refused after earlier ones went through.
+      if (v.ids.length > ACTION_MAX) void qc.invalidateQueries({ queryKey: qk.mailThreadLists });
     },
     onSuccess: (r: { threads: MailThread[] }) => patchThreads(qc, r?.threads ?? []),
     onSettled: () => {

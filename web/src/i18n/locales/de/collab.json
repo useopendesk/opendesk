@@ -159,7 +159,15 @@
     "searchImport": "Ältere E-Mails importieren",
     "storageFull": "Neue E-Mails warten beim Anbieter: Der Collab-Speicher des Workspace ist voll.",
     "storageFullAdmin": "Füge Plätze hinzu oder frag nach mehr Speicher, um Platz zu schaffen.",
-    "billing": "Abrechnung"
+    "billing": "Abrechnung",
+    "selecting": "Alle Unterhaltungen werden ausgewählt",
+    "pageSelected_one": "Die {{count}} geladene Unterhaltung ist ausgewählt.",
+    "pageSelected_other": "Alle {{count}} geladenen Unterhaltungen sind ausgewählt.",
+    "selectEvery": "Alle Unterhaltungen in {{scope}} auswählen",
+    "folderSelected_one": "Die {{count}} Unterhaltung in {{scope}} ist ausgewählt.",
+    "folderSelected_other": "Alle {{count}} Unterhaltungen in {{scope}} sind ausgewählt.",
+    "firstSelected_one": "Die erste Unterhaltung ({{count}}) in {{scope}} ist ausgewählt.",
+    "firstSelected_other": "Die ersten {{count}} Unterhaltungen in {{scope}} sind ausgewählt."
   },
   "action": {
     "archive": "Archivieren",

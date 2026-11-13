@@ -257,6 +257,11 @@ right away) and, except for the local handling actions, at the provider by the j
 (`jobs.CollabApplyArgs`), retried with backoff. If the provider refuses for good, the next sync
 brings back the provider's state.
 
+A request takes up to 100 conversations. The web app's list has a master checkbox above it (one
+click selects the conversations loaded, one more every conversation of the box or folder in view,
+up to 1000) and sends a longer selection as one request per hundred, in order; selecting never
+changes mail, an action does.
+
 | action | Gmail | Microsoft | IMAP |
 | --- | --- | --- | --- |
 | `read` / `unread` | remove / add `UNREAD` | `isRead` | `\Seen` |

@@ -68,6 +68,7 @@ import { FolderBar } from "@/components/collab/FolderBar";
 import { SearchCoverage, SpamBesideWork, StorageFullBanner } from "@/components/collab/MailNotices";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "@/components/collab/pickers";
 import { ListShareDialog, SnoozeItems } from "@/components/collab/ThreadMenu";
+import { SELECT_ALL_MAX, SelectAllBar } from "@/components/collab/SelectAllBar";
 import { ThreadRow, type AIDraftAction } from "@/components/collab/ThreadRow";
 import { SnoozeMenu } from "@/components/tickets/detail/SnoozeMenu";
 import { useConfirm } from "@/components/ui/confirm";
@@ -181,10 +182,12 @@ export default function MailPage() {
   const [pickMove, setPickMove] = useState(false);
   const [pickLabels, setPickLabels] = useState(false);
   const [q2, setQ2] = useState(search.q ?? "");
+  const [selectingAll, setSelectingAll] = useState(false);
 
   useEffect(() => {
     setSelected(new Set());
     setFocusIdx(0);
+    setSelectingAll(false);
   }, [listKey]);
   useEffect(() => setQ2(search.q ?? ""), [search.q]);
 
@@ -245,6 +248,26 @@ export default function MailPage() {
     },
     [threads],
   );
+
+  /** The master checkbox: every loaded conversation, or none when any is selected. */
+  const toggleAll = () => setSelected(selected.size ? new Set() : new Set(threads.map((x) => x.id)));
+  /** Every conversation of the box or folder in view: its remaining pages load first, up to SELECT_ALL_MAX. */
+  const selectEvery = async () => {
+    setSelectingAll(true);
+    try {
+      let pages = list.data?.pages ?? [];
+      let more = list.hasNextPage;
+      while (more && pages.reduce((n, p) => n + p.data.length, 0) < SELECT_ALL_MAX) {
+        const r = await list.fetchNextPage();
+        if (r.isError || !r.data) break;
+        pages = r.data.pages;
+        more = r.hasNextPage;
+      }
+      setSelected(new Set(pages.flatMap((p) => p.data).slice(0, SELECT_ALL_MAX).map((x) => x.id)));
+    } finally {
+      setSelectingAll(false);
+    }
+  };
 
   const move = (d: 1 | -1) => {
     const i = Math.max(0, Math.min(threads.length - 1, focusIdx + d));
@@ -994,6 +1017,18 @@ export default function MailPage() {
           </div>
         )}
         {shareId && <ListShareDialog threadId={shareId} onClose={() => setShareId(null)} />}
+
+        {canAct && !noAccounts && threads.length > 0 && (
+          <SelectAllBar
+            loaded={threads.length}
+            selected={selected.size}
+            hasMore={!!list.hasNextPage}
+            loading={selectingAll}
+            scope={title}
+            onToggle={toggleAll}
+            onSelectEvery={() => void selectEvery()}
+          />
+        )}
 
         <div ref={listRef} role="listbox" aria-label={t("list.label")} aria-multiselectable className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {noAccounts ? (
