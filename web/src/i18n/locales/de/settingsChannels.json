@@ -893,6 +893,95 @@
       "sendOnly": "Bei einer reinen Sendeverbindung teilt Google die weiteren Absenderadressen dieses Kontos nicht. Füge sie oben von Hand hinzu."
     }
   },
+  "whatsapp": {
+    "title": "WhatsApp",
+    "description": "Lassen Sie Kundinnen und Kunden Ihnen per WhatsApp schreiben. Ihre Nachrichten landen auf ihren Tickets, und Sie antworten aus dem Ticket.",
+    "connections": {
+      "title": "WhatsApp-Nummern",
+      "description": "Nachrichten an diese Nummern werden auf Tickets dokumentiert."
+    },
+    "empty": {
+      "title": "Noch keine WhatsApp-Nummer",
+      "body": "Verbinden Sie eine Nummer über Twilio, und WhatsApp-Nachrichten Ihrer Kundschaft eröffnen Tickets, die Sie von hier beantworten.",
+      "tipInbox": "Nachrichten im gemeinsamen Posteingang",
+      "tipWindow": "Vorlagen nach 24 Stunden"
+    },
+    "connect": {
+      "button": "Nummer verbinden",
+      "title": "WhatsApp mit {{name}} verbinden",
+      "setup": "Sie brauchen einen WhatsApp-Absender in einem Twilio-Konto. Tragen Sie seine Nummer sowie SID und Auth-Token des Kontos ein.",
+      "sender": "WhatsApp-Nummer",
+      "senderHint": "Mit Landesvorwahl, zum Beispiel +14155550100",
+      "name": "Name (optional)",
+      "submit": "Verbinden",
+      "cancel": "Abbrechen",
+      "connected": "{{name}} verbunden",
+      "error": "Verbindung zu {{name}} nicht möglich."
+    },
+    "field": {
+      "account_sid": "Account-SID",
+      "auth_token": "Auth-Token"
+    },
+    "hook": {
+      "title": "Webhook in Twilio eintragen",
+      "description": "Nachrichten erreichen opendesk, sobald {{name}} sie an diese Adresse sendet.",
+      "done": "Fertig"
+    },
+    "twilio": {
+      "step1": "Öffnen Sie in der Twilio-Konsole Messaging, Senders, WhatsApp senders und wählen Sie die Nummer.",
+      "step2": "Tragen Sie unter Endpoint configuration diese Adresse als Webhook für eingehende Nachrichten ein, mit der Methode POST.",
+      "step3": "Senden Sie von WhatsApp eine Nachricht an die Nummer. Der Status hier wechselt zu Empfang aktiv."
+    },
+    "webhook": "Webhook für eingehende Nachrichten ({{name}})",
+    "lastEvent": "Letzte Nachricht {{when}}",
+    "noEventYet": "Noch nichts empfangen",
+    "health": {
+      "healthy": "Empfang aktiv",
+      "action_required": "Webhook fehlt",
+      "waiting": "Wartet auf eine Nachricht",
+      "error": "Funktioniert nicht",
+      "unknown": "Nicht geprüft",
+      "test": "Testen",
+      "tested": "Die Verbindung funktioniert.",
+      "testedAttention": "Die Zugangsdaten funktionieren. Es ist noch keine Nachricht eingegangen.",
+      "testError": "Die Verbindung konnte nicht getestet werden."
+    },
+    "healthCode": {
+      "receiving": "Nachrichten werden an opendesk gesendet.",
+      "webhook_missing": "Es ist noch keine Nachricht eingegangen. Tragen Sie die Webhook-Adresse beim Anbieter ein und senden Sie eine Nachricht an die Nummer.",
+      "credentials_refused": "Der Anbieter hat die Zugangsdaten abgelehnt. Ersetzen Sie sie durch funktionierende.",
+      "provider_unreachable": "Der Anbieter ist nicht erreichbar. Versuchen Sie es gleich noch einmal."
+    },
+    "rotate": {
+      "label": "Zugangsdaten von {{name}} ersetzen",
+      "title": "Zugangsdaten von {{name}} ersetzen",
+      "submit": "Ersetzen",
+      "saved": "Zugangsdaten ersetzt"
+    },
+    "disconnectLabel": "{{name}} trennen",
+    "disconnectTitle": "Diese Nummer trennen?",
+    "disconnectBody": "{{name}} liefert keine Nachrichten mehr. Unterhaltungen auf Tickets bleiben erhalten. Entfernen Sie den Webhook auch beim Anbieter.",
+    "disconnect": "Trennen",
+    "disconnected": "Nummer getrennt",
+    "disconnectError": "Trennen nicht möglich.",
+    "saveError": "Speichern nicht möglich.",
+    "placement": {
+      "title": "Zuordnung von {{name}}",
+      "description": "Wohin die Nachricht einer Kundin oder eines Kunden geht.",
+      "brand": "Marke",
+      "brandHint": "Die Marke, zu der die Unterhaltungen dieser Nummer gehören.",
+      "defaultBrand": "Standardmarke",
+      "reuse": "Gelöstes Ticket wieder öffnen",
+      "reuseHint_one": "Eine Nachricht geht auf das Ticket der Kundschaft, das am letzten Tag gelöst wurde.",
+      "reuseHint_other": "Eine Nachricht geht auf das Ticket der Kundschaft, das in den letzten {{count}} Tagen gelöst wurde.",
+      "reuseNever": "Jede neue Unterhaltung eröffnet ein neues Ticket.",
+      "never": "Nie",
+      "day": "1 Tag",
+      "daysN": "{{n}} Tage",
+      "window": "24-Stunden-Fenster",
+      "windowHint": "WhatsApp erlaubt freie Antworten 24 Stunden nach der letzten Nachricht der Kundschaft. Danach bietet das Antwortfeld genehmigte Vorlagen an."
+    }
+  },
   "phone": {
     "title": "Telefon",
     "description": "Verbinde deine Cloud-Telefonanlage. Jeder Anruf landet im Ticket der anrufenden Person: wer ihn angenommen hat, wie lange er dauerte und seine Aufnahme.",

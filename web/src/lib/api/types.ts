@@ -340,7 +340,7 @@ export type Priority = "low" | "normal" | "high" | "urgent";
 /** Business impact; sev1 is the most severe. A ticket may have none. */
 export type Severity = "sev1" | "sev2" | "sev3" | "sev4";
 /** phone: a ticket a call opened (contracts/phone.md). */
-export type Channel = "email" | "chat" | "api" | "portal" | "phone";
+export type Channel = "email" | "chat" | "api" | "portal" | "phone" | "whatsapp";
 // Labels ("tags" in the API) and custom fields (contracts/api.md "Labels and custom fields").
 export type LabelColor =
   | "gray" | "red" | "orange" | "amber" | "yellow" | "lime" | "green" | "teal" | "cyan" | "blue" | "indigo" | "violet" | "purple" | "pink" | "rose";
@@ -498,7 +498,7 @@ export type Attachment = {
   url: string;
 };
 /** "scheduled" is the app's own: a reply held for the undo window, not yet sent (outbox.ts). */
-export type DeliveryStatus = "none" | "scheduled" | "pending" | "sent" | "failed" | "bounced";
+export type DeliveryStatus = "none" | "scheduled" | "pending" | "sent" | "delivered" | "read" | "failed" | "bounced";
 export type Message = {
   id: string;
   ticket_id: string;
@@ -1262,6 +1262,36 @@ export type PhoneConnection = {
   created_at: string;
 };
 export type PhoneLine = { id: string; name: string; provider: string };
+export type WhatsAppProvider = { key: string; name: string; fields: { name: string; label: string; secret: boolean }[]; docs: string };
+export type WhatsAppHealthCode = "" | "receiving" | "webhook_missing" | "credentials_refused" | "provider_unreachable";
+export type WhatsAppConnection = {
+  id: string;
+  provider: string;
+  name: string;
+  /** The WhatsApp number customers write to, in E.164. */
+  sender: string;
+  account_name: string;
+  status: "connected" | "error";
+  last_error: string;
+  health_status: "unknown" | "healthy" | "action_required" | "error";
+  health_code: WhatsAppHealthCode;
+  health_detail: string;
+  health_checked_at: string | null;
+  brand_id: string | null;
+  /** A message goes on the customer's latest ticket solved within this many days; 0 opens a new one. */
+  reuse_days: number;
+  last_event_at: string | null;
+  /** Where the provider sends messages and the delivery of what is sent: admins only. */
+  webhook_url?: string;
+  status_url?: string;
+  created_at: string;
+};
+/** What the composer of a WhatsApp ticket needs (contracts/whatsapp.md "Window"). */
+export type WhatsAppTicketState = {
+  connection: { id: string; name: string; sender: string } | null;
+  window: { open: boolean; closes_at: string | null };
+};
+export type WhatsAppTemplate = { id: string; name: string; language: string; body: string; variables: string[] };
 export type SupportChannelConnection = {
   id: string;
   provider: string;

@@ -85,7 +85,7 @@ func writeTools() []*tool {
 					"priority": arr("", enum("", priorities...)),
 					"assignee": str(`"me", "none" or a teammate.`),
 					"label":    str("Label name."),
-					"channel":  enum("", "email", "chat", "api", "portal", "phone"),
+					"channel":  enum("", "email", "chat", "api", "portal", "phone", "whatsapp"),
 					"query":    str("Full-text search."),
 				}),
 			}, "name", "filters"),

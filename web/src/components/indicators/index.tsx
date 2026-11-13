@@ -288,6 +288,9 @@ export function ChannelIcon({ channel, className, plain }: { channel: Channel; c
           strokeLinejoin="round"
         />
       )}
+      {channel === "whatsapp" && (
+        <path d="M8 2.5a5.5 5.5 0 0 0-4.7 8.3l-.8 2.7 2.8-.8A5.5 5.5 0 1 0 8 2.5z" stroke={c} strokeWidth={SW} strokeLinejoin="round" />
+      )}
       {channel === "portal" && (
         <>
           <circle cx="8" cy="8" r="6" stroke={c} strokeWidth={SW} />

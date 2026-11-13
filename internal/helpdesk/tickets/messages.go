@@ -2,6 +2,7 @@ package tickets
 
 import (
 	"context"
+	"html"
 	"net/http"
 	"regexp"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/templates"
+	"github.com/useopendesk/opendesk/internal/whatsapp"
 )
 
 // MessageInput is a reply or note written through any trusted agent surface: the
@@ -27,18 +29,19 @@ import (
 // the shared validation and delivery behavior; callers must first authorize the
 // principal for the ticket with domain.LoadVisibleTicket.
 type MessageInput struct {
-	Kind          string            `json:"kind" enum:"reply,note"`
-	Direction     string            `json:"direction,omitempty" enum:"inbound,outbound" doc:"Default outbound. inbound (replies only) stores the message as the ticket's contact's own words, as if they had emailed it; nothing is sent"`
-	BodyHTML      string            `json:"body_html" maxLength:"500000"`
-	To            []string          `json:"to,omitempty" maxItems:"20" doc:"Email replies: who it goes to; left out: the customer's reply address (their address, or the Reply-To of their latest email at their own organisation)"`
-	Cc            []string          `json:"cc,omitempty" maxItems:"20"`
-	Bcc           []string          `json:"bcc,omitempty" maxItems:"20"`
-	AttachmentIDs []string          `json:"attachment_ids,omitempty" maxItems:"20"`
-	Status        *string           `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed" doc:"Applied after the message is added"`
-	MailboxID     string            `json:"mailbox_id,omitempty" doc:"Replies: send from this address of the ticket's brand (the caller must be allowed to send from it); it becomes the ticket's reply address"`
-	FromNoteID    string            `json:"from_note_id,omitempty" doc:"Replies: an internal note of yours, without files, this reply is written from. The note stays as a marker pointing at the reply; only admins read what it said"`
-	FromAccount   *FromAccountInput `json:"from_account,omitempty" doc:"Email replies: send from one of your own Collab addresses instead of the ticket's reply address, which stays as it is"`
-	SavedReplyIDs []string          `json:"saved_reply_ids,omitempty" maxItems:"10" doc:"Saved replies used in this message: their actions apply to the ticket once it is added"`
+	Kind             string                           `json:"kind" enum:"reply,note"`
+	Direction        string                           `json:"direction,omitempty" enum:"inbound,outbound" doc:"Default outbound. inbound (replies only) stores the message as the ticket's contact's own words, as if they had emailed it; nothing is sent"`
+	BodyHTML         string                           `json:"body_html" maxLength:"500000"`
+	To               []string                         `json:"to,omitempty" maxItems:"20" doc:"Email replies: who it goes to; left out: the customer's reply address (their address, or the Reply-To of their latest email at their own organisation)"`
+	Cc               []string                         `json:"cc,omitempty" maxItems:"20"`
+	Bcc              []string                         `json:"bcc,omitempty" maxItems:"20"`
+	AttachmentIDs    []string                         `json:"attachment_ids,omitempty" maxItems:"20"`
+	Status           *string                          `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed" doc:"Applied after the message is added"`
+	MailboxID        string                           `json:"mailbox_id,omitempty" doc:"Replies: send from this address of the ticket's brand (the caller must be allowed to send from it); it becomes the ticket's reply address"`
+	FromNoteID       string                           `json:"from_note_id,omitempty" doc:"Replies: an internal note of yours, without files, this reply is written from. The note stays as a marker pointing at the reply; only admins read what it said"`
+	FromAccount      *FromAccountInput                `json:"from_account,omitempty" doc:"Email replies: send from one of your own Collab addresses instead of the ticket's reply address, which stays as it is"`
+	SavedReplyIDs    []string                         `json:"saved_reply_ids,omitempty" maxItems:"10" doc:"Saved replies used in this message: their actions apply to the ticket once it is added"`
+	WhatsAppTemplate *whatsapp.WhatsAppTemplateChoice `json:"whatsapp_template,omitempty" doc:"WhatsApp replies: send this approved template instead of the words, which the customer-service window allows only for 24 hours after their last message"`
 }
 
 // FromAccountInput is the Collab address a reply goes out from (contracts/collab.md
@@ -352,6 +355,8 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	if authorType == "ai" {
 		authorType = "user" // the assistant writes on the user's behalf, after their approval
 	}
+	var wa whatsapp.ReplyPlan
+	waPlanned := false
 	nm := domain.NewMessage{WorkspaceID: wid, TicketID: tid, Kind: b.Kind, Direction: "outbound", AuthorType: authorType,
 		AuthorUserID: actor.UserID, BodyHTML: bodyHTML, BodyText: bodyText, Subject: replySubject(subject), AttachmentIDs: attIDs}
 	if b.Kind == "reply" && channel == domain.ChannelEmail {
@@ -384,6 +389,24 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		}
 		nm.DeliveryStatus = "pending"
 		nm.BodyHTML, nm.BodyText = withSignOff(nm.BodyHTML, nm.BodyText, bot)
+	} else if b.Kind == "reply" && channel == domain.ChannelWhatsApp {
+		if len(b.To)+len(b.Cc)+len(b.Bcc) > 0 {
+			return domain.Message{}, httpx.Validation("to, cc and bcc apply only to email replies")
+		}
+		if len(attIDs) > 0 {
+			return domain.Message{}, httpx.Validation("A WhatsApp reply is text only for now.")
+		}
+		wa, err = whatsapp.PlanReply(ctx, d, tx, wid, tid, b.WhatsAppTemplate)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		if wa.Text != "" {
+			// A template goes out as the words it fills, which the timeline shows.
+			nm.BodyText = wa.Text
+			nm.BodyHTML = "<p>" + strings.ReplaceAll(html.EscapeString(wa.Text), "\n", "<br>") + "</p>"
+		}
+		nm.DeliveryStatus = "pending"
+		waPlanned = true
 	} else if len(b.To)+len(b.Cc)+len(b.Bcc) > 0 {
 		return domain.Message{}, httpx.Validation("to, cc and bcc apply only to email replies")
 	}
@@ -396,6 +419,11 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	msg, err := domain.AddMessage(ctx, tx, d.Jobs, nm)
 	if err != nil {
 		return domain.Message{}, err
+	}
+	if waPlanned {
+		if err := whatsapp.RecordOutbound(ctx, d, tx, wid, tid, msg.ID, wa); err != nil {
+			return domain.Message{}, err
+		}
 	}
 	if fromNote != nil {
 		// The reply carries the note's words now: the note stays where it was as a marker
