@@ -73,6 +73,20 @@
     "error": "Une erreur s’est produite. Veuillez réessayer.",
     "offline": "Impossible de joindre le serveur. Vérifiez votre connexion."
   },
+  "chat_verify": {
+    "page_title": "Vérifiez votre compte",
+    "title": "Vérifiez votre compte",
+    "body": "Confirmez que cette adresse est bien la vôtre, pour que {{brand}} sache que la conversation vient de vous.",
+    "button": "Vérifier le compte",
+    "not_you": "Ce n’est pas vous ? Fermez cette page et rien ne change.",
+    "done_title": "Votre compte est vérifié",
+    "already_title": "Votre compte est déjà vérifié",
+    "done_body": "{{brand}} sait désormais que la conversation de {{email}} vient de vous. Vous pouvez fermer cette page et continuer à discuter.",
+    "invalid_title": "Ce lien n’est pas valide",
+    "invalid_body": "Il a peut-être expiré ou a déjà été utilisé. Demandez un nouvel e-mail dans la conversation.",
+    "error": "Une erreur s’est produite. Veuillez réessayer.",
+    "offline": "Impossible de joindre le serveur. Vérifiez votre connexion."
+  },
   "footer": {
     "powered_by": "Propulsé par",
     "language": "Langue"

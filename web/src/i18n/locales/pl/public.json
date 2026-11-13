@@ -75,6 +75,20 @@
     "error": "Coś poszło nie tak. Spróbuj ponownie.",
     "offline": "Nie można połączyć się z serwerem. Sprawdź połączenie."
   },
+  "chat_verify": {
+    "page_title": "Zweryfikuj swoje konto",
+    "title": "Zweryfikuj swoje konto",
+    "body": "Potwierdź, że ten adres należy do Ciebie, aby zespół {{brand}} wiedział, że czat pochodzi od Ciebie.",
+    "button": "Zweryfikuj konto",
+    "not_you": "To nie Ty? Zamknij tę stronę, a nic się nie zmieni.",
+    "done_title": "Twoje konto jest zweryfikowane",
+    "already_title": "Twoje konto jest już zweryfikowane",
+    "done_body": "Zespół {{brand}} wie już, że czat z adresu {{email}} należy do Ciebie. Możesz zamknąć tę stronę i dalej rozmawiać.",
+    "invalid_title": "Ten link jest nieprawidłowy",
+    "invalid_body": "Mógł wygasnąć lub zostać już użyty. Poproś o nowy e-mail na czacie.",
+    "error": "Coś poszło nie tak. Spróbuj ponownie.",
+    "offline": "Nie można połączyć się z serwerem. Sprawdź połączenie."
+  },
   "footer": {
     "powered_by": "Obsługiwane przez",
     "language": "Język"

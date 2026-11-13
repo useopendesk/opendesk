@@ -69,6 +69,20 @@
     "error": "出了点问题，请重试。",
     "offline": "无法连接服务器，请检查网络连接。"
   },
+  "chat_verify": {
+    "page_title": "验证您的账户",
+    "title": "验证您的账户",
+    "body": "请确认此邮箱地址属于您，以便 {{brand}} 知道这段聊天来自您本人。",
+    "button": "验证账户",
+    "not_you": "不是您本人？关闭此页面即可，不会有任何更改。",
+    "done_title": "您的账户已验证",
+    "already_title": "您的账户已经验证过了",
+    "done_body": "{{brand}} 现在知道来自 {{email}} 的聊天是您本人。您可以关闭此页面，继续聊天。",
+    "invalid_title": "此链接无效",
+    "invalid_body": "链接可能已过期或已被使用。请在聊天中重新请求一封邮件。",
+    "error": "出了点问题，请重试。",
+    "offline": "无法连接服务器，请检查网络连接。"
+  },
   "footer": {
     "powered_by": "技术支持",
     "language": "语言"
