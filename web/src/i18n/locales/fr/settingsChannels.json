@@ -901,6 +901,96 @@
       "sendOnly": "Google ne partage pas les autres adresses d’envoi de ce compte avec une connexion en envoi seul. Ajoutez-les ci-dessus à la main."
     }
   },
+  "whatsapp": {
+    "title": "WhatsApp",
+    "description": "Laissez vos clients vous écrire sur WhatsApp. Leurs messages arrivent sur leurs tickets et vous répondez depuis le ticket.",
+    "connections": {
+      "title": "Numéros WhatsApp",
+      "description": "Les messages envoyés à ces numéros sont documentés sur les tickets."
+    },
+    "empty": {
+      "title": "Aucun numéro WhatsApp pour l’instant",
+      "body": "Connectez un numéro via Twilio : les messages WhatsApp de vos clients ouvrent des tickets auxquels vous répondez d’ici.",
+      "tipInbox": "Messages dans la boîte partagée",
+      "tipWindow": "Modèles après 24 heures"
+    },
+    "connect": {
+      "button": "Connecter un numéro",
+      "title": "Connecter WhatsApp avec {{name}}",
+      "setup": "Il vous faut un expéditeur WhatsApp dans un compte Twilio. Saisissez son numéro, ainsi que le SID et le jeton d’authentification du compte.",
+      "sender": "Numéro WhatsApp",
+      "senderHint": "Avec l’indicatif du pays, par exemple +14155550100",
+      "name": "Nom (facultatif)",
+      "submit": "Connecter",
+      "cancel": "Annuler",
+      "connected": "{{name}} connecté",
+      "error": "Impossible de se connecter à {{name}}."
+    },
+    "field": {
+      "account_sid": "SID du compte",
+      "auth_token": "Jeton d’authentification"
+    },
+    "hook": {
+      "title": "Définir le webhook dans Twilio",
+      "description": "Les messages arrivent dans opendesk dès que {{name}} les envoie à cette adresse.",
+      "done": "Terminé"
+    },
+    "twilio": {
+      "step1": "Dans la console Twilio, ouvrez Messaging, Senders, WhatsApp senders et choisissez le numéro.",
+      "step2": "Sous Endpoint configuration, collez cette adresse comme webhook des messages entrants, avec la méthode POST.",
+      "step3": "Envoyez un message au numéro depuis WhatsApp. L’état ici passe à Réception active."
+    },
+    "webhook": "Webhook des messages entrants ({{name}})",
+    "lastEvent": "Dernier message {{when}}",
+    "noEventYet": "Rien reçu pour l’instant",
+    "health": {
+      "healthy": "Réception active",
+      "action_required": "Webhook manquant",
+      "waiting": "En attente d’un message",
+      "error": "Ne fonctionne pas",
+      "unknown": "Non vérifié",
+      "test": "Tester",
+      "tested": "La connexion fonctionne.",
+      "testedAttention": "Les identifiants fonctionnent. Aucun message n’est encore arrivé.",
+      "testError": "Impossible de tester la connexion."
+    },
+    "healthCode": {
+      "receiving": "Les messages sont envoyés à opendesk.",
+      "webhook_missing": "Aucun message n’est encore arrivé. Ajoutez l’adresse du webhook chez le fournisseur, puis envoyez un message au numéro.",
+      "credentials_refused": "Le fournisseur a refusé les identifiants. Remplacez-les par des identifiants valides.",
+      "provider_unreachable": "Impossible de joindre le fournisseur. Réessayez dans un instant."
+    },
+    "rotate": {
+      "label": "Remplacer les identifiants de {{name}}",
+      "title": "Remplacer les identifiants de {{name}}",
+      "submit": "Remplacer",
+      "saved": "Identifiants remplacés"
+    },
+    "disconnectLabel": "Déconnecter {{name}}",
+    "disconnectTitle": "Déconnecter ce numéro ?",
+    "disconnectBody": "{{name}} ne livre plus de messages. Les conversations déjà sur des tickets restent. Supprimez aussi le webhook chez le fournisseur.",
+    "disconnect": "Déconnecter",
+    "disconnected": "Numéro déconnecté",
+    "disconnectError": "Impossible de déconnecter.",
+    "saveError": "Impossible d’enregistrer.",
+    "placement": {
+      "title": "Placement de {{name}}",
+      "description": "Où va le message d’un client.",
+      "brand": "Marque",
+      "brandHint": "La marque à laquelle appartiennent les conversations de ce numéro.",
+      "defaultBrand": "Marque par défaut",
+      "reuse": "Rouvrir un ticket résolu",
+      "reuseHint_one": "Un message va sur le ticket du client résolu au cours du dernier jour.",
+      "reuseHint_other": "Un message va sur le ticket du client résolu au cours des {{count}} derniers jours.",
+      "reuseHint_many": "Un message va sur le ticket du client résolu au cours des {{count}} derniers jours.",
+      "reuseNever": "Chaque nouvelle conversation ouvre un nouveau ticket.",
+      "never": "Jamais",
+      "day": "1 jour",
+      "daysN": "{{n}} jours",
+      "window": "Fenêtre de 24 heures",
+      "windowHint": "WhatsApp autorise les réponses libres pendant 24 heures après le dernier message du client. Ensuite, le champ de réponse propose des modèles approuvés."
+    }
+  },
   "phone": {
     "title": "Téléphone",
     "description": "Connectez votre téléphonie cloud. Chaque appel arrive sur le ticket de l’appelant, avec qui l’a pris, sa durée et son enregistrement.",

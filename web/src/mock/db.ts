@@ -2,6 +2,7 @@
 
 import type {
   PhoneConnection,
+  WhatsAppConnection,
   Activity,
   AIFeature,
   AISettings,
@@ -112,6 +113,8 @@ export type WsData = {
   activities: Activity[];
   /** Phone connections (contracts/phone.md; handlers/phone.ts). */
   phone: PhoneConnection[];
+  /** WhatsApp connections (contracts/whatsapp.md; handlers/whatsapp.ts). */
+  whatsapp: WhatsAppConnection[];
   tags: Tag[];
   tagGroups: TagGroup[];
   customFields: CustomField[];

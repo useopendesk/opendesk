@@ -429,7 +429,7 @@ validation remains necessary before claiming live-tested Placetel functionality.
 
 ## Not yet
 
-Aircall SMS and WhatsApp, two-way contact sync, an OAuth app (Aircall Marketplace) instead of
+Aircall SMS, Aircall WhatsApp (WhatsApp is its own channel, `contracts/whatsapp.md`), two-way contact sync, an OAuth app (Aircall Marketplace) instead of
 API keys, Aircall's real-time transcription. For Voys: insight cards (Voys has none),
 playable recordings (Voys' recording URL needs the API token), contact sync with its contact
 book, and registering the call notification for the admin (Voys has no API for it).

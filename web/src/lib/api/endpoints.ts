@@ -156,6 +156,8 @@ export type SendMessageBody = {
   from_account?: { account_id: string; email?: string; reply_to?: string };
   /** Saved replies used in this message: their actions apply to the ticket once it is added. */
   saved_reply_ids?: string[];
+  /** WhatsApp replies: an approved template and its variables, sent in place of the words once the 24-hour window is closed. */
+  whatsapp_template?: { id: string; variables: Record<string, string> };
 };
 
 /** Starts a third-party thread (contracts/api.md "Threads"). */
@@ -478,6 +480,18 @@ export const api = {
     rotateWebhook: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/rotate-webhook`),
     disconnect: (id: string) => http.del(`/v1/phone/connections/${id}`),
     lines: () => http.get<{ data: T.PhoneLine[] }>("/v1/phone/lines"),
+  },
+  whatsapp: {
+    providers: () => http.get<{ data: T.WhatsAppProvider[] }>("/v1/whatsapp/providers"),
+    connections: () => http.get<{ data: T.WhatsAppConnection[] }>("/v1/whatsapp/connections"),
+    connect: (b: { provider: string; name?: string; sender: string; brand_id?: string; credentials: Record<string, string> }) =>
+      http.create<T.WhatsAppConnection>("/v1/whatsapp/connections", b),
+    update: (id: string, b: { name?: string; brand_id?: string; clear_brand?: boolean; reuse_days?: number; credentials?: Record<string, string> }) =>
+      http.patch<T.WhatsAppConnection>(`/v1/whatsapp/connections/${id}`, b),
+    test: (id: string) => http.post<T.WhatsAppConnection>(`/v1/whatsapp/connections/${id}/test`),
+    disconnect: (id: string) => http.del(`/v1/whatsapp/connections/${id}`),
+    ticket: (id: string) => http.get<T.WhatsAppTicketState>(`/v1/tickets/${id}/whatsapp`),
+    templates: (id: string) => http.get<{ data: T.WhatsAppTemplate[] }>(`/v1/tickets/${id}/whatsapp/templates`),
   },
   ticketPanels: {
     list: () => http.get<{ data: T.TicketPanel[] }>("/v1/ticket-panels"),

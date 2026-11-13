@@ -77,6 +77,7 @@ const simpleLists: Record<string, { key: () => readonly unknown[]; field: string
   ticket_panel: { key: () => qk.ticketPanels, field: "panel" },
   support_channel_connection: { key: () => qk.supportChannelConnections, field: "support_channel_connection" },
   phone_connection: { key: () => qk.phoneConnections, field: "phone_connection" },
+  whatsapp_connection: { key: () => qk.whatsappConnections, field: "whatsapp_connection" },
   support_channel_destination: { key: () => qk.supportChannelDestinations, field: "support_channel_destination" },
 };
 
@@ -269,6 +270,8 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
       if (m.author?.type === "api" && !m.author.api_key) void qc.invalidateQueries({ queryKey: qk.messages(tid), exact: true });
       // A newer message means Ollie's suggestion no longer answers the latest one.
       if (env.type === "message.created" && m.kind === "reply") {
+        // A customer's WhatsApp message opens the 24-hour window again.
+        if (m.direction === "inbound") void qc.invalidateQueries({ queryKey: qk.whatsappTicket(tid), exact: true });
         const s = qc.getQueryData<SuggestedReply | null>(qk.suggestedReply(tid));
         if (s && s.message_id !== m.id) qc.setQueryData(qk.suggestedReply(tid), null);
       }

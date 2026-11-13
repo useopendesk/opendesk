@@ -491,6 +491,8 @@ func channelWord(s string) string {
 		return "API"
 	case domain.ChannelPortal:
 		return "Form"
+	case domain.ChannelWhatsApp:
+		return "WhatsApp"
 	}
 	return humanWord(s)
 }

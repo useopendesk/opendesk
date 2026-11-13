@@ -545,3 +545,26 @@ func (WikiTrashPurgeArgs) Kind() string { return "wiki.trash_purge" }
 type WikiRemindersArgs struct{}
 
 func (WikiRemindersArgs) Kind() string { return "wiki.reminders" }
+
+// WhatsAppInboundArgs applies one verified, deduplicated WhatsApp provider event
+// (whatsapp_inbound_events): a customer's message or a delivery status. Owner: whatsapp.
+type WhatsAppInboundArgs struct {
+	WorkspaceID     uuid.UUID `json:"workspace_id"`
+	ConnectionID    uuid.UUID `json:"connection_id"`
+	ExternalEventID string    `json:"external_event_id"`
+}
+
+func (WhatsAppInboundArgs) Kind() string { return "whatsapp.inbound" }
+
+// WhatsAppSendArgs sends an agent's reply through the provider. Owner: whatsapp.
+type WhatsAppSendArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MessageID   uuid.UUID `json:"message_id"`
+}
+
+func (WhatsAppSendArgs) Kind() string { return "whatsapp.send" }
+
+// WhatsAppPruneArgs removes processed WhatsApp provider events older than a week. Owner: whatsapp.
+type WhatsAppPruneArgs struct{}
+
+func (WhatsAppPruneArgs) Kind() string { return "whatsapp.prune" }

@@ -921,6 +921,95 @@
       "sendOnly": "Google doesn't share this account's other send-as addresses with a send-only connection. Add them above by hand."
     }
   },
+  "whatsapp": {
+    "title": "WhatsApp",
+    "description": "Let customers write to you on WhatsApp. Their messages land on their tickets, and you answer from the ticket.",
+    "connections": {
+      "title": "WhatsApp numbers",
+      "description": "Messages to these numbers are documented on tickets."
+    },
+    "empty": {
+      "title": "No WhatsApp number yet",
+      "body": "Connect a number through Twilio and customers' WhatsApp messages open tickets you answer from here.",
+      "tipInbox": "Messages in the shared inbox",
+      "tipWindow": "Templates after 24 hours"
+    },
+    "connect": {
+      "button": "Connect a number",
+      "title": "Connect WhatsApp with {{name}}",
+      "setup": "You need a WhatsApp sender in a Twilio account. Paste its number and the account's SID and auth token.",
+      "sender": "WhatsApp number",
+      "senderHint": "With its country code, like +14155550100",
+      "name": "Name (optional)",
+      "submit": "Connect",
+      "cancel": "Cancel",
+      "connected": "{{name}} connected",
+      "error": "Could not connect to {{name}}."
+    },
+    "field": {
+      "account_sid": "Account SID",
+      "auth_token": "Auth token"
+    },
+    "hook": {
+      "title": "Set the webhook in Twilio",
+      "description": "Messages reach opendesk once {{name}} sends them to this address.",
+      "done": "Done"
+    },
+    "twilio": {
+      "step1": "In the Twilio console, open Messaging, Senders, WhatsApp senders and choose the number.",
+      "step2": "Under Endpoint configuration, paste this address as the webhook for incoming messages, with the method POST.",
+      "step3": "Send a message to the number from WhatsApp. The state here changes to Receiving."
+    },
+    "webhook": "Webhook for incoming messages ({{name}})",
+    "lastEvent": "Last message {{when}}",
+    "noEventYet": "Nothing received yet",
+    "health": {
+      "healthy": "Receiving",
+      "action_required": "Needs the webhook",
+      "waiting": "Waiting for a message",
+      "error": "Not working",
+      "unknown": "Not checked",
+      "test": "Test",
+      "tested": "The connection works.",
+      "testedAttention": "The credentials work. No message has come in yet.",
+      "testError": "Could not test the connection."
+    },
+    "healthCode": {
+      "receiving": "Messages are sent to opendesk.",
+      "webhook_missing": "No message has come in yet. Add the webhook address in the provider, then send a message to the number.",
+      "credentials_refused": "The provider refused the credentials. Replace them with working ones.",
+      "provider_unreachable": "Couldn't reach the provider. Try again in a moment."
+    },
+    "rotate": {
+      "label": "Replace the credentials of {{name}}",
+      "title": "Replace the credentials of {{name}}",
+      "submit": "Replace",
+      "saved": "Credentials replaced"
+    },
+    "disconnectLabel": "Disconnect {{name}}",
+    "disconnectTitle": "Disconnect this number?",
+    "disconnectBody": "{{name}} stops delivering messages. Conversations already on tickets stay. Remove the webhook in the provider too.",
+    "disconnect": "Disconnect",
+    "disconnected": "Number disconnected",
+    "disconnectError": "Could not disconnect.",
+    "saveError": "Could not save.",
+    "placement": {
+      "title": "{{name}} placement",
+      "description": "Where a customer's message goes.",
+      "brand": "Brand",
+      "brandHint": "The brand the number's conversations belong to.",
+      "defaultBrand": "Default brand",
+      "reuse": "Reopen a solved ticket",
+      "reuseHint_one": "A message goes on the customer's ticket solved in the last day.",
+      "reuseHint_other": "A message goes on the customer's ticket solved in the last {{count}} days.",
+      "reuseNever": "Every new conversation opens a new ticket.",
+      "never": "Never",
+      "day": "1 day",
+      "daysN": "{{n}} days",
+      "window": "24-hour window",
+      "windowHint": "WhatsApp allows free-form replies for 24 hours after the customer's last message. After that the composer offers approved templates."
+    }
+  },
   "phone": {
     "title": "Phone",
     "description": "Connect your cloud phone system. Every call lands on the caller's ticket, with who took it, how long it lasted and its recording.",

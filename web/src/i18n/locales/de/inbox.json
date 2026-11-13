@@ -633,7 +633,17 @@
     "chatReply": "Im Chat · per E-Mail, falls der Besucher gegangen ist",
     "chatReplyHint": "Ihre Antwort erscheint sofort im Chat des Besuchers. Hat er die Seite verlassen (2 Minuten ohne Aktivität), geht sie eine Minute später zusätzlich an seine E-Mail-Adresse, außer er kommt zurück.",
     "chatReplyHere": "Im Chat",
-    "chatReplyAway": "Im Chat · per E-Mail, falls er sie nicht liest"
+    "chatReplyAway": "Im Chat · per E-Mail, falls er sie nicht liest",
+    "whatsappTo": "An",
+    "whatsappVia": "per WhatsApp von {{sender}}",
+    "whatsappOpen": "Sie können noch {{when}} frei antworten",
+    "whatsappClosed": "24-Stunden-Fenster geschlossen",
+    "whatsappDisconnected": "Nummer nicht verbunden",
+    "whatsappClosedHint": "Die Kundin oder der Kunde hat vor mehr als 24 Stunden zuletzt geschrieben, daher erlaubt WhatsApp nur eine genehmigte Vorlage. Wählen Sie eine aus und füllen Sie ihre Variablen aus.",
+    "whatsappNoTemplates": "Für diese Nummer gibt es noch keine genehmigten Vorlagen. Legen Sie eine beim Anbieter an und lassen Sie sie von WhatsApp genehmigen, dann erscheint sie hier.",
+    "whatsappTemplate": "Vorlage",
+    "whatsappPick": "Vorlage wählen",
+    "whatsappVariable": "Wert für {{name}}"
   },
   "sharedDraft": {
     "label": "Geteilter Entwurf",
@@ -733,7 +743,11 @@
     "showReply": "Antwort anzeigen",
     "showNote": "Notiz anzeigen",
     "hideNote": "Notiz ausblenden",
-    "forward": "Weiterleiten"
+    "forward": "Weiterleiten",
+    "delivered": "Zugestellt",
+    "deliveredToPhone": "Auf dem Telefon der Kundschaft zugestellt",
+    "read": "Gelesen",
+    "readByCustomer": "Die Kundschaft hat es gelesen"
   },
   "merge": {
     "title": "#{{number}} mit anderem Ticket zusammenführen",

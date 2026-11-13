@@ -650,7 +650,17 @@
     "chatReply": "Dans le chat · par e-mail si le visiteur est parti",
     "chatReplyHint": "Votre réponse s’affiche en direct dans le chat du visiteur. S’il a quitté la page (aucune activité depuis 2 minutes), elle part aussi à son adresse e-mail une minute plus tard, sauf s’il revient.",
     "chatReplyHere": "Dans le chat",
-    "chatReplyAway": "Dans le chat · par e-mail s’il ne la lit pas"
+    "chatReplyAway": "Dans le chat · par e-mail s’il ne la lit pas",
+    "whatsappTo": "À",
+    "whatsappVia": "sur WhatsApp depuis {{sender}}",
+    "whatsappOpen": "Vous pouvez répondre librement pendant encore {{when}}",
+    "whatsappClosed": "Fenêtre de 24 heures fermée",
+    "whatsappDisconnected": "Numéro non connecté",
+    "whatsappClosedHint": "Le client a écrit pour la dernière fois il y a plus de 24 heures : WhatsApp n’autorise qu’un modèle approuvé. Choisissez-en un et remplissez ses variables.",
+    "whatsappNoTemplates": "Ce numéro n’a pas encore de modèle approuvé. Créez-en un chez le fournisseur et faites-le approuver par WhatsApp : il apparaîtra ici.",
+    "whatsappTemplate": "Modèle",
+    "whatsappPick": "Choisir un modèle",
+    "whatsappVariable": "Valeur pour {{name}}"
   },
   "sharedDraft": {
     "label": "Brouillon partagé",
@@ -717,7 +727,11 @@
     "unverified": "Expéditeur non vérifié",
     "unverifiedHint": "Le domaine de l’expéditeur a échoué à la vérification d’authentification des e-mails. L’expéditeur n’est peut-être pas celui qu’il prétend être. Soyez prudent avec les liens et les demandes de ce message.",
     "viaForm": "Envoyé via le formulaire à l’adresse <m>{{address}}</m>",
-    "forward": "Transférer"
+    "forward": "Transférer",
+    "delivered": "Remis",
+    "deliveredToPhone": "Remis sur le téléphone du client",
+    "read": "Lu",
+    "readByCustomer": "Le client l’a lu"
   },
   "merge": {
     "title": "Fusionner #{{number}} avec un autre ticket",

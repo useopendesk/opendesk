@@ -172,6 +172,14 @@ export const qk = {
   get phoneLines() {
     return w(["phone", "lines"] as const);
   },
+  get whatsappProviders() {
+    return w(["whatsapp", "providers"] as const);
+  },
+  get whatsappConnections() {
+    return w(["whatsapp", "connections"] as const);
+  },
+  whatsappTicket: (id: string) => w(["whatsapp", "ticket", id] as const),
+  whatsappTemplates: (id: string) => w(["whatsapp", "templates", id] as const),
   get ticketPanels() {
     return w(["ticket-panels"] as const);
   },
@@ -503,6 +511,10 @@ export const q = {
   phoneProviders: () => list(qk.phoneProviders, api.phone.providers, { staleTime: 60 * 60_000 }),
   phoneConnections: () => list(qk.phoneConnections, api.phone.connections),
   phoneLines: () => list(qk.phoneLines, api.phone.lines, { staleTime: 5 * 60_000 }),
+  whatsappProviders: () => list(qk.whatsappProviders, api.whatsapp.providers, { staleTime: 60 * 60_000 }),
+  whatsappConnections: () => list(qk.whatsappConnections, api.whatsapp.connections),
+  whatsappTicket: (id: string) => queryOptions({ queryKey: qk.whatsappTicket(id), queryFn: () => api.whatsapp.ticket(id), staleTime: 30_000 }),
+  whatsappTemplates: (id: string) => list(qk.whatsappTemplates(id), () => api.whatsapp.templates(id), { staleTime: 5 * 60_000 }),
   supportChannelProviders: () => list(qk.supportChannelProviders, api.supportChannels.providers, { staleTime: 60 * 60_000 }),
   supportChannelConnections: () => list(qk.supportChannelConnections, api.supportChannels.connections),
   supportChannelDestinations: () => list(qk.supportChannelDestinations, api.supportChannels.destinations),

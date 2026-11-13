@@ -28,6 +28,7 @@ import { variableText } from "./composerTemplates";
 import { ReplySignature } from "./ReplySignature";
 import { ReplyPreview } from "./ReplyPreview";
 import { SendButton } from "./SendButton";
+import { useWhatsAppReply, WhatsAppLine, WhatsAppTemplatePanel } from "./WhatsAppReply";
 import { ChatReplyLine } from "./ChatReplyLine";
 import { statusLabel } from "../bits";
 import { useDisplay } from "../fields";
@@ -453,7 +454,8 @@ export const Composer = forwardRef<
   // A forwarded email can go without words of its own.
   // A reply whose To the agent emptied waits for an address.
   const noRecipient = mode === "reply" && draft.to?.length === 0;
-  const canSend = (!!draft.html || !!forwarding) && !noRecipient && !busyUploads && !disabled && !ai.busy && !noSender && !filling && threadReady && !sendThread.isPending;
+  const wa = useWhatsAppReply(ticket, mode);
+  const canSend = (!!draft.html || !!forwarding || wa.ready) && wa.sendable && !noRecipient && !busyUploads && !disabled && !ai.busy && !noSender && !filling && threadReady && !sendThread.isPending;
 
   // The send button's moment: a check once it is out, or once a reply is on hold (its toast
   // and the timeline count down from there).
@@ -570,6 +572,11 @@ export const Composer = forwardRef<
       from_note_id: reply ? draft.fromNote : undefined,
       saved_reply_ids: draft.savedReplyIds?.length ? draft.savedReplyIds : undefined,
     };
+    // Outside WhatsApp's 24-hour window only a template goes out: its words are the reply's.
+    if (reply && wa.active && wa.closed && wa.pick) {
+      body.body_html = wa.html;
+      body.whatsapp_template = { id: wa.pick.id, variables: wa.pick.variables };
+    }
     const tempId = `tmp-${Date.now().toString(36)}`;
     retries.current.set(tempId, body);
     const temp = tempMessage(body, tempId);
@@ -589,6 +596,7 @@ export const Composer = forwardRef<
     }
     setSentWith(status);
     setSent(true);
+    wa.setPick(null);
     setUploads([]);
     setDraft({ html: "", to: undefined, cc: [], bcc: [], showCc: false, mailboxId: undefined, fromAccount: undefined, fromNote: undefined, savedReplyIds: undefined, ...(opts.as ? { mode: "reply" } : {}) });
     editor.current?.clear();
@@ -823,6 +831,8 @@ export const Composer = forwardRef<
               )
             ) : ticket.channel === "chat" ? (
               <ChatReplyLine ticket={ticket} />
+            ) : ticket.channel === "whatsapp" && mode === "reply" ? (
+              <WhatsAppLine ticket={ticket} wa={wa} />
             ) : (
               <button
                 type="button"
@@ -833,7 +843,7 @@ export const Composer = forwardRef<
                 {t("composer.to")} <span className="mono text-fg-2" data-ph-mask>{recipient}</span>
               </button>
             )}
-            {!note && !threadMode && (
+            {!note && !threadMode && !wa.active && (
               <button
                 type="button"
                 onClick={() => setDraft({ showCc: !draft.showCc })}
@@ -898,6 +908,7 @@ export const Composer = forwardRef<
             />
           )}
           {mode === "reply" && !replyMailboxId && <NoFollowUpSender ticket={ticket} ctx={teams} />}
+          {wa.closed && <WhatsAppTemplatePanel wa={wa} />}
           <div ref={writingArea}>
             <RichEditor
               ref={editor}
@@ -913,8 +924,8 @@ export const Composer = forwardRef<
               extensions={extensions}
               onSubmit={() => submit()}
               onKeyDown={onKeyDown}
-              editable={!disabled && !ai.busy}
-              contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", open ? "min-h-[96px]" : "min-h-[44px]")}
+              editable={!disabled && !ai.busy && !wa.closed}
+              contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", wa.closed ? "hidden" : open ? "min-h-[96px]" : "min-h-[44px]")}
               afterContent={
                 forwarding ? (
                   <ForwardedEmail
