@@ -918,7 +918,7 @@ export function registerResources() {
   });
 
   // Public chat verification: reading the link changes nothing; confirming verifies the visitor.
-  post("/v1/public/chat-verification", (ctx) => findVerifyLink(String(ctx.body.token ?? "")).page);
+  post("/v1/public/chat-verification", (ctx) => respond(200, findVerifyLink(String(ctx.body.token ?? "")).page));
   post("/v1/public/chat-verification/confirm", (ctx) => {
     const { ws, c, page } = findVerifyLink(String(ctx.body.token ?? ""));
     if (page.status !== "verified") {
@@ -926,7 +926,7 @@ export function registerResources() {
       c.updated_at = nowIso();
       publish(ws, "contact.updated", { contact: contactOut(ws, c) });
     }
-    return { ...page, status: "verified" };
+    return respond(200, { ...page, status: "verified" });
   });
 
   // Public CSAT.
