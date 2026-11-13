@@ -71,6 +71,20 @@
     "error": "Something went wrong. Please try again.",
     "offline": "Can't reach the server. Check your connection."
   },
+  "chat_verify": {
+    "page_title": "Verify your account",
+    "title": "Verify your account",
+    "body": "Confirm that this address is yours, so {{brand}} knows the chat is from you.",
+    "button": "Verify account",
+    "not_you": "Not you? Close this page and nothing changes.",
+    "done_title": "Your account is verified",
+    "already_title": "Your account is already verified",
+    "done_body": "{{brand}} now knows the chat from {{email}} is yours. You can close this page and keep chatting.",
+    "invalid_title": "This link isn't valid",
+    "invalid_body": "It may have expired or been used already. Ask for a new email in the chat.",
+    "error": "Something went wrong. Please try again.",
+    "offline": "Can't reach the server. Check your connection."
+  },
   "footer": {
     "powered_by": "Powered by",
     "language": "Language"
