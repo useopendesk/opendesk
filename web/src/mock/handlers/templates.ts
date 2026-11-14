@@ -191,7 +191,7 @@ function surveyButtons(accent: string): string {
 function renderEmail(o: EmailLayoutOptions, custom: string, parts: { content: string; signature: string; history: string; footer: string }, brand: { name: string; color: string; logo: string }) {
   const accent = o.accent || brand.color || "#0A0A0A";
   const font = FONTS[o.font] ?? FONTS.system;
-  const sig = parts.signature.trim() ? `<div style="margin-top:20px;color:#404040">${parts.signature}</div>` : "";
+  const sig = parts.signature.trim() ? `<div style="margin-top:20px${o.style === "branded" ? ";color:#404040" : ""}">${parts.signature}</div>` : "";
   let body: string;
   if (o.mode === "custom" && custom.trim()) {
     body = custom.replace(/\{\{\s*content\s*\}\}/g, parts.content).replace(/\{\{\s*signature\s*\}\}/g, parts.signature).replace(/\{\{\s*history\s*\}\}/g, parts.history);
@@ -212,7 +212,7 @@ function renderEmail(o: EmailLayoutOptions, custom: string, parts: { content: st
       `</td></tr></table>`;
   } else {
     body =
-      `<div style="max-width:640px;padding:16px 20px;font-family:${font};font-size:14px;line-height:1.6;color:#171717">` +
+      `<div style="font-family:${font};font-size:14px;line-height:1.6">` +
       (o.logo && brand.logo ? `<div style="margin:0 0 18px"><img src="${esc(brand.logo)}" alt="${esc(brand.name)}" height="28" style="display:block;height:28px;width:auto;max-width:220px;border:0"></div>` : "") +
       parts.content +
       sig +
