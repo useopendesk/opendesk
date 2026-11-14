@@ -14,8 +14,8 @@ func TestIsEmoji(t *testing.T) {
 		"\u2611\uFE0F":         true, // with its variation selector
 		"\U0001F1ED\U0001F1FA": true, // regional indicator pair
 		"\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466": true, // ZWJ family
-		"\U0001F44B\U0001F3FD":                 true, // skin tone
-		"\U0001F9D1\U0001F3FF\u200D\U0001F4BB": true, // ZWJ with a skin tone
+		"\U0001F44B\U0001F3FD":                                                   true, // skin tone
+		"\U0001F9D1\U0001F3FF\u200D\U0001F4BB":                                   true, // ZWJ with a skin tone
 		"\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F": true, // tag sequence
 		"1\uFE0F\u20E3":        true, // keycap
 		"#\u20E3":              true,

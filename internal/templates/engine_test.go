@@ -13,17 +13,17 @@ func vals(text map[string]string) *Values {
 func TestRenderVariablesAndFilters(t *testing.T) {
 	v := vals(map[string]string{"contact.first_name": "Jane", "team.name": "Billing", "agent.phone": ""})
 	cases := map[string]string{
-		"Hi {{contact.first_name}},":                              "Hi Jane,",
-		"Hi {{ contact.first_name }},":                            "Hi Jane,",
-		`Hi {{ agent.phone | default: "there" }}`:                 "Hi there",
-		`Hi {{ agent.phone | default: 'there' | upcase }}`:        "Hi THERE",
-		"{{ team.name | downcase }}":                              "billing",
-		"{{ team.name | upcase }}":                                "BILLING",
-		"{{ contact.last_name }}":                                 "", // known, no value
-		"{{ contact.nmae }}":                                      "{{ contact.nmae }}",
-		"function() { return {{x}} }":                             "function() { return {{x}} }",
-		`{{ contact.first_name | default: &quot;there&quot; }}`:   "Jane",
-		"{% if agent.phone %}Call {{agent.phone}}{% endif %}done": "done",
+		"Hi {{contact.first_name}},":                                                        "Hi Jane,",
+		"Hi {{ contact.first_name }},":                                                      "Hi Jane,",
+		`Hi {{ agent.phone | default: "there" }}`:                                           "Hi there",
+		`Hi {{ agent.phone | default: 'there' | upcase }}`:                                  "Hi THERE",
+		"{{ team.name | downcase }}":                                                        "billing",
+		"{{ team.name | upcase }}":                                                          "BILLING",
+		"{{ contact.last_name }}":                                                           "", // known, no value
+		"{{ contact.nmae }}":                                                                "{{ contact.nmae }}",
+		"function() { return {{x}} }":                                                       "function() { return {{x}} }",
+		`{{ contact.first_name | default: &quot;there&quot; }}`:                             "Jane",
+		"{% if agent.phone %}Call {{agent.phone}}{% endif %}done":                           "done",
 		"{% if contact.first_name %}Hi {{contact.first_name}}{% else %}Hello{% endif %}":    "Hi Jane",
 		"{% unless agent.phone %}no phone{% endunless %}":                                   "no phone",
 		`{% if team.name == "billing" %}B{% else %}O{% endif %}`:                            "B",
