@@ -299,3 +299,15 @@ func TestCredentialsKeyPrevious(t *testing.T) {
 		t.Fatalf("current and repeated keys: %v %d", err, len(c.CredentialsKeyPrevious))
 	}
 }
+
+func TestAIAgentInstructions(t *testing.T) {
+	productionEnv(t)
+	c, err := Load()
+	if err != nil || c.AIAgentInstructions != "" {
+		t.Fatalf("unset: %v %q", err, c.AIAgentInstructions)
+	}
+	t.Setenv("AI_AGENT_INSTRUCTIONS", "  Line one.\r\nLine two.  ")
+	if c, err = Load(); err != nil || c.AIAgentInstructions != "Line one.\nLine two." {
+		t.Fatalf("set: %v %q", err, c.AIAgentInstructions)
+	}
+}

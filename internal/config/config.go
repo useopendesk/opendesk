@@ -223,10 +223,13 @@ type Config struct {
 	AIModel           string // drafting, summaries, answers
 	AIFastModel       string // triage, classification, short rewrites
 	// AIModels are the models a workspace may choose (contracts/ai.md "Models"); empty = the defaults.
-	AIModels         []string
-	EmbeddingsDriver string // openrouter | voyage | openai | none
-	VoyageAPIKey     string
-	EmbeddingsModel  string
+	AIModels []string
+	// AIAgentInstructions holds optional instance-wide guidance for chat and email support
+	// agents across every workspace (AI_AGENT_INSTRUCTIONS).
+	AIAgentInstructions string
+	EmbeddingsDriver    string // openrouter | voyage | openai | none
+	VoyageAPIKey        string
+	EmbeddingsModel     string
 	// AIUsageMarkup multiplies a call's provider cost into what the workspace pays when
 	// billing is on (contracts/billing.md "Metered usage").
 	AIUsageMarkup float64
@@ -528,18 +531,19 @@ func Load() (*Config, error) {
 		StripePriceTopUp:    env("STRIPE_PRICE_AI_TOPUP", env("STRIPE_PRICE_CREDITS", "")),
 		StripeAPIURL:        env("STRIPE_API_URL", ""),
 
-		AIProvider:        env("AI_PROVIDER", ""),
-		AnthropicAPIKey:   env("ANTHROPIC_API_KEY", ""),
-		OpenAIAPIKey:      env("OPENAI_API_KEY", ""),
-		OpenAIBaseURL:     strings.TrimRight(env("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
-		OpenRouterAPIKey:  env("OPENROUTER_API_KEY", ""),
-		OpenRouterBaseURL: strings.TrimRight(env("OPENROUTER_BASE_URL", "https://openrouter.ai/api"), "/"),
-		AIModel:           env("AI_MODEL", ""),
-		AIFastModel:       env("AI_FAST_MODEL", ""),
-		AIModels:          envList("AI_MODELS"),
-		EmbeddingsDriver:  env("EMBEDDINGS_DRIVER", ""),
-		VoyageAPIKey:      env("VOYAGE_API_KEY", ""),
-		EmbeddingsModel:   env("EMBEDDINGS_MODEL", ""),
+		AIProvider:          env("AI_PROVIDER", ""),
+		AnthropicAPIKey:     env("ANTHROPIC_API_KEY", ""),
+		OpenAIAPIKey:        env("OPENAI_API_KEY", ""),
+		OpenAIBaseURL:       strings.TrimRight(env("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
+		OpenRouterAPIKey:    env("OPENROUTER_API_KEY", ""),
+		OpenRouterBaseURL:   strings.TrimRight(env("OPENROUTER_BASE_URL", "https://openrouter.ai/api"), "/"),
+		AIModel:             env("AI_MODEL", ""),
+		AIFastModel:         env("AI_FAST_MODEL", ""),
+		AIModels:            envList("AI_MODELS"),
+		AIAgentInstructions: strings.TrimSpace(strings.ReplaceAll(env("AI_AGENT_INSTRUCTIONS", ""), "\r\n", "\n")),
+		EmbeddingsDriver:    env("EMBEDDINGS_DRIVER", ""),
+		VoyageAPIKey:        env("VOYAGE_API_KEY", ""),
+		EmbeddingsModel:     env("EMBEDDINGS_MODEL", ""),
 
 		DecisionsProvider: strings.ToLower(env("DECISIONS_PROVIDER", "")),
 		TypesafeAPIKey:    env("TYPESAFE_API_KEY", ""),

@@ -272,6 +272,7 @@ AI features are on when a provider is configured. See [AI features](/guides/ai/)
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint: Azure, Ollama, vLLM, LM Studio. Point it at a local model to keep everything on your server. |
 | `AI_MODEL` | `claude-sonnet-5-5` with Anthropic | Model for drafting, summaries and answers. Required for `openai`. |
 | `AI_FAST_MODEL` | `claude-haiku-4-5-20251001` with Anthropic, else `AI_MODEL` | Model for triage, classification and short rewrites. |
+| `AI_AGENT_INSTRUCTIONS` | empty | Optional instance-wide instructions included in `<instance_guidance>` for chat and email support agents across every workspace. |
 | `EMBEDDINGS_DRIVER` | detected | `voyage`, `openai` or `none`. When empty: `voyage` if `VOYAGE_API_KEY` is set, else `openai` with the `openai` provider, else `none` (search falls back to Postgres full-text search). |
 | `VOYAGE_API_KEY` | | Voyage AI key for embeddings. |
 | `EMBEDDINGS_MODEL` | | Embeddings model. |
