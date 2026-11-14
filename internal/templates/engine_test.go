@@ -178,6 +178,34 @@ func TestRenderEmail(t *testing.T) {
 	}
 }
 
+// Plain reads like a person's own email, so it follows the reader's light or dark theme:
+// no forced light scheme, fixed text colour or frame. Branded keeps its light card.
+func TestRenderEmailPlainFollowsTheme(t *testing.T) {
+	c := &Context{Values: vals(nil), Location: time.UTC, BrandColor: "#2563EB"}
+	at := time.Date(2026, 10, 17, 14, 3, 0, 0, time.UTC)
+	parts := Parts{Content: "<p>Thanks!</p>", ContentText: "Thanks!", Signature: "<p>Alex</p>",
+		History: []HistoryItem{{Author: "Jane", At: at, HTML: "<p>Help</p>"}}}
+
+	e := c.RenderEmail(DefaultDesign(), parts)
+	if !strings.Contains(e.HTML, `<meta name="color-scheme" content="light dark">`) || strings.Contains(e.HTML, "light only") {
+		t.Errorf("plain: color scheme: %s", e.HTML)
+	}
+	for _, unwanted := range []string{"color:#171717", "color:#404040", "padding:16px 20px", "max-width:640px", "background:#F5F5F5"} {
+		if strings.Contains(e.HTML, unwanted) {
+			t.Errorf("plain: unexpected %q in %s", unwanted, e.HTML)
+		}
+	}
+
+	d := DefaultDesign()
+	d.Layout.Style = "branded"
+	e = c.RenderEmail(d, parts)
+	for _, want := range []string{`<meta name="color-scheme" content="light only">`, "color:#171717", "background:#FFFFFF"} {
+		if !strings.Contains(e.HTML, want) {
+			t.Errorf("branded: missing %q", want)
+		}
+	}
+}
+
 // The quote line reads each quoted message's author, address and date, filled in one pass.
 func TestHistoryHeaderEmail(t *testing.T) {
 	c := &Context{Values: vals(nil), Location: time.UTC, BrandColor: "#2563EB"}
