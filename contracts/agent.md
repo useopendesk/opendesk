@@ -47,7 +47,8 @@ Each reply is a tool-using model loop (at most 6 model turns per reply) with:
   workspace's `widget_blocked_topics` and the bot's `blocked_topics`; the workspace's
   `reply_language` and `instructions` and the workspace name; plus optional instance-wide
   `AI_AGENT_INSTRUCTIONS` in `<instance_guidance>`. The guidance shapes voice and content, never the
-  rules, tools or blocked topics;
+  rules, tools or blocked topics; where guidance conflicts, `<agent_guidance>` wins over
+  `<workspace_guidance>`, which wins over `<instance_guidance>`;
 - the visitor: name, whether the session is verified (`user_hash`), and the current page URL when the
   widget reports it;
 - the procedures it may pick ("Procedures" below): the enabled ones whose `channels` include the

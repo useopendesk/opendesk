@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func productionEnv(t *testing.T) {
@@ -309,5 +310,13 @@ func TestAIAgentInstructions(t *testing.T) {
 	t.Setenv("AI_AGENT_INSTRUCTIONS", "  Line one.\r\nLine two.  ")
 	if c, err = Load(); err != nil || c.AIAgentInstructions != "Line one.\nLine two." {
 		t.Fatalf("set: %v %q", err, c.AIAgentInstructions)
+	}
+	t.Setenv("AI_AGENT_INSTRUCTIONS", strings.Repeat("é", MaxAIAgentInstructions))
+	if c, err = Load(); err != nil || utf8.RuneCountInString(c.AIAgentInstructions) != MaxAIAgentInstructions {
+		t.Fatalf("at the limit: %v", err)
+	}
+	t.Setenv("AI_AGENT_INSTRUCTIONS", strings.Repeat("a", MaxAIAgentInstructions+1))
+	if _, err = Load(); err == nil || !strings.Contains(err.Error(), "AI_AGENT_INSTRUCTIONS") {
+		t.Fatalf("over the limit: %v", err)
 	}
 }

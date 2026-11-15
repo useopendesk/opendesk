@@ -17,10 +17,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // MinAuthSecretLength is the hard floor for AUTH_SECRET; the realtime gateway enforces the same.
 const MinAuthSecretLength = 32
+
+// MaxAIAgentInstructions caps AI_AGENT_INSTRUCTIONS, which every support agent reply carries.
+const MaxAIAgentInstructions = 8000
 
 type Config struct {
 	Env      string // development | production
@@ -225,7 +229,7 @@ type Config struct {
 	// AIModels are the models a workspace may choose (contracts/ai.md "Models"); empty = the defaults.
 	AIModels []string
 	// AIAgentInstructions holds optional instance-wide guidance for chat and email support
-	// agents across every workspace (AI_AGENT_INSTRUCTIONS).
+	// agents across every workspace (AI_AGENT_INSTRUCTIONS), at most MaxAIAgentInstructions characters.
 	AIAgentInstructions string
 	EmbeddingsDriver    string // openrouter | voyage | openai | none
 	VoyageAPIKey        string
@@ -564,6 +568,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("AI_USAGE_MARKUP must be a number from 1 to 100")
 	}
 	c.AIUsageMarkup = markup
+	if utf8.RuneCountInString(c.AIAgentInstructions) > MaxAIAgentInstructions {
+		return nil, fmt.Errorf("AI_AGENT_INSTRUCTIONS must be at most %d characters", MaxAIAgentInstructions)
+	}
 	if c.AIProvider == "" {
 		switch {
 		case c.OpenRouterAPIKey != "":
