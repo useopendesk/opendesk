@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 )
 
 const pngBytes = "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
@@ -107,5 +109,63 @@ func TestOldSignedLinksRenderStable(t *testing.T) {
 	}
 	if r := s.get(t, "app.test", "/help/"+s.slug+"/_help/files/"+id.String()); r.status != 200 {
 		t.Fatalf("the image itself: %d", r.status)
+	}
+}
+
+// An image two articles show stays on the help center when the one holding it is deleted:
+// it passes to the other (a published one before an older draft), and the sweep keeps it.
+// The same goes for changelog entries.
+func TestHelpCenterFileHandedOver(t *testing.T) {
+	s := newSite(t, func(s *site) { s.D.Cfg.ServeWeb = true })
+	agent := s.ws.Agent.As(s.ws)
+	files := "/help/" + s.slug + "/_help/files/"
+	id := s.file(t, "image/png", pngBytes, "kb_article_id", s.article)
+	// The second article names it in upper case, as an older body may.
+	body := `<p><img src="/v1/attachments/` + id.String() + `"></p>`
+	upper := `<p><img src="/v1/attachments/` + strings.ToUpper(id.String()) + `"></p>`
+	var second, draft uuid.UUID
+	s.Exec(`UPDATE kb_articles SET body_html = $2 WHERE id = $1`, s.article, body)
+	s.Scalar(`SELECT id FROM kb_articles WHERE workspace_id = $1 AND title = 'Change your plan'`, &second, s.ws.ID)
+	s.Exec(`UPDATE kb_articles SET body_html = $2 WHERE id = $1`, second, upper)
+	s.Scalar(`INSERT INTO kb_articles (workspace_id, title, slug, body_html, status, created_at) VALUES ($1, 'Old draft', 'old-draft', $2, 'draft', now() - interval '1 year') RETURNING id`,
+		&draft, s.ws.ID, body)
+	s.Exec(`UPDATE attachments SET created_at = now() - interval '25 hours' WHERE id = $1`, id)
+
+	s.Do("DELETE", "/v1/kb/articles/"+s.article.String(), agent, nil).Want(t, 204)
+	var holder *uuid.UUID
+	s.Scalar(`SELECT kb_article_id FROM attachments WHERE id = $1`, &holder, id)
+	if holder == nil || *holder != second {
+		t.Fatalf("held by %v, want the published article %s", holder, second)
+	}
+	if err := tickets.PurgeAttachments(s.Ctx, s.D); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.get(t, "app.test", files+id.String()); r.status != 200 || r.body != pngBytes {
+		t.Fatalf("after the first article went: %d", r.status)
+	}
+
+	// An edit that drops it hands it over too; with no article left naming it, an entry may.
+	s.Do("DELETE", "/v1/kb/articles/"+draft.String(), agent, nil).Want(t, 204)
+	var entry uuid.UUID
+	s.Scalar(`INSERT INTO changelog_entries (workspace_id, title, slug, body_html, status, published_at) VALUES ($1, 'Shipped', 'shipped', $2, 'published', now()) RETURNING id`,
+		&entry, s.ws.ID, body)
+	s.Do("PATCH", "/v1/kb/articles/"+second.String(), agent, map[string]any{"body_html": "<p>No image</p>"}).Want(t, 200)
+	s.Scalar(`SELECT changelog_entry_id FROM attachments WHERE id = $1`, &holder, id)
+	if holder == nil || *holder != entry {
+		t.Fatalf("held by %v, want the entry %s", holder, entry)
+	}
+	if r := s.get(t, "app.test", files+id.String()); r.status != 200 {
+		t.Fatalf("the entry's image: %d", r.status)
+	}
+
+	// Nobody naming it once the entry is gone, the sweep removes it.
+	s.Do("DELETE", "/v1/changelog/entries/"+entry.String(), agent, nil).Want(t, 204)
+	if err := tickets.PurgeAttachments(s.Ctx, s.D); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	s.Scalar(`SELECT count(*) FROM attachments WHERE id = $1`, &n, id)
+	if n != 0 {
+		t.Fatal("a file nothing names was kept")
 	}
 }

@@ -691,7 +691,7 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 | GET | `/v1/search?q=&brand_id=` | → `{tickets: Ticket[], contacts: Contact[], articles: KbArticle[], wiki_pages: WikiSearchHit[]}` (5 each; each kind only with its read scope). `brand_id` (optional) narrows the articles to what that brand shows: its own and those of every brand |
 | GET | `/v1/reports/overview?from=&to=&team_id=&brand_id=` | → `{created, solved, open_now, first_response_p50_minutes, resolution_p50_minutes, csat_avg, csat_count, sla_breached, by_day: [{date, created, solved}], by_channel: {...}, by_severity: Record<Severity \| "none", number> /* tickets created in the range */, by_agent: [{user, solved, first_response_p50_minutes}], by_team: [{team_id: string \| null, created, solved, open_now, first_response_p50_minutes}], by_brand: [{brand_id, created, solved, open_now, first_response_p50_minutes}]}`. `team_id` (a team, or `none`) and `brand_id` narrow every figure. Private teams' tickets are counted, with no subjects or contacts; spam, deleted and merged tickets are not. Every `first_response_p50_minutes` is the median, over tickets created in the range, of the time from a ticket's creation to its first response: `first_responded_at`, a person's first public reply (a member's, including one whose account was since deleted or an imported agent's; never Ollie's, a bot's or an automation's), none on a ticket the team started (a team's reply within a minute of its creation, before any customer message) |
 | GET | `/v1/reports/agents?from=&to=&team_id=&brand_id=` | → `{data: ReportAgent[], online_time: "all" \| "self" \| "none" \| "off"}`, one row per member, most solved first; a member who is not an admin gets their own row only ("Agents report"). Same range, roles, scope and filters as the overview |
-| POST | `/v1/attachments` | multipart `file` → `Attachment` (unattached, linked when sent). Only whoever uploaded it (that user, or that API key) may send it in `attachment_ids` (`422` otherwise). An upload nothing holds is deleted after 24 hours; a message, a wiki page, an unsent reply draft, a knowledge base article or changelog entry that owns it, or the body of an article or entry of the workspace that links it holds it |
+| POST | `/v1/attachments` | multipart `file` → `Attachment` (unattached, linked when sent). Only whoever uploaded it (that user, or that API key) may send it in `attachment_ids`, and not once an article or changelog entry owns it (`422` otherwise). An upload nothing holds is deleted after 24 hours; a message, a wiki page, an unsent reply draft, a knowledge base article or changelog entry that owns it, or the body of an article or entry of the workspace that links it holds it |
 | GET | `/v1/attachments/{id}` | → 302 to signed URL or streamed. For img tags, the links messages, wiki pages, articles and changelog entries carry when members read them are signed (`?exp=&sig=`) and work for one to two hours. A file on a ticket the caller may not see is `404` (contracts/teams.md "Visibility"); a wiki page's file is read by whoever may see the page (`wiki:read` for a key; contracts/wiki.md "Files"); an article's or changelog entry's file by any member (`kb:read` or `changelog:read` for a key); an upload not sent yet is its uploader's alone (`404` for anyone else) |
 
 #### Agents report
@@ -1086,14 +1086,18 @@ A knowledge base article or changelog entry names one of our files as `/v1/attac
 is stored as its path. As an article or entry is created or edited, each upload its body names that the person
 or key saving it uploaded, and that nothing else holds (a message, a wiki page, another article or entry, an
 unsent reply draft), becomes its own (`attachments.kb_article_id` / `changelog_entry_id`, migration `000760`,
-which also gave existing articles and entries the uploads they name). A file the body no longer names is let go.
-An article's or entry's files:
+which also gave existing articles and entries the uploads they name, a published one first, then the oldest).
+A file the body no longer names, and every file of an article or entry being deleted, passes to another article
+of the workspace whose body names it (a published one first, then the oldest), else to such a changelog entry
+(a shown one first), so a help center that shows it keeps serving it; a file nothing else holds or names is
+let go. An article's or entry's files:
 
-- are kept while it is, published or not; the sweep of uploads nobody sent leaves them. Deleting it, or
-  dropping a file from its body, lets go of them, and the sweep removes them a day later;
+- are kept while it is, published or not; the sweep of uploads nobody sent leaves them, as it leaves any upload
+  the body of an article or entry of the workspace names. One let go is removed by the sweep a day later;
+- stay its own: a reply or note can't send one in `attachment_ids` (`422`), and a message never takes one;
 - are read by any member (`GET /v1/attachments/{id}`; `kb:read` or `changelog:read` for a key), and come signed
   (one to two hours) in every member's read (`GET /v1/kb/articles`, `/v1/kb/articles/{id}`, the changelog's
-  equivalents, `/v1/search`), so the editor shows them to every agent;
+  equivalents, `/v1/search`, and a wiki page whose body names one), so the editor shows them to every agent;
 - are public once it is: a raster image of a published article the help center shows, or of a changelog entry it
   shows (published and dated now or earlier), is served from the help center's own address at
   `/_help/files/<id>` (contracts/teams.md "Serving"). The help center's pages, its Atom feed and the public API

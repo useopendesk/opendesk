@@ -334,6 +334,10 @@ func registerArticles(d *deps.Deps, api huma.API) {
 				return nil, err
 			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				// Its files pass to another article or entry that shows them.
+				if err := holdFiles(ctx, tx, p, articleFiles, id, ""); err != nil {
+					return err
+				}
 				tag, err := tx.Exec(ctx, `DELETE FROM kb_articles WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id)
 				if err != nil {
 					return err

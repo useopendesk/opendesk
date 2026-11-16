@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/helpdesk/kb"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 	"github.com/useopendesk/opendesk/internal/helpdesk/widget"
+	"github.com/useopendesk/opendesk/internal/helpdesk/wiki"
 )
 
 const pngBytes = "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
@@ -203,5 +206,62 @@ func TestChangelogFiles(t *testing.T) {
 	e.Do("GET", "/v1/public/help/"+ws.Slug+"/changelog", hdtest.Auth{}, nil).Want(t, 200).JSON(t, &page)
 	if len(page.Data) != 1 || !strings.Contains(page.Data[0].BodyHTML, stable) {
 		t.Fatalf("public changelog %+v", page.Data)
+	}
+}
+
+// A file an article holds stays the article's: a reply naming it in attachment_ids is
+// refused, and a message added with it does not take it, so the help center keeps serving it.
+func TestArticleFileStaysOffReplies(t *testing.T) {
+	e := hdtest.New(t, kb.Register, widget.Register, tickets.Register)
+	ws := e.NewWorkspace()
+	agent := ws.Agent.As(ws)
+	file := uploadPNG(t, e, agent)
+	art := createArticle(t, e, agent, map[string]any{"title": "Charts", "body_html": img(file), "status": "published"})
+	var tk domain.Ticket
+	err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		var err error
+		tk, err = domain.CreateTicket(e.Ctx, tx, domain.NewTicket{WorkspaceID: ws.ID, Channel: domain.ChannelAPI, Subject: "Help"})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/messages", agent, map[string]any{"kind": "reply", "body_html": "x", "attachment_ids": []string{file.ID}}).Want(t, 422)
+	err = e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		_, err := domain.AddMessage(e.Ctx, tx, e.D.Jobs, domain.NewMessage{WorkspaceID: ws.ID, TicketID: tk.ID, Kind: "reply", Direction: "outbound",
+			AuthorType: "user", AuthorUserID: &ws.Agent.ID, BodyText: "x", BodyHTML: "<p>x</p>", Trigger: "none", AttachmentIDs: []uuid.UUID{uuid.MustParse(file.ID)}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := holderOf(t, e, "kb_article_id", file.ID); h == nil || h.String() != art.ID {
+		t.Fatalf("file held by %v, want %s", h, art.ID)
+	}
+	if h := holderOf(t, e, "message_id", file.ID); h != nil {
+		t.Fatalf("a message took the article's file: %v", h)
+	}
+}
+
+// An image copied from an article into a wiki page loads there too: any member reads an
+// article's files, so the page's read signs it.
+func TestArticleFileInWikiPage(t *testing.T) {
+	e := hdtest.New(t, kb.Register, widget.Register, wiki.Register)
+	ws := e.NewWorkspace()
+	agent := ws.Agent.As(ws)
+	file := uploadPNG(t, e, agent)
+	createArticle(t, e, agent, map[string]any{"title": "Charts", "body_html": img(file)})
+	var pg struct {
+		ID       string `json:"id"`
+		BodyHTML string `json:"body_html"`
+	}
+	e.Do("POST", "/v1/wiki/pages", ws.Admin.As(ws), map[string]any{"title": "Notes", "body_html": `<p><img src="/v1/attachments/` + file.ID + `"></p>`}).
+		Want(t, 201).JSON(t, &pg)
+	if h := holderOf(t, e, "wiki_page_id", file.ID); h != nil {
+		t.Fatalf("the page took the article's file: %v", h)
+	}
+	e.Do("GET", "/v1/wiki/pages/"+pg.ID, ws.Viewer.As(ws), nil).Want(t, 200).JSON(t, &pg)
+	if !strings.Contains(pg.BodyHTML, `src="http://api.test/v1/attachments/`+file.ID+`?exp=`) {
+		t.Fatalf("page read %s", pg.BodyHTML)
 	}
 }

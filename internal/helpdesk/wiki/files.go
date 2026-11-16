@@ -22,8 +22,9 @@ import (
 // hands out signed links to the files of its space.
 
 // signFiles gives the reader of page signed links to the files of the page's space (its own,
-// and those of the pages beside it, which the same people see), so images load without a
-// token. Any other file keeps its plain path.
+// and those of the pages beside it, which the same people see) and to those a knowledge base
+// article or changelog entry of the workspace holds (which any member reads), so images load
+// without a token. Any other file keeps its plain path.
 func signFiles(ctx context.Context, q db.Querier, wid, page uuid.UUID, body string) (string, error) {
 	files := hd.FileIDs(body)
 	if len(files) == 0 {
@@ -33,7 +34,10 @@ func signFiles(ctx context.Context, q db.Querier, wid, page uuid.UUID, body stri
 		JOIN wiki_pages h ON h.workspace_id = a.workspace_id AND h.id = a.wiki_page_id
 		JOIN wiki_pages p ON p.workspace_id = $1 AND p.id = $2
 		WHERE a.workspace_id = $1 AND a.id = ANY($3) AND a.message_id IS NULL
-		AND h.private_to IS NOT DISTINCT FROM p.private_to AND h.team_id IS NOT DISTINCT FROM p.team_id`, wid, page, files)
+		AND h.private_to IS NOT DISTINCT FROM p.private_to AND h.team_id IS NOT DISTINCT FROM p.team_id
+		UNION
+		SELECT a.id FROM attachments a WHERE a.workspace_id = $1 AND a.id = ANY($3) AND a.message_id IS NULL AND a.wiki_page_id IS NULL
+		AND (a.kb_article_id IS NOT NULL OR a.changelog_entry_id IS NOT NULL)`, wid, page, files)
 	signed, err := collectIDs(rows, err)
 	if err != nil || len(signed) == 0 {
 		return hd.PlainFiles(body), err

@@ -15,10 +15,12 @@ import (
 // Files (contracts/api.md "Knowledge base"): a body keeps one of our files as its plain path,
 // /v1/attachments/<id>. As an article or changelog entry is saved, each upload its body names
 // that the person or key saving it uploaded, and that nothing else holds (a message, a wiki
-// page, another article or entry, an unsent reply draft), becomes its own; a file the body no
-// longer names is let go, and the sweep of unattached uploads removes it later. Members read
-// its files with signed links; a published one's help center serves its images at
-// /_help/files/<id>.
+// page, another article or entry, an unsent reply draft), becomes its own. A file the body no
+// longer names, or every file of one being deleted, passes to another article of the
+// workspace whose body names it (a published one first, then the oldest), else to such a
+// changelog entry; one nobody names is let go, and the sweep of unattached uploads removes it
+// later. Members read its files with signed links; a published one's help center serves its
+// images at /_help/files/<id>.
 
 // holder is the attachments column naming what holds a file.
 type holder string
@@ -28,27 +30,64 @@ const (
 	entryFiles   holder = "changelog_entry_id"
 )
 
-// holdFiles makes the files body names owner's own, as described above, and lets go of
-// those it no longer names. Run in the transaction that saves the body.
+// holdFiles makes the files body names owner's own, as described above, and hands over
+// those it no longer names. Run in the transaction that saves the body, or with body "" in
+// the one that deletes the owner, before the delete.
 func holdFiles(ctx context.Context, tx pgx.Tx, p *auth.Principal, col holder, owner uuid.UUID, body string) error {
 	files := hd.FileIDs(body)
 	if files == nil {
 		files = []uuid.UUID{}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE attachments SET `+string(col)+` = NULL
-		WHERE workspace_id = $1 AND `+string(col)+` = $2 AND NOT (id = ANY($3))`, p.WorkspaceID, owner, files); err != nil {
+	rows, err := tx.Query(ctx, `UPDATE attachments SET `+string(col)+` = NULL
+		WHERE workspace_id = $1 AND `+string(col)+` = $2 AND NOT (id = ANY($3)) RETURNING id`, p.WorkspaceID, owner, files)
+	if err != nil {
+		return err
+	}
+	released, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return err
+	}
+	if err := handOverFiles(ctx, tx, p.WorkspaceID, owner, released); err != nil {
 		return err
 	}
 	user, key := p.ActorUserID(), p.ActorAPIKeyID()
 	if len(files) == 0 || (user == nil && key == nil) {
 		return nil
 	}
-	_, err := tx.Exec(ctx, `UPDATE attachments a SET `+string(col)+` = $3
+	_, err = tx.Exec(ctx, `UPDATE attachments a SET `+string(col)+` = $3
 		WHERE a.workspace_id = $1 AND a.id = ANY($2) AND a.message_id IS NULL AND a.wiki_page_id IS NULL
 		AND a.kb_article_id IS NULL AND a.changelog_entry_id IS NULL
 		AND (a.uploaded_by = $4 OR a.uploaded_by_api_key_id = $5)
 		AND NOT EXISTS (SELECT 1 FROM ticket_reply_drafts rd WHERE rd.workspace_id = a.workspace_id AND a.id = ANY(rd.attachment_ids))`,
 		p.WorkspaceID, files, owner, user, key)
+	return err
+}
+
+// handOverFiles gives each of files that nothing holds to an article of the workspace other
+// than from whose body names it (a published one first, then the oldest), else to such a
+// changelog entry (a shown one first), so a help center that shows it keeps serving it.
+func handOverFiles(ctx context.Context, tx pgx.Tx, wid, from uuid.UUID, files []uuid.UUID) error {
+	if len(files) == 0 {
+		return nil
+	}
+	const unheld = `a.workspace_id = $1 AND a.id = ANY($2) AND a.message_id IS NULL AND a.wiki_page_id IS NULL
+		AND a.kb_article_id IS NULL AND a.changelog_entry_id IS NULL`
+	if _, err := tx.Exec(ctx, `UPDATE attachments a SET kb_article_id = x.owner
+		FROM (SELECT DISTINCT ON (f.id) f.id, k.id AS owner FROM attachments f
+			JOIN kb_articles k ON k.workspace_id = f.workspace_id AND k.id <> $3
+				AND strpos(lower(k.body_html), '/v1/attachments/' || f.id::text) > 0
+			WHERE f.workspace_id = $1 AND f.id = ANY($2)
+			ORDER BY f.id, (k.status = 'published') DESC, k.created_at, k.id) x
+		WHERE a.id = x.id AND `+unheld, wid, files, from); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `UPDATE attachments a SET changelog_entry_id = x.owner
+		FROM (SELECT DISTINCT ON (f.id) f.id, e.id AS owner FROM attachments f
+			JOIN changelog_entries e ON e.workspace_id = f.workspace_id AND e.id <> $3
+				AND strpos(lower(e.body_html), '/v1/attachments/' || f.id::text) > 0
+			WHERE f.workspace_id = $1 AND f.id = ANY($2)
+			ORDER BY f.id, (e.status = 'published' AND e.published_at <= now()) DESC, e.created_at, e.id) x
+		WHERE a.id = x.id AND `+unheld, wid, files, from)
 	return err
 }
 
