@@ -133,7 +133,7 @@ describe("agent language", () => {
     resetLocale();
   });
 
-  it("selects French, German and Czech regional variants and falls back to English for other languages", () => {
+  it("selects French, German, Czech and Chinese variants and falls back to English for other languages", () => {
     expect(pickAgentLocale(["fr-FR", "en-US"])).toBe("fr");
     expect(pickAgentLocale(["fr-CA"])).toBe("fr");
     expect(pickAgentLocale(["de-DE"])).toBe("de");
@@ -141,6 +141,9 @@ describe("agent language", () => {
     expect(pickAgentLocale(["cs-CZ", "en-US"])).toBe("cs");
     expect(pickAgentLocale(["sk-SK", "cs"])).toBe("cs");
     expect(pickAgentLocale(["en-US", "de-DE"])).toBe("en");
+    expect(pickAgentLocale(["zh-CN", "en-US"])).toBe("zh-CN");
+    expect(pickAgentLocale(["zh-Hans-CN"])).toBe("zh-CN");
+    expect(pickAgentLocale(["zh-TW"])).toBe("en");
     expect(pickAgentLocale(["it-IT"])).toBe("en");
     expect(pickAgentLocale(["ar-EG"])).toBe("en");
     expect(pickAgentLocale([])).toBe("en");
@@ -178,13 +181,15 @@ describe("agent language", () => {
 describe("inSentence", () => {
   afterEach(() => resetLocale());
 
-  it("lowercases a label inside a sentence, except in German, whose nouns keep their capital", async () => {
+  it("lowercases a label inside a sentence, except in German, whose nouns keep their capital, and Chinese, which has no case", async () => {
     await i18n.changeLanguage("fr");
     expect(inSentence("Contacts")).toBe("contacts");
     await i18n.changeLanguage("cs");
     expect(inSentence("Kontakty")).toBe("kontakty");
     await i18n.changeLanguage("de");
     expect(inSentence("Kontakte")).toBe("Kontakte");
+    await i18n.changeLanguage("zh-CN");
+    expect(inSentence("SLA 政策")).toBe("SLA 政策");
     await i18n.changeLanguage("en");
     expect(inSentence("Tickets")).toBe("tickets");
   });
