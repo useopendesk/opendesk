@@ -1,19 +1,21 @@
 // Calendar dates in the agent app's language: the date-fns locale for month and
 // weekday names, and the short patterns each language writes a date in
-// ("Mar 4" in English, "4 mars" in French, "4. März" in German, "10月6日" in Chinese).
+// ("Mar 4" in English, "4 mars" in French, "4. März" in German, "4. 3." in Czech,
+// which writes a short date in numbers, "10月6日" in Chinese).
 
-import { de, fr, zhCN } from "date-fns/locale";
+import { cs, de, fr, zhCN } from "date-fns/locale";
 import type { Locale } from "date-fns";
 import { AGENT_LOCALES, type AgentLocale, i18n } from "./index";
 
 export type DatePattern = "dayMonth" | "dayMonthYear" | "weekdayDayMonth" | "field";
 
-const LOCALES: Partial<Record<AgentLocale, Locale>> = { fr, de, "zh-CN": zhCN };
+const LOCALES: Partial<Record<AgentLocale, Locale>> = { fr, de, cs, "zh-CN": zhCN };
 
 const PATTERNS: Record<AgentLocale, Record<DatePattern, string>> = {
   en: { dayMonth: "MMM d", dayMonthYear: "MMM d, yyyy", weekdayDayMonth: "EEE, MMM d", field: "d MMM yyyy" },
   fr: { dayMonth: "d MMM", dayMonthYear: "d MMM yyyy", weekdayDayMonth: "EEE d MMM", field: "d MMM yyyy" },
   de: { dayMonth: "d. MMM", dayMonthYear: "d. MMM yyyy", weekdayDayMonth: "EEE, d. MMM", field: "d. MMM yyyy" },
+  cs: { dayMonth: "d. M.", dayMonthYear: "d. M. yyyy", weekdayDayMonth: "EEEEEE d. M.", field: "d. M. yyyy" },
   "zh-CN": { dayMonth: "M月d日", dayMonthYear: "yyyy年M月d日", weekdayDayMonth: "EEE M月d日", field: "yyyy年M月d日" },
 };
 
