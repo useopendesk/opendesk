@@ -7,16 +7,18 @@ import { cs, de, fr, zhCN } from "date-fns/locale";
 import type { Locale } from "date-fns";
 import { AGENT_LOCALES, type AgentLocale, i18n } from "./index";
 
-export type DatePattern = "dayMonth" | "dayMonthYear" | "weekdayDayMonth" | "field";
+// monthYear heads a calendar: Czech names the month standing alone (LLLL, "březen",
+// not "března" as in a date), Chinese puts the year first.
+export type DatePattern = "dayMonth" | "dayMonthYear" | "weekdayDayMonth" | "field" | "monthYear";
 
 const LOCALES: Partial<Record<AgentLocale, Locale>> = { fr, de, cs, "zh-CN": zhCN };
 
 const PATTERNS: Record<AgentLocale, Record<DatePattern, string>> = {
-  en: { dayMonth: "MMM d", dayMonthYear: "MMM d, yyyy", weekdayDayMonth: "EEE, MMM d", field: "d MMM yyyy" },
-  fr: { dayMonth: "d MMM", dayMonthYear: "d MMM yyyy", weekdayDayMonth: "EEE d MMM", field: "d MMM yyyy" },
-  de: { dayMonth: "d. MMM", dayMonthYear: "d. MMM yyyy", weekdayDayMonth: "EEE, d. MMM", field: "d. MMM yyyy" },
-  cs: { dayMonth: "d. M.", dayMonthYear: "d. M. yyyy", weekdayDayMonth: "EEEEEE d. M.", field: "d. M. yyyy" },
-  "zh-CN": { dayMonth: "M月d日", dayMonthYear: "yyyy年M月d日", weekdayDayMonth: "EEE M月d日", field: "yyyy年M月d日" },
+  en: { dayMonth: "MMM d", dayMonthYear: "MMM d, yyyy", weekdayDayMonth: "EEE, MMM d", field: "d MMM yyyy", monthYear: "MMMM yyyy" },
+  fr: { dayMonth: "d MMM", dayMonthYear: "d MMM yyyy", weekdayDayMonth: "EEE d MMM", field: "d MMM yyyy", monthYear: "MMMM yyyy" },
+  de: { dayMonth: "d. MMM", dayMonthYear: "d. MMM yyyy", weekdayDayMonth: "EEE, d. MMM", field: "d. MMM yyyy", monthYear: "MMMM yyyy" },
+  cs: { dayMonth: "d. M.", dayMonthYear: "d. M. yyyy", weekdayDayMonth: "EEEEEE d. M.", field: "d. M. yyyy", monthYear: "LLLL yyyy" },
+  "zh-CN": { dayMonth: "M月d日", dayMonthYear: "yyyy年M月d日", weekdayDayMonth: "EEE M月d日", field: "yyyy年M月d日", monthYear: "yyyy年M月" },
 };
 
 /** The agent language for a full tag, a base tag or a locale, or null. */

@@ -97,8 +97,7 @@ export function Calendar({
   return (
     <div className={cn("w-[224px] select-none", className)}>
       <div className="mb-1.5 flex items-center justify-between">
-        {/* LLLL: the month standing alone, which Czech names "březen", not "března" as in a date */}
-        <span className="pl-1 text-[12.5px] font-medium">{format(month, "LLLL yyyy", { locale })}</span>
+        <span className="pl-1 text-[12.5px] font-medium">{format(month, datePattern("monthYear", i18n.resolvedLanguage), { locale })}</span>
         <div className="flex">
           {[-1, 1].map((n) => (
             <button
