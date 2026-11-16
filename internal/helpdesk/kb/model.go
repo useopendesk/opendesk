@@ -115,7 +115,7 @@ func loadArticle(ctx context.Context, q db.Querier, wid, id uuid.UUID) (KbArticl
 	if err != nil {
 		return a, err
 	}
-	return a, signFiles(ctx, q, wid, articleFiles, &a.BodyHTML)
+	return a, signFiles(ctx, q, wid, &a.BodyHTML)
 }
 
 // public strips what an anonymous reader must not see: the author's email.

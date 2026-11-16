@@ -296,7 +296,7 @@ func registerArticles(d *deps.Deps, api huma.API) {
 					p.WorkspaceID, id, cur.CollectionID, cur.Title, cur.Slug, cur.Excerpt, cur.BodyHTML, cur.Status, cur.BrandID); err != nil {
 					return slugConflict(err)
 				}
-				if err := holdFiles(ctx, tx, p, articleFiles, id, cur.BodyHTML); err != nil {
+				if err := holdFiles(ctx, tx, p, hd.ArticleFiles, id, cur.BodyHTML); err != nil {
 					return err
 				}
 				if a, err = loadArticle(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -335,7 +335,7 @@ func registerArticles(d *deps.Deps, api huma.API) {
 			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				// Its files pass to another article or entry that shows them.
-				if err := holdFiles(ctx, tx, p, articleFiles, id, ""); err != nil {
+				if err := holdFiles(ctx, tx, p, hd.ArticleFiles, id, ""); err != nil {
 					return err
 				}
 				tag, err := tx.Exec(ctx, `DELETE FROM kb_articles WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id)
@@ -400,7 +400,7 @@ func createArticle(ctx context.Context, d *deps.Deps, p *auth.Principal, b kbArt
 			id, p.WorkspaceID, cid, title, slug, excerpt, body, status, p.ActorUserID(), brand); err != nil {
 			return slugConflict(err)
 		}
-		if err := holdFiles(ctx, tx, p, articleFiles, id, body); err != nil {
+		if err := holdFiles(ctx, tx, p, hd.ArticleFiles, id, body); err != nil {
 			return err
 		}
 		if a, err = loadArticle(ctx, tx, p.WorkspaceID, id); err != nil {

@@ -240,7 +240,7 @@ func registerChangelog(d *deps.Deps, api huma.API) {
 					id, p.WorkspaceID, brand, title, slug, excerpt, body, cats, status, p.ActorUserID(), b.PublishedAt); err != nil {
 					return slugConflict(err)
 				}
-				if err := holdFiles(ctx, tx, p, entryFiles, id, body); err != nil {
+				if err := holdFiles(ctx, tx, p, hd.EntryFiles, id, body); err != nil {
 					return err
 				}
 				if e, err = loadEntry(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -330,7 +330,7 @@ func registerChangelog(d *deps.Deps, api huma.API) {
 					p.WorkspaceID, id, cur.Title, cur.Slug, cur.Excerpt, cur.BodyHTML, cur.Categories, cur.Status, cur.BrandID, cur.PublishedAt); err != nil {
 					return slugConflict(err)
 				}
-				if err := holdFiles(ctx, tx, p, entryFiles, id, cur.BodyHTML); err != nil {
+				if err := holdFiles(ctx, tx, p, hd.EntryFiles, id, cur.BodyHTML); err != nil {
 					return err
 				}
 				if e, err = loadEntry(ctx, tx, p.WorkspaceID, id); err != nil {
@@ -360,7 +360,7 @@ func registerChangelog(d *deps.Deps, api huma.API) {
 			}
 			err = d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				// Its files pass to another article or entry that shows them.
-				if err := holdFiles(ctx, tx, p, entryFiles, id, ""); err != nil {
+				if err := holdFiles(ctx, tx, p, hd.EntryFiles, id, ""); err != nil {
 					return err
 				}
 				tag, err := tx.Exec(ctx, `DELETE FROM changelog_entries WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, id)

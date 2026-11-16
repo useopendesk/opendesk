@@ -265,3 +265,20 @@ func TestArticleFileInWikiPage(t *testing.T) {
 		t.Fatalf("page read %s", pg.BodyHTML)
 	}
 }
+
+// An article's editor shows an image another article or an entry holds: any member reads it.
+func TestArticleSignsFilesOthersHold(t *testing.T) {
+	e := hdtest.New(t, kb.Register, widget.Register)
+	ws := e.NewWorkspace()
+	agent := ws.Agent.As(ws)
+	file := uploadPNG(t, e, agent)
+	var entry struct{ ID string }
+	e.Do("POST", "/v1/changelog/entries", agent, map[string]any{"title": "New charts", "body_html": img(file)}).Want(t, 201).JSON(t, &entry)
+	art := createArticle(t, e, ws.Admin.As(ws), map[string]any{"title": "Charts", "body_html": `<p><img src="/v1/attachments/` + file.ID + `"></p>`})
+	if h := holderOf(t, e, "changelog_entry_id", file.ID); h == nil || h.String() != entry.ID {
+		t.Fatalf("file held by %v, want the entry", h)
+	}
+	if !strings.Contains(art.BodyHTML, `src="http://api.test/v1/attachments/`+file.ID+`?exp=`) {
+		t.Fatalf("article read %s", art.BodyHTML)
+	}
+}

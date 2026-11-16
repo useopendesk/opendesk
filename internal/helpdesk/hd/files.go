@@ -1,12 +1,14 @@
 package hd
 
 import (
+	"context"
 	"html"
 	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/domain"
 )
@@ -66,4 +68,57 @@ func LinkFiles(body string, link func(id uuid.UUID) string) string {
 		}
 		return g[1] + html.EscapeString(to) + `"`
 	})
+}
+
+// FileHolder is the attachments column naming the knowledge base article or changelog entry
+// that holds a file.
+type FileHolder string
+
+const (
+	ArticleFiles FileHolder = "kb_article_id"
+	EntryFiles   FileHolder = "changelog_entry_id"
+)
+
+// ReleaseFiles lets go of the files the owners (articles or entries, per col; ids of either
+// may be mixed in) of workspace wid hold, other than keep, and hands each to an article of the
+// workspace that is not one of the owners and whose body names it (a published one first, then the oldest), else to such a
+// changelog entry (a shown one first), so a help center that shows it keeps serving it. A
+// file nothing else holds or names is left for the sweep of unattached uploads. Run it in the
+// transaction that saves the owners' bodies, or that deletes the owners, before the delete
+// (contracts/api.md "Article and changelog files").
+func ReleaseFiles(ctx context.Context, tx pgx.Tx, wid uuid.UUID, col FileHolder, owners, keep []uuid.UUID) error {
+	if len(owners) == 0 {
+		return nil
+	}
+	if keep == nil {
+		keep = []uuid.UUID{}
+	}
+	rows, err := tx.Query(ctx, `UPDATE attachments SET `+string(col)+` = NULL
+		WHERE workspace_id = $1 AND `+string(col)+` = ANY($2) AND NOT (id = ANY($3)) RETURNING id`, wid, owners, keep)
+	if err != nil {
+		return err
+	}
+	files, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil || len(files) == 0 {
+		return err
+	}
+	const unheld = `a.workspace_id = $1 AND a.id = ANY($2) AND a.message_id IS NULL AND a.wiki_page_id IS NULL
+		AND a.kb_article_id IS NULL AND a.changelog_entry_id IS NULL`
+	if _, err := tx.Exec(ctx, `UPDATE attachments a SET kb_article_id = x.owner
+		FROM (SELECT DISTINCT ON (f.id) f.id, k.id AS owner FROM attachments f
+			JOIN kb_articles k ON k.workspace_id = f.workspace_id AND NOT (k.id = ANY($3))
+				AND strpos(lower(k.body_html), '/v1/attachments/' || f.id::text) > 0
+			WHERE f.workspace_id = $1 AND f.id = ANY($2)
+			ORDER BY f.id, (k.status = 'published') DESC, k.created_at, k.id) x
+		WHERE a.id = x.id AND `+unheld, wid, files, owners); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE attachments a SET changelog_entry_id = x.owner
+		FROM (SELECT DISTINCT ON (f.id) f.id, e.id AS owner FROM attachments f
+			JOIN changelog_entries e ON e.workspace_id = f.workspace_id AND NOT (e.id = ANY($3))
+				AND strpos(lower(e.body_html), '/v1/attachments/' || f.id::text) > 0
+			WHERE f.workspace_id = $1 AND f.id = ANY($2)
+			ORDER BY f.id, (e.status = 'published' AND e.published_at <= now()) DESC, e.created_at, e.id) x
+		WHERE a.id = x.id AND `+unheld, wid, files, owners)
+	return err
 }

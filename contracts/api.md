@@ -1090,17 +1090,22 @@ which also gave existing articles and entries the uploads they name, a published
 A file the body no longer names, and every file of an article or entry being deleted, passes to another article
 of the workspace whose body names it (a published one first, then the oldest), else to such a changelog entry
 (a shown one first), so a help center that shows it keeps serving it; a file nothing else holds or names is
-let go. An article's or entry's files:
+let go. The same happens for the articles and entries that go with a deleted brand (contracts/teams.md) and the
+articles an import's undo removes (contracts/imports.md). An article's or entry's files:
 
 - are kept while it is, published or not; the sweep of uploads nobody sent leaves them, as it leaves any upload
   the body of an article or entry of the workspace names. One let go is removed by the sweep a day later;
 - stay its own: a reply or note can't send one in `attachment_ids` (`422`), and a message never takes one;
 - are read by any member (`GET /v1/attachments/{id}`; `kb:read` or `changelog:read` for a key), and come signed
   (one to two hours) in every member's read (`GET /v1/kb/articles`, `/v1/kb/articles/{id}`, the changelog's
-  equivalents, `/v1/search`, and a wiki page whose body names one), so the editor shows them to every agent;
-- are public once it is: a raster image of a published article the help center shows, or of a changelog entry it
-  shows (published and dated now or earlier), is served from the help center's own address at
-  `/_help/files/<id>` (contracts/teams.md "Serving"). The help center's pages, its Atom feed and the public API
+  equivalents, `/v1/search`, and a wiki page whose body names one), whichever article or entry the body
+  belongs to, so the editor shows them to every agent;
+- are public while a body the help center shows names them: a raster image an article or entry of the workspace
+  holds is served from the help center's own address at `/_help/files/<id>` (contracts/teams.md "Serving") when
+  an article the help center shows as published, or a changelog entry it shows (published and dated now or
+  earlier), names it (without case) or holds it. Who holds it doesn't matter: a draft or an entry holding an
+  image never hides it from a published article that names it. An upload no article or entry save claimed is
+  never served there. The help center's pages, its Atom feed and the public API
   (`/v1/public/help/...` articles, collections, search, changelog) point every link to one of our files there,
   bodies stored before files were kept as plain paths included. Anything else there is `404`.
 

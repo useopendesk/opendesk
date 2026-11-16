@@ -65,7 +65,7 @@ func loadEntry(ctx context.Context, q db.Querier, wid, id uuid.UUID) (ChangelogE
 	if err != nil {
 		return e, err
 	}
-	return e, signFiles(ctx, q, wid, entryFiles, &e.BodyHTML)
+	return e, signFiles(ctx, q, wid, &e.BodyHTML)
 }
 
 // publicEntry strips what an anonymous reader must not see: the author's email.

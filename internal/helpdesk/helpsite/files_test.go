@@ -169,3 +169,53 @@ func TestHelpCenterFileHandedOver(t *testing.T) {
 		t.Fatal("a file nothing names was kept")
 	}
 }
+
+// The help center serves an image some article or entry holds whenever a body it shows as
+// published names it, whoever holds it: a draft or an entry never hides it from a published
+// article. A file no save claimed, or one only a draft or another brand names, stays hidden.
+func TestHelpCenterFileNamedByPublished(t *testing.T) {
+	s := newSite(t, func(s *site) { s.D.Cfg.ServeWeb = true })
+	files := "/help/" + s.slug + "/_help/files/"
+	var draft, entry uuid.UUID
+	s.Scalar(`SELECT id FROM kb_articles WHERE workspace_id = $1 AND status = 'draft'`, &draft, s.ws.ID)
+	s.Scalar(`INSERT INTO changelog_entries (workspace_id, title, slug, status) VALUES ($1, 'Next', 'next', 'draft') RETURNING id`, &entry, s.ws.ID)
+	brand := uuid.New()
+	s.Exec(`INSERT INTO brands (id, workspace_id, name, slug) VALUES ($1, $2, 'Other', $3)`, brand, s.ws.ID, "other-"+s.slug)
+
+	byDraft := s.file(t, "image/png", pngBytes, "kb_article_id", draft)
+	byEntry := s.file(t, "image/png", pngBytes, "changelog_entry_id", entry)
+	draftOnly := s.file(t, "image/png", pngBytes, "kb_article_id", draft)
+	otherBrand := s.file(t, "image/png", pngBytes, "kb_article_id", draft)
+	unclaimed := s.file(t, "image/png", pngBytes, "", uuid.Nil)
+	img := func(ids ...uuid.UUID) string {
+		out := ""
+		for _, id := range ids {
+			out += `<img src="/v1/attachments/` + id.String() + `">`
+		}
+		return out
+	}
+	// The published article names its images in upper case, as an older body may.
+	s.Exec(`UPDATE kb_articles SET body_html = $2 WHERE id = $1`, s.article, strings.ToUpper(img(byDraft, byEntry, unclaimed)))
+	s.Exec(`UPDATE kb_articles SET body_html = $2 WHERE id = $1`, draft, img(byDraft, draftOnly, otherBrand))
+	s.Exec(`INSERT INTO kb_articles (workspace_id, title, slug, body_html, status, published_at, brand_id) VALUES ($1, 'Theirs', 'theirs', $2, 'published', now(), $3)`,
+		s.ws.ID, img(otherBrand), brand)
+
+	for name, c := range map[string]struct {
+		id   uuid.UUID
+		want int
+	}{
+		"a draft holds it, a published article names it":    {byDraft, 200},
+		"an entry holds it, a published article names it":   {byEntry, 200},
+		"a draft holds it, nothing published names it":      {draftOnly, 404},
+		"only another brand's published article names it":   {otherBrand, 404},
+		"a published article names it, but no save claimed": {unclaimed, 404},
+	} {
+		if r := s.get(t, "app.test", files+c.id.String()); r.status != c.want {
+			t.Fatalf("%s: %d, want %d", name, r.status, c.want)
+		}
+	}
+	s.Exec(`UPDATE kb_articles SET status = 'draft' WHERE id = $1`, s.article)
+	if r := s.get(t, "app.test", files+byDraft.String()); r.status != 404 {
+		t.Fatalf("once the article naming it is unpublished: %d", r.status)
+	}
+}
