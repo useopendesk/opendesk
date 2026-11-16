@@ -133,12 +133,15 @@ describe("agent language", () => {
     resetLocale();
   });
 
-  it("selects French and German regional variants and falls back to English for other languages", () => {
+  it("selects French, German and Chinese variants and falls back to English for other languages", () => {
     expect(pickAgentLocale(["fr-FR", "en-US"])).toBe("fr");
     expect(pickAgentLocale(["fr-CA"])).toBe("fr");
     expect(pickAgentLocale(["de-DE"])).toBe("de");
     expect(pickAgentLocale(["de-CH", "fr-CH"])).toBe("de");
     expect(pickAgentLocale(["en-US", "de-DE"])).toBe("en");
+    expect(pickAgentLocale(["zh-CN", "en-US"])).toBe("zh-CN");
+    expect(pickAgentLocale(["zh-Hans-CN"])).toBe("zh-CN");
+    expect(pickAgentLocale(["zh-TW"])).toBe("en");
     expect(pickAgentLocale(["it-IT"])).toBe("en");
     expect(pickAgentLocale(["ar-EG"])).toBe("en");
     expect(pickAgentLocale([])).toBe("en");
