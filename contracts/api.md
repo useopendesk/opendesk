@@ -1087,7 +1087,7 @@ A knowledge base article or changelog entry names one of our files as `/v1/attac
 `data-src` or `href`). The API stores that plain path: a link to the file at the API's address, signed or not,
 is stored as its path. As an article or entry is created or edited, each upload its body names that the person
 or key saving it uploaded, and that nothing else holds (a message, a wiki page, another article or entry, an
-unsent reply draft), becomes its own (`attachments.kb_article_id` / `changelog_entry_id`, migration `000760`,
+unsent reply draft), becomes its own (`attachments.kb_article_id` / `changelog_entry_id`, migration `000765`,
 which also gave existing articles and entries the uploads they name, a published one first, then the oldest).
 A file the body no longer names, and every file of an article or entry being deleted, passes to another article
 of the workspace whose body names it (a published one first, then the oldest), else to such a changelog entry
