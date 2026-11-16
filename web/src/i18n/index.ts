@@ -134,7 +134,7 @@ export function loadAgentCatalogs(lng: string = pickAgentLocale()): Promise<void
  * which its nouns need; Chinese has no letter case, so it is unchanged.
  */
 export function inSentence(label: string): string {
-  return i18n.resolvedLanguage === "de" ? label : label.toLowerCase();
+  return i18n.resolvedLanguage === "de" || i18n.resolvedLanguage === "zh-CN" ? label : label.toLowerCase();
 }
 
 /** Public routes, which load only the namespaces they show. */

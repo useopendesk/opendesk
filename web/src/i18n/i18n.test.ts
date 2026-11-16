@@ -181,13 +181,15 @@ describe("agent language", () => {
 describe("inSentence", () => {
   afterEach(() => resetLocale());
 
-  it("lowercases a label inside a sentence, except in German, whose nouns keep their capital", async () => {
+  it("lowercases a label inside a sentence, except in German, whose nouns keep their capital, and Chinese, which has no case", async () => {
     await i18n.changeLanguage("fr");
     expect(inSentence("Contacts")).toBe("contacts");
     await i18n.changeLanguage("cs");
     expect(inSentence("Kontakty")).toBe("kontakty");
     await i18n.changeLanguage("de");
     expect(inSentence("Kontakte")).toBe("Kontakte");
+    await i18n.changeLanguage("zh-CN");
+    expect(inSentence("SLA 政策")).toBe("SLA 政策");
     await i18n.changeLanguage("en");
     expect(inSentence("Tickets")).toBe("tickets");
   });
