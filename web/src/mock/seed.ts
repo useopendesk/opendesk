@@ -45,6 +45,7 @@ import {
 } from "./content";
 import { contactRef, db, defaultRouting, userRef, type WsData } from "./db";
 import { seedPhone } from "./phone";
+import { seedWhatsApp } from "./whatsapp";
 import { brandLogo, logoMark, portrait } from "./avatars";
 import { teammatePresence, type Meta } from "./gateway";
 import { seedDefaultLabels } from "./labels";
@@ -138,6 +139,7 @@ export function baseWorkspace(id: string, name: string, slug: string): WsData {
     originals: {},
     activities: [],
     phone: [],
+    whatsapp: [],
     tags: [],
     tagGroups: [],
     customFields: [],
@@ -1426,6 +1428,7 @@ function seedMargin(): WsData {
   seedTicketTypes(ws);
   seedMarginFields(ws, { maya: uid("maya"), jonas: uid("jonas"), lea: uid("lea"), priya: uid("priya") });
   seedPhone(ws, userRef(uid("jonas"))!);
+  seedWhatsApp(ws, userRef(uid("jonas"))!);
   return ws;
 }
 

@@ -669,7 +669,17 @@
       "member_gone": "Vous ne pouvez plus répondre sur ce ticket, la réponse n’a donc pas été envoyée.",
       "refused": "La réponse n’a pas pu être envoyée telle qu’elle était écrite à l’heure prévue. Vérifiez-la et renvoyez-la.",
       "failed": "La réponse programmée n’a pas pu être envoyée. Renvoyez-la."
-    }
+    },
+    "whatsappTo": "À",
+    "whatsappVia": "sur WhatsApp depuis {{sender}}",
+    "whatsappOpen": "Vous pouvez répondre librement pendant encore {{when}}",
+    "whatsappClosed": "Fenêtre de 24 heures fermée",
+    "whatsappDisconnected": "Numéro non connecté",
+    "whatsappClosedHint": "Le client a écrit pour la dernière fois il y a plus de 24 heures : WhatsApp n’autorise qu’un modèle approuvé. Choisissez-en un et remplissez ses variables.",
+    "whatsappNoTemplates": "Ce numéro n’a pas encore de modèle approuvé. Créez-en un chez le fournisseur et faites-le approuver par WhatsApp : il apparaîtra ici.",
+    "whatsappTemplate": "Modèle",
+    "whatsappPick": "Choisir un modèle",
+    "whatsappVariable": "Valeur pour {{name}}"
   },
   "sharedDraft": {
     "label": "Brouillon partagé",
@@ -736,7 +746,11 @@
     "unverified": "Expéditeur non vérifié",
     "unverifiedHint": "Le domaine de l’expéditeur a échoué à la vérification d’authentification des e-mails. L’expéditeur n’est peut-être pas celui qu’il prétend être. Soyez prudent avec les liens et les demandes de ce message.",
     "viaForm": "Envoyé via le formulaire à l’adresse <m>{{address}}</m>",
-    "forward": "Transférer"
+    "forward": "Transférer",
+    "delivered": "Remis",
+    "deliveredToPhone": "Remis sur le téléphone du client",
+    "read": "Lu",
+    "readByCustomer": "Le client l’a lu"
   },
   "merge": {
     "title": "Fusionner #{{number}} avec un autre ticket",

@@ -656,7 +656,17 @@
       "member_gone": "You can no longer reply on this ticket, so the reply was not sent.",
       "refused": "The reply could no longer be sent as it was written when it was due. Check it and send it again.",
       "failed": "The scheduled reply could not be sent. Send it again."
-    }
+    },
+    "whatsappTo": "To",
+    "whatsappVia": "on WhatsApp from {{sender}}",
+    "whatsappOpen": "You can reply freely for {{when}}",
+    "whatsappClosed": "24-hour window closed",
+    "whatsappDisconnected": "Number not connected",
+    "whatsappClosedHint": "The customer last wrote more than 24 hours ago, so WhatsApp only allows an approved template message. Choose one and fill in its variables.",
+    "whatsappNoTemplates": "This number has no approved templates yet. Create one in the provider and WhatsApp's approval, then it shows here.",
+    "whatsappTemplate": "Template",
+    "whatsappPick": "Choose a template",
+    "whatsappVariable": "Value for {{name}}"
   },
   "sharedDraft": {
     "label": "Shared draft",
@@ -756,7 +766,11 @@
     "showReply": "Show reply",
     "showNote": "Show note",
     "hideNote": "Hide note",
-    "forward": "Forward"
+    "forward": "Forward",
+    "delivered": "Delivered",
+    "deliveredToPhone": "Delivered to the customer's phone",
+    "read": "Read",
+    "readByCustomer": "The customer read it"
   },
   "merge": {
     "title": "Merge #{{number}} into another ticket",

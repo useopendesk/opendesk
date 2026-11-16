@@ -567,7 +567,7 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     cc: m.cc ?? [],
     bcc: m.bcc ?? [],
     attachments: m.attachments ?? [],
-    delivery_status: m.kind === "note" || inbound || !isEmail ? "none" : (m.delivery ?? "sent"),
+    delivery_status: m.kind === "note" || inbound || !(isEmail || t.channel === "whatsapp") ? "none" : (m.delivery ?? "sent"),
     delivery_error: m.delivery_error ?? "",
     reply_to: inbound && isEmail ? (m.reply_to ?? "") : "",
     reply_address: inbound && isEmail && !m.auth_failed && m.reply_to && sameOrg(contact?.email ?? "", m.reply_to) ? m.reply_to : "",

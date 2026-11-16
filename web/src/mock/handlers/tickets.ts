@@ -3,6 +3,7 @@
 import type { Attachment, Channel, Message, Priority, ReportsAgents, ReportsOverview, Severity, SuggestionField, Thread, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
 import { chatReachable, contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
+import { simulateWhatsAppDelivery, whatsappReply } from "./whatsapp";
 import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
 import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
@@ -14,7 +15,7 @@ import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
-const CHANNELS: Channel[] = ["email", "chat", "api", "portal", "phone"];
+const CHANNELS: Channel[] = ["email", "chat", "api", "portal", "phone", "whatsapp"];
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
 const SEVERITIES: Severity[] = ["sev1", "sev2", "sev3", "sev4"];
 const SUGGESTION_FIELDS: SuggestionField[] = ["priority", "severity", "labels", "team", "spam"];
@@ -544,7 +545,9 @@ export function registerTickets() {
   post("/v1/tickets/:id/messages", (ctx) => {
     const t = ticket(ctx);
     const kind = s(ctx, "kind") === "note" ? "note" : "reply";
-    const html = required(ctx, "body_html");
+    const asked = required(ctx, "body_html");
+    // A WhatsApp reply goes out as its words, or as a template once the 24-hour window is closed.
+    const html = kind === "reply" && t.channel === "whatsapp" ? whatsappReply(ctx.ws, t, ctx.body, asked) : asked;
     const status = s(ctx, "status") as TicketStatus | undefined;
     if (status && !STATUSES.includes(status)) throw invalid("Unknown status");
     if ((status === "solved" || status === "closed") && t.status !== "solved" && t.status !== "closed") checkRequiredOnSolve(ctx.ws, t.fields);
@@ -568,7 +571,7 @@ export function registerTickets() {
       { kind, direction: "outbound", html, user: myRef, to: kind === "reply" && t.channel === "email" && strArr(ctx.body.to)?.length ? strArr(ctx.body.to) : undefined, cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc), attachments: attachmentsFor(strArr(ctx.body.attachment_ids)), delivery: "pending" },
       { status, actor: myRef },
     );
-    if (msg.delivery_status === "pending") simulateDelivery(ctx.ws, t, msg.id);
+    if (msg.delivery_status === "pending") (t.channel === "whatsapp" ? simulateWhatsAppDelivery : simulateDelivery)(ctx.ws, t, msg.id);
     if (fromNote) {
       const note = ctx.ws.messages[noteIndex];
       // Its words are kept, hidden like a deleted message's: only admins read them.

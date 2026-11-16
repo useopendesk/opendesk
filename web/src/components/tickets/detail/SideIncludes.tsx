@@ -29,7 +29,7 @@ export function inConversation(m: Message): boolean {
     !m.thread_id &&
     !m.deleted_at &&
     !m.id.startsWith("tmp-") &&
-    (m.direction === "inbound" ? !m.auth_failed : m.delivery_status === "sent" || m.delivery_status === "none")
+    (m.direction === "inbound" ? !m.auth_failed : m.delivery_status === "sent" || m.delivery_status === "delivered" || m.delivery_status === "read" || m.delivery_status === "none")
   );
 }
 

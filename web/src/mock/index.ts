@@ -36,6 +36,7 @@ import { registerMcp } from "./handlers/mcp";
 import { registerNotificationPrefs } from "./handlers/notificationPrefs";
 import { registerSupportChannels } from "./handlers/supportChannels";
 import { registerPhone } from "./handlers/phone";
+import { registerWhatsApp } from "./handlers/whatsapp";
 import { registerTemplates } from "./handlers/templates";
 import { registerResources } from "./handlers/resources";
 import { registerSpaces } from "./handlers/spaces";
@@ -120,6 +121,7 @@ export function installMock(): void {
   registerNotificationPrefs();
   registerSupportChannels();
   registerPhone();
+  registerWhatsApp();
   registerTemplates();
   registerCollab();
   registerWorkspaces();

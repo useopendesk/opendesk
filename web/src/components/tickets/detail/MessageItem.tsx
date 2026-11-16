@@ -327,6 +327,14 @@ function Delivery({ m, onRetry }: { m: Message; onRetry?: () => void }) {
         <Spinner className="size-3" /> {t("message.sending")}
       </span>
     );
+  if (m.delivery_status === "delivered" || m.delivery_status === "read")
+    return (
+      <Tooltip content={t(m.delivery_status === "read" ? "message.readByCustomer" : "message.deliveredToPhone")}>
+        <span className="flex items-center gap-1 text-[11px] text-fg-4 animate-fade-in">
+          <CheckCheck className={`size-3 ${m.delivery_status === "read" ? tone.blue.text : tone.green.text}`} /> {t(m.delivery_status === "read" ? "message.read" : "message.delivered")}
+        </span>
+      </Tooltip>
+    );
   if (m.delivery_status === "sent")
     return (
       <Tooltip content={t("message.deliveredTo", { to: m.to.join(", ") || t("composer.theCustomer") })}>

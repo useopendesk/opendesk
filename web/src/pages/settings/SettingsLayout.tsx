@@ -27,9 +27,9 @@ import {
   Layers,
   ListChecks,
   MessageCircle,
+  MessageSquareText,
   MessageSquareShare,
   Phone,
-  MessageSquareText,
   MessagesSquare,
   PanelsTopLeft,
   Palette,
@@ -72,6 +72,7 @@ type NavPath =
   | "/settings/mailboxes"
   | "/settings/support-channels"
   | "/settings/phone"
+  | "/settings/whatsapp"
   | "/settings/mail-accounts"
   | "/settings/mail-categories"
   | "/settings/brands"
@@ -151,6 +152,7 @@ const groups: { title: keyof typeof navigation.groups; items: { to: NavPath; lab
     items: [
       { to: "/settings/mailboxes", label: "mailboxes", icon: <Inbox /> },
       { to: "/settings/phone", label: "phone", icon: <Phone /> },
+      { to: "/settings/whatsapp", label: "whatsapp", icon: <MessageSquareText /> },
       { to: "/settings/support-channels", label: "supportChannels", icon: <MessageSquareShare /> },
       { to: "/settings/mail-accounts", label: "mailAccounts", icon: <AtSign /> },
       { to: "/settings/mail-categories", label: "mailCategories", icon: <PanelsTopLeft /> },

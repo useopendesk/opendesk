@@ -1,0 +1,61 @@
+---
+title: WhatsApp with Twilio
+description: Connect a WhatsApp number through Twilio so customers' messages land on their tickets and your team answers from the ticket, with templates after 24 hours.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+Connect a WhatsApp number through [Twilio](https://www.twilio.com/whatsapp) and customers can write to your team on WhatsApp. Each customer's messages land on their ticket, in the shared inbox, and you answer from the ticket. Every reply shows whether it was sent, delivered to the customer's phone or read.
+
+Connecting needs the admin role. Open **Settings**, **WhatsApp**, in the **Channels** group.
+
+## Before you start
+
+- **A WhatsApp sender in a Twilio account.** Twilio's [self sign-up](https://www.twilio.com/docs/whatsapp/self-sign-up) registers your business number with WhatsApp. Its Twilio sandbox works for a first try.
+- **Your Account SID and Auth token**, from the Twilio console's account info.
+
+## Connect the number
+
+<Steps>
+<Step title="Paste the number and the credentials">
+
+Choose **Connect a number**, enter the WhatsApp number with its country code (like `+14155550100`), and paste the **Account SID** and **Auth token**. opendesk checks them with Twilio before saving. They are stored encrypted and never shown again.
+
+</Step>
+<Step title="Set the webhook in Twilio">
+
+Copy the webhook address opendesk shows. In the Twilio console, open **Messaging**, **Senders**, **WhatsApp senders**, choose the number, and under **Endpoint configuration** paste it as the webhook for incoming messages, with the method **POST**.
+
+</Step>
+<Step title="Send a test message">
+
+From WhatsApp, write to the number. The state in opendesk changes from **Waiting for a message** to **Receiving**, and a ticket opens on the **WhatsApp** channel.
+
+</Step>
+</Steps>
+
+## How messages find their ticket
+
+A message goes on the customer's open WhatsApp ticket. Without one, it goes on their latest WhatsApp ticket solved in the last **7 days** (change it, or choose never), else it opens a new ticket, routed like any other: routing rules and automations can use **Channel is WhatsApp** as a condition. The ticket is named after the first line of the message. The customer's number becomes their contact's phone number, and their WhatsApp profile name becomes the contact's name when they are new.
+
+Pictures, documents, voice notes and videos they send are kept as attachments on the message.
+
+## Answering
+
+Reply from the ticket as you would an email. The line above the box shows where it goes and how long you can write freely.
+
+<Callout type="note">
+WhatsApp only allows free-form replies for **24 hours after the customer's last message**. After that, the box asks for an **approved template** instead: choose one, fill in its variables, and the message that goes out is shown in the ticket. A new message from the customer opens the window again.
+</Callout>
+
+Templates are created and approved in Twilio's Content Template Builder. Only approved ones are offered.
+
+Each reply shows its delivery: **Sending**, **Sent**, **Delivered** and **Read**. A message WhatsApp refuses (a number that is not on WhatsApp, an expired window) is marked **Not delivered** with the reason.
+
+Replies are text for now: files can't be sent yet, and a customer can't be started a conversation from opendesk before they write first.
+
+## Brands
+
+If your workspace has several brands, choose which one a number belongs to under **Settings**, **WhatsApp**, so its tickets and replies use that brand.
