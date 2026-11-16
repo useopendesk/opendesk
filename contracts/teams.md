@@ -474,6 +474,7 @@ zone holds that no domain does. Every status change publishes `brand.updated`.
 | `/changelog` · `/changelog/<entry slug>` · `/changelog/feed.xml` | the brand's and shared published changelog entries, newest first, 10 a page (`?page=`, `?category=`); one entry; an Atom feed of the latest 30. The header links the changelog, and the home page shows the latest three, once there is one |
 | `/sitemap.xml` · `/robots.txt` | every published article, topic and changelog entry of the brand |
 | `/_help/*` | the stylesheet, script and fonts |
+| `/_help/files/<id>` | an image of a published article or changelog entry the help center shows (contracts/api.md "Article and changelog files"): raster images only, `Cache-Control: public, max-age=300`, `nosniff`, a sandbox CSP and `Cross-Origin-Resource-Policy: cross-origin`; anything else `404`. Rate limited per address |
 | `POST /_help/views` | `{article_id}` from the page's script: counts an article view |
 
 - `?lang=` picks the interface language (the SUPPORTED web locales), else the brand's locale, else the
@@ -490,7 +491,7 @@ zone holds that no domain does. Every status change publishes `brand.updated`.
   is elsewhere (`/help/<slug>/c/x` → `/c/x`). A brand whose help center is off, or an unknown host or
   path, is a `404` page.
 - Responses carry a CSP of their own: scripts and styles from the page's origin only, images over
-  https, `frame-ancestors 'none'`. Article bodies are the stored sanitized HTML.
+  https, `frame-ancestors 'none'`. Article bodies are the stored sanitized HTML, their files at `/_help/files/<id>`.
 - Cloud: `*.opendeskhelp.com` and every custom hostname reach a Cloudflare Worker
   (`deploy/cloudflare/help-worker`) that caches pages and forwards to the API with `OD-Help-Host`
   (the hostname asked for), `OD-Help-Client-IP` and `OD-Help-Secret` (`HELP_PROXY_SECRET`, at least
