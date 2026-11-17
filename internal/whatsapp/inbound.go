@@ -120,6 +120,12 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 			return err
 		}
 	}
+	// A file that came through needs no "[image]" placeholder under it; the attachment is
+	// the message. A caption stays as the text.
+	bodyText := text
+	if media != nil && strings.TrimSpace(m.Text) == "" && strings.TrimSpace(m.Caption) == "" {
+		bodyText = ""
+	}
 	linked := false
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		pc, err := domain.ContactByPhone(ctx, tx, c.WorkspaceID, m.From, m.ContactName)
@@ -157,8 +163,8 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 			Direction:       "inbound",
 			AuthorType:      "contact",
 			AuthorContactID: &pc.ID,
-			BodyHTML:        hd.TextToHTML(text),
-			BodyText:        text,
+			BodyHTML:        hd.TextToHTML(bodyText),
+			BodyText:        bodyText,
 			DeliveryStatus:  "none",
 			AttachmentIDs:   attIDs,
 			CreatedAt:       at,
