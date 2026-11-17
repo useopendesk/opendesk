@@ -128,6 +128,84 @@ type MediaInfo struct {
 	ID       string
 }
 
+// TemplateComponent is one component of a Meta message template as the Graph API lists it.
+type TemplateComponent struct {
+	Type    string           `json:"type"`
+	Format  string           `json:"format,omitempty"`
+	Text    string           `json:"text,omitempty"`
+	Buttons []map[string]any `json:"buttons,omitempty"`
+	Example map[string]any   `json:"example,omitempty"`
+}
+
+// MetaTemplate is one message template of the connection's WhatsApp Business account.
+type MetaTemplate struct {
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	Language   string              `json:"language"`
+	Category   string              `json:"category"`
+	Status     string              `json:"status"`
+	Components []TemplateComponent `json:"components"`
+}
+
+// FetchTemplates lists every message template of the connection's WhatsApp Business
+// account, following Meta's pages. The list is what the settings page syncs and what an
+// agent picks a template from outside the 24-hour window.
+func (c *Client) FetchTemplates(ctx context.Context, acc Account) ([]MetaTemplate, error) {
+	if strings.TrimSpace(acc.WABAID) == "" {
+		return nil, errors.New("whatsapp: the account has no WhatsApp Business account id")
+	}
+	var out []MetaTemplate
+	endpoint := "/" + url.PathEscape(acc.WABAID) + "/message_templates?limit=100"
+	for page := 0; endpoint != "" && page < 50; page++ {
+		if page > 0 {
+			parsed, err := url.Parse(endpoint)
+			if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "graph.facebook.com" {
+				return nil, errors.New("whatsapp: refusing a template page outside the Graph API")
+			}
+		}
+		var res struct {
+			Data   []MetaTemplate `json:"data"`
+			Paging struct {
+				Next string `json:"next"`
+			} `json:"paging"`
+		}
+		if err := c.sendJSONURL(ctx, acc, "list templates", http.MethodGet, endpoint, nil, &res); err != nil {
+			return nil, err
+		}
+		out = append(out, res.Data...)
+		endpoint = res.Paging.Next
+	}
+	return out, nil
+}
+
+// SendMedia sends one uploaded media object (UploadMedia's id) with an optional caption and
+// document filename, and returns the WhatsApp message id.
+func (c *Client) SendMedia(ctx context.Context, acc Account, to, kind, mediaID, caption, filename string) (string, error) {
+	switch kind {
+	case "image", "video", "audio", "document":
+	default:
+		return "", fmt.Errorf("whatsapp: unsupported media kind %q", kind)
+	}
+	if strings.TrimSpace(mediaID) == "" {
+		return "", errors.New("whatsapp: no media id")
+	}
+	media := map[string]any{"id": mediaID}
+	if caption = strings.TrimSpace(caption); caption != "" && kind != "audio" {
+		media["caption"] = caption
+	}
+	if kind == "document" && strings.TrimSpace(filename) != "" {
+		media["filename"] = strings.TrimSpace(filename)
+	}
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                to,
+		"type":              kind,
+		kind:                media,
+	}
+	return c.send(ctx, acc, "send media", payload)
+}
+
 // ValidateCredentials checks that the access token reads the number and that the number
 // belongs to the WhatsApp Business account, and returns what the number calls itself. The
 // number list is read with the API's largest page; a WABA with more numbers than that is
@@ -388,6 +466,45 @@ func (c *Client) call(ctx context.Context, acc Account, op, method, path, conten
 		return fmt.Errorf("whatsapp %s: %w", op, err)
 	}
 	return nil
+}
+
+// sendJSONURL makes one Graph API call against an absolute URL Meta itself returned (a
+// template page), after checking it stays on the Graph API host.
+func (c *Client) sendJSONURL(ctx context.Context, acc Account, op, method, rawURL string, body any, out any) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "graph.facebook.com" {
+		return fmt.Errorf("whatsapp %s: refusing a URL outside the Graph API", op)
+	}
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("whatsapp %s: %w", op, err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, reader)
+	if err != nil {
+		return fmt.Errorf("whatsapp %s: %w", op, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+acc.AccessToken)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("whatsapp %s: %w", op, transportError(err))
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return statusError(res)
+	}
+	if out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxGraphResponse))
+		return nil
+	}
+	return json.NewDecoder(io.LimitReader(res.Body, maxGraphResponse)).Decode(out)
 }
 
 // graphVersion is the Graph API version a connection uses, defaultAPIVersion unless the

@@ -407,11 +407,8 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 			return domain.Message{}, httpx.E(422, "whatsapp_window_closed",
 				"The 24-hour WhatsApp reply window has closed. The customer must message again before a free-form reply can go out.")
 		}
-		if len(attIDs) > 0 {
-			return domain.Message{}, httpx.Validation("attachments are not supported on WhatsApp yet")
-		}
-		if utf8.RuneCountInString(hd.HTMLToText(bodyHTML)) > 4096 {
-			return domain.Message{}, httpx.Validation("the message is longer than WhatsApp's limit of 4096 characters")
+		if err := validateWhatsAppReply(attIDs, bodyText); err != nil {
+			return domain.Message{}, err
 		}
 		nm.DeliveryStatus = "pending"
 		whatsappConn = connID

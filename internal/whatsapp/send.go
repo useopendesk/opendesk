@@ -35,15 +35,16 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 		Kind           string
 		Direction      string
 		DeliveryStatus string
+		DeliveryMeta   []byte
 		Attachments    int64
 	}
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT m.id, m.body_text, m.body_html, m.kind, m.direction, m.delivery_status,
-			t.id, t.channel, t.contact_id, t.custom,
+			m.delivery_meta, t.id, t.channel, t.contact_id, t.custom,
 			(SELECT count(*) FROM attachments a WHERE a.workspace_id = m.workspace_id AND a.message_id = m.id)
 		FROM messages m JOIN tickets t ON t.id = m.ticket_id AND t.workspace_id = m.workspace_id
 		WHERE m.workspace_id = $1 AND m.id = $2`, job.Args.WorkspaceID, job.Args.MessageID).Scan(
-		&m.ID, &m.BodyText, &m.BodyHTML, &m.Kind, &m.Direction, &m.DeliveryStatus, &m.TicketID,
-		&m.Channel, &m.ContactID, &m.Custom, &m.Attachments)
+		&m.ID, &m.BodyText, &m.BodyHTML, &m.Kind, &m.Direction, &m.DeliveryStatus, &m.DeliveryMeta,
+		&m.TicketID, &m.Channel, &m.ContactID, &m.Custom, &m.Attachments)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -52,11 +53,6 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 	}
 	if m.Channel != domain.ChannelWhatsApp || m.Kind != "reply" || m.Direction != "outbound" || m.DeliveryStatus != "pending" {
 		return nil
-	}
-	if m.Attachments > 0 {
-		// One message carries one file on WhatsApp, and the channel's media path arrives in
-		// the next phase; refusing beats dropping the file silently.
-		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "Attachments are not supported on WhatsApp yet.")
 	}
 	c, err := connectionForContact(ctx, s.d.DB.Pool, job.Args.WorkspaceID, m.Custom)
 	if err != nil {
@@ -75,12 +71,30 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 		}
 		return err
 	}
+	out := outboundMessage{ID: m.ID, BodyText: m.BodyText, BodyHTML: m.BodyHTML, Attachments: m.Attachments, DeliveryMeta: m.DeliveryMeta}
+	// A template may go out at any time; a free-form reply only inside the window.
+	if tmpl := whatsappTemplateFromMeta(m.DeliveryMeta); tmpl != nil {
+		err := s.sendTemplateMessage(ctx, c, out, waID, tmpl)
+		if err != nil && job.Attempt >= job.MaxAttempts {
+			// River's last attempt: a template that never left is a failed message, not one
+			// that stays pending forever.
+			return s.failMessage(ctx, c.WorkspaceID, out.ID, whatsappSendError(err))
+		}
+		return err
+	}
 	// The window is checked again here: the send can run seconds after the reply was written,
 	// and the window may have closed in between.
 	if _, open, err := contactWindow(ctx, s.d.DB.Pool, c.WorkspaceID, c.ID, *m.ContactID); err == nil && !open {
 		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID,
 			"The 24-hour WhatsApp reply window has closed. The customer must message again before a free-form reply can go out.")
 	} else if err != nil {
+		return err
+	}
+	if out.Attachments > 0 {
+		err := s.sendMediaMessage(ctx, c, out, waID)
+		if err != nil && job.Attempt >= job.MaxAttempts {
+			return s.failMessage(ctx, c.WorkspaceID, out.ID, whatsappSendError(err))
+		}
 		return err
 	}
 	body := m.BodyText
@@ -146,4 +160,14 @@ func whatsappSendError(err error) string {
 		}
 	}
 	return "WhatsApp could not deliver this message."
+}
+
+// outboundMessage is what a send helper needs from the message row it delivers: the words,
+// the attachments count and the template an agent picked, if any.
+type outboundMessage struct {
+	ID           uuid.UUID
+	BodyText     string
+	BodyHTML     string
+	Attachments  int64
+	DeliveryMeta []byte
 }

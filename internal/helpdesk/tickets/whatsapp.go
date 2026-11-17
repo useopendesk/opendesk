@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -15,6 +16,13 @@ import (
 // whatsAppWindow is Meta's customer service window: free-form replies are allowed for 24
 // hours after the customer's latest message.
 const whatsAppWindow = 24 * time.Hour
+
+// Meta's caps on a free-form reply: 4096 characters of text, or 1024 of caption when the
+// reply carries one file.
+const (
+	whatsAppMaxTextRunes    = 4096
+	whatsAppMaxCaptionRunes = 1024
+)
 
 // whatsAppConnectionForTicket returns the WhatsApp connection a ticket was opened through:
 // tickets.custom.whatsapp_connection_id, else the workspace's first connection.
@@ -53,4 +61,19 @@ func whatsAppWindowOpen(ctx context.Context, tx pgx.Tx, wid, connID, contactID u
 		return false, err
 	}
 	return last != nil && time.Since(*last) < whatsAppWindow, nil
+}
+
+// validateWhatsAppReply holds a free-form WhatsApp reply to Meta's limits: one file per
+// message, and a caption of at most 1024 characters when the reply carries it. Text alone
+// may be 4096. The 24-hour window is checked before this.
+func validateWhatsAppReply(attIDs []uuid.UUID, bodyText string) error {
+	switch {
+	case len(attIDs) > 1:
+		return httpx.Validation("WhatsApp takes one file per message. Send the files one at a time.")
+	case len(attIDs) == 1 && utf8.RuneCountInString(bodyText) > whatsAppMaxCaptionRunes:
+		return httpx.Validation("a WhatsApp caption can be at most 1024 characters")
+	case len(attIDs) == 0 && utf8.RuneCountInString(bodyText) > whatsAppMaxTextRunes:
+		return httpx.Validation("the message is longer than WhatsApp's limit of 4096 characters")
+	}
+	return nil
 }

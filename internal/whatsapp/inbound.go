@@ -110,7 +110,18 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 	if subject == "" {
 		subject = "WhatsApp message"
 	}
-	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+	// Media is fetched before the transaction: the download is slow and may fail, and only
+	// its stored copy joins the ticket. A file that will never be usable leaves the
+	// placeholder text in place; a refusal that may pass is returned for River to retry.
+	var media *inboundAttachment
+	if m.MediaID != "" {
+		var err error
+		if media, err = s.prepareInboundMedia(ctx, c, m); err != nil {
+			return err
+		}
+	}
+	linked := false
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		pc, err := domain.ContactByPhone(ctx, tx, c.WorkspaceID, m.From, m.ContactName)
 		if err != nil {
 			return err
@@ -128,6 +139,17 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 		if err != nil {
 			return err
 		}
+		// The attachment row is inserted unattached: AddMessage links the uploads of the
+		// message it inserts, and an inbound file has no uploader to match.
+		var attIDs []uuid.UUID
+		if media != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO attachments (id, workspace_id, filename, content_type, size_bytes, storage_key, inline)
+				VALUES ($1,$2,$3,$4,$5,$6,false)`,
+				media.ID, c.WorkspaceID, media.Filename, media.ContentType, media.SizeBytes, media.StorageKey); err != nil {
+				return err
+			}
+			attIDs = []uuid.UUID{media.ID}
+		}
 		msg, err := domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{
 			WorkspaceID:     c.WorkspaceID,
 			TicketID:        ticketID,
@@ -138,6 +160,7 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 			BodyHTML:        hd.TextToHTML(text),
 			BodyText:        text,
 			DeliveryStatus:  "none",
+			AttachmentIDs:   attIDs,
 			CreatedAt:       at,
 		})
 		if err != nil {
@@ -145,8 +168,17 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 		}
 		_, err = tx.Exec(ctx, `UPDATE messages SET provider_message_id = $3 WHERE workspace_id = $1 AND id = $2`,
 			c.WorkspaceID, msg.ID, m.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		linked = true
+		return nil
 	})
+	if media != nil && (err != nil || !linked) {
+		// The transaction left no message for the file: nothing references the object.
+		_ = s.d.Storage.Delete(context.WithoutCancel(ctx), media.StorageKey)
+	}
+	return err
 }
 
 // openTicketFor returns the contact's open WhatsApp ticket on this workspace, else pgx.ErrNoRows.

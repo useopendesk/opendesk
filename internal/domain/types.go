@@ -254,6 +254,9 @@ type Message struct {
 	Attachments    []Attachment  `json:"attachments"`
 	DeliveryStatus string        `json:"delivery_status" enum:"none,pending,sent,failed,bounced"`
 	DeliveryError  string        `json:"delivery_error"`
+	// DeliveryMeta is what the delivery provider reported (contracts/whatsapp.md): its own
+	// status and timestamps, never credentials. Empty for email.
+	DeliveryMeta map[string]any `json:"delivery_meta,omitempty"`
 	// AI marks a reply written by the widget AI agent.
 	AI bool `json:"ai"`
 	// AIAction is an action the agent asks the visitor to confirm (contracts/agent.md).

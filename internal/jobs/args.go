@@ -579,3 +579,9 @@ func (WhatsAppSendArgs) Kind() string { return "whatsapp.send" }
 type WhatsAppPruneArgs struct{}
 
 func (WhatsAppPruneArgs) Kind() string { return "whatsapp.prune" }
+
+// WhatsAppTemplateSyncArgs refreshes every WhatsApp connection's message templates from Meta.
+// Owner: whatsapp.
+type WhatsAppTemplateSyncArgs struct{}
+
+func (WhatsAppTemplateSyncArgs) Kind() string { return "whatsapp.template_sync" }

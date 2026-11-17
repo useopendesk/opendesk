@@ -77,12 +77,18 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &inboundWorker{s: s})
 	river.AddWorker(w, &sendWorker{s: s})
 	river.AddWorker(w, &pruneWorker{s: s})
+	river.AddWorker(w, &templateSyncWorker{s: s})
 }
 
 // Periodic adds the engine's periodic jobs.
 func Periodic(*deps.Deps) []*river.PeriodicJob {
-	return []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
-		func() (river.JobArgs, *river.InsertOpts) { return jobs.WhatsAppPruneArgs{}, nil }, nil)}
+	return []*river.PeriodicJob{
+		river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) { return jobs.WhatsAppPruneArgs{}, nil }, nil),
+		// Templates Meta paused or rejected must stop being offered without an admin syncing.
+		river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) { return jobs.WhatsAppTemplateSyncArgs{}, nil }, nil),
+	}
 }
 
 // Background starts nothing that outlives a request: every job is River's.
@@ -91,6 +97,7 @@ func Background(context.Context, *deps.Deps) {}
 // Register mounts the WhatsApp API and the Meta webhook.
 func (s *Service) Register(api huma.API, r chi.Router) {
 	s.registerAPI(api, r)
+	s.registerTemplateAPI(api, r)
 	r.Get("/v1/whatsapp/hooks/{connection}", s.verifyWebhook)
 	r.Post("/v1/whatsapp/hooks/{connection}", s.webhook)
 }
