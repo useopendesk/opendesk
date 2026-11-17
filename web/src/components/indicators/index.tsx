@@ -3,6 +3,7 @@
 // default, coloured from the tone palette (lib/tones.ts) with light and dark
 // variants, and they snap in softly when their value changes.
 
+import { MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
@@ -256,7 +257,7 @@ export function SentimentIcon({ sentiment, className }: { sentiment: Sentiment |
   );
 }
 
-// Channel: envelope, bubble, handset, braces, globe; drawn to match the family.
+// Channel: envelope, bubble, handset, braces, globe, WhatsApp bubble; drawn to match the family.
 
 export function ChannelIcon({ channel, className, plain }: { channel: Channel; className?: string; plain?: boolean }) {
   useTranslation("indicators");
@@ -294,6 +295,7 @@ export function ChannelIcon({ channel, className, plain }: { channel: Channel; c
           <path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" stroke={c} strokeWidth={SW} strokeLinejoin="round" />
         </>
       )}
+      {channel === "whatsapp" && <MessageCircle className="size-full" style={{ color: c }} strokeWidth={2.2} />}
     </Glyph>
   );
 }

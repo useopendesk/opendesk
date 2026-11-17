@@ -78,6 +78,7 @@ const simpleLists: Record<string, { key: () => readonly unknown[]; field: string
   ticket_panel: { key: () => qk.ticketPanels, field: "panel" },
   support_channel_connection: { key: () => qk.supportChannelConnections, field: "support_channel_connection" },
   phone_connection: { key: () => qk.phoneConnections, field: "phone_connection" },
+  whatsapp_connection: { key: () => qk.whatsappConnections, field: "whatsapp_connection" },
   support_channel_destination: { key: () => qk.supportChannelDestinations, field: "support_channel_destination" },
 };
 
@@ -565,6 +566,8 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
       const id = d.support_channel_connection_id as string;
       qc.setQueryData<{ connection_id: string }[]>(qk.supportChannelDestinations, (old) => old?.filter((x) => x.connection_id !== id));
     }
+    // A removed number takes its synced templates with it.
+    if (resource === "whatsapp_connection" && verb === "deleted") void qc.invalidateQueries({ queryKey: qk.of("whatsapp", "templates") });
     if (resource === "view") refreshCounts(qc);
     // A changed or removed panel's answers are from before the change.
     if (resource === "ticket_panel" && verb !== "created") void qc.invalidateQueries({ queryKey: qk.of("tickets", "panels") });
