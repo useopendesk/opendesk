@@ -143,10 +143,10 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 						return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_templates_refused",
 							"Meta refused the template sync: "+msg)
 					}
-					return nil, httpx.E(http.StatusBadGateway, "whatsapp_templates_failed",
-						"Couldn't reach Meta to sync the templates. Try again in a moment.")
 				}
-				return nil, httpx.Wrap(firstErr)
+				s.d.Log.Error("whatsapp template sync failed", "err", firstErr)
+				return nil, httpx.E(http.StatusBadGateway, "whatsapp_templates_failed",
+					"Couldn't reach Meta to sync the templates. Try again in a moment.")
 			}
 			var (
 				rows []whatsappTemplateRow

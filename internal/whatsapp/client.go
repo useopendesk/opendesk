@@ -155,25 +155,30 @@ func (c *Client) FetchTemplates(ctx context.Context, acc Account) ([]MetaTemplat
 		return nil, errors.New("whatsapp: the account has no WhatsApp Business account id")
 	}
 	var out []MetaTemplate
-	endpoint := "/" + url.PathEscape(acc.WABAID) + "/message_templates?limit=100"
-	for page := 0; endpoint != "" && page < 50; page++ {
-		if page > 0 {
-			parsed, err := url.Parse(endpoint)
-			if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "graph.facebook.com" {
-				return nil, errors.New("whatsapp: refusing a template page outside the Graph API")
-			}
-		}
+	path := "/" + url.PathEscape(acc.WABAID) + "/message_templates?limit=100"
+	endpoint := ""
+	for page := 0; page < 50; page++ {
 		var res struct {
 			Data   []MetaTemplate `json:"data"`
 			Paging struct {
 				Next string `json:"next"`
 			} `json:"paging"`
 		}
-		if err := c.sendJSONURL(ctx, acc, "list templates", http.MethodGet, endpoint, nil, &res); err != nil {
+		var err error
+		if page == 0 {
+			err = c.sendJSON(ctx, acc, "list templates", http.MethodGet, path, nil, &res)
+		} else {
+			// Meta's next page is an absolute URL on the Graph API; it is checked there.
+			err = c.sendJSONURL(ctx, acc, "list templates", http.MethodGet, endpoint, nil, &res)
+		}
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, res.Data...)
 		endpoint = res.Paging.Next
+		if endpoint == "" {
+			break
+		}
 	}
 	return out, nil
 }
