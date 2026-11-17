@@ -101,6 +101,13 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusUnauthorized)
 		return
 	}
+	// Stored as jsonb, like the phone and support channel events. A signed body that is not
+	// JSON is refused before it reaches the queue.
+	if !json.Valid(body) {
+		s.d.Log.Warn("whatsapp webhook body is not JSON", "connection_id", c.ID)
+		refuse(http.StatusBadRequest)
+		return
+	}
 	if !s.d.Limiter.Allow("whatsapp-hook:"+c.ID.String(), webhookPerMinute, time.Minute) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
