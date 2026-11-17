@@ -130,7 +130,7 @@ type Ticket struct {
 	Status    string      `json:"status" enum:"open,pending,on_hold,solved,closed"`
 	Priority  string      `json:"priority" enum:"low,normal,high,urgent"`
 	Severity  *string     `json:"severity" enum:"sev1,sev2,sev3,sev4" nullable:"true"`
-	Channel   string      `json:"channel" enum:"email,chat,api,portal,phone"`
+	Channel   string      `json:"channel" enum:"email,chat,api,portal,phone,whatsapp"`
 	MailboxID *uuid.UUID  `json:"mailbox_id"`
 	Contact   *ContactRef `json:"contact"`
 	Assignee  *UserRef    `json:"assignee"`
