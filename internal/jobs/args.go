@@ -556,3 +556,26 @@ func (WikiTrashPurgeArgs) Kind() string { return "wiki.trash_purge" }
 type WikiRemindersArgs struct{}
 
 func (WikiRemindersArgs) Kind() string { return "wiki.reminders" }
+
+// WhatsAppInboundArgs processes one verified Meta webhook delivery. Owner: whatsapp.
+type WhatsAppInboundArgs struct {
+	WorkspaceID  uuid.UUID `json:"workspace_id"`
+	ConnectionID uuid.UUID `json:"connection_id"`
+	EventID      uuid.UUID `json:"event_id"`
+}
+
+func (WhatsAppInboundArgs) Kind() string { return "whatsapp.inbound" }
+
+// WhatsAppSendArgs sends one outbound WhatsApp reply. Owner: whatsapp.
+type WhatsAppSendArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MessageID   uuid.UUID `json:"message_id"`
+}
+
+func (WhatsAppSendArgs) Kind() string { return "whatsapp.send" }
+
+// WhatsAppPruneArgs removes applied Meta deliveries older than the channel's retention.
+// Owner: whatsapp.
+type WhatsAppPruneArgs struct{}
+
+func (WhatsAppPruneArgs) Kind() string { return "whatsapp.prune" }

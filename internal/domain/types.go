@@ -110,6 +110,8 @@ const (
 	ChannelPortal = "portal"
 	// ChannelPhone: a ticket a call opened (contracts/phone.md).
 	ChannelPhone = "phone"
+	// ChannelWhatsApp: a ticket a WhatsApp message opened (contracts/whatsapp.md).
+	ChannelWhatsApp = "whatsapp"
 )
 
 var (
@@ -117,7 +119,7 @@ var (
 	Priorities = []string{"low", "normal", "high", "urgent"}
 	// Severities are ordered most severe first; a ticket may have none (nil).
 	Severities = []string{"sev1", "sev2", "sev3", "sev4"}
-	Channels   = []string{ChannelEmail, ChannelChat, ChannelAPI, ChannelPortal, ChannelPhone}
+	Channels   = []string{ChannelEmail, ChannelChat, ChannelAPI, ChannelPortal, ChannelPhone, ChannelWhatsApp}
 )
 
 type Ticket struct {
