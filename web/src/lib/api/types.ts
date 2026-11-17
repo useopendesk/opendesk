@@ -1334,7 +1334,8 @@ export type WhatsAppTemplateButton = {
 export type WhatsAppDeliveryMeta = {
   provider_status?: "sent" | "delivered" | "read" | "failed";
   provider_error?: string;
-  provider_error_code?: string;
+  /** Meta's numeric error code, e.g. 131047 for a closed window. */
+  provider_error_code?: number;
   whatsapp_template?: {
     id?: string;
     name?: string;
