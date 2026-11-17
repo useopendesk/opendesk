@@ -80,7 +80,7 @@ ticks. A WhatsApp ticket records the connection it was opened through in
 | POST | `/v1/whatsapp/connections/{id}/subscribe` | admin user | subscribes the Meta app and points the WABA's callback at this connection → `WhatsAppConnection`; 404; 422 `whatsapp_subscribe_refused`; 502 `whatsapp_subscribe_failed` |
 | DELETE | `/v1/whatsapp/connections/{id}` | admin user | → 204; its tickets stay; 404 |
 | GET | `/v1/whatsapp/hooks/{connection}` | Meta (public) | `hub.mode`, `hub.verify_token`, `hub.challenge` → 200 `text/plain` challenge; 403 wrong mode or token; 404 unknown connection |
-| POST | `/v1/whatsapp/hooks/{connection}` | Meta (public, signed) | one raw delivery → 200 `{"status":"ok"}`; 401 bad signature; 403 no app secret; 404 unknown connection; 413 body over 1 MiB; 429 rate limited; 500 store failure |
+| POST | `/v1/whatsapp/hooks/{connection}` | Meta (public, signed) | one raw delivery → 200 `{"status":"ok"}`; 400 a signed body that is not JSON; 401 bad signature; 403 no app secret; 404 unknown connection; 413 body over 1 MiB; 429 rate limited; 500 store failure |
 | GET | `/v1/whatsapp/templates` | viewer, `settings:read` | `?connection_id` → `{data: WhatsAppTemplate[]}`; a bad id is 422 `validation_failed`, another workspace's id matches nothing |
 | POST | `/v1/whatsapp/templates/sync` | admin user | `{connection_id?}` (optional body; empty syncs every connection) → `{data: WhatsAppTemplate[], synced: number}`; 404 unknown connection; 422 `whatsapp_templates_refused`; 502 `whatsapp_templates_failed` |
 | POST | `/v1/tickets/{id}/messages` | agent, `tickets:write` | the normal message body (`contracts/api.md`); on a WhatsApp ticket a `reply` is a free-form WhatsApp reply and returns 201 `Message` with `delivery_status: "pending"`; 404; 409 `whatsapp_not_configured`; 422 `whatsapp_window_closed`; 422 `validation_failed` (no contact, more than one file, 4096/1024 limits) |
@@ -164,9 +164,10 @@ refused before it is stored. opendesk answers `200 {"status":"ok"}` at once, als
 delivery already stored (that retry is a no-op), so Meta keeps the webhook on; the job does
 the work, with up to 10 attempts. Storing it also sets `last_event_at` and clears an error
 state (`status: "connected"`, `last_error` empty). Applied deliveries are pruned a week after
-receipt. A verified payload that cannot be parsed is logged and dropped, and a delivery
-whose job fails all its attempts is not re-sent by Meta: the raw body stays until the prune
-and its messages are lost.
+receipt. A signed body that is not JSON is a 400 before it is stored, and a stored delivery
+whose shape the job cannot parse is logged and dropped; a delivery whose job fails all its
+attempts is not re-sent by Meta: the raw body stays until the prune and its messages are
+lost.
 
 A delivery for a suspended workspace is acknowledged and dropped: nothing changes tickets and
 nothing is sent while the workspace is suspended, as the phone engine does. While the workspace
