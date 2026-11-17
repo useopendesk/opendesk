@@ -11,6 +11,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
@@ -244,9 +245,31 @@ func (s *Service) syncAllTemplates(ctx context.Context) error {
 		return err
 	}
 	for _, c := range conns {
+		// A suspended workspace's connection is not called: its stored templates stay as
+		// they are until it is unsuspended, as the email syncer leaves a suspended mailbox.
+		if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, c.WorkspaceID); err != nil {
+			s.d.Log.Warn("whatsapp template sync skipped", "workspace_id", c.WorkspaceID, "connection_id", c.ID, "err", err)
+			continue
+		} else if suspended {
+			continue
+		}
 		if _, err := s.syncConnectionTemplates(ctx, c); err != nil {
 			s.d.Log.Warn("whatsapp template sync failed", "workspace_id", c.WorkspaceID, "connection_id", c.ID, "err", err)
 		}
 	}
 	return nil
+}
+
+// applyTemplateStatus folds a template review result from Meta into the stored copy, so a
+// template Meta approved, paused or rejected is not offered until the next sync. A template
+// this connection does not hold is ignored.
+func (s *Service) applyTemplateStatus(ctx context.Context, c connection, st TemplateStatus) error {
+	status := strings.ToUpper(strings.TrimSpace(st.Event))
+	if status == "" || st.MessageTemplateName == "" || st.MessageTemplateLanguage == "" {
+		return nil
+	}
+	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE whatsapp_templates SET status = $4, updated_at = now()
+		WHERE workspace_id = $1 AND connection_id = $2 AND name = $3 AND language = $5`,
+		c.WorkspaceID, c.ID, st.MessageTemplateName, status, st.MessageTemplateLanguage)
+	return err
 }

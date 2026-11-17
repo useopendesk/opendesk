@@ -30,7 +30,7 @@ CREATE TABLE whatsapp_inbound_events (
     workspace_id      uuid NOT NULL,
     connection_id     uuid NOT NULL REFERENCES whatsapp_connections(id) ON DELETE CASCADE,
     external_event_id text NOT NULL,
-    payload           bytea NOT NULL,
+    payload           jsonb NOT NULL,
     received_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX whatsapp_inbound_events_conn_event_uq ON whatsapp_inbound_events(connection_id, external_event_id);

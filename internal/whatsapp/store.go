@@ -96,7 +96,7 @@ func deleteConnection(ctx context.Context, q db.Querier, wid, id uuid.UUID) erro
 func insertInboundEvent(ctx context.Context, q db.Querier, wid, connID uuid.UUID, externalID string, payload []byte) (uuid.UUID, bool, error) {
 	id := ids.New()
 	tag, err := q.Exec(ctx, `INSERT INTO whatsapp_inbound_events (id, workspace_id, connection_id, external_event_id, payload, received_at)
-		VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT (connection_id, external_event_id) DO NOTHING`, id, wid, connID, externalID, payload)
+		VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT (connection_id, external_event_id) DO NOTHING`, id, wid, connID, externalID, json.RawMessage(payload))
 	if err != nil {
 		return uuid.Nil, false, err
 	}
@@ -151,9 +151,10 @@ func contactWindow(ctx context.Context, q db.Querier, wid, connID, contactID uui
 	return last, time.Since(last) < WindowDuration, nil
 }
 
-// connectionForContact returns the connection a contact's window belongs to for a ticket: the
-// one the ticket was opened through (tickets.custom.whatsapp_connection_id), else the
-// workspace's first connection.
+// connectionForContact returns the connection the ticket's messages go out from: the one the
+// ticket was opened through (tickets.custom.whatsapp_connection_id), else the workspace's
+// first connection. A recorded connection that was disconnected is skipped, so a ticket whose
+// number was removed and connected again keeps replying through the new connection.
 func connectionForContact(ctx context.Context, q db.Querier, wid uuid.UUID, custom []byte) (connection, error) {
 	var meta map[string]any
 	if len(custom) > 0 {
@@ -161,7 +162,15 @@ func connectionForContact(ctx context.Context, q db.Querier, wid uuid.UUID, cust
 	}
 	if raw, ok := meta["whatsapp_connection_id"].(string); ok {
 		if id, err := uuid.Parse(raw); err == nil {
-			return loadConnection(ctx, q, wid, id)
+			c, err := loadConnection(ctx, q, wid, id)
+			if err == nil {
+				return c, nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return connection{}, err
+			}
+			// The ticket's connection was disconnected: the workspace's current one speaks
+			// for it, with the contact window and number it has.
 		}
 	}
 	all, err := listConnections(ctx, q, wid)

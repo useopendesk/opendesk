@@ -15,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/products"
 )
 
 // inboundWorker applies one verified Meta delivery: the messages in it become ticket
@@ -41,6 +42,19 @@ func (w *inboundWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppIn
 	if err != nil {
 		return err
 	}
+	// A suspended workspace's deliveries are acknowledged and dropped, as the phone engine
+	// does: nothing changes tickets and nothing is sent while the workspace is suspended.
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, c.WorkspaceID); err != nil {
+		return err
+	} else if suspended {
+		s.d.Log.Info("whatsapp delivery dropped: workspace suspended", "connection_id", c.ID)
+		return nil
+	}
+	// While Tickets is off the delivery stays stored and unapplied; the job snoozes until it
+	// is on again (products.Reactivate wakes it), as the phone engine's events do.
+	if err := products.Hold(ctx, s.d.DB.Pool, c.WorkspaceID); err != nil {
+		return products.SnoozeHeld(err)
+	}
 	payloadData, err := ParsePayload(payload)
 	if err != nil {
 		// Verified but not understood: acknowledged so Meta keeps the webhook on.
@@ -57,6 +71,12 @@ func (w *inboundWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppIn
 	for _, st := range payloadData.ExtractStatuses() {
 		if err := w.applyStatus(ctx, c, st); err != nil {
 			s.d.Log.Error("whatsapp status not applied", "connection_id", c.ID, "wa_message_id", st.MessageID, "err", err)
+			errs = append(errs, err)
+		}
+	}
+	for _, ts := range payloadData.ExtractTemplateStatuses() {
+		if err := w.s.applyTemplateStatus(ctx, c, ts); err != nil {
+			s.d.Log.Error("whatsapp template status not applied", "connection_id", c.ID, "template", ts.MessageTemplateName, "err", err)
 			errs = append(errs, err)
 		}
 	}
@@ -139,7 +159,9 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 			return err
 		}
 		ticketID, err := openTicketFor(ctx, tx, c.WorkspaceID, pc.ID)
+		newTicket := false
 		if errors.Is(err, pgx.ErrNoRows) {
+			newTicket = true
 			ticketID, err = createTicketFor(ctx, s, tx, c, pc.ID, subject, text)
 		}
 		if err != nil {
@@ -167,7 +189,11 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 			BodyText:        bodyText,
 			DeliveryStatus:  "none",
 			AttachmentIDs:   attIDs,
-			CreatedAt:       at,
+			// A ticket this message opened runs the new-ticket work (auto-triage, SLA
+			// policies, notifications) with the message as its body, like the widget's
+			// first message. A message on an open ticket is a customer reply.
+			Trigger:   ticketTrigger(newTicket),
+			CreatedAt: at,
 		})
 		if err != nil {
 			return err
@@ -220,6 +246,16 @@ func createTicketFor(ctx context.Context, s *Service, tx pgx.Tx, c connection, c
 		}
 	}
 	return t.ID, nil
+}
+
+// ticketTrigger is what a message's ticket trigger is: the first message of a ticket this
+// delivery opened runs the new-ticket work (auto-triage, SLA policies, notifications) with
+// the message as its body; a message on an open ticket keeps its own derived trigger.
+func ticketTrigger(newTicket bool) string {
+	if newTicket {
+		return jobs.TriggerTicketCreated
+	}
+	return ""
 }
 
 // applyStatus applies Meta's delivery report to the message it is about.

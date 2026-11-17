@@ -54,6 +54,14 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 	if m.Channel != domain.ChannelWhatsApp || m.Kind != "reply" || m.Direction != "outbound" || m.DeliveryStatus != "pending" {
 		return nil
 	}
+	// A suspended workspace's replies do not go out, as the email sender's do not: the job is
+	// canceled rather than retried, and the message keeps what the agent wrote.
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, job.Args.WorkspaceID); err != nil {
+		return err
+	} else if suspended {
+		s.d.Log.Info("whatsapp send canceled: workspace suspended", "message_id", m.ID)
+		return river.JobCancel(errors.New("workspace suspended"))
+	}
 	c, err := connectionForContact(ctx, s.d.DB.Pool, job.Args.WorkspaceID, m.Custom)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

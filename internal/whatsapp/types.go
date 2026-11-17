@@ -523,6 +523,29 @@ func sharedContactPhone(phones []WebhookContactPhone) string {
 	return strings.TrimSpace(phones[0].WaID)
 }
 
+// ExtractTemplateStatuses flattens Meta's template review results (field
+// "message_template_status_update"): one template's approval state changed on Meta's side,
+// so the stored copy can follow without waiting for the next sync.
+func (p *WebhookPayload) ExtractTemplateStatuses() []TemplateStatus {
+	if p == nil {
+		return nil
+	}
+	var out []TemplateStatus
+	for _, entry := range p.Entry {
+		for _, change := range entry.Changes {
+			if change.Field != "message_template_status_update" {
+				continue
+			}
+			st := change.Value.TemplateStatus
+			if st.MessageTemplateName == "" || st.MessageTemplateLanguage == "" || st.Event == "" {
+				continue
+			}
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
 // parseWebhookTimestamp reads Meta's timestamp, a string of Unix seconds. A fractional
 // timestamp is read to the nanosecond; anything that is not a time is zero.
 func parseWebhookTimestamp(raw string) time.Time {
