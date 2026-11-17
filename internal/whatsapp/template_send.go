@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
 
 // templateSendMaxAttempts is how often Meta's rate limit or a server error may be retried
@@ -33,14 +35,38 @@ func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outbo
 	// What is sent is the row as re-read, never only what the message carried when it was
 	// written: the template may have been paused or changed since.
 	tmpl.Name, tmpl.Language = row.Name, row.Language
-	tmpl.HeaderType = row.HeaderType
+	tmpl.HeaderType = strings.ToUpper(strings.TrimSpace(row.HeaderType))
 	if strings.TrimSpace(tmpl.Body) == "" {
 		tmpl.Body = row.BodyContent
 	}
 	prepareTemplateHeader(tmpl, row)
+	// prepareTemplateHeader drops every header that is not text. A media header keeps its
+	// shape here so components() knows which file component to build; the file is uploaded
+	// below and its Meta id fills the component.
+	headerKind := templateMediaKind(row.HeaderType)
+	if headerKind != "" {
+		tmpl.HeaderType = strings.ToUpper(strings.TrimSpace(row.HeaderType))
+	}
 	acc, _, err := s.account(c)
 	if err != nil {
 		return s.failMessage(ctx, c.WorkspaceID, m.ID, "This WhatsApp connection's credentials could not be read.")
+	}
+	if headerKind != "" {
+		reason, uerr := s.uploadTemplateHeaderMedia(ctx, c, acc, tmpl)
+		if uerr != nil {
+			// Meta refused the upload before accepting anything, so the same send may
+			// succeed later: count the attempts here as the template send does.
+			if attempts := templateSendAttempts(m.DeliveryMeta) + 1; attempts < templateSendMaxAttempts {
+				if aerr := s.recordTemplateAttempt(ctx, c.WorkspaceID, m.ID, attempts); aerr != nil {
+					return aerr
+				}
+				return uerr
+			}
+			return s.failMessage(ctx, c.WorkspaceID, m.ID, whatsappSendError(uerr))
+		}
+		if reason != "" {
+			return s.failMessage(ctx, c.WorkspaceID, m.ID, reason)
+		}
 	}
 	wamid, err := NewClient(s.http).SendTemplate(ctx, acc, waID, tmpl.Name, tmpl.Language, tmpl.components())
 	if err != nil {
@@ -124,6 +150,71 @@ func prepareTemplateHeader(tmpl *whatsappTemplate, row whatsappTemplateRow) {
 	}
 	tmpl.Params[carrier] = tmpl.HeaderText
 	tmpl.HeaderText = "{{" + carrier + "}}"
+}
+
+// uploadTemplateHeaderMedia reads the file an image, video or document header names out of
+// storage, checks it against Meta's caps from the stored row, and uploads it so the send can
+// carry its media id. It returns the safe reason a message cannot be sent, or an error worth
+// retrying (Meta's rate limit or a server error). The storage key never appears in the return
+// value or a log line.
+func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, acc Account, tmpl *whatsappTemplate) (string, error) {
+	kind := templateMediaKind(tmpl.HeaderType)
+	if kind == "" {
+		return "", nil
+	}
+	id, err := uuid.Parse(strings.TrimSpace(tmpl.HeaderAttachmentID))
+	if err != nil || id == uuid.Nil {
+		return "This template's file is missing.", nil
+	}
+	var (
+		filename, contentType, storageKey string
+		sizeBytes                         int64
+	)
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT filename, content_type, size_bytes, storage_key FROM attachments
+		WHERE workspace_id = $1 AND id = $2`, c.WorkspaceID, id).Scan(&filename, &contentType, &sizeBytes, &storageKey)
+	if db.IsNotFound(err) {
+		return "This template's file is missing.", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(storageKey) == "" {
+		return "This template's file is missing.", nil
+	}
+	// The row as it is now decides: the file may have been replaced or re-uploaded since the
+	// API checked it.
+	if problem := templateMediaProblem(kind, contentType, sizeBytes); problem != "" {
+		return problem, nil
+	}
+	limit := mediaSizeLimit(kind)
+	body, err := s.d.Storage.Get(ctx, storageKey)
+	if err != nil {
+		return "This template's file could not be read.", nil
+	}
+	content, readErr := io.ReadAll(io.LimitReader(body, limit+1))
+	_ = body.Close()
+	if readErr != nil {
+		return "This template's file could not be read.", nil
+	}
+	if int64(len(content)) > limit {
+		return templateMediaProblem(kind, contentType, int64(len(content))), nil
+	}
+	if len(content) == 0 {
+		return "This template's file is missing.", nil
+	}
+	filename = hd.CleanFilename(filename)
+	mediaID, err := NewClient(s.http).UploadMedia(ctx, acc, content, contentType, filename)
+	if err != nil {
+		if metaRetryable(err) {
+			return "", err
+		}
+		return whatsappSendError(err), nil
+	}
+	tmpl.HeaderMediaID = mediaID
+	if kind == "document" {
+		tmpl.HeaderMediaFilename = filename
+	}
+	return "", nil
 }
 
 // templateSendAttempts reads how often a template send was already refused for a transient

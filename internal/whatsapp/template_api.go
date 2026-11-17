@@ -58,8 +58,11 @@ type templateSendBody struct {
 	Params     map[string]string `json:"params,omitempty" doc:"Values for the template's body variables, by placeholder name or number"`
 	// HeaderText is the value filled into the header's variable, not the template's approved
 	// header text: the approval already holds that text, and Meta takes only the value.
-	HeaderText string            `json:"header_text,omitempty" doc:"The value (not the approved header text) of the template's text header variable, when it has one"`
-	ButtonURLs map[string]string `json:"button_urls,omitempty" doc:"Values for the template's URL buttons, by button number"`
+	HeaderText string `json:"header_text,omitempty" doc:"The value (not the approved header text) of the template's text header variable, when it has one"`
+	// HeaderMediaID is the workspace's uploaded file that fills an IMAGE, VIDEO or DOCUMENT
+	// header; the send uploads it to Meta, which is what the approval's header expects.
+	HeaderMediaID string            `json:"header_media_id,omitempty" doc:"The opendesk attachment id of the file for an IMAGE/VIDEO/DOCUMENT header"`
+	ButtonURLs    map[string]string `json:"button_urls,omitempty" doc:"Values for the template's URL buttons, by button number"`
 }
 
 // registerTemplateAPI mounts the templates' API: the synced list, an admin sync, and sending
@@ -211,9 +214,17 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 			if err != nil {
 				return nil, err
 			}
-			headerText, err := templateHeaderValue(in.Body.HeaderText, row)
+			headerText, headerAttachmentID, err := templateHeader(row, in.Body.HeaderText, in.Body.HeaderMediaID)
 			if err != nil {
 				return nil, err
+			}
+			if headerAttachmentID != "" {
+				// The file is checked here, before the message is written, so a wrong or
+				// missing one answers the agent instead of failing the send later.
+				if err := s.checkTemplateHeaderAttachment(ctx, p.WorkspaceID,
+					templateMediaKind(row.HeaderType), headerAttachmentID); err != nil {
+					return nil, err
+				}
 			}
 			buttonURLs, err := cleanButtonURLs(in.Body.ButtonURLs, row.Buttons)
 			if err != nil {
@@ -226,8 +237,8 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 				return nil, httpx.Validation("This template has no body text to send.")
 			}
 			tmpl := &whatsappTemplate{ID: row.ID.String(), Name: row.Name, Language: row.Language,
-				Body: row.BodyContent, Params: params, HeaderType: row.HeaderType,
-				HeaderText: headerText, ButtonURLs: buttonURLs}
+				Body: row.BodyContent, Params: params, HeaderType: strings.ToUpper(strings.TrimSpace(row.HeaderType)),
+				HeaderText: headerText, HeaderAttachmentID: headerAttachmentID, ButtonURLs: buttonURLs}
 			var msg domain.Message
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				var err error
@@ -337,14 +348,34 @@ func cleanTemplateParams(given map[string]string, row whatsappTemplateRow) (map[
 	return params, nil
 }
 
-// templateHeaderValue checks the value of a text header's one variable, and refuses a header
-// this channel cannot fill (an image, video or document header). given is the value the agent
+// templateHeader decides what a send carries for the template's header: the value of a text
+// header's one variable, or the attachment that fills an image, video or document header. A
+// template without a header ignores a value or file sent for it (a client may send both for
+// every template), and a header this channel cannot fill is refused. given is what the agent
 // filled in, never the template's approved header text.
-func templateHeaderValue(given string, row whatsappTemplateRow) (string, error) {
-	if kind := strings.TrimSpace(row.HeaderType); kind != "" && !strings.EqualFold(kind, "TEXT") {
-		return "", httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_header_unsupported",
+func templateHeader(row whatsappTemplateRow, headerText, headerMediaID string) (string, string, error) {
+	switch kind := strings.ToUpper(strings.TrimSpace(row.HeaderType)); kind {
+	case "":
+		// The template has no header, so there is nothing to fill.
+		return "", "", nil
+	case "TEXT":
+		text, err := textHeaderValue(headerText, row)
+		return text, "", err
+	case "IMAGE", "VIDEO", "DOCUMENT":
+		if strings.TrimSpace(headerMediaID) == "" {
+			return "", "", httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_params_missing",
+				"Choose the file for this template's "+strings.ToLower(kind)+" header.")
+		}
+		return "", strings.TrimSpace(headerMediaID), nil
+	default:
+		return "", "", httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_header_unsupported",
 			"Templates with a "+strings.ToLower(kind)+" header can't be sent from opendesk yet.")
 	}
+}
+
+// textHeaderValue checks the value of a text header's one variable. It returns "" for a
+// static header, which sends no component.
+func textHeaderValue(given string, row whatsappTemplateRow) (string, error) {
 	keys := orderedPlaceholders(row.HeaderContent)
 	if len(keys) == 0 {
 		// A static header uses Meta's approved text; a value makes no difference.
@@ -358,6 +389,38 @@ func templateHeaderValue(given string, row whatsappTemplateRow) (string, error) 
 		return "", httpx.Validation("The template's header value is longer than WhatsApp's 60-character limit.")
 	}
 	return given, nil
+}
+
+// checkTemplateHeaderAttachment confirms the file an agent picked for a media header belongs
+// to the workspace, is of the header's shape and is under Meta's cap for it. The row is read
+// by workspace and id only, so an id from another workspace is never taken. Size and type are
+// checked again by the send from the same row: the file may change between the two.
+func (s *Service) checkTemplateHeaderAttachment(ctx context.Context, wid uuid.UUID, kind, rawID string) error {
+	id, err := hd.ParseRef(rawID, "header_media_id")
+	if err != nil {
+		return err
+	}
+	var (
+		contentType, storageKey string
+		sizeBytes               int64
+	)
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT content_type, size_bytes, storage_key FROM attachments
+		WHERE workspace_id = $1 AND id = $2`, wid, id).Scan(&contentType, &sizeBytes, &storageKey)
+	if db.IsNotFound(err) {
+		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
+			"The file for this template's header was not found in this workspace.")
+	}
+	if err != nil {
+		return httpx.Wrap(err)
+	}
+	if strings.TrimSpace(storageKey) == "" {
+		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
+			"The file for this template's header is not available.")
+	}
+	if problem := templateMediaProblem(kind, contentType, sizeBytes); problem != "" {
+		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_unsupported", problem)
+	}
+	return nil
 }
 
 // cleanButtonURLs checks the values of a template's URL buttons. Meta keeps a button's index
