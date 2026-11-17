@@ -180,7 +180,9 @@
     "soundOn": "Mute chat alert sounds",
     "soundOff": "Play a sound when a visitor is waiting",
     "title_one": "● {{count}} customer waiting",
-    "title_other": "● {{count}} customers waiting"
+    "title_other": "● {{count}} customers waiting",
+    "whatsapp": "WhatsApp",
+    "whatsappHint": "WhatsApp. Replies from here go to the customer's WhatsApp."
   },
   "presence": {
     "viewing": "{{name}} is viewing",
