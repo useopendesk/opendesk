@@ -3,7 +3,6 @@
 // default, coloured from the tone palette (lib/tones.ts) with light and dark
 // variants, and they snap in softly when their value changes.
 
-import { MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
@@ -295,7 +294,20 @@ export function ChannelIcon({ channel, className, plain }: { channel: Channel; c
           <path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" stroke={c} strokeWidth={SW} strokeLinejoin="round" />
         </>
       )}
-      {channel === "whatsapp" && <MessageCircle className="size-full" style={{ color: c }} strokeWidth={2.2} />}
+      {channel === "whatsapp" && (
+        <>
+          <path
+            d="M8 2.5c-3.1 0-5.6 2.2-5.6 4.9 0 1.55.85 2.95 2.2 3.85l-.5 2.35a.4.4 0 0 0 .58.43l2.35-1.2c.32.06.65.09.98.09 3.1 0 5.6-2.2 5.6-4.9S11.1 2.5 8 2.5z"
+            stroke={c}
+            strokeWidth={SW}
+            strokeLinejoin="round"
+          />
+          <path
+            d="M6.15 5.9c.12.86.76 1.5 1.62 1.62l.4-.4a.35.35 0 0 1 .37-.08l.95.4a.35.35 0 0 1 .21.32v.5c0 .29-.24.53-.53.53A3.97 3.97 0 0 1 5.2 4.85c0-.29.24-.53.53-.53h.5a.35.35 0 0 1 .32.21l.4.95a.35.35 0 0 1-.08.37z"
+            fill={c}
+          />
+        </>
+      )}
     </Glyph>
   );
 }
