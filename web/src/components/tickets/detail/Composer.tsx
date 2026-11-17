@@ -458,7 +458,18 @@ export const Composer = forwardRef<
     realtime()?.setPresenceState(hasDraft && mode === "reply" ? "replying" : "viewing");
   }, [hasDraft, mode]);
 
-  const upload = (files: FileList | File[]) => uploadFiles(files, setUploads);
+  // WhatsApp takes one file per message (a free-form reply); a second one would be refused.
+  const whatsappReply = ticket.channel === "whatsapp" && mode === "reply";
+  const upload = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!whatsappReply) {
+      uploadFiles(list, setUploads);
+      return;
+    }
+    const room = Math.max(0, 1 - uploads.length);
+    if (list.length > room) toast.error(t("composer.whatsappOneFile"));
+    if (room > 0) uploadFiles(list.slice(0, room), setUploads);
+  };
 
   const busyUploads = uploads.some((u) => u.status === "uploading");
   // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
@@ -558,6 +569,11 @@ export const Composer = forwardRef<
     // WhatsApp only takes a free-form reply inside the customer's 24 hour window; a template goes out any time.
     if (reply && ticket.channel === "whatsapp" && !whatsAppWindowOpen(ticket)) {
       toast.error(t("composer.whatsappWindowClosed"));
+      return;
+    }
+    // One file per WhatsApp message, even when a note's files stayed on the way back to a reply.
+    if (reply && ticket.channel === "whatsapp" && uploads.length > 1) {
+      toast.error(t("composer.whatsappOneFile"));
       return;
     }
     if (reply && !opts.checked) {
@@ -966,7 +982,7 @@ export const Composer = forwardRef<
                 <>
                   {/* Ollie writes from the ticket, so it stays out of what goes to a third party. */}
                   {!threadMode && <ComposerAiMenu ai={ai} hasDraft={!!draft.html} disabled={disabled} />}
-                  <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
+                  <input ref={fileInput} type="file" multiple={!whatsappReply} hidden onChange={(e) => e.target.files && upload(e.target.files)} />
                   <Tooltip content={t("composer.attach")}>
                     <button
                       type="button"

@@ -189,7 +189,10 @@ export type WhatsAppTemplateSendBody = {
   template_id: string;
   /** One value per `{{1}}` or `{{name}}` placeholder of the body, keyed by it. */
   params?: Record<string, string>;
+  /** The value (not the approved text) of a text header's one placeholder. */
   header_text?: string;
+  /** An uploaded attachment for an image, video or document header: its opendesk attachment id. */
+  header_media_id?: string;
   /** URL button values, keyed by the button's index. */
   button_urls?: Record<string, string>;
 };

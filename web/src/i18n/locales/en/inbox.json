@@ -659,7 +659,8 @@
     },
     "whatsappWindowOpen": "WhatsApp window open. {{left}} left to reply.",
     "whatsappWindowClosed": "The 24 hour window is closed, so only a template can go out.",
-    "whatsappTemplate": "Send template"
+    "whatsappTemplate": "Send template",
+    "whatsappOneFile": "WhatsApp takes one file per message. Remove the file to attach another."
   },
   "sharedDraft": {
     "label": "Shared draft",
@@ -681,8 +682,27 @@
     "noTemplates": "No template can be sent from here yet. Sync approved templates in Settings > WhatsApp.",
     "emptySearch": "No template matches that search.",
     "preview": "Preview",
+    "header": "Header",
+    "headerMedia": "{{kind}} header",
+    "kind": {
+      "image": "Image",
+      "video": "Video",
+      "document": "Document"
+    },
+    "headerChoose": "Choose a file",
+    "headerFileHint": "Up to {{size}}.",
+    "headerUploading": "Uploading",
+    "headerRemove": "Remove the header file",
+    "headerTooLarge": "{{name}} is larger than {{size}}.",
+    "headerUploadFailed": "Couldn't upload {{name}}",
+    "headerValue": "Header: {{name}}",
+    "headerValueHint": "Up to 60 characters.",
     "params": "Fill in the placeholders",
     "paramHint": "Goes in this placeholder in the message.",
+    "buttons": "Button links",
+    "buttonValue": "Button: {{text}}",
+    "buttonNumber": "Button {{number}}",
+    "buttonHint": "Goes in this button's link.",
     "back": "Back",
     "cancel": "Cancel",
     "send": "Send template",

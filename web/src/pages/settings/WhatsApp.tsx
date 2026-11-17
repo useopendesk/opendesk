@@ -13,6 +13,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { CopyField } from "@/components/ui/copy-button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
@@ -234,14 +235,19 @@ export default function WhatsApp() {
 function ConnectDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation("settingsWhatsapp");
   const qc = useQueryClient();
+  const { data: brands } = useQuery(q.brands());
   const [name, setName] = useState("");
+  const [brandId, setBrandId] = useState("");
   const [apiVersion, setApiVersion] = useState("");
   const [credentials, setCredentials] = useState({ phone_number_id: "", waba_id: "", access_token: "", app_secret: "", verify_token: "" });
   const [error, setError] = useState("");
+  // "Default brand" is the empty value: the number joins the workspace's default brand.
+  const brandOptions = [{ value: "", label: t("connect.defaultBrand") }, ...(brands ?? []).map((b) => ({ value: b.id, label: b.name }))];
   const save = useMutation({
     mutationFn: () =>
       api.whatsapp.connect({
         name: name.trim() || undefined,
+        brand_id: brandId || undefined,
         credentials: {
           ...credentials,
           verify_token: credentials.verify_token.trim() || undefined,
@@ -275,6 +281,9 @@ function ConnectDialog({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-4">
         <Field label={t("connect.name")} hint={t("connect.nameHint")}>
           {(props) => <TextInput {...props} autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />}
+        </Field>
+        <Field label={t("connect.brand")} hint={t("connect.brandHint")} optional>
+          {({ id }) => <Select id={id} value={brandId} onChange={setBrandId} options={brandOptions} placeholder={t("connect.defaultBrand")} />}
         </Field>
         <Field label={t("connect.phoneNumberId")}>
           {(props) => <TextInput {...props} autoComplete="off" spellCheck={false} className="mono" value={credentials.phone_number_id} onChange={set("phone_number_id")} />}
