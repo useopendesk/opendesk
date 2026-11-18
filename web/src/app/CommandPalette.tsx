@@ -68,6 +68,7 @@ import { useHref } from "@/lib/links";
 import { openSelectedInNewTab } from "./paletteLink";
 import { AiResults } from "./PaletteAiResults";
 import { groupCls, HitItem, Item } from "./paletteItems";
+import { usePaletteHighlight } from "./paletteHighlight";
 import { asSource, useAppSearch, type AppHit } from "@/lib/appSearch";
 import { useOpenHit } from "@/lib/appSearch/open";
 import { useSettingsAccess } from "@/lib/settingsAccess";
@@ -138,17 +139,16 @@ export function CommandPalette() {
   const several = useWorkspaces().several;
   const aiQuery = useDebounced(query.trim(), 300);
   const aiSearch = useQuery({ ...q.aiSearch(aiQuery), enabled: open && aiMode && ai.enabled && aiQuery.length > 1 });
-  // The app's own search: settings and places like the sidebar, and the docs for questions.
+  // The app's own search: settings and places like the sidebar, and the docs for Ask AI.
   const access = useSettingsAccess({ cloud: open });
   const assistant = ai.config?.assistant_name ?? "Ollie";
   const app = useAppSearch(aiMode ? aiQuery : deferred, {
     access,
     settings: open,
-    // The docs index is the larger one: loaded for Ask AI, or a search of a few words ("add a mailbox").
-    docs: open && (aiMode || /\S+\s+\S/.test(deferred)),
+    // The docs index is the larger one: loaded for Ask AI's questions only.
+    docs: open && aiMode,
     mode: aiMode ? "most" : "all",
     limit: aiMode ? 4 : 6,
-    docsLimit: aiMode ? 4 : 3,
     assistant,
   });
   const openHit = useOpenHit();
@@ -157,15 +157,16 @@ export function CommandPalette() {
   const appHelp = useMutation({ mutationFn: api.ai.appHelp });
   const { reset: resetHelp } = appHelp;
   const root = useRef<HTMLDivElement>(null);
-  // The highlighted item. Ask AI's results arrive after the words that asked for them, when cmdk
-  // has already picked its first item: once none is highlighted, the first one is, so Enter acts.
+  // The highlighted item. Results arrive after the words that asked for them, when cmdk has
+  // already picked its first item: a search's tickets after the settings hits, Ask AI's results.
+  // The first item is highlighted again so Enter acts on it, until the arrow keys move it; in Ask
+  // AI, only once none is highlighted.
   const [active, setActive] = useState("");
+  const highlight = usePaletteHighlight(root, setActive);
   const helpStatus = appHelp.status;
   useEffect(() => {
-    if (!aiMode || root.current?.querySelector('[cmdk-item][aria-selected="true"]')) return;
-    const first = root.current?.querySelector("[cmdk-item]")?.getAttribute("data-value");
-    if (first) setActive(first);
-  }, [aiMode, aiQuery, aiSearch.data, app.settings, app.docs, helpStatus]);
+    highlight.pickFirst(aiMode);
+  }, [highlight, aiMode, aiQuery, aiSearch.data, deferred, search.data, ticketsOn, app.settings, app.docs, helpStatus]);
 
   useEffect(() => {
     if (!open) {
@@ -187,8 +188,6 @@ export function CommandPalette() {
   // A page as a link: its href for the browser, and the navigation in place.
   const toHref = useHref();
   const link = (to: NavigateOptions) => ({ href: toHref(to), onSelect: () => go(() => void navigate(to)) });
-  // The highlighted item. Ask AI's results arrive after the words that asked for them, when cmdk
-  // has already picked its first item: once none is highlighted, the first one is, so Enter acts.
 
   // The server leaves tickets out while Tickets is off; a result cached before that is not shown either.
   const results = search.data && !ticketsOn ? { ...search.data, tickets: [] } : search.data;
@@ -200,7 +199,7 @@ export function CommandPalette() {
   const role = useRole();
   // Go to lists these pages already; the Settings group adds their sections and fields.
   const settingsHits = app.settings.filter((h) => !(h.kind === "setting" && h.entry.k === "p" && GO_SETTINGS.has(h.route)));
-  const appResults = settingsHits.length + app.docs.length > 0;
+  const appResults = settingsHits.length > 0;
 
   return (
     <D.Root open={open} onOpenChange={(o) => shell.palette(o)}>
@@ -230,8 +229,12 @@ export function CommandPalette() {
               <Command.Input
                 autoFocus
                 value={query}
-                onValueChange={setQuery}
+                onValueChange={(v) => {
+                  highlight.reset();
+                  setQuery(v);
+                }}
                 onKeyDown={(e) => {
+                  highlight.onKeyDown(e);
                   if (e.key === "Tab" && !e.shiftKey && ai.enabled) {
                     e.preventDefault();
                     setAiMode((m) => !m);
@@ -387,13 +390,6 @@ export function CommandPalette() {
               {settingsHits.length > 0 && (
                 <Command.Group heading={tNav("titles.settings")} forceMount className={groupCls}>
                   {settingsHits.map((h) => (
-                    <HitItem key={h.id} hit={h} query={deferred} {...hitLink(h)} />
-                  ))}
-                </Command.Group>
-              )}
-              {app.docs.length > 0 && (
-                <Command.Group heading={tNav("command.docs")} forceMount className={groupCls}>
-                  {app.docs.map((h) => (
                     <HitItem key={h.id} hit={h} query={deferred} {...hitLink(h)} />
                   ))}
                 </Command.Group>

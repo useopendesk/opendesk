@@ -76,3 +76,24 @@ func TestAppHelpWithoutProvider(t *testing.T) {
 		t.Fatal(string(r.Body))
 	}
 }
+
+func TestAppHelpRateLimit(t *testing.T) {
+	e := newEnv(t, opts{})
+	e.F.set("app_help", "Open Settings, then Mailboxes.")
+	body := map[string]any{"question": "how do I add a mailbox", "sources": []map[string]any{{"title": "Settings / Mailboxes"}}}
+
+	// Twenty questions a minute for each person; the next is refused before the model is called.
+	for i := 0; i < 20; i++ {
+		e.Do("POST", "/v1/ai/app-help", e.agent(), body).Want(t, 200)
+	}
+	calls := e.F.calls()
+	if r := e.Do("POST", "/v1/ai/app-help", e.agent(), body).Want(t, 429); problemCode(t, r) != "rate_limited" {
+		t.Fatal(string(r.Body))
+	}
+	if e.F.calls() != calls {
+		t.Fatal("model called past the limit")
+	}
+
+	// The limit is per person: a teammate in the same workspace is still answered.
+	e.Do("POST", "/v1/ai/app-help", e.viewer(), body).Want(t, 200)
+}

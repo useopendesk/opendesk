@@ -29,6 +29,11 @@ describe("matching", () => {
     expect(find("authenticaton")[0]).toBe("2fa");
   });
 
+  it("forgives no typo in a word under five letters", () => {
+    expect(find("tame")).toEqual([]);
+    expect(find("lables")[0]).toBe("labels");
+  });
+
   it("matches stems", () => {
     expect(stem("labels")).toBe(stem("label"));
     expect(stem("archived")).toBe(stem("archive"));

@@ -147,7 +147,7 @@ function wordScore(q: string, qs: string, last: boolean, f: Prepared["fields"][n
   if (CJK.test(q)) return f.norm.includes(q) ? 1 : 0;
   let best = 0;
   const syn = SYN.get(qs);
-  const typos = q.length >= 8 ? 2 : q.length >= 4 ? 1 : 0;
+  const typos = q.length >= 8 ? 2 : q.length >= 5 ? 1 : 0;
   for (let i = 0; i < f.words.length && best < 1; i++) {
     const w = f.words[i];
     const ws = f.stems[i];

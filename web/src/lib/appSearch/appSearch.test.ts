@@ -43,6 +43,12 @@ describe("the settings index", () => {
     expect([...routes].filter((r) => !(r in SETTINGS_RULES))).toEqual([]);
   });
 
+  it("leaves out labels that are only placeholders", () => {
+    // "{{name}}" or "{{a}} {{b}}" in English has no words of its own to find.
+    const empty = settingsIndex.entries.filter((e) => !/\p{L}/u.test(String(t(e.t.slice(e.t.indexOf(":") + 1), { ns: e.t.slice(0, e.t.indexOf(":")), lng: "en" })).replace(/\{\{[^}]*\}\}/g, "")));
+    expect(empty.map((e) => e.t)).toEqual([]);
+  });
+
   it("deep-links a section or row to its label, and a page to its top", () => {
     const hit = find("two factor")[0];
     expect(hit).toMatchObject({ kind: "setting", route: "/settings/security", title: "Two-factor authentication", hash: "find=auth%3AtwofactorAuthentication" });
@@ -56,6 +62,13 @@ describe("searching settings", () => {
     expect(titles(find("custom sidebar"))[0]).toBe("Customize sidebar");
     expect(titles(find("sidbar"))[0]).toBe("Customize sidebar");
     expect(titles(find("rearrange navigation"))).toContain("Customize sidebar");
+  });
+
+  it("forgives a typo only in a longer word, so a name finds no settings", () => {
+    expect(find("jane")).toEqual([]);
+    expect(titles(find("acme"))).not.toContain("Accent colour");
+    expect(titles(find("sidbar"))[0]).toBe("Customize sidebar");
+    expect(titles(find("custom sidebar"))[0]).toBe("Customize sidebar");
   });
 
   it("finds a row by a word anywhere in it, its hint or the fields under it", () => {

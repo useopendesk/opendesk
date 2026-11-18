@@ -316,6 +316,9 @@ func (s *Service) register(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			if !s.d.Limiter.Allow("ai:app-help:"+p.UserID.String(), 20, time.Minute) {
+				return nil, httpx.E(http.StatusTooManyRequests, "rate_limited", "Too many questions; try again in a minute.")
+			}
 			out, err := s.AppHelp(ctx, p, in.Body)
 			if err != nil {
 				return nil, apiErr(err)

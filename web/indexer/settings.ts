@@ -167,7 +167,8 @@ function refIn(expr: ts.Node | undefined, cats: Map<string, Catalog>): Ref | und
     if (key.includes(":")) [ns, k] = key.split(":", 2);
     const value = ns ? cats.get(ns)?.get(k) : undefined;
     // A label with a placeholder reads differently on the page: only its words are kept (as extra text).
-    if (value !== undefined) found = `${ns}:${k}`;
+    // One that is only placeholders ("{{a}} of {{b}}") says nothing to search for.
+    if (value !== undefined && /\p{L}/u.test(value.replace(/\{\{[^}]*\}\}/g, ""))) found = `${ns}:${k}`;
   });
   return found;
 }

@@ -218,7 +218,7 @@ interface AIModel {
 | POST | `/v1/ai/translate` | agent | $0.01 | `{html?: string, text?: string, target: string /* BCP 47 */}` → `{html?, text?, source_language}` |
 | POST | `/v1/kb/articles/ai/draft` | agent | $0.05 | `{ticket_ids?: string[] /* at most 10 */, topic?: string /* up to 300 chars */}` → `{title, body_html, excerpt}` (not saved) |
 | GET | `/v1/ai/search` | viewer | $0 | `?q` semantic search over tickets and articles (embeddings), FTS fallback → same shape as `/v1/search` |
-| POST | `/v1/ai/app-help` | viewer, people only | $0.005 | `{question: string /* 1..500 */, language?: string /* BCP 47, the reader's */, sources: {title: string /* 1..300, where it is */, url?: string /* ..500 */, text?: string /* ..2000 */}[] /* 1..8 */}` → `{answer: string}`: a few sentences of plain text on doing something in opendesk, from the excerpts the app's own search found ("Asking about the app" below); fast model |
+| POST | `/v1/ai/app-help` | viewer, people only | $0.005 | `{question: string /* 1..500 */, language?: string /* BCP 47, the reader's */, sources: {title: string /* 1..300, where it is */, url?: string /* ..500 */, text?: string /* ..2000 */}[] /* 1..8 */}` → `{answer: string}`: a few sentences of plain text on doing something in opendesk, from the excerpts the app's own search found ("Asking about the app" below); fast model; 20 a minute per person (`429 rate_limited`) |
 
 `{id}` is a ticket uuid, `#123` (URL-encoded `%23123`) or `123`. API keys need the scope
 of the data the route reads or writes: `tickets:read` (summary, ask, search),
@@ -256,7 +256,7 @@ is `event: error` with the problem object as data, and the stream ends.
 
 ### Asking about the app
 
-The command menu's Ask AI (and its normal search) also answers questions about opendesk itself
+The command menu's Ask AI also answers questions about opendesk itself
 ("how do I customize my sidebar"), from two indexes the web app builds with itself (`web/indexer`), each
 loaded on first use as a chunk of its own:
 
@@ -269,8 +269,10 @@ loaded on first use as a chunk of its own:
   pages (Customize sidebar, New Space) join them.
 - **docs**: the docs site's pages and their `##` sections with their first words, linking to
   `docs.opendesk.sh`. Built from `docs/src/content/docs`; nothing is fetched from the docs site at runtime.
+  The larger of the two, it loads only in Ask AI: the menu's normal search lists settings, never docs.
 
-Matching runs in the browser (words anywhere, stems, everyday synonyms, typos), with or without AI.
+Matching runs in the browser (words anywhere, stems, everyday synonyms, a typo in a word of five letters
+or more and two from eight), with or without AI.
 With AI, **Answer with {assistant}** sends the question and the top excerpts (at most four places and four
 docs sections: the app's own strings and the public docs, never workspace data) to
 `POST /v1/ai/app-help`, which answers from them alone on the fast model, metered as `app_help`. API keys
