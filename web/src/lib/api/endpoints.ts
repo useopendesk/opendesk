@@ -876,6 +876,8 @@ export const api = {
     translate: (b: { html?: string; text?: string; target: string }) => http.post<T.TranslateResult>("/v1/ai/translate", b),
     kbDraft: (b: { ticket_ids?: string[]; topic?: string }) => http.post<T.KBArticleDraft>("/v1/kb/articles/ai/draft", b),
     search: (q: string) => http.get<T.SearchResults>("/v1/ai/search", { query: { q } }),
+    /** A few sentences on doing something in opendesk, from the app places and docs the app's own search found. */
+    appHelp: (b: T.AppHelpInput) => http.post<{ answer: string }>("/v1/ai/app-help", b),
     /** The models a workspace may choose from, with the instance defaults. */
     models: () => http.get<T.AIModels>("/v1/ai/models"),
     /** The workspace's provider: the instance's (charged to the AI balance) or its own key. */

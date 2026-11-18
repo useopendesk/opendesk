@@ -2358,8 +2358,17 @@ export type AutoRecharge = {
   failure: { code: AutoRechargeFailure; at: string } | null;
 };
 export type AutoRechargePatch = Partial<Pick<AutoRecharge, "enabled" | "threshold_usd" | "amount_usd" | "monthly_limit_usd">>;
+/** POST /v1/ai/app-help (contracts/ai.md "Asking about the app"). */
+export type AppHelpInput = {
+  question: string;
+  /** The reader's language, a BCP 47 tag. */
+  language?: string;
+  /** 1 to 8 excerpts: places in the app and docs sections, `title` the path to them. */
+  sources: { title: string; url?: string; text?: string }[];
+};
+
 export type AIFeature =
-  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer" | "procedure" | "wiki_write";
+  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer" | "procedure" | "wiki_write" | "app_help";
 /**
  * GET /v1/billing/usage (contracts/billing.md). `from`/`to` are RFC 3339; `to` is exclusive.
  * Every usd value is US dollars, a number with up to 6 decimals.
