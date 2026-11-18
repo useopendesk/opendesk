@@ -603,7 +603,8 @@ Ollie off for an account they manage (`ai: false`) whatever the workspace locks.
   teams, people) and to its assignees.
 - Viewers read; acting (actions, sending, sharing, assigning, comments) needs agent or above and
   sight of the conversation. Managing an account (rename, share, signature, settings, disconnect)
-  is its owner's; for a shared account, workspace admins too.
+  is its owner's; for a shared account, workspace admins too, except making it private, which only
+  its owner can (`422 validation_failed`).
 - Anything not visible is `404`. Every row is read and written with `workspace_id` from the
   Principal; a referenced team, user, folder or attachment is checked to belong to the workspace.
 - A member removed from the workspace, or a deleted user, loses their accounts: private accounts
@@ -683,7 +684,7 @@ with a claim that expires on its own, and reports back. Nobody has to assign it.
   the skip (`collab_ai_skips`).
 - **Approval**: an AI draft does not clear Needs action (only a sent reply does), so the
   conversation waits in Needs action, its draft labelled "AI draft by <name>", until a person sends
-  or discards it. **Ready for review** (`box=ai_review`, `boxes.ai_review`) lists the conversations
+  a reply or marks it done; discarding the draft leaves it in Needs action. **Ready for review** (`box=ai_review`, `boxes.ai_review`) lists the conversations
   in an inbox with such a draft, on any account the member sees, so a person can find them without
   opening each Needs action conversation. Saving the draft takes it over and takes it off the list.
 
