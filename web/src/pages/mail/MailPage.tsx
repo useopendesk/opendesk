@@ -898,10 +898,11 @@ export default function MailPage() {
                 className="w-[220px]"
               />
             )}
-            {/* Compose leads the sidebar (components/collab/SidebarCompose.tsx); a phone's sidebar is a drawer, so it stays here. */}
-            {canAct && !noAccounts && phone && (
+            {canAct && !noAccounts && (
               <Tooltip content={t("list.compose")} shortcut="c">
-                <Button size="sm" variant="ghost" square icon={<PenSquare />} onClick={() => compose.open({ accountId: account?.id ?? folderAccount?.id })} aria-label={t("list.compose")} />
+                <Button size="sm" variant={compact ? "ghost" : "secondary"} square={compact} icon={<PenSquare />} onClick={() => compose.open({ accountId: account?.id ?? folderAccount?.id })} aria-label={t("list.compose")}>
+                  {compact ? null : t("list.compose")}
+                </Button>
               </Tooltip>
             )}
           </div>

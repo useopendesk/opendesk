@@ -1055,7 +1055,7 @@ the end that makes a new section named after it.
 **Arranging in place.** Outside edit mode the sidebar arranges itself where it is too
 (`web/src/components/collab/SidebarDrag.tsx`, `SidebarRow.tsx`, `SectionMenu.tsx`): a row or a section's title
 drags as itself past a few pixels (a finger holds still first, so the sidebar still scrolls) with edit mode's
-rules and drop line; a double-click on a row or a section's title renames it in place (F2 on the focused row:
+rules and drop line; a click on a section's title folds or unfolds it, every time (its ⋯ renames it); a double-click on a row renames it in place (F2 on the focused row:
 `sidebarEdit.renameFocused()`); each section's ⋯ renames it, gives it an emoji, adds rows (Favorites and the
 member's own sections), moves it up or down, hides or deletes it; a row's menu renames it in place, changes its
 icon and moves it up or down where its section keeps the member's order. Every sidebar menu ends with Edit
