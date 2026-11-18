@@ -51,7 +51,7 @@ export const isEverywhereList = (v: unknown): v is EverywhereList => typeof v ==
 export const isEverywhere = (i: Pick<SpaceItem, "kind">) => i.kind === "everywhere";
 
 /** The Collab boxes a Space row can open (across a workspace's accounts). */
-export const SPACE_BOXES = ["inbox", "shared", "assigned"] as const;
+export const SPACE_BOXES = ["inbox", "shared", "assigned", "mentions"] as const;
 export type SpaceBox = (typeof SPACE_BOXES)[number];
 
 export const LIMITS = {

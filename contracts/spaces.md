@@ -50,7 +50,7 @@ type SpaceItemKind =
   | "ticket_folder"  // an inbox folder: id "unassigned" | "mine" | "open" | "pending" | "solved" | "spam" (web/src/lib/folders.ts)
   | "team"           // id: team uuid
   | "view"           // id: view uuid
-  | "box"            // a Collab box across accounts: id "inbox" (All inboxes) | "shared" | "assigned"
+  | "box"            // a Collab box across accounts: id "inbox" (All inboxes) | "shared" | "assigned" | "mentions"
   | "account"        // a Collab account's inbox: id: account uuid
   | "folder"         // a Collab folder or label: id: folder uuid
   | "page"           // a workspace page: id "contacts" | "knowledge" | "wiki" | "reports"

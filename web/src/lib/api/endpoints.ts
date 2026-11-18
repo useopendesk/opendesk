@@ -1012,6 +1012,9 @@ export const api = {
       share: (id: string, shares: T.MailAudience) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/shares`, { shares }),
       assign: (id: string, user_ids: string[]) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/assignees`, { user_ids }),
       comment: (id: string, b: { body_html: string; mentions?: string[] }) => http.create<T.MailComment>(`/v1/collab/threads/${id}/comments`, b),
+      /** In or out of your Mentions box (contracts/collab.md "Mentions"). */
+      follow: (id: string) => http.put<void>(`/v1/collab/threads/${id}/follow`),
+      unfollow: (id: string) => http.del(`/v1/collab/threads/${id}/follow`),
     },
     comments: {
       update: (id: string, body_html: string) => http.patch<T.MailComment>(`/v1/collab/comments/${id}`, { body_html }),

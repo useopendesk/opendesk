@@ -121,6 +121,7 @@ function offersOf(d: WorkspaceData, labels: RowLabels, wholeHint: string): { id:
     mail.push({ item: it("box", "inbox"), label: labels.allInboxes, icon: <Layers /> });
     mail.push({ item: it("box", "shared"), label: labels.box("shared"), icon: boxIcon.shared });
     mail.push({ item: it("box", "assigned"), label: labels.box("assigned"), icon: boxIcon.assigned });
+    mail.push({ item: it("box", "mentions"), label: labels.box("mentions"), icon: boxIcon.mentions });
     for (const a of d.accounts ?? []) {
       mail.push({ item: it("account", a.id), label: accountName(a), icon: <AccountDot color={a.color} className="size-2.5" />, hint: a.email });
       const fs = d.folders[a.id];

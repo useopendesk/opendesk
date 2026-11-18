@@ -3492,6 +3492,8 @@ export type MailThreadDetail = {
   ticket?: { id: string; number: number; subject: string } | null;
   /** AI drafts discarded, replaced or abandoned and gone, oldest first (contracts/collab.md "AI draft outcomes"). */
   unused_ai_drafts?: (AIDraftRef & { outcome_at: string })[];
+  /** You follow it: it is in your Mentions box (contracts/collab.md "Mentions"). */
+  following?: boolean;
 };
 
 /** One address across the conversations you see (contracts/collab.md "People"). */
@@ -3573,8 +3575,11 @@ export type SidebarSection = { id: string; title: string; collapsed: boolean; ic
 /** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
 export type SidebarBadge = "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none";
 
-/** ai_review: Ready for review, conversations in an inbox with an AI draft waiting for a person. */
-export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "needs_action" | "snoozed" | "ai_review";
+/**
+ * ai_review: Ready for review, conversations in an inbox with an AI draft waiting for a person.
+ * mentions: the conversations you follow, mentioned in a comment or answered (contracts/collab.md "Mentions").
+ */
+export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "mentions" | "needs_action" | "snoozed" | "ai_review";
 
 export type MailThreadAction =
   | "read"
@@ -3595,8 +3600,8 @@ export type MailThreadAction =
   | "snooze";
 
 export type MailCounts = {
-  /** Unread conversations; assigned, shared, needs_action, snoozed and ai_review: open ones; spam: unread ones in spam. */
-  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number; needs_action: number; snoozed?: number; ai_review?: number; spam?: number };
+  /** Unread conversations; assigned, shared, needs_action, snoozed and ai_review: open ones; spam: unread ones in spam; mentions: every one you follow and see. */
+  boxes: { inbox: number; unread: number; shared: number; assigned: number; mentions?: number; drafts: number; needs_action: number; snoozed?: number; ai_review?: number; spam?: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
   /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
@@ -3650,7 +3655,7 @@ export type SpaceItem = {
   /** A workspace the user is a member of; "" for an everywhere row (it spans them all). */
   workspace_id: string;
   kind: SpaceItemKind;
-  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
+  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned | mentions; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
   id: string;
   /** The person's own label for the row, 1..64 characters. */
   name?: string;
