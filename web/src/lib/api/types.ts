@@ -3565,7 +3565,7 @@ export type SidebarPrefs = {
 };
 
 /** A row of a member's own section: a Space row of this workspace. */
-export type SidebarItem = Omit<SpaceItem, "workspace_id" | "kind"> & { kind: Exclude<SpaceItemKind, "section" | "everywhere"> };
+export type SidebarItem = Omit<SpaceItem, "workspace_id" | "kind" | "rows" | "hidden"> & { kind: Exclude<SpaceItemKind, "section" | "everywhere"> };
 
 /** One of a member's own sidebar sections: at most 20, 60 rows each, 300 in all. */
 export type SidebarSection = { id: string; title: string; collapsed: boolean; icon?: string; items: SidebarItem[] };
@@ -3658,6 +3658,14 @@ export type SpaceItem = {
   badge?: SidebarBadge;
   /** One emoji in place of the row's own icon. */
   icon?: string;
+  /**
+   * A whole section only (kind "section"), contracts/spaces.md "Arranging a whole section": its rows
+   * top to bottom as row keys (`team:<id>`, `box:assigned`), the rest following in their usual
+   * order; in Favorites, rows the Space adds before the person's own favorites. At most 300.
+   */
+  rows?: string[];
+  /** A whole section only: the row keys it does not show in this Space. At most 300. */
+  hidden?: string[];
 };
 
 export type SpaceSection = {

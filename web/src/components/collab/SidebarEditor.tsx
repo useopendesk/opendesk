@@ -9,7 +9,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { Copy, CornerUpLeft, Ellipsis, Eye, EyeOff, FolderInput, GripVertical, Hash, LayoutTemplate, ListTree, Pencil, Pin, PinOff, Plus, RotateCcw, Settings2, SlidersHorizontal, SmilePlus, Trash2, X } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useShortcuts } from "@/lib/shortcuts";
 import { buildEverywhereRow, buildRow, RowEmoji, useRowLabels } from "@/components/spaces/rows";
@@ -47,6 +46,7 @@ import { spaceUi, usePickedSpaceId } from "@/lib/spaces/store";
 import { useOwnSidebar } from "./AddToSidebar";
 import { layoutsUi } from "./LayoutsDialog";
 import { ownRowOf, useSidebarItems, type Item, type ItemBadge } from "./sidebarItems";
+import { DragGhost } from "./DragGhost";
 import { useEditDrag } from "./useEditDrag";
 
 // ─── Parts ──────────────────────────────────────────────────────────────────
@@ -333,18 +333,7 @@ function EditList({
         );
       })}
       {lineBeforeSection(null) && <Line />}
-      {drag &&
-        createPortal(
-          <div
-            aria-hidden
-            className="pointer-events-none fixed z-[90] flex h-7 max-w-[220px] items-center gap-2 rounded-md bg-surface px-2.5 text-[12.5px] text-fg shadow-lg ring-1 ring-line"
-            style={{ left: drag.x + 10, top: drag.y - 14 }}
-          >
-            <GripVertical className="size-3.5 shrink-0 text-fg-4" />
-            <span className="truncate">{drag.label}</span>
-          </div>,
-          document.body,
-        )}
+      <DragGhost drag={drag} />
     </div>
   );
 }
