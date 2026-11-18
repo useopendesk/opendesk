@@ -363,6 +363,37 @@ On a shared account with handling on, the work view keeps spam in sight:
 - Needs action and Ready for review say, above the list, how many unread conversations of the
   handling accounts in view are in spam, with a link to them.
 
+### Mentions
+
+A mention in a comment would otherwise reach a member as a notification alone, while the conversation
+waits in the inbox among less important mail. **Mentions** (`box=mentions`) keeps those conversations
+apart, for each member:
+
+- A member **follows** a conversation when a comment mentions them (`mentions`, or a mention an edit
+  adds), when a comment answers theirs, or by hand (`PUT /v1/collab/threads/{id}/follow`). Their own
+  comments never make them follow.
+- **Answers**: comments have no reply link, so a comment answers a member when, since that member's
+  latest comment in the conversation, only its author has commented: the first comments after
+  theirs, however many the author writes. Someone else commenting after that answers no one but the
+  person before them.
+- Mentioned or answered again, a member who removed themselves follows again.
+- Only members who see the conversation follow it ("Who sees what"): a mention of someone who
+  cannot see it shares it with them first, an answer does not. Following never changes who sees
+  anything. The box lists the conversations the member follows and still sees, trash and spam left
+  out; a follow kept on one they no longer see shows again once they see it again.
+- `DELETE /v1/collab/threads/{id}/follow` removes the member: it leaves their Mentions and nothing
+  else changes, for them (they still see it) or for anyone else. Any member who sees a conversation,
+  a viewer included, follows and unfollows it for themselves.
+- Newest activity first: the later of its newest mail and the latest comment in it or follow of it.
+- `counts.boxes.mentions` counts every conversation the box lists, so it goes down as the member
+  removes themselves. The sidebar's Mentions row (`box:mentions`) shows it by default, after Assigned to
+  me, while the box holds any or is open; it is hidden, pinned, added to the member's own sections or a
+  Space and its number chosen like the other rows. The folder bar does not offer it.
+- `MailThreadDetail.following` says whether the caller follows. The conversation says so beside its
+  assignees ("In your Mentions", which removes it), and its ⋯ menu adds or removes it, with Undo.
+- The follow routes publish `collab.changed` to the member alone; a comment publishes it to everyone
+  who sees the conversation, followers included.
+
 ### Drafts
 
 Drafts are kept at the provider and stored like synced mail: `draft: true`, in the Drafts folder,
@@ -951,6 +982,7 @@ interface MailThreadDetail {
   can_act: boolean
   ticket: { id: string; number: number; subject: string } | null  // the ticket it answered or was answered from, when the caller sees it ("Answering tickets")
   unused_ai_drafts: (AIDraftRef & { outcome_at: string })[]  // AI drafts discarded, replaced or abandoned and gone, oldest first ("AI draft outcomes")
+  following: boolean           // the caller follows it: it is in their Mentions ("Mentions")
 }
 
 interface CollabStatus {
@@ -1107,13 +1139,13 @@ unless `unified_inbox` is off, `box:inbox` is hidden or it is pinned already, an
 in `auto_pins` either way: unpinned later, it stays unpinned. Without Collab it neither counts
 accounts nor pins or records anything.
 
-`badges` keys are a row (`box:inbox` for All inboxes, `box:shared`, `box:assigned`, `account:<id>`,
+`badges` keys are a row (`box:inbox` for All inboxes, `box:shared`, `box:assigned`, `box:mentions`, `account:<id>`,
 `folder:<id>`, `ticket_folder:<id>`, `view:<id>`, `team:<id>`) or a section's default (`section:mail`,
 `section:inbox`, `section:teams`, `section:views`, `section:favorites`). A row without its own value
 follows its section's, and without either shows what it always has: unread conversations for mail rows,
 the ticket count for ticket rows. For mail rows `unread` is unread conversations, `total` every
 conversation in that inbox or folder (All inboxes: the sum of the shown accounts' inbox totals; Shared
-with me and Assigned to me: their counts), `none` no number. For ticket rows (inbox folders, teams, views)
+with me, Assigned to me and Mentions: their counts), `none` no number. For ticket rows (inbox folders, teams, views)
 `count` is the usual number (a team's unassigned tickets), `awaiting`, `urgent` and `overdue` the row's
 `stats` from `GET /v1/tickets/counts` (contracts/api.md), `open` a team's open count (team rows only), and
 `none` hides it. A row reads a value it has no number for (`total` on a team, `open` on a view, `awaiting`
@@ -1223,8 +1255,8 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
-| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&category=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `category`: one tab of the inbox ("Categories"), with `box=inbox` only (`422` otherwise). `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`, `needs_action`, `snoozed` ("Snooze"), `ai_review` (conversations in an inbox whose draft an AI client saved and no person has saved, sent or discarded since: "Ready for review", "AI queue"). Without `account_id` it spans every account the caller sees (for `shared`, `assigned`, and `needs_action`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared`, `assigned`, and `needs_action` count conversations still in an inbox. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
-| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts, needs_action, snoozed, ai_review, spam}: number, accounts: Record<id, number>, folders: Record<id, number>, assigned: Record<account id, number>, addresses: Record<id, Record<address, number>>, categories: Record<account id, Record<key, number>>, ai_review: Record<account id, number>, spam: Record<account id, number>}`: unread conversations; `shared`, `assigned`, `needs_action`, `snoozed` and `ai_review` count those still in an inbox, `drafts` every draft conversation, `spam` the unread ones in spam ("Spam beside Needs action"); `ai_review` and `spam` (`boxes.ai_review` and `boxes.spam` by account) list only accounts with some (missing = 0); `folders` lists only folders with unread conversations, and `assigned` (`boxes.assigned` by account) only accounts with some (missing = 0); `addresses`, for each account with addresses besides its own, the unread conversations in its inbox with each of its addresses (its own included, lower case) on a message, matched like `to=` (missing = 0); `categories`, for each split account, the unread conversations in its inbox by category key, `primary` included (missing = 0) |
+| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&category=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `category`: one tab of the inbox ("Categories"), with `box=inbox` only (`422` otherwise). `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`, `mentions` (the conversations the caller follows, newest activity first: "Mentions"), `needs_action`, `snoozed` ("Snooze"), `ai_review` (conversations in an inbox whose draft an AI client saved and no person has saved, sent or discarded since: "Ready for review", "AI queue"). Without `account_id` it spans every account the caller sees (for `shared`, `assigned`, `mentions` and `needs_action`, every conversation they see). `folder_id` replaces `box`. `unread`, `all` and `mentions` leave out trash and spam, `starred` leaves out trash, and `shared`, `assigned`, and `needs_action` count conversations still in an inbox. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
+| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, mentions, drafts, needs_action, snoozed, ai_review, spam}: number, accounts: Record<id, number>, folders: Record<id, number>, assigned: Record<account id, number>, addresses: Record<id, Record<address, number>>, categories: Record<account id, Record<key, number>>, ai_review: Record<account id, number>, spam: Record<account id, number>}`: unread conversations; `shared`, `assigned`, `needs_action`, `snoozed` and `ai_review` count those still in an inbox, `mentions` every conversation the box lists, `drafts` every draft conversation, `spam` the unread ones in spam ("Spam beside Needs action"); `ai_review` and `spam` (`boxes.ai_review` and `boxes.spam` by account) list only accounts with some (missing = 0); `folders` lists only folders with unread conversations, and `assigned` (`boxes.assigned` by account) only accounts with some (missing = 0); `addresses`, for each account with addresses besides its own, the unread conversations in its inbox with each of its addresses (its own included, lower case) on a message, matched like `to=` (missing = 0); `categories`, for each split account, the unread conversations in its inbox by category key, `primary` included (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?, category?, until?}` → `{threads: MailThread[]}`. `done`, `needs_action` and `snooze` are available only for a shared account with handling enabled and do not create a provider job; `snooze` needs `until` in the future ("Snooze"). Threads the caller cannot act on are `404` (all or nothing). `categorize` needs a `category` every one of their accounts has (`422 validation_failed`) |
@@ -1241,8 +1273,10 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | DELETE | `/v1/collab/accounts/{id}/category-rules/{rule_id}` | manage | → 204 |
 | PUT | `/v1/collab/threads/{id}/shares` | act | `{shares: Audience}` → `MailThreadDetail`. Empty unshares. Audit `collab.thread_shared` (ids only) |
 | PUT | `/v1/collab/threads/{id}/assignees` | act | `{user_ids: string[0..20]}` → `MailThreadDetail`; each must be a member (agent+); assigning lets them see it. Each new assignee gets a `collab_assigned` notification |
-| POST | `/v1/collab/threads/{id}/comments` | act | `{body_html: 1..20000, mentions?: string[]}` → `MailComment`; each mentioned member who can see it gets a `collab_mention` notification; a mention of someone who cannot see it shares the conversation with them |
-| PATCH | `/v1/collab/comments/{id}` | its author | `{body_html}` → `MailComment` |
+| POST | `/v1/collab/threads/{id}/comments` | act | `{body_html: 1..20000, mentions?: string[]}` → `MailComment`; each mentioned member who can see it gets a `collab_mention` notification; a mention of someone who cannot see it shares the conversation with them. The people it mentions or answers follow it ("Mentions") |
+| PUT | `/v1/collab/threads/{id}/follow` | see | → 204: the caller follows it, in their Mentions ("Mentions"); following already moves it to the top |
+| DELETE | `/v1/collab/threads/{id}/follow` | see | → 204: out of the caller's Mentions; nothing else changes. Not following is fine |
+| PATCH | `/v1/collab/comments/{id}` | its author | `{body_html}` → `MailComment`; people newly mentioned are notified and follow it |
 | DELETE | `/v1/collab/comments/{id}` | its author, or an admin | → 204 |
 | POST | `/v1/collab/messages` | act on the account | Send: `{account_id, mode: "new" \| "reply" \| "reply_all" \| "forward", message_id? (the `MailMessage.id` replied to or forwarded; required unless new), to: string[], cc?: string[], bcc?: string[], subject, body_html, attachment_ids?: string[] (POST /v1/attachments uploads of the caller), forward_attachments?: boolean, from_email?}` → `MailMessage`. `from_email` is the address it goes out from and must be one of the account's addresses that can send (`422 validation_failed`); left out, a reply or forward goes from the address the original was written to, new mail from the default ("Addresses"). At most 100 recipients, 25 MB of files. Sent through the provider within the request (`502 send_failed` with the provider's reason, nothing stored); then stored in the conversation (a reply stays in its conversation) and in Sent. The server sends `body_html` as written: the composer adds the signature and, for a forward, the original. Someone who sees only one conversation (shared or assigned) may reply to it or forward it; new mail needs sight of the account. At most 60 a minute per person (`429 rate_limited`) |
 | POST | `/v1/collab/drafts` | act on the account | Save a new draft ("Drafts"): the body of `POST /v1/collab/messages`, recipients optional → `MailMessage` (`draft: true`, `draft_id`). Saved at the provider first (`502 provider_error` with detail, nothing stored). At most 120 saves a minute per person (`429 rate_limited`) |
@@ -1493,7 +1527,7 @@ webhooks.
 
 | type | data | to |
 | --- | --- | --- |
-| `collab.changed` | `{account_id: string \| null, thread_ids: string[], folders: boolean}`: conversations changed (synced, acted on, sent, shared, assigned, commented, or their account's `reply_all` changed); `folders` when folders or counts changed. Refetch what is shown | who sees the account, plus who sees the conversations |
+| `collab.changed` | `{account_id: string \| null, thread_ids: string[], folders: boolean}`: conversations changed (synced, acted on, sent, shared, assigned, commented, followed or unfollowed, or their account's `reply_all` changed); `folders` when folders or counts changed. Refetch what is shown | who sees the account, plus who sees the conversations; a follow or unfollow, that member alone |
 | `collab.accounts` | `{account_id}`: an account was connected, changed, removed, or changed status | its owner and audience, before and after |
 | `collab.sidebar` | `{}`: the member saved their sidebar preferences (`PUT /v1/collab/sidebar`, with or without Collab). Refetch them | that member alone |
 
@@ -1542,3 +1576,6 @@ in-app and push like other notifications, emailed by the member's notification p
   (`migrations/000663_collab_ticket_replies.up.sql`, with `mailboxes.personal_replies`): the account a
   ticket reply went from and the Reply-To asked for, and the ticket a conversation answered. Deleting the account clears the first and
   keeps the reply; deleting the ticket clears the last.
+- `collab_thread_followers` (`migrations/000770_collab_thread_followers.up.sql`): who follows each
+  conversation ("Mentions") and when it last had something for them (`activity_at`). It goes with the
+  conversation, the user or the workspace.

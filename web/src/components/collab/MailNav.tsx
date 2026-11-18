@@ -425,6 +425,20 @@ export function MailSection({ prefs, shown: view = prefs, rail, first }: { prefs
           menu={{ badge: { key: "box:assigned", kind: "mail", sections: ["mail"] }, pin: { kind: "box", id: "assigned" }, hideId: hid.box("assigned") }}
         />
       )}
+      {/* Conversations where a teammate mentioned or answered you, out of the inbox's way, until
+          you remove yourself (contracts/collab.md "Mentions"). Shown while it holds any, or while open. */}
+      {!hidden.has(hid.box("mentions")) && (here.box === "mentions" || !!counts?.boxes.mentions) && (
+        <MailRow
+          link={{ box: "mentions" }}
+          active={here.box === "mentions"}
+          icon={boxIcon.mentions}
+          label={t("box.mentions")}
+          shown={mailShown(prefs, "box:mentions", ["mail"], listBoxNumbers("mentions", counts))}
+          rail={rail}
+          prefs={prefs}
+          menu={{ badge: { key: "box:mentions", kind: "mail", sections: ["mail"] }, pin: { kind: "box", id: "mentions" }, hideId: hid.box("mentions") }}
+        />
+      )}
       {/* AI drafts waiting for a person to send, edit or discard (contracts/collab.md "AI queue"). */}
       {!hidden.has(hid.box("ai_review")) && (here.box === "ai_review" || !!counts?.boxes.ai_review || handling) && (
         <MailRow

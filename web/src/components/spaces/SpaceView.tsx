@@ -92,6 +92,7 @@ function RemoteSection({ d, id, item, first, rail, mark, ctx }: { d: WorkspaceDa
       if (p.unified_inbox && (d.accounts?.length ?? 0) >= 2 && !hidden.has(hid.box("inbox"))) list.push(row("box", "inbox"));
       if (!hidden.has(hid.box("shared")) && d.mailCounts?.boxes.shared) list.push(row("box", "shared"));
       if (!hidden.has(hid.box("assigned")) && d.mailCounts?.boxes.assigned) list.push(row("box", "assigned"));
+      if (!hidden.has(hid.box("mentions")) && d.mailCounts?.boxes.mentions) list.push(row("box", "mentions"));
       list.push(...accounts.map((a) => row("account", a.id)));
       break;
     }

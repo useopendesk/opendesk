@@ -329,13 +329,13 @@ export function buildRow(item: { kind: string; id: string }, d: WorkspaceData, c
       const nums =
         box === "inbox"
           ? allInboxNumbers(shownAccounts, d.folders, d.mailCounts)
-          : box === "shared" || box === "assigned"
+          : box === "shared" || box === "assigned" || box === "mentions"
             ? listBoxNumbers(box, d.mailCounts)
             : isTabBox(box)
               ? boxTabNumbers(box, accounts, d.folders, d.mailCounts, true)
               : {};
-      // Inbox, Unread, Shared and Assigned showed their count before anyone chose; the other boxes nothing.
-      const fallback = box === "inbox" || box === "shared" || box === "assigned" || box === "unread" ? undefined : "none";
+      // Inbox, Unread, Shared, Assigned and Mentions show their count before anyone chooses; the other boxes nothing.
+      const fallback = box === "inbox" || box === "shared" || box === "assigned" || box === "mentions" || box === "unread" ? undefined : "none";
       return {
         key,
         label: box === "inbox" ? ctx.labels.allInboxes : ctx.labels.box(box),
