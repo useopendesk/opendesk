@@ -163,6 +163,7 @@ export function CommandPalette() {
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-scrim/70 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out" />
         <D.Content
+          aria-modal="true"
           aria-describedby={undefined}
           className="fixed left-1/2 top-[14vh] z-50 w-[calc(100vw-32px)] max-w-[620px] -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-raised shadow-float origin-top outline-none data-[state=open]:animate-palette-in data-[state=closed]:animate-palette-out motion-reduce:animate-none"
         >
