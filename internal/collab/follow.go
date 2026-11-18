@@ -21,13 +21,13 @@ import (
 
 // followedSQL is a predicate on collab_threads alias t: the user (SQL parameter u) follows it.
 func followedSQL(u string) string {
-	return `EXISTS (SELECT 1 FROM collab_thread_followers xf WHERE xf.thread_id = t.id AND xf.user_id = ` + u + `)`
+	return `EXISTS (SELECT 1 FROM collab_thread_followers xf WHERE xf.workspace_id = t.workspace_id AND xf.thread_id = t.id AND xf.user_id = ` + u + `)`
 }
 
 // mentionsOrderSQL is the Mentions box's order key on collab_threads alias t for the user (SQL
 // parameter u): its newest mail, or the newest comment or follow that concerned them.
 func mentionsOrderSQL(u string) string {
-	return `GREATEST(t.last_message_at, (SELECT xf.activity_at FROM collab_thread_followers xf WHERE xf.thread_id = t.id AND xf.user_id = ` + u + `))`
+	return `GREATEST(t.last_message_at, (SELECT xf.activity_at FROM collab_thread_followers xf WHERE xf.workspace_id = t.workspace_id AND xf.thread_id = t.id AND xf.user_id = ` + u + `))`
 }
 
 // follow makes people follow a conversation, in tx: those who are members and see it. One
@@ -37,7 +37,7 @@ func follow(ctx context.Context, tx pgx.Tx, wid, threadID uuid.UUID, users []uui
 		return nil
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO collab_thread_followers (workspace_id, thread_id, user_id)
-		SELECT $1, t.id, u FROM collab_threads t, unnest($3::uuid[]) u
+		SELECT DISTINCT $1::uuid, t.id, u FROM collab_threads t, unnest($3::uuid[]) u
 		WHERE t.workspace_id = $1 AND t.id = $2
 			AND EXISTS (SELECT 1 FROM members m WHERE m.workspace_id = $1 AND m.user_id = u)
 			AND `+threadVisibleSQL("t", "u")+`
