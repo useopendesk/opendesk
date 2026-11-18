@@ -1,11 +1,11 @@
 // The Space editor's sections and rows (contracts/spaces.md "The editor"), arranged as finely as
 // the sidebar's edit mode arranges a workspace's sidebar. A whole built-in section opens into its
 // rows, a group inside its Space section: a row reorders inside it where the section keeps an
-// order, goes into Favorites, out into any Space section (a row of its own there; the group stops
-// showing it), or back home, and hides with its eye. Sections, rows and groups drag by their grip
-// with the sidebar's own drag (useEditDrag: pointer events, so touch drags too), and a focused grip
-// moves one place with an arrow key, Alt or not, across sections too. The rules and the changes are
-// lib/spaces/arrange.ts.
+// order, is added to Favorites or to any Space section (a row of its own there) and stays in its
+// section, as pinning does in the sidebar, and hides with its eye. Sections, rows and groups drag
+// by their grip with the sidebar's own drag (useEditDrag: pointer events, so touch drags too), and a
+// focused grip moves one place with an arrow key, Alt or not: a group's row within its group, a
+// Space row or a section across sections. The rules and the changes are lib/spaces/arrange.ts.
 
 import { motion, useReducedMotion } from "motion/react";
 import { Building2, ChevronRight, ChevronsDownUp, CornerUpLeft, Ellipsis, Eye, EyeOff, FileText, FolderInput, GripVertical, Inbox, Layers, Mail, Plus, RotateCcw, Star, Trash2, Users, X } from "lucide-react";
@@ -21,7 +21,7 @@ import { dropInSpace, type EditSource, type EditTarget } from "@/lib/collab/side
 import { cn } from "@/lib/cn";
 import { springs } from "@/lib/motion";
 import type { WorkspaceData } from "@/lib/spaces/hooks";
-import { arrangeRows, canMoveRow, homeOf, isArranged, isGroupKey, itemOfKey, moveRow, pinOfKey, resetArranged, rowKeyOf, setRowHidden, stepRow, type Layout } from "@/lib/spaces/arrange";
+import { arrangeRows, canMoveRow, homeOf, isArranged, isGroupKey, itemOfKey, moveRow, resetArranged, rowKeyOf, setRowHidden, stepRow, type Layout } from "@/lib/spaces/arrange";
 import { isCollabItem, isEverywhere, isEverywhereList, isSectionId, itemKey, removeItem, removeSection, updateItem, updateSection, type SpaceProblem } from "@/lib/spaces/model";
 import { buildRow, everywhereIcons, InWorkspace, type RowLabels } from "./rows";
 import { favoriteRow, sectionRows, type SectionRow } from "./sectionRows";
@@ -118,19 +118,8 @@ function Grip({ label, id, props, onStep }: { label: string; id: string; props: 
   );
 }
 
-/** A whole section's rows as the editor shows them: in the Space's order, rows hidden here dimmed, rows moved elsewhere in the Space left out. */
+/** A whole section's rows as the editor shows them: in the Space's order, rows hidden here dimmed. */
 type GroupView = { item: SpaceItem; id: SidebarSectionId; rows: (SectionRow & { hidden: boolean })[] | "loading"; open: boolean };
-
-/** Where a row is elsewhere in the Space, by workspace and row key: a row of its own, or a row Favorites add. */
-function elsewhereOf(space: Space): Set<string> {
-  const out = new Set<string>();
-  for (const sec of space.sections)
-    for (const i of sec.items) {
-      if (i.kind === "section" && i.id === "favorites") for (const k of i.rows ?? []) out.add(`${i.workspace_id}|${k}`);
-      else if (i.kind !== "section" && i.kind !== "everywhere") out.add(`${i.workspace_id}|${rowKeyOf(i)}`);
-    }
-  return out;
-}
 
 /** The grip's id, kept when a row changes section, so the focus follows it. */
 const gripOf = (i: SpaceItem) => (i.kind === "section" || i.kind === "everywhere" ? itemKey(i) : `${i.workspace_id}|${rowKeyOf(i)}`);
@@ -171,7 +160,6 @@ export function SpaceArrange({
   const sectionName = (sec: SpaceSection, i: number) => sec.title.trim() || t("view.untitledN", { n: i + 1 });
 
   // Each whole section's rows, as they show here.
-  const elsewhere = elsewhereOf(space);
   const groups = new Map<string, GroupView>();
   for (const sec of space.sections)
     for (const item of sec.items) {
@@ -183,9 +171,8 @@ export function SpaceArrange({
         const id = item.id;
         const live = id === "favorites" ? (item.rows ?? []).flatMap((k) => favoriteRow(k, d, labels) ?? []) : sectionRows(id, d, labels, words);
         const byKey = new Map(live.map((r) => [r.key, r]));
-        const away = (item.hidden ?? []).filter((k) => elsewhere.has(`${item.workspace_id}|${k}`));
         const hidden = new Set(item.hidden ?? []);
-        rows = arrangeRows(id, live.map((r) => r.key), { rows: item.rows, hidden: id === "favorites" ? [] : away }).flatMap((k) => {
+        rows = arrangeRows(id, live.map((r) => r.key), { rows: item.rows }).flatMap((k) => {
           const r = byKey.get(k);
           return r ? [{ ...r, hidden: id !== "favorites" && hidden.has(k) }] : [];
         });
@@ -261,9 +248,10 @@ export function SpaceArrange({
     return (
       <>
         {g.rows.map((r) => {
-          const grip = `${g.item.workspace_id}|${r.key}`;
-          const own = itemOfKey(g.item.workspace_id, r.key);
-          const pin = pinOfKey(r.key);
+          // Unique per group: a row shown in two groups (Mail and Favorites) has a grip in each.
+          const grip = `${gk}|${r.key}`;
+          const toFavorites = !fav && favorites && canMoveRow(space, gk, r.key, favorites) ? favorites : undefined;
+          const addTo = itemOfKey(g.item.workspace_id, r.key) ? space.sections.filter((x) => canMoveRow(space, gk, r.key, x.id)) : [];
           return (
             <motion.div key={r.key} {...motionProps}>
               {lineAt(gk, r.key) && <Line inset />}
@@ -294,8 +282,8 @@ export function SpaceArrange({
                     </button>
                   </Tooltip>
                 )}
-                {!own && !(pin && favorites && !fav) && <span aria-hidden className="size-6 shrink-0" />}
-                {(own || (pin && favorites && !fav)) && (
+                {!addTo.length && !toFavorites && <span aria-hidden className="size-6 shrink-0" />}
+                {(!!addTo.length || toFavorites) && (
                   <Menu>
                     <MenuTrigger asChild>
                       <button type="button" aria-label={t("row.more", { name: r.label })} className={iconBtn}>
@@ -303,21 +291,16 @@ export function SpaceArrange({
                       </button>
                     </MenuTrigger>
                     <MenuContent align="end" className="w-[210px]">
-                      {pin && favorites && !fav && (
-                        <MenuItem icon={<Star />} onSelect={() => move(gk, r.key, favorites, null)}>
+                      {toFavorites && (
+                        <MenuItem icon={<Star />} onSelect={() => move(gk, r.key, toFavorites, null)}>
                           {t("editor.toFavorites")}
                         </MenuItem>
                       )}
-                      {fav && g.item.workspace_id && homeOf(r.key) && homeGroup(homeOf(r.key)!, g.item.workspace_id) && (
-                        <MenuItem icon={<CornerUpLeft />} onSelect={() => move(gk, r.key, homeGroup(homeOf(r.key)!, g.item.workspace_id)!, null)}>
-                          {t("editor.backInto", { name: labels.section(homeOf(r.key)!, data.get(g.item.workspace_id)?.collab) })}
-                        </MenuItem>
-                      )}
-                      {own && (
-                        <MenuSub label={t("editor.moveTo")} icon={<FolderInput />}>
-                          {space.sections.map((x, i) => (
+                      {!!addTo.length && (
+                        <MenuSub label={t("editor.addTo")} icon={<FolderInput />}>
+                          {addTo.map((x) => (
                             <MenuItem key={x.id} onSelect={() => move(gk, r.key, x.id, null)}>
-                              {sectionName(x, i)}
+                              {sectionName(x, space.sections.indexOf(x))}
                             </MenuItem>
                           ))}
                         </MenuSub>
@@ -417,7 +400,8 @@ export function SpaceArrange({
                   const grip = gripOf(item);
                   const home = !group && !isEverywhere(item) && homeOf(rowKeyOf(item));
                   const back = home ? homeGroup(home, item.workspace_id) : undefined;
-                  const favorites = !group && pinOfKey(rowKeyOf(item)) ? homeGroup("favorites", item.workspace_id) : undefined;
+                  const fg = !group && !isEverywhere(item) ? homeGroup("favorites", item.workspace_id) : undefined;
+                  const favorites = fg && canMoveRow(space, sec.id, key, fg) ? fg : undefined;
                   const markHere = marks && !isEverywhere(item) && d;
                   const header = (
                     <div className={cn("group/row flex h-9 items-center gap-1.5 pl-1.5 pr-1.5", gone && "opacity-60")}>

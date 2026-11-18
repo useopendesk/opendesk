@@ -5,10 +5,10 @@
 // in the section's usual order, and new ones show. Favorites take rows from elsewhere: each key
 // of its `rows` is a row the Space adds, before the person's own favorites.
 //
-// In the editor a whole section opens into its rows, a group inside its Space section. A row
-// moves within its group, out of it into a Space section (where it becomes a row of its own and
-// its group stops showing it), into Favorites, or back home. Pure, so the editor, the sidebar
-// and the tests read and change it the same way.
+// In the editor a whole section opens into its rows, a group inside its Space section. As in the
+// workspace's sidebar, a row reorders within its group, and adding it elsewhere leaves it there:
+// into Favorites (one of its rows) or into a Space section (a row of its own). Hiding is its eye.
+// Pure, so the editor, the sidebar and the tests read and change it the same way.
 
 import type { SidebarPin, SidebarPrefs, SidebarSectionId, Space, SpaceItem, SpaceItemKind, SpaceSection } from "../api/types";
 import { isOrdered } from "../collab/rowOrder";
@@ -149,18 +149,29 @@ function moving(s: Space, from: string, key: string): Moving | null {
   return { workspaceId: item.workspace_id, key: rowKeyOf(item), item };
 }
 
-/** Whether a row can land in a container: within its group where it takes a place, in Favorites, back home, or in a Space section. */
+/**
+ * Whether a row can land in a container: within its group where it takes a place, in Favorites
+ * or a Space section where it isn't yet, and a Space row back into its home section.
+ */
 export function canMoveRow(s: Space, from: string, key: string, to: string): boolean {
   const m = moving(s, from, key);
   if (!m) return false;
-  if (!isGroupKey(to)) return s.sections.some((x) => x.id === to) && (!!m.group || !!itemOfKey(m.workspaceId, m.key));
+  if (!isGroupKey(to)) {
+    const sec = s.sections.find((x) => x.id === to);
+    if (!sec) return false;
+    if (m.group) return true;
+    const item = m.item ?? itemOfKey(m.workspaceId, m.key);
+    if (!item) return false;
+    // A Space row moves among Space sections; a row of a group is added where it isn't yet.
+    return !isGroupKey(from) || !sec.items.some((x) => itemKey(x) === itemKey(item));
+  }
   if (m.group) return false;
   const g = groupAt(s, to);
   if (!g || g.item.workspace_id !== m.workspaceId) return false;
   const id = g.item.id as SidebarSectionId;
   if (from === to) return isOrderedRow(id, m.key);
-  if (id === "favorites") return !!pinOfKey(m.key);
-  return homeOf(m.key) === id;
+  if (id === "favorites") return !!pinOfKey(m.key) && !(g.item.rows ?? []).includes(m.key);
+  return !isGroupKey(from) && homeOf(m.key) === id;
 }
 
 const setGroup = (s: Space, key: string, f: (i: SpaceItem) => SpaceItem): Space => ({
@@ -198,9 +209,9 @@ function withOrder(i: SpaceItem, keys: readonly string[]): SpaceItem {
 
 /**
  * Moves a row, or a whole section, to sit before `before` (or last) in a container, or returns
- * null where it can't go (canMoveRow). From a group it leaves the group: Favorites lets it go, the
- * others stop showing it. Into a Space section it is a row of its own; into Favorites, one of its
- * rows; back home, shown again where it was.
+ * null where it can't go (canMoveRow). Within a group it reorders. Into a Space section it is a
+ * row of its own and into Favorites one of its rows, as the sidebar pins it: where it was, it
+ * stays. A Space row back home stops being a row of its own and shows in its section again.
  */
 export function moveRow(s: Space, from: string, key: string, to: string, before: string | null, shown: Shown): Space | null {
   if (!canMoveRow(s, from, key, to)) return null;
@@ -216,17 +227,12 @@ export function moveRow(s: Space, from: string, key: string, to: string, before:
     });
   }
 
-  // Out of where it is.
-  let next = s;
-  if (isGroupKey(from)) next = setGroup(next, from, (i) => (i.id === "favorites" ? { ...i, rows: (i.rows ?? []).filter((k) => k !== m.key) } : { ...i, hidden: unique([...(i.hidden ?? []), m.key]) }));
-  else next = removeItem(next, key);
-
-  // Into where it goes.
+  // Into a Space section.
   if (!isGroupKey(to)) {
     const item: SpaceItem = m.item ?? itemOfKey(m.workspaceId, m.key)!;
     const k = itemKey(item);
-    // A row sits in a Space once: one already elsewhere moves here.
-    next = removeItem(next, k);
+    // A row sits in a Space once: one already elsewhere (the Space row moving) moves here.
+    const next = removeItem(s, k);
     return {
       ...next,
       sections: next.sections.map((sec) => {
@@ -237,14 +243,14 @@ export function moveRow(s: Space, from: string, key: string, to: string, before:
       }),
     };
   }
-  // A row of Favorites, or a row back home: a Space row that stood for it goes.
-  const own = itemOfKey(m.workspaceId, m.key);
-  if (own) next = removeItem(next, itemKey(own));
-  return setGroup(next, to, (i) => {
-    if (i.id === "favorites") {
-      const rows = (i.rows ?? []).filter((k) => k !== m.key);
+  // Into Favorites, one of its rows.
+  if (groupAt(s, to)!.item.id === "favorites")
+    return setGroup(s, to, (i) => {
+      const rows = i.rows ?? [];
       return { ...i, rows: placed(rows, m.key, before !== null && rows.includes(before) ? before : null), hidden: (i.hidden ?? []).filter((k) => k !== m.key) };
-    }
+    });
+  // A Space row back home: shown there again, at the place it lands.
+  return setGroup(removeItem(s, key), to, (i) => {
     const back = { ...i, hidden: (i.hidden ?? []).filter((k) => k !== m.key) };
     if (!isOrderedRow(i.id as SidebarSectionId, m.key)) return back;
     const keys = shown(to).filter((k) => k !== m.key && isOrderedRow(i.id as SidebarSectionId, k));
@@ -256,9 +262,10 @@ export function moveRow(s: Space, from: string, key: string, to: string, before:
 export type Layout = { key: string; keys: readonly string[] }[];
 
 /**
- * Where Alt with an arrow key takes a row: the next place up or down, in the order the editor
- * shows (a group's rows sit at the group's place in its Space section), that the row can land
- * on and that moves it. Null at either end.
+ * Where an arrow key takes a row: the next place up or down, in the order the editor shows (a
+ * group's rows sit at the group's place in its Space section), that the row can land on and that
+ * moves it. A step never adds a row somewhere new: a row of a group moves within it, and a Space
+ * row or a whole section walks the Space's sections, past the groups. Null at either end.
  */
 export function stepRow(s: Space, from: string, key: string, dir: -1 | 1, layout: Layout): { to: string; before: string | null } | null {
   const byKey = new Map(layout.map((c) => [c.key, c.keys]));
@@ -281,6 +288,7 @@ export function stepRow(s: Space, from: string, key: string, dir: -1 | 1, layout
   for (let j = here + dir; j >= 0 && j < slots.length; j += dir) {
     const x = slots[j];
     if (same(x)) continue;
+    if (x.to !== from && (isGroupKey(from) || isGroupKey(x.to))) continue;
     if (canMoveRow(s, from, key, x.to)) return x;
   }
   return null;

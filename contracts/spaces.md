@@ -97,9 +97,11 @@ Keys naming something gone or out of the person's sight are kept and skipped. Wi
 `hidden` (every Space saved before them) a whole section shows as it always did. A row's menu inside
 an arranged section still changes the person's own preferences, never the Space.
 
-The editor moves a row out of a whole section by hiding it there and putting it where it lands:
-into Favorites (one of its `rows`), or into a section of the Space as a row of its own (a
-`SpaceItem`), keeping its place. Back home, it leaves `hidden` again.
+In the editor, as in the workspace's sidebar (contracts/collab.md "Edit mode"), a row of a whole
+section added to Favorites (one of its `rows`) or to a section of the Space (a row of its own, a
+`SpaceItem`) stays in its own section: adding never touches `hidden`, and a row already there is
+not added twice. Only its eye hides it. Taking it out of Favorites leaves it where it always was. A
+row of its own dragged back into its home section stops being one and shows there again.
 
 A workspace's own sidebar takes sections of these rows too, of that workspace alone: the member's own
 sections (`SidebarPrefs.sections`, contracts/collab.md "Your own sections"). Customize sidebar copies a
@@ -159,10 +161,11 @@ to the starter do not change it.
   Space's arrangement; they are arranged in the editor. Name, icon, colour and marks stay in the editor below.
 - **The editor** (New Space, Edit) has the name, icon and colour; the Space's sections and rows, dragged
   into order, each row with its name and number; each whole section open into its rows, which reorder,
-  hide with their eye, and move into Favorites, into any section of the Space or back home
-  ("Arranging a whole section"), by dragging their grip (pointer events, the sidebar's own drag, so
-  touch drags too), from their menu, or with an arrow key on the focused grip, which walks across
-  sections; Add section; and "Add from" with a tab per workspace
+  hide with their eye, and are added to Favorites or to any section of the Space while staying in
+  their own ("Arranging a whole section"), by dragging their grip (pointer events, the sidebar's own
+  drag, so touch drags too) or from their menu; an arrow key on the focused grip moves a row one
+  place, within its whole section or, for the Space's own rows and sections, across sections, and
+  never adds it anywhere; Add section; and "Add from" with a tab per workspace
   listing what that workspace offers: its whole sections, inbox folders, teams, views, Collab boxes,
   accounts and folders, its pages (Contacts, Knowledge base, Wiki, Reports), its teamspaces and its pages,
   databases and canvases (searchable), plus an "Every workspace" tab with the Everywhere lists (not offered
