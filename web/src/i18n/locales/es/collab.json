@@ -1102,8 +1102,8 @@
     "add": "Añadir",
     "newSection": "Nueva sección",
     "newSectionTitle": "Nueva sección",
-    "emptySection": "Arrastra filas aquí o añade algunas",
-    "emptyFavorites": "Arrastra filas aquí para convertirlas en favoritos",
+    "emptySection": "Suelta filas aquí",
+    "emptyFavorites": "Suelta favoritos aquí",
     "spaceSettings": "Ajustes del Space",
     "editingSpace": "Editando {{name}}",
     "hintTitle": "Haz tuya la barra lateral",
@@ -1127,9 +1127,7 @@
     "customize": "Personalizar",
     "customizeHint": "Organiza tu barra lateral: arrastra, renombra y oculta",
     "doneHint": "Terminar de organizar la barra lateral",
-    "doneEditing": "Listo",
-    "layoutsShort": "Diseños",
-    "barHint": "Arrastra para mover. Haz clic en un nombre para renombrarlo. El ojo lo oculta."
+    "doneEditing": "Listo"
   },
   "layouts": {
     "title": "Empezar desde un diseño",

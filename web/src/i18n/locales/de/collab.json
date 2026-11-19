@@ -1046,8 +1046,8 @@
     "add": "Hinzufügen",
     "newSection": "Neuer Bereich",
     "newSectionTitle": "Neuer Bereich",
-    "emptySection": "Zeilen hierher ziehen oder hinzufügen",
-    "emptyFavorites": "Zeilen hierher ziehen, um sie zu Favoriten zu machen",
+    "emptySection": "Zeilen hier ablegen",
+    "emptyFavorites": "Favoriten hier ablegen",
     "spaceSettings": "Space-Einstellungen",
     "editingSpace": "{{name}} bearbeiten",
     "hintTitle": "Gestalte deine Seitenleiste",
@@ -1071,9 +1071,7 @@
     "customize": "Anpassen",
     "customizeHint": "Seitenleiste anordnen: ziehen, umbenennen, ausblenden",
     "doneHint": "Anordnen der Seitenleiste beenden",
-    "doneEditing": "Fertig",
-    "layoutsShort": "Layouts",
-    "barHint": "Zum Verschieben ziehen. Zum Umbenennen auf einen Namen klicken. Das Auge blendet aus."
+    "doneEditing": "Fertig"
   },
   "layouts": {
     "title": "Mit einem Layout beginnen",

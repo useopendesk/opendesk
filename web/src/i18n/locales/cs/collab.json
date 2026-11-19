@@ -1132,8 +1132,8 @@
     "add": "Přidat",
     "newSection": "Nová sekce",
     "newSectionTitle": "Nová sekce",
-    "emptySection": "Přetáhněte sem řádky nebo nějaké přidejte",
-    "emptyFavorites": "Přetažením sem přidáte řádky do oblíbených",
+    "emptySection": "Sem přetáhněte řádky",
+    "emptyFavorites": "Sem přetáhněte oblíbené",
     "spaceSettings": "Nastavení Space",
     "editingSpace": "Úprava: {{name}}",
     "hintTitle": "Přizpůsobte si postranní panel",
@@ -1157,9 +1157,7 @@
     "customize": "Přizpůsobit",
     "customizeHint": "Uspořádejte postranní panel: přetahujte, přejmenovávejte, skrývejte",
     "doneHint": "Dokončit uspořádání postranního panelu",
-    "doneEditing": "Hotovo",
-    "layoutsShort": "Rozvržení",
-    "barHint": "Přetažením přesunete. Kliknutím na název přejmenujete. Ikonou oka skryjete."
+    "doneEditing": "Hotovo"
   },
   "layouts": {
     "title": "Začít podle rozvržení",

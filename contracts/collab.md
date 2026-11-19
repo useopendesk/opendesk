@@ -1096,12 +1096,14 @@ a Space picked, its sections and rows move and rename the same way.
 
 **Edit mode.** The web app arranges the sidebar where it is (`web/src/components/collab/SidebarEditor.tsx`),
 entered from Edit sidebar (the Customize button, a row's or section's menu, the user menu, the sidebar's
-right-click menu, `g e`) and left with Done or Escape. Every section and row has a handle (pointer events, so touch drags too; arrow keys move one
-place) and an eye; hidden ones stay listed, dimmed. Sections reorder among sections; a row reorders within
+right-click menu, `g e`) and left with Done or Escape. It draws the sidebar as it is, with the normal rows, titles and
+numbers on the same chrome; what edits them shows on hover or focus (always on touch). Every section and row drags by itself
+or by a grip in the gutter (pointer events, so touch drags too; arrow keys on the grip move one place, F2 renames) and has an
+eye; hidden ones stay listed, dimmed. An empty Favorites or own section is one dashed line to drop rows on. Sections reorder among sections; a row reorders within
 its section (`row_order` for Inbox, Mail accounts, Teams and Workspace), goes into Favorites (pinned, or a
-page starred) or into a section of the member's own. Own sections and rows are renamed inline and take an
-emoji. The bar has Reset (order, `hidden` and `row_order` back to the defaults; own sections and favorites
-stay), Start from a layout (a preview of the sidebar with each), Copy a Space and the customize dialog.
+page starred) or into a section of the member's own. Sections and rows are renamed in place with a double-click and take an
+emoji. The top row has Done and one ⋯ menu: Start from a layout (a preview of the sidebar with each), Copy a Space,
+the customize dialog and Reset (order, `hidden` and `row_order` back to the defaults; own sections and favorites stay).
 Removing, hiding and deleting show Undo. With a Space picked, the same mode edits that Space
 (contracts/spaces.md). When one target is a row in several places (a view under Views and in Favorites), the
 row clicked lights up alone, like a tab.

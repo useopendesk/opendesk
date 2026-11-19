@@ -1027,8 +1027,8 @@
     "add": "添加",
     "newSection": "新建分区",
     "newSectionTitle": "新建分区",
-    "emptySection": "把行拖到这里，或添加一些",
-    "emptyFavorites": "把行拖到这里即可加入收藏",
+    "emptySection": "把行拖到这里",
+    "emptyFavorites": "拖到这里加入收藏",
     "spaceSettings": "空间设置",
     "editingSpace": "正在编辑 {{name}}",
     "hintTitle": "让侧边栏成为你的",
@@ -1052,9 +1052,7 @@
     "customize": "自定义",
     "customizeHint": "整理你的侧边栏：拖动、重命名、隐藏",
     "doneHint": "完成侧边栏整理",
-    "doneEditing": "完成",
-    "layoutsShort": "布局",
-    "barHint": "拖动即可移动。点击名称即可重命名。点击眼睛图标可隐藏。"
+    "doneEditing": "完成"
   },
   "layouts": {
     "title": "从布局开始",

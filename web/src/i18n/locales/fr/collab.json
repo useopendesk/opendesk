@@ -977,8 +977,8 @@
     "add": "Ajouter",
     "newSection": "Nouvelle section",
     "newSectionTitle": "Nouvelle section",
-    "emptySection": "Faites glisser des lignes ici ou ajoutez-en",
-    "emptyFavorites": "Faites glisser des lignes ici pour en faire des favoris",
+    "emptySection": "Déposez des lignes ici",
+    "emptyFavorites": "Déposez des favoris ici",
     "spaceSettings": "Réglages de l’espace",
     "editingSpace": "Modification de {{name}}",
     "hintTitle": "Faites de la barre latérale la vôtre",
@@ -1002,9 +1002,7 @@
     "customize": "Personnaliser",
     "customizeHint": "Organiser la barre latérale : déplacer, renommer, masquer",
     "doneHint": "Terminer l’organisation de la barre latérale",
-    "doneEditing": "Terminé",
-    "layoutsShort": "Dispositions",
-    "barHint": "Faites glisser pour déplacer. Cliquez sur un nom pour le renommer. L’œil le masque."
+    "doneEditing": "Terminé"
   },
   "layouts": {
     "title": "Partir d’une disposition",

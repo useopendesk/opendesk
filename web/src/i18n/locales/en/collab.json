@@ -1067,8 +1067,8 @@
     "add": "Add",
     "newSection": "New section",
     "newSectionTitle": "New section",
-    "emptySection": "Drag rows here or add some",
-    "emptyFavorites": "Drag rows here to make them favorites",
+    "emptySection": "Drop rows here",
+    "emptyFavorites": "Drop favorites here",
     "spaceSettings": "Space settings",
     "editingSpace": "Editing {{name}}",
     "hintTitle": "Make the sidebar yours",
@@ -1092,9 +1092,7 @@
     "customize": "Customize",
     "customizeHint": "Arrange your sidebar: drag, rename, hide",
     "doneHint": "Done arranging the sidebar",
-    "doneEditing": "Done",
-    "layoutsShort": "Layouts",
-    "barHint": "Drag to move. Click a name to rename it. The eye hides it."
+    "doneEditing": "Done"
   },
   "layouts": {
     "title": "Start from a layout",

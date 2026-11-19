@@ -798,10 +798,14 @@ export default function MailPage() {
     "mail.comment": () => openId && threadRef.current?.comment(),
     "mail.people": () => openId && threadRef.current?.people(),
     "mail.search": () => searchRef.current?.focus(),
-    "mail.escape": () => {
-      if (selected.size || every.running) clearSelection();
-      else if (openId) close();
-    },
+    // Only with something to clear or close: otherwise Escape is left to others (the sidebar's edit mode).
+    "mail.escape":
+      selected.size || every.running || openId
+        ? () => {
+            if (selected.size || every.running) clearSelection();
+            else if (openId) close();
+          }
+        : undefined,
     "mail.selectAll": () => !openId && setSelected(new Set(threads.map((x) => x.id))),
   });
 
