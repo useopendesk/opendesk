@@ -51,6 +51,10 @@ beforeEach(async () => {
   vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   Element.prototype.scrollIntoView = vi.fn();
+  // The editor scrolls to its selection when focused; jsdom lays nothing out.
+  const noRects = () => Object.assign([], { item: () => null }) as unknown as DOMRectList;
+  Range.prototype.getClientRects = noRects;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
 });
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
