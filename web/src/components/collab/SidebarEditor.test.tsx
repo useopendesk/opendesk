@@ -72,8 +72,9 @@ describe("the sidebar's edit mode", () => {
     await act(async () => {
       more.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
     });
-    await settle();
-    const items = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].map((x) => x.textContent);
+    const menuItems = () => [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].map((x) => x.textContent);
+    for (let i = 0; i < 100 && !menuItems().includes("Reset"); i++) await settle();
+    const items = menuItems();
     expect(items).toEqual(expect.arrayContaining(["Start from a layout", "More options", "Reset"]));
   });
 
@@ -85,8 +86,11 @@ describe("the sidebar's edit mode", () => {
     expect(el.querySelector('[data-edit-section="favorites"] [data-edit-head] button[aria-label="Add rows"]')).not.toBeNull();
   });
 
-  it("draws rows as the sidebar does, with their numbers", () => {
-    const pending = el.querySelector<HTMLElement>('[data-edit-row="ticket_folder:pending"]')!;
+  it("draws rows as the sidebar does, with their numbers", async () => {
+    // The numbers arrive with the counts query, after the rows.
+    const row = () => el.querySelector<HTMLElement>('[data-edit-row="ticket_folder:pending"]')!;
+    for (let i = 0; i < 100 && !row().querySelector("[data-count]"); i++) await settle();
+    const pending = row();
     expect(pending.textContent).toContain("Pending");
     expect(pending.querySelector("[data-count]")).not.toBeNull();
     expect(pending.querySelector('button[aria-label="Move Pending"]')).not.toBeNull();
