@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { i18n } from "@/i18n";
 import { setWorkspaceId } from "@/lib/api/client";
 import { api, rows } from "@/lib/api/endpoints";
-import type { MailComment, MailThreadDetail } from "@/lib/api/types";
+import type { MailComment, MailThreadDetail, UserRef } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
 import { installMock } from "@/mock";
 import { db } from "@/mock/db";
@@ -18,7 +18,7 @@ import { ThreadView } from "./ThreadView";
 
 vi.mock("@tanstack/react-router", async (original) => ({ ...await original<typeof import("@tanstack/react-router")>(), useNavigate: () => vi.fn() }));
 
-const bea = { id: "u-bea", name: "Bea Agent", avatar_url: null };
+const bea: UserRef = { id: "u-bea", name: "Bea Agent", email: "bea@example.com", avatar_url: null };
 const at = "2026-11-01T10:00:00Z";
 const comment = (id: string, body_html: string, extra: Partial<MailComment> = {}): MailComment => ({
   id, thread_id: "", author: bea, body_html, mentions: [], reply_to: null, parent: null, parent_deleted: false, created_at: at, updated_at: at, ...extra,
