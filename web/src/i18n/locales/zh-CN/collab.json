@@ -928,6 +928,8 @@
     "tabs": "收件箱分类",
     "settings": "分类设置",
     "moved_other": "已将 {{count}} 个会话移到 {{name}}",
+    "dropRefused_other": "它们的收件箱没有 {{name}} 分类",
+    "dropSome_other": "{{count}} 个会话未移动：它们的收件箱没有 {{name}} 分类",
     "always": "始终",
     "alwaysHint": "将来自 {{sender}} 的后续邮件也发到这里",
     "ruleSaved": "来自 {{sender}} 的邮件现在会发到 {{name}}",

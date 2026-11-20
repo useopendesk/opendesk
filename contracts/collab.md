@@ -616,6 +616,26 @@ order:
 
 A conversation keeps its category as more messages arrive; one the account answers moves to Primary.
 Moving a conversation (`categorize`, "Actions") is the person's choice, which nothing changes after.
+
+**Learning from moves.** Every move a member makes by hand (the row menu, a drag onto a tab, a bulk
+move) on a `local` account is also an example for Ollie (`collab_category_examples`): the
+conversation's latest sender who is not the account, their name, the subject, the first 200
+characters of the text, the signals, and the category it left and went to. One per conversation
+(the latest move wins); moving it back to the category it left (Undo) forgets it. An account keeps
+its latest 20 per category and 100 in all; examples go with the conversation, the account and the
+workspace, and with a category the account no longer has. When Ollie sorts the account's mail, the
+decision's state carries up to 16 of them (`moved_by_reader`, at most 4 per category and 6,000
+characters together; first those from a sender, then a domain, of the mail being sorted, then the
+latest), and a rule asks for similar mail to go where the reader put it. They are data written by
+their senders like the mail itself, never instructions. Sender rules, people the account writes to,
+replies and Gmail's tab still come first; without Ollie they change nothing. Examples are used only
+by that account's own sorting: no route returns them and no event carries them, so a private
+account's stay private. After a move, the sender's other inbox conversations of the last 30 days
+that sorting placed (Ollie, the headers or Gmail's tab; at most 25; never one a person moved, a rule
+placed or that stays in Primary as a reply or a known correspondent's) are sorted again by
+`collab.categorize` with the examples: the sender's domain, or the address alone at a public mail
+provider such as gmail.com. Like any sorting, they spend the workspace's AI balance and fall back to
+the headers when it is too low. A move on a Gmail-synced account teaches nothing here (Gmail decides).
 History imports are not sorted; when categories are turned on or changed for an account, its inbox
 conversations of the last 30 days (at most 300) are sorted again, except those a person moved.
 Conversations in a category that is removed go back to Primary. Mail is never archived, read or
@@ -634,9 +654,11 @@ own order (accounts taken in list order). So a set that was reordered or extende
 whatever other accounts in view follow. Moving a conversation offers "Always for this sender" to
 whoever manages the account, which adds the sender rule and moves that sender's other inbox
 conversations too. A conversation dragged from the list onto a tab is moved there as the row menu
-moves it (`categorize`, the same toast and Undo); dragging a selected row moves the selection. A
-tab takes the drop only while every dragged conversation's account has its key, and the tab in view
-takes none.
+moves it (`categorize`, the same toast and Undo); dragging a selected row moves the selection. In
+All inboxes a tab can be a category only some accounts have: dropped there, the conversations whose
+account has its key move and a toast says how many stayed. While none of the dragged conversations'
+accounts has it, the tab refuses the drop (the pointer shows it cannot drop) and a hint under it says
+their inbox has no such category. The tab in view takes none.
 
 **Reordering the tabs.** Whoever may change the one set the tabs show reorders them on the mail page:
 a tab dragged along the row (a pointer drag past a few pixels; a press that does not move opens the
@@ -1622,7 +1644,8 @@ in-app and push like other notifications, emailed by the member's notification p
   `migrations/000662_collab_history.up.sql`, with `collab_messages.size`, the generated
   `collab_messages.search`, `collab_accounts.stored_bytes` and `subscriptions.collab_storage_override`).
 - `collab_category_sets` (the workspace's, each team's and each account's categories; one row per scope),
-  `collab_category_rules` (an account's sender rules), `collab_threads.category`, `category_source` and
+  `collab_category_rules` (an account's sender rules), `collab_category_examples` (conversations moved by
+  hand, Ollie's examples; `migrations/000772_collab_category_examples.up.sql`), `collab_threads.category`, `category_source` and
   `category_pending`, `collab_messages.signals`, and `collab_accounts.category_keys` and `category_sig` (what
   the account was last sorted with) (`migrations/000684_collab_categories.up.sql`).
 - `collab_accounts.config` (not secret) holds the granted `scopes` and, under `settings`, the settings

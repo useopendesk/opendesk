@@ -43,7 +43,7 @@ import { accountName, boxForRole, isMailBox, mailListQuery, type MailSearch } fr
 import { cachedFolders } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
 import { addressNumbers } from "@/lib/collab/badges";
-import { accountCategories, canMoveToCategory, categoryTabs, PRIMARY, ruleSender } from "@/lib/collab/categories";
+import { accountCategories, categoryTabs, movableToCategory, PRIMARY, ruleSender } from "@/lib/collab/categories";
 import { assignChanges, useAllFolders, useAssignThreads, useCanAct, useMailAccounts, useSelectEvery, useSidebarPrefs, useThreadAction } from "@/lib/collab/hooks";
 import { type ComposeMode } from "@/lib/collab/recipients";
 import { identitiesOf, ownEmails as ownEmailsOf } from "@/lib/collab/identities";
@@ -736,8 +736,15 @@ export default function MailPage() {
   dropRef.current = (ids, to) => {
     const items = threads.filter((x) => ids.includes(x.id));
     if (!items.length) return;
-    // A category tab (it took them only while each one's account has it): moved there as the row menu moves them.
-    if (to.category) return act(items, "categorize", { category: to.category, label: tabs.find((c) => c.key === to.category)?.name ?? to.category });
+    // A category tab: those whose account has it move there as the row menu moves them; the others stay, and the toast says so.
+    if (to.category) {
+      const name = tabs.find((c) => c.key === to.category)?.name ?? to.category;
+      const ok = movableToCategory(items, accountsById, to.category);
+      if (!ok.length) return void toast.error(t("categories.dropRefused", { count: items.length, name }));
+      act(ok, "categorize", { category: to.category, label: name });
+      if (ok.length < items.length) toast.info(t("categories.dropSome", { count: items.length - ok.length, name }));
+      return;
+    }
     const folderTo = to.box === "folder" && to.folder ? Object.values(folderMap).flatMap((fs) => fs ?? []).find((f) => f.id === to.folder) : undefined;
     const accountId = folderTo?.account_id ?? to.account;
     const its = accountId ? items.filter((x) => x.account_id === accountId) : items;
@@ -771,9 +778,9 @@ export default function MailPage() {
         return assignMe(its);
     }
   };
-  /** Whether the conversations being dragged may drop on a place: a category tab takes them while each one's account has its category. */
+  /** Whether the conversations being dragged may drop on a place: a category tab takes them while one of their accounts has its category. */
   const acceptsRef = useRef<(ids: string[], to: ThreadDropTarget) => boolean>(() => true);
-  acceptsRef.current = (ids, to) => !to.category || canMoveToCategory(threads.filter((x) => ids.includes(x.id)), accountsById, to.category);
+  acceptsRef.current = (ids, to) => !to.category || movableToCategory(threads.filter((x) => ids.includes(x.id)), accountsById, to.category).length > 0;
   useEffect(
     () =>
       canAct
