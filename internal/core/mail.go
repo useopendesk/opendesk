@@ -80,7 +80,7 @@ func (s *svc) appLink(path, key, value string) string {
 
 // enqueueMail queues a system email in tx.
 func (s *svc) enqueueMail(ctx context.Context, tx pgx.Tx, to string, m mailer.Mail) error {
-	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: to, Subject: m.Subject, HTML: m.HTML, Text: m.Text, Headers: m.Headers},
+	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: to, Subject: m.Subject, HTML: m.HTML, Text: m.Text, Headers: m.Headers, FromName: m.FromName},
 		&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8})
 	return err
 }
@@ -149,7 +149,7 @@ type systemEmailWorker struct {
 
 func (w *systemEmailWorker) Work(ctx context.Context, job *river.Job[jobs.SystemEmailArgs]) error {
 	a := job.Args
-	return w.s.d.Mailer.Send(ctx, mailer.Mail{To: a.To, Subject: a.Subject, HTML: a.HTML, Text: a.Text, Headers: a.Headers})
+	return w.s.d.Mailer.Send(ctx, mailer.Mail{To: a.To, Subject: a.Subject, HTML: a.HTML, Text: a.Text, Headers: a.Headers, FromName: a.FromName})
 }
 
 // forgotArgs asks for a reset email. The lookup runs in the worker, so the endpoint

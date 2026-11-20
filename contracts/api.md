@@ -591,7 +591,10 @@ Each value is overridable: `NOTIFY_EMAIL_DELAY`, `NOTIFY_EMAIL_COOLDOWNS` (e.g. 
 - Notification emails carry `List-Unsubscribe: <{API_URL}/v1/notifications/unsubscribe/one-click?token=…>` and
   `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), and a footer link to `{APP_URL}/unsubscribe?token=…`
   and to `/settings/notifications`. The token is a `notification_unsubscribe` JWT (`contracts/tokens.md`). Emails about one
-  ticket carry `References: <ticket-<ticket id>@<mail domain>>` so mail clients thread them per ticket.
+  ticket carry `References: <ticket-<ticket id>@<mail domain>>` so mail clients thread them per ticket. With
+  `NOTIFY_EMAIL_THREAD_SUBJECT=true` (default false) they also carry `In-Reply-To` with the same id and the subject
+  `#<number>: <ticket subject>`, which clients that match subjects (Gmail) need; the sender's display name then says what
+  happened ("New ticket from Sam", "Dana Lee replied"), the address stays `MAIL_FROM`'s.
 - Contents are short and plain: who acted, the ticket number and subject, and at most a 140-character plain-text excerpt
   (mentions, customer replies). Never a full message, an attachment or anything secret.
 - The unsubscribe link turns off email for every type in that workspace and records the choices from before

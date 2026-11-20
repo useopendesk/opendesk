@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"github.com/useopendesk/opendesk/internal/config"
 	"net/http"
 	"net/url"
 	"strings"
@@ -104,10 +105,11 @@ func (f *notifyFixture) send(now time.Time) {
 }
 
 type queuedMail struct {
-	Subject string
-	HTML    string
-	Text    string
-	Headers map[string]string
+	Subject  string
+	HTML     string
+	Text     string
+	Headers  map[string]string
+	FromName string `json:"from_name"`
 }
 
 func (f *notifyFixture) mails() []queuedMail {
@@ -276,6 +278,25 @@ func TestNotificationEmailSingle(t *testing.T) {
 	}
 	if len(f.mails()) != 1 {
 		t.Fatal("emailed twice")
+	}
+}
+
+// TestNotificationEmailThreadSubject: with NOTIFY_EMAIL_THREAD_SUBJECT the queued email
+// carries the ticket's subject, In-Reply-To and the event as the sender's name.
+func TestNotificationEmailThreadSubject(t *testing.T) {
+	f := newNotifyFixture(t, "notifthreadsubj")
+	was := notifyprefs.Current()
+	on := config.NotifyEmail(was)
+	on.ThreadSubject = true
+	notifyprefs.Configure(on)
+	defer notifyprefs.Configure(config.NotifyEmail(was))
+	tid := f.ticket("SAML with Okta", nil, &f.uid)
+	f.notify(hd.NotifyAssigned, &tid, nil)
+	f.send(later())
+	m := f.mails()
+	if len(m) != 1 || m[0].FromName != "Maya Chen assigned you" || !strings.HasPrefix(m[0].Subject, "#") ||
+		!strings.HasSuffix(m[0].Subject, ": SAML with Okta") || !strings.Contains(m[0].Headers["In-Reply-To"], tid.String()) {
+		t.Fatalf("threaded email: %+v", m)
 	}
 }
 

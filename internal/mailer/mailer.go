@@ -34,6 +34,18 @@ type Mail struct {
 	// Headers are extra headers, such as List-Unsubscribe and References. Names are
 	// limited to allowedHeaders.
 	Headers map[string]string
+	// FromName, when set, replaces the display name of the sender; the address stays.
+	FromName string
+}
+
+// Sender is from with m.FromName as its display name, when m has one.
+func Sender(from string, m Mail) string {
+	name := strings.TrimSpace(HeaderSafe(m.FromName))
+	a, err := mail.ParseAddress(from)
+	if name == "" || err != nil {
+		return from
+	}
+	return (&mail.Address{Name: name, Address: a.Address}).String()
 }
 
 // allowedHeaders are the extra headers a Mail may carry.
@@ -142,7 +154,7 @@ func (s *sesMailer) Send(ctx context.Context, m Mail) error {
 		headers = append(headers, sestypes.MessageHeader{Name: aws.String(h[0]), Value: aws.String(h[1])})
 	}
 	_, err := s.client.SendEmail(ctx, &sesv2.SendEmailInput{
-		FromEmailAddress: aws.String(s.from),
+		FromEmailAddress: aws.String(Sender(s.from, m)),
 		Destination:      &sestypes.Destination{ToAddresses: []string{m.To}},
 		Content: &sestypes.EmailContent{Simple: &sestypes.Message{
 			Subject: &sestypes.Content{Data: aws.String(HeaderSafe(m.Subject)), Charset: aws.String("UTF-8")},
@@ -198,7 +210,7 @@ func Build(from string, m Mail) string {
 	}
 	var b strings.Builder
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
-	h("From", from)
+	h("From", Sender(from, m))
 	h("To", m.To)
 	h("Subject", mime.QEncoding.Encode("utf-8", HeaderSafe(m.Subject)))
 	h("Date", time.Now().UTC().Format(time.RFC1123Z))

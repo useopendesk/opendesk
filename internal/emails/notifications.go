@@ -56,6 +56,9 @@ type Batch struct {
 	Test bool
 	// Urgent reports the types that lead a list under "Needs you now"; nil means none.
 	Urgent func(typ string) bool
+	// ThreadSubject: an email about one ticket takes the ticket's subject, and what
+	// happened moves to the sender's display name (NOTIFY_EMAIL_THREAD_SUBJECT).
+	ThreadSubject bool
 }
 
 // Notifications builds a notification email: a specific one for a single notification,
@@ -102,9 +105,25 @@ func Notifications(s Site, b Batch) mailer.Mail {
 			url.Values{"token": {b.UnsubscribeToken}}.Encode() + ">"
 		m.Headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
 	}
-	// Emails about one ticket thread together in mail clients that follow References.
+	// Emails about one ticket thread together in mail clients that follow References. With
+	// ThreadSubject they also share In-Reply-To and one subject per ticket, which clients
+	// that match subjects (Gmail) need; what happened moves to the sender's display name.
 	if t := oneTicket(b.Notes); t != nil && b.More == 0 {
-		m.Headers["References"] = "<ticket-" + t.String() + "@" + mailDomain(s) + ">"
+		ref := "<ticket-" + t.String() + "@" + mailDomain(s) + ">"
+		m.Headers["References"] = ref
+		if !b.ThreadSubject {
+			return m
+		}
+		m.Headers["In-Reply-To"] = ref
+		n := b.Notes[0]
+		m.Subject = mailer.HeaderSafe(fmt.Sprintf("#%d: %s", n.TicketNumber, clip(n.TicketSubject, 80)))
+		if b.Test {
+			m.Subject = "Test: " + m.Subject
+		}
+		m.FromName = clip(describe(n).title, 60)
+		if len(b.Notes) > 1 {
+			m.FromName = clip(fmt.Sprintf("%s (+%d)", describe(n).title, len(b.Notes)-1), 60)
+		}
 	}
 	return m
 }

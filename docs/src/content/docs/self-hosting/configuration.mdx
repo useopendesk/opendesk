@@ -159,6 +159,7 @@ How often notification emails may go to one person (see [How emails are paced](/
 | `NOTIFY_EMAIL_PER_DAY` | `100` (`24`) | Most emails per person in a day. |
 | `NOTIFY_EMAIL_INSTANCE_PER_MINUTE` | `60` (`120`) | Most notification emails the whole server sends in a minute; the rest wait. |
 | `NOTIFY_EMAIL_ACTIVE_WINDOW` | `5m` | Nothing is emailed while someone was active in the workspace this recently. |
+| `NOTIFY_EMAIL_THREAD_SUBJECT` | `false` | Give every email about one ticket the subject `#<number>: <ticket subject>`, with what happened in the sender's name, so Gmail groups them into one conversation per ticket. |
 
 ## Inbound email
 

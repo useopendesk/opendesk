@@ -226,6 +226,8 @@ type SystemEmailArgs struct {
 	Text    string `json:"text"`
 	// Headers are extra headers (List-Unsubscribe, References); see mailer.Mail.
 	Headers map[string]string `json:"headers,omitempty"`
+	// FromName replaces the sender's display name; see mailer.Mail.
+	FromName string `json:"from_name,omitempty"`
 }
 
 func (SystemEmailArgs) Kind() string { return "mail.system" }

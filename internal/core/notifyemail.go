@@ -242,7 +242,7 @@ func (s *svc) sendNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid uui
 		wid, uid, d.Step, now, now.Add(pace.Cooldown(d.Step)), lastUrgent); err != nil {
 		return err
 	}
-	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: set.Cadence, Location: set.Location(), Clock: clock, Now: now, Urgent: notifyprefs.Urgent}
+	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: set.Cadence, Location: set.Location(), Clock: clock, Now: now, Urgent: notifyprefs.Urgent, ThreadSubject: notifyprefs.Current().ThreadSubject}
 	if len(keep) > emails.MaxListed {
 		b.More = len(keep) - emails.MaxListed
 		keep = keep[:emails.MaxListed]
@@ -326,7 +326,7 @@ func (s *svc) sendTestNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid
 	}
 	now := time.Now()
 	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: notifyprefs.CadenceInstant, Location: set.Location(), Clock: clock, Now: now,
-		Notes: emails.SampleNotes(now), UnsubscribeToken: tok, Test: true, Urgent: notifyprefs.Urgent}
+		Notes: emails.SampleNotes(now), UnsubscribeToken: tok, Test: true, Urgent: notifyprefs.Urgent, ThreadSubject: notifyprefs.Current().ThreadSubject}
 	return s.enqueueMail(ctx, tx, email, emails.Notifications(s.site(), b))
 }
 
