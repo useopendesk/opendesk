@@ -244,7 +244,7 @@ func TestToolsFollowScopes(t *testing.T) {
 		t.Fatalf("tickets:read tools: %v", got)
 	}
 	got = toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeKBRead, auth.ScopeContactsRead)))
-	if !slices.Equal(got, []string{"get_contact", "search_contacts", "search_knowledge"}) {
+	if !slices.Equal(got, []string{"get_company", "get_contact", "search_companies", "search_contacts", "search_knowledge"}) {
 		t.Fatalf("kb and contacts tools: %v", got)
 	}
 	got = toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeWikiRead)))
@@ -266,7 +266,8 @@ func TestToolsFollowScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"search_tickets", "get_ticket", "list_custom_fields", "reply_to_ticket", "draft_reply", "add_note", "update_ticket", "create_ticket",
-		"search_contacts", "get_contact", "search_knowledge", "create_kb_draft",
+		"search_contacts", "get_contact", "create_contact", "update_contact", "search_companies", "get_company", "create_company", "update_company",
+		"search_knowledge", "create_kb_draft",
 		"search_wiki", "get_wiki_page", "create_wiki_page", "update_wiki_page", "get_report",
 		"list_collab_conversations", "get_collab_conversation", "draft_collab_reply", "claim_collab_conversation", "release_collab_conversation",
 		"list_collab_draft_outcomes"}

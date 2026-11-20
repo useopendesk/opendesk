@@ -149,6 +149,12 @@ A tool is offered only when the key, or the OAuth connection together with your 
 | `create_ticket` | `tickets:write` | Creates a ticket for a contact email, optionally with custom field values. With a mailbox, the first reply is emailed to the contact. | Yes |
 | `search_contacts` | `contacts:read` | Finds contacts by name, email, phone or field value. | No |
 | `get_contact` | `contacts:read` | Reads a contact by id or email, with their latest tickets when the key also has `tickets:read`. | No |
+| `create_contact` | `contacts:write` | Creates a contact with an email, a name or both, and optionally a phone, company (id or exact name), external id, labels, notes and custom fields. An email that already belongs to a contact is refused and the error names it. | Yes |
+| `update_contact` | `contacts:write` | Changes a contact's details. Only what you pass changes; labels are added or removed and custom fields merged. | Yes |
+| `search_companies` | `contacts:read` | Finds companies by name, domain or field value. | No |
+| `get_company` | `contacts:read` | Reads a company by id or exact name. | No |
+| `create_company` | `contacts:write` | Creates a company with a name, and optionally a domain, external id, labels, notes and custom fields. | Yes |
+| `update_company` | `contacts:write` | Changes a company's details, as `update_contact` does. | Yes |
 | `search_knowledge` | `kb:read` | Searches knowledge base articles and knowledge sources; the top matches come with their full text. | No |
 | `create_kb_draft` | `kb:write` | Creates an unpublished draft article for the team to review. | Yes |
 | `search_wiki` | `wiki:read` | Searches the team's internal wiki; each match comes with where it sits and a passage. | No |
