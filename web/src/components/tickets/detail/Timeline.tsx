@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TagChip } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { AI_TONE, tone } from "@/lib/tones";
+import { Popover } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PriorityIcon, priorityOrder, SeverityChip, severityLabel, StatusIcon, statusOrder } from "../bits";
 import { isSeverity, pct } from "@/lib/decisions";
@@ -345,6 +346,7 @@ function ActivityLine({ a }: { a: Activity }) {
       </span>
       <span className="min-w-0 truncate">{text}</span>
       {ai && <DecisionMeta a={a} ollie={ollie} />}
+      {a.type === "ai_handoff" && <HandoffWhy data={a.data} />}
       <span className="flex-1" />
       <Tooltip content={fullDate(a.created_at)}>
         <time dateTime={a.created_at} className="mono shrink-0 text-[10.5px] text-fg-4">
@@ -352,6 +354,37 @@ function ActivityLine({ a }: { a: Activity }) {
         </time>
       </Tooltip>
     </div>
+  );
+}
+
+const HANDOFF_RULES = ["agent", "visitor_request", "reply_limit", "needs_human"] as const;
+type HandoffRule = (typeof HANDOFF_RULES)[number];
+const isHandoffRule = (r: unknown): r is HandoffRule => (HANDOFF_RULES as readonly unknown[]).includes(r);
+
+/** Why a handoff happened: the rule that applied and, when the agent decided, its own words (internal, never shown to the customer). */
+export function HandoffWhy({ data }: { data: Record<string, unknown> }) {
+  const { t } = useTranslation("inbox");
+  if (!isHandoffRule(data.rule)) return null; // older handoffs kept no reason
+  const reason = typeof data.reason === "string" ? data.reason : "";
+  return (
+    <Popover
+      align="start"
+      className="w-72 p-3"
+      trigger={
+        <button type="button" className="shrink-0 rounded-sm px-1 text-[11px] text-fg-3 underline decoration-line underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+          {t("activity.handoffWhy")}
+        </button>
+      }
+    >
+      <p className="text-[12.5px] font-medium text-fg">{t(`activity.handoffRule.${data.rule}`)}</p>
+      {reason && (
+        <p className="mt-1.5 text-[12px] leading-[18px] text-fg-2" data-ph-mask>
+          <span className="label-caps mr-1.5">{t("activity.handoffReason")}</span>
+          {reason}
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-fg-4">{t("activity.handoffInternal")}</p>
+    </Popover>
   );
 }
 

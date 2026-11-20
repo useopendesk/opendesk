@@ -531,6 +531,15 @@
     "aiSuggestedSent": "<b>{{who}}</b> sent {{ollie}}'s suggested reply",
     "handoffCustomer": "The customer asked for a person",
     "handoffAi": "<b>{{who}}</b> handed this to the team",
+    "handoffWhy": "Why?",
+    "handoffReason": "Reason",
+    "handoffInternal": "Only the team sees this.",
+    "handoffRule": {
+      "agent": "The agent decided a person was needed.",
+      "visitor_request": "The visitor asked for a person.",
+      "reply_limit": "The conversation reached the agent's reply limit.",
+      "needs_human": "The AI judged that a person is needed."
+    },
     "other": "<b>{{who}}</b> updated this ticket <m>{{type}}</m>",
     "teamFrom": "<b>{{who}}</b> moved this from <b>{{from}}</b> to <b>{{team}}</b>",
     "teamRule": "Routed to <b>{{team}}</b> by rule <b>{{rule}}</b>",
