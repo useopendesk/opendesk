@@ -520,6 +520,14 @@
     "triagedAs": "<b>{{who}}</b> hat dies als <b>{{category}}</b> eingeordnet",
     "aiAnswered": "<b>{{who}}</b> hat aus der Wissensdatenbank geantwortet",
     "aiAnsweredEmail": "<b>{{who}}</b> hat per E-Mail geantwortet",
+    "aiSkipped": "<b>{{who}}</b> hat diese Nachricht dem Team überlassen",
+    "skippedWhy": "Warum?",
+    "skippedInternal": "Nur das Team sieht das.",
+    "skippedReason": {
+      "contact_limit": "Der Kunde hat das Limit der Antworten erreicht, die der Agent einer Person pro Stunde gibt.",
+      "monthly_cap": "Der Agent hat sein Monatslimit aufgebraucht.",
+      "no_balance": "Das KI-Guthaben ist aufgebraucht."
+    },
     "procedureRan": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt",
     "procedureNothing": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt: nichts zu tun",
     "procedureFailed": "<b>{{who}}</b> konnte <b>{{name}}</b> nicht abschließen",

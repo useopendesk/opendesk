@@ -199,7 +199,7 @@ func (s *Service) WidgetAnswer(ctx context.Context, a jobs.AIWidgetAnswerArgs) e
 	}
 	if capped, err := s.agentCapped(ctx, a.WorkspaceID, ac.set); err != nil || capped {
 		if capped {
-			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID)
+			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipMonthlyCap)
 		}
 		return err
 	}
@@ -489,13 +489,30 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 }
 
 // decline records that the agent did not reply to this message; the team handles it.
-func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID) error {
-	_, err := s.d.DB.Pool.Exec(ctx, `INSERT INTO ai_widget_answers (message_id, workspace_id, ticket_id, answered) VALUES ($1, $2, $3, false)
-		ON CONFLICT DO NOTHING`, mid, wid, tid)
+func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID, reason string) error {
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `INSERT INTO ai_widget_answers (message_id, workspace_id, ticket_id, answered) VALUES ($1, $2, $3, false)
+			ON CONFLICT DO NOTHING`, mid, wid, tid)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		return logAISkipped(ctx, tx, wid, tid, reason)
+	})
 	if err != nil {
 		return err
 	}
 	return s.assignWaitingChat(ctx, wid, tid)
+}
+
+// logAISkipped records on the ticket why the agent left the customer's message unanswered,
+// for the team only (contracts/agent.md "Why it did not answer").
+func logAISkipped(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, reason string) error {
+	var live bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL)`, wid, tid).Scan(&live); err != nil || !live {
+		return err
+	}
+	_, err := domain.LogActivity(ctx, tx, wid, tid, "ai", nil, "ai_skipped", map[string]any{"reason": reason})
+	return err
 }
 
 // assignWaitingChat gives a chat the agent leaves unanswered to a member who takes chats.

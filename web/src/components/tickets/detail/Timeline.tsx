@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TagChip } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { AI_TONE, tone } from "@/lib/tones";
+import { Popover } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PriorityIcon, priorityOrder, SeverityChip, severityLabel, StatusIcon, statusOrder } from "../bits";
 import { isSeverity, pct } from "@/lib/decisions";
@@ -309,6 +310,8 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
       if (a.actor.type === "contact") return { icon: <Hand />, text: line("activity.handoffCustomer") };
       // The bot that handed over, by the name it had then.
       return { icon: <Hand />, text: line("activity.handoffAi", typeof d.bot === "string" && d.bot ? { who: d.bot } : {}) };
+    case "ai_skipped":
+      return { icon: <Sparkles />, hue: "ai", text: line("activity.aiSkipped") };
     default:
       return { icon: <ArrowRightLeft />, text: line("activity.other", { type: a.type }) };
   }
@@ -344,6 +347,7 @@ function ActivityLine({ a }: { a: Activity }) {
         {icon}
       </span>
       <span className="min-w-0 truncate">{text}</span>
+      {a.type === "ai_skipped" && <SkippedWhy data={a.data} />}
       {ai && <DecisionMeta a={a} ollie={ollie} />}
       <span className="flex-1" />
       <Tooltip content={fullDate(a.created_at)}>
@@ -352,6 +356,29 @@ function ActivityLine({ a }: { a: Activity }) {
         </time>
       </Tooltip>
     </div>
+  );
+}
+
+const SKIP_REASONS = ["contact_limit", "monthly_cap", "no_balance"] as const;
+const isSkipReason = (r: unknown): r is (typeof SKIP_REASONS)[number] => (SKIP_REASONS as readonly unknown[]).includes(r);
+
+/** Why the agent left a message unanswered: the rule that applied (internal, never shown to the customer). */
+export function SkippedWhy({ data }: { data: Record<string, unknown> }) {
+  const { t } = useTranslation("inbox");
+  if (!isSkipReason(data.reason)) return null;
+  return (
+    <Popover
+      align="start"
+      className="w-72 p-3"
+      trigger={
+        <button type="button" className="shrink-0 rounded-sm px-1 text-[11px] text-fg-3 underline decoration-line underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+          {t("activity.skippedWhy")}
+        </button>
+      }
+    >
+      <p className="text-[12.5px] font-medium text-fg">{t(`activity.skippedReason.${data.reason}`)}</p>
+      <p className="mt-2 text-[11px] text-fg-4">{t("activity.skippedInternal")}</p>
+    </Popover>
   );
 }
 
