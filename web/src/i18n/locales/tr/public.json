@@ -71,6 +71,20 @@
     "error": "Bir sorun oluştu. Lütfen tekrar deneyin.",
     "offline": "Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin."
   },
+  "chat_verify": {
+    "page_title": "Hesabınızı doğrulayın",
+    "title": "Hesabınızı doğrulayın",
+    "body": "Bu adresin size ait olduğunu onaylayın; böylece {{brand}} sohbetin sizden geldiğini bilir.",
+    "button": "Hesabı doğrula",
+    "not_you": "Siz değil misiniz? Bu sayfayı kapatın, hiçbir şey değişmez.",
+    "done_title": "Hesabınız doğrulandı",
+    "already_title": "Hesabınız zaten doğrulanmış",
+    "done_body": "{{brand}} artık {{email}} adresinden gelen sohbetin size ait olduğunu biliyor. Bu sayfayı kapatıp sohbete devam edebilirsiniz.",
+    "invalid_title": "Bu bağlantı geçerli değil",
+    "invalid_body": "Süresi dolmuş ya da daha önce kullanılmış olabilir. Sohbetten yeni bir e-posta isteyin.",
+    "error": "Bir sorun oluştu. Lütfen tekrar deneyin.",
+    "offline": "Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin."
+  },
   "footer": {
     "powered_by": "Altyapı:",
     "language": "Dil"

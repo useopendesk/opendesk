@@ -73,6 +73,20 @@
     "error": "Qualcosa è andato storto. Riprova.",
     "offline": "Impossibile raggiungere il server. Controlla la connessione."
   },
+  "chat_verify": {
+    "page_title": "Verifica il tuo account",
+    "title": "Verifica il tuo account",
+    "body": "Conferma che questo indirizzo è tuo, così {{brand}} sa che la chat è tua.",
+    "button": "Verifica account",
+    "not_you": "Non sei tu? Chiudi questa pagina e non cambierà nulla.",
+    "done_title": "Il tuo account è verificato",
+    "already_title": "Il tuo account è già verificato",
+    "done_body": "Ora {{brand}} sa che la chat di {{email}} è tua. Puoi chiudere questa pagina e continuare a chattare.",
+    "invalid_title": "Questo link non è valido",
+    "invalid_body": "Potrebbe essere scaduto o essere già stato usato. Chiedi una nuova email nella chat.",
+    "error": "Qualcosa è andato storto. Riprova.",
+    "offline": "Impossibile raggiungere il server. Controlla la connessione."
+  },
   "footer": {
     "powered_by": "Realizzato con",
     "language": "Lingua"

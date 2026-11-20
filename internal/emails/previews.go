@@ -82,6 +82,7 @@ func Previews(s Site, now time.Time) []Preview {
 		{Name: "account-signup-attempt", Title: "Sign-up with a taken address", Mail: SignupAttempt(s)},
 		{Name: "account-passkey-added", Title: "Passkey added", Mail: SecurityNotice(s, PasskeyAdded, "Passkey: MacBook Touch ID")},
 		{Name: "billing-payment-failed", Title: "Payment failed", Mail: PaymentFailed(s, ws, wid.String())},
+		{Name: "chat-verify-email", Title: "Verify a chat visitor's email", Mail: ChatVerification(s, ws, s.App("/chat/verify")+"#token=sample", 48)},
 		{Name: "notify-assigned", Title: "Notification: assigned", Mail: Notifications(s, batch("instant", []Note{assigned}, 0))},
 		{Name: "notify-new-ticket", Title: "Notification: new unassigned ticket", Mail: Notifications(s, batch("instant", []Note{newTicket}, 0))},
 		{Name: "notify-mentioned", Title: "Notification: mentioned", Mail: Notifications(s, batch("instant", []Note{mentioned}, 0))},

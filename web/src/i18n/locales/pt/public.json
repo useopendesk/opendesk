@@ -73,6 +73,20 @@
     "error": "Algo deu errado. Tente novamente.",
     "offline": "Não foi possível acessar o servidor. Verifique sua conexão."
   },
+  "chat_verify": {
+    "page_title": "Verifique sua conta",
+    "title": "Verifique sua conta",
+    "body": "Confirme que este endereço é seu para que {{brand}} saiba que o chat é seu.",
+    "button": "Verificar conta",
+    "not_you": "Não foi você? Feche esta página e nada muda.",
+    "done_title": "Sua conta está verificada",
+    "already_title": "Sua conta já está verificada",
+    "done_body": "Agora {{brand}} sabe que o chat de {{email}} é seu. Você pode fechar esta página e continuar conversando.",
+    "invalid_title": "Este link não é válido",
+    "invalid_body": "Ele pode ter expirado ou já ter sido usado. Peça um novo e-mail no chat.",
+    "error": "Algo deu errado. Tente novamente.",
+    "offline": "Não foi possível acessar o servidor. Verifique sua conexão."
+  },
   "footer": {
     "powered_by": "Desenvolvido com",
     "language": "Idioma"

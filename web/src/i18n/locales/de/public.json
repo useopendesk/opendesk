@@ -71,6 +71,20 @@
     "error": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
     "offline": "Der Server ist nicht erreichbar. Bitte prüfen Sie Ihre Verbindung."
   },
+  "chat_verify": {
+    "page_title": "Konto verifizieren",
+    "title": "Konto verifizieren",
+    "body": "Bestätigen Sie, dass diese Adresse Ihnen gehört, damit {{brand}} weiß, dass der Chat von Ihnen stammt.",
+    "button": "Konto verifizieren",
+    "not_you": "Nicht Sie? Schließen Sie diese Seite, dann ändert sich nichts.",
+    "done_title": "Ihr Konto ist verifiziert",
+    "already_title": "Ihr Konto ist bereits verifiziert",
+    "done_body": "{{brand}} weiß jetzt, dass der Chat von {{email}} von Ihnen stammt. Sie können diese Seite schließen und weiterchatten.",
+    "invalid_title": "Dieser Link ist ungültig",
+    "invalid_body": "Er ist möglicherweise abgelaufen oder wurde bereits verwendet. Fordern Sie im Chat eine neue E-Mail an.",
+    "error": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+    "offline": "Der Server ist nicht erreichbar. Bitte prüfen Sie Ihre Verbindung."
+  },
   "footer": {
     "powered_by": "Bereitgestellt von",
     "language": "Sprache"

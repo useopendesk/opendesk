@@ -51,6 +51,7 @@ import { TicketTeamChips, useTeamsCtx } from "../teams";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { readPanel, savePanel } from "./panel";
 import { useVisitorPresence, VisitorPresenceBar } from "./VisitorPresence";
+import { useChatVerification } from "@/components/contacts/VerificationBadge";
 
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
@@ -626,5 +627,5 @@ function HeaderSeverity({ t }: { t: Ticket }) {
 
 /** Whether a chat's visitor is on the page, above the conversation. */
 function ChatPresence({ ticket }: { ticket: Ticket }) {
-  return <VisitorPresenceBar p={useVisitorPresence(ticket)} />;
+  return <VisitorPresenceBar p={useVisitorPresence(ticket)} verification={useChatVerification(ticket)} />;
 }

@@ -73,6 +73,20 @@
     "error": "Algo salió mal. Inténtalo de nuevo.",
     "offline": "No se puede conectar con el servidor. Revisa tu conexión."
   },
+  "chat_verify": {
+    "page_title": "Verifica tu cuenta",
+    "title": "Verifica tu cuenta",
+    "body": "Confirma que esta dirección es tuya para que {{brand}} sepa que el chat es tuyo.",
+    "button": "Verificar cuenta",
+    "not_you": "¿No eres tú? Cierra esta página y no cambiará nada.",
+    "done_title": "Tu cuenta está verificada",
+    "already_title": "Tu cuenta ya está verificada",
+    "done_body": "{{brand}} ya sabe que el chat de {{email}} es tuyo. Puedes cerrar esta página y seguir chateando.",
+    "invalid_title": "Este enlace no es válido",
+    "invalid_body": "Puede que haya caducado o que ya se haya usado. Pide un nuevo correo en el chat.",
+    "error": "Algo salió mal. Inténtalo de nuevo.",
+    "offline": "No se puede conectar con el servidor. Revisa tu conexión."
+  },
   "footer": {
     "powered_by": "Con la tecnología de",
     "language": "Idioma"

@@ -71,6 +71,20 @@
     "error": "Er ging iets mis. Probeer het opnieuw.",
     "offline": "De server is niet bereikbaar. Controleer je verbinding."
   },
+  "chat_verify": {
+    "page_title": "Verifieer je account",
+    "title": "Verifieer je account",
+    "body": "Bevestig dat dit adres van jou is, zodat {{brand}} weet dat de chat van jou komt.",
+    "button": "Account verifiëren",
+    "not_you": "Ben jij dit niet? Sluit deze pagina en er verandert niets.",
+    "done_title": "Je account is geverifieerd",
+    "already_title": "Je account is al geverifieerd",
+    "done_body": "{{brand}} weet nu dat de chat van {{email}} van jou is. Je kunt deze pagina sluiten en verder chatten.",
+    "invalid_title": "Deze link is niet geldig",
+    "invalid_body": "Hij is misschien verlopen of al gebruikt. Vraag in de chat om een nieuwe e-mail.",
+    "error": "Er ging iets mis. Probeer het opnieuw.",
+    "offline": "De server is niet bereikbaar. Controleer je verbinding."
+  },
   "footer": {
     "powered_by": "Mogelijk gemaakt door",
     "language": "Taal"

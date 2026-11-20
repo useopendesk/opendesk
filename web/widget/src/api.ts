@@ -1,4 +1,4 @@
-import type { Attachment, Conversation, Message, Rating, SessionIdentity, WidgetConfig, WidgetSession } from "./types";
+import type { Attachment, Conversation, Message, Rating, SessionIdentity, Verification, WidgetConfig, WidgetSession } from "./types";
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -78,6 +78,11 @@ export class WidgetApi {
   async endSession() {
     if (!this.visitorToken) return;
     await this.req<void>("DELETE", "/v1/widget/session");
+  }
+
+  /** Email the visitor a link to verify their address; nothing is sent while one still works, unless `resend`. */
+  verification(resend = false) {
+    return this.req<Verification>("POST", "/v1/widget/verification", resend ? { resend: true } : {});
   }
 
   async conversations() {
