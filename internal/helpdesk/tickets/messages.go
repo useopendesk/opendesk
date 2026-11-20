@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/collab"
@@ -19,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/templates"
 )
 
@@ -230,11 +232,11 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	}
 	var channel, subject string
 	var mailboxEmail, mailboxName, contactEmail *string
-	var mailboxID, team *uuid.UUID
+	var mailboxID, team, contactID *uuid.UUID
 	var brand uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT t.channel, t.subject, t.mailbox_id, t.brand_id, t.team_id, mb.email, mb.display_name, c.email FROM tickets t
+	if err := tx.QueryRow(ctx, `SELECT t.channel, t.subject, t.mailbox_id, t.brand_id, t.team_id, t.contact_id, mb.email, mb.display_name, c.email FROM tickets t
 		LEFT JOIN mailboxes mb ON mb.id = t.mailbox_id LEFT JOIN contacts c ON c.id = t.contact_id
-		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&channel, &subject, &mailboxID, &brand, &team, &mailboxEmail, &mailboxName, &contactEmail); err != nil {
+		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&channel, &subject, &mailboxID, &brand, &team, &contactID, &mailboxEmail, &mailboxName, &contactEmail); err != nil {
 		return domain.Message{}, err
 	}
 	// A reply from the member's own Collab address leaves the reply address as it is.
@@ -387,6 +389,30 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	} else if len(b.To)+len(b.Cc)+len(b.Bcc) > 0 {
 		return domain.Message{}, httpx.Validation("to, cc and bcc apply only to email replies")
 	}
+	// A WhatsApp reply leaves only inside Meta's 24-hour window, as free-form text.
+	var whatsappConn uuid.UUID
+	if channel == domain.ChannelWhatsApp && b.Kind == "reply" {
+		connID, err := whatsAppConnectionForTicket(ctx, tx, wid, tid)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		if contactID == nil {
+			return domain.Message{}, httpx.Validation("this ticket has no contact to reply to on WhatsApp")
+		}
+		open, err := whatsAppWindowOpen(ctx, tx, wid, connID, *contactID)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		if !open {
+			return domain.Message{}, httpx.E(422, "whatsapp_window_closed",
+				"The 24-hour WhatsApp reply window has closed. The customer must message again before a free-form reply can go out.")
+		}
+		if err := validateWhatsAppReply(attIDs, bodyText); err != nil {
+			return domain.Message{}, err
+		}
+		nm.DeliveryStatus = "pending"
+		whatsappConn = connID
+	}
 	asKeyBot(&nm, p, bot)
 	if actor.UserID != nil && nm.FromName == "" {
 		if u, err := domain.LoadUserRef(ctx, tx, *actor.UserID); err == nil {
@@ -396,6 +422,12 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	msg, err := domain.AddMessage(ctx, tx, d.Jobs, nm)
 	if err != nil {
 		return domain.Message{}, err
+	}
+	if whatsappConn != uuid.Nil {
+		if _, err := d.Jobs.InsertTx(ctx, tx, jobs.WhatsAppSendArgs{WorkspaceID: wid, MessageID: msg.ID},
+			&river.InsertOpts{MaxAttempts: 5}); err != nil {
+			return domain.Message{}, err
+		}
 	}
 	if fromNote != nil {
 		// The reply carries the note's words now: the note stays where it was as a marker
