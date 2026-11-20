@@ -82,3 +82,61 @@ func TestSessionCompanyAndFields(t *testing.T) {
 		t.Fatalf("anonymous visitor applied a company: %d %v", companies(), co)
 	}
 }
+
+// TestSessionPhone: a verified page gives a contact a phone number once; what a teammate typed,
+// or the page sent earlier, is not replaced, and an unverified visitor sets none.
+func TestSessionPhone(t *testing.T) {
+	e, ws := setup(t)
+	phone := func(id any) string {
+		var p string
+		e.Scalar(`SELECT phone FROM contacts WHERE id = $1`, &p, id)
+		return p
+	}
+	e.Exec(`INSERT INTO custom_fields (workspace_id, entity, key, name, type) VALUES ($1, 'contact', 'widget_signed_up', 'Signed up', 'date')`, ws.ID)
+	hash := crypto.HMACHex([]byte("s3cret"), "user-phone")
+	body := map[string]any{"key": ws.WidgetKey, "user_id": "user-phone", "user_hash": hash, "email": "phone@example.com", "phone": " +34 600 111 222 ",
+		"fields": map[string]any{"widget_signed_up": "2024-05-14"}}
+	s := start(t, e, body)
+	// The sign-up date a page sends lands in a date field, as the docs say.
+	var signedUp *string
+	e.Scalar(`SELECT fields->>'widget_signed_up' FROM contacts WHERE id = $1`, &signedUp, s.Contact.ID)
+	if signedUp == nil || *signedUp != "2024-05-14" {
+		t.Fatalf("sign-up date %v", signedUp)
+	}
+	if got := phone(s.Contact.ID); got != "+34 600 111 222" {
+		t.Fatalf("phone %q", got)
+	}
+	var events int
+	e.Scalar(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'contact.updated'`, &events, ws.ID)
+	if events == 0 {
+		t.Fatal("the change was not announced")
+	}
+
+	// The page changing it later, with the same session, leaves it: only an empty number is filled.
+	body["phone"], body["visitor_token"] = "+34 999 999 999", s.VisitorToken
+	start(t, e, body)
+	if got := phone(s.Contact.ID); got != "+34 600 111 222" {
+		t.Fatalf("replaced with %q", got)
+	}
+	// A teammate's number is kept, and an emptied one is filled again.
+	e.Exec(`UPDATE contacts SET phone = '020 7946 0000' WHERE id = $1`, s.Contact.ID)
+	start(t, e, body)
+	if got := phone(s.Contact.ID); got != "020 7946 0000" {
+		t.Fatalf("a teammate's number was replaced by %q", got)
+	}
+
+	// Anything that is not a phone number as kept is ignored, and the session still starts.
+	for name, bad := range map[string]string{"control": "060\x00 1", "long": "0123456789012345678901234567890123456789012345678901"} {
+		h := crypto.HMACHex([]byte("s3cret"), "user-"+name)
+		u := start(t, e, map[string]any{"key": ws.WidgetKey, "user_id": "user-" + name, "user_hash": h, "phone": bad})
+		if got := phone(u.Contact.ID); got != "" {
+			t.Fatalf("%s: stored %q", name, got)
+		}
+	}
+
+	// Without a verified identity none is set.
+	anon := start(t, e, map[string]any{"key": ws.WidgetKey, "phone": "+1 555 0100"})
+	if got := phone(anon.Contact.ID); got != "" {
+		t.Fatalf("anonymous visitor set %q", got)
+	}
+}
