@@ -342,6 +342,8 @@ type MailComment struct {
 	ParentDeleted bool      `json:"parent_deleted"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// AINoteBy is, for a note an AI key added, the key's name then ("AI note by <name>").
+	AINoteBy *string `json:"ai_note_by"`
 }
 
 // CommentQuote is what a reply shows of the comment it answers: who wrote it and its first line.
@@ -375,11 +377,21 @@ type MailThreadDetail struct {
 	// Ticket is the ticket the conversation answered or was answered from, when the caller
 	// sees it ("Answering tickets").
 	Ticket *ThreadTicket `json:"ticket"`
+	// AISkips are the AI keys that looked at the conversation in the queue and handed it
+	// back with skip since its last message, with their reason ("AI queue").
+	AISkips []AISkip `json:"ai_skips"`
 	// UnusedAIDrafts are the conversation's AI drafts that were discarded, replaced or
 	// abandoned and are gone, so feedback on them stays reachable ("AI draft outcomes").
 	UnusedAIDrafts []UnusedAIDraft `json:"unused_ai_drafts"`
 	// Following: the caller follows it, so it is in their Mentions box ("Mentions").
 	Following bool `json:"following"`
+}
+
+// AISkip is an AI key skipping a conversation: "<client> skipped: <reason>".
+type AISkip struct {
+	Client string    `json:"client"`
+	Reason string    `json:"reason"`
+	At     time.Time `json:"at"`
 }
 
 // UnusedAIDraft is an AI draft a person did not use, with when that was known.

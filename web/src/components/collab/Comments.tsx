@@ -106,13 +106,15 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
   const confirm = useConfirm();
   const me = useSession((s) => s.user?.id);
   const admin = atLeast(useRole(), "admin");
-  const mine = !!c.author && c.author.id === me;
+  // An AI note is the key's words: it can be deleted, never edited as if a person wrote it.
+  const mine = !!c.author && c.author.id === me && !c.ai_note_by;
   const [editing, setEditing] = useState(false);
   const [html, setHtml] = useState(c.body_html);
   const extensions = useMentionExtension();
   const editor = useRef<RichEditorHandle>(null);
   const body = useMemo(() => sanitizeHtml(c.body_html), [c.body_html]);
-  const name = c.author?.name ?? t("comments.someone");
+  const name = c.ai_note_by ? t("comments.aiNoteBy", { name: c.ai_note_by }) : (c.author?.name ?? t("comments.someone"));
+  const ownAINote = !!c.ai_note_by && !!c.author && c.author.id === me;
   const reply = onReply
     ? () => {
         useReplyTargets.getState().set(threadId, { id: c.id, name, excerpt: firstLine(c.body_html) });
@@ -157,7 +159,7 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
             </time>
           </Tooltip>
           {c.updated_at !== c.created_at && <span className="text-[10.5px] text-fg-4">{t("comments.edited")}</span>}
-          {canAct && !editing && (reply || mine || admin) && (
+          {canAct && !editing && (reply || mine || ownAINote || admin) && (
             <span className="ml-auto flex items-center gap-0.5">
               {reply && (
                 <Tooltip content={t("comments.reply")}>
@@ -171,7 +173,7 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
                   </button>
                 </Tooltip>
               )}
-              {(mine || admin) && (
+              {(mine || ownAINote || admin) && (
             <Menu>
               <MenuTrigger asChild>
                 <button

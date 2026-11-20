@@ -955,6 +955,8 @@ function detailOut(ws: WsData, t: ThreadMeta): MailThreadDetail {
     comments: t.comments,
     shares: t.shares,
     can_act: canActRole(ws, db.meId),
+    // The mock has no AI queue: nothing has been skipped (contracts/collab.md "AI notes").
+    ai_skips: [],
     // The demo keeps no AI draft records once a draft is gone.
     unused_ai_drafts: [],
     following: !!t.followers?.[db.meId],
