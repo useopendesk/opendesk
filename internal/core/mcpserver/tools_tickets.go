@@ -85,12 +85,15 @@ func ticketTools() []*tool {
 		{
 			Name: "reply_to_ticket", Title: "Reply to a ticket", Scopes: []string{auth.ScopeTicketsWrite}, OpenWorld: true,
 			Description: "Send a public reply on a ticket. The customer receives it (by email for email tickets). Write the body in markdown, without a signature. " +
-				"Optionally set the ticket's status after sending, for example pending while waiting on the customer.",
+				"Optionally set the ticket's status after sending, for example pending while waiting on the customer. " +
+				"With direction inbound it instead records what the customer said somewhere else (a phone call, a chat) as their own message, " +
+				"like Log request in the app: nothing is sent, and the ticket waits for the team's answer. A note is the team's own word; use add_note for that.",
 			Schema: obj(map[string]any{
-				"ticket": str(ticketArg),
-				"body":   strN("The reply, in markdown.", 1, maxBodyChars),
-				"status": enum("Status to set after the reply is sent.", statuses...),
-				"cc":     arr("Extra email addresses to copy (email tickets).", str(""), 20),
+				"ticket":    str(ticketArg),
+				"body":      strN("The reply, in markdown.", 1, maxBodyChars),
+				"status":    enum("Status to set after the reply is sent.", statuses...),
+				"cc":        arr("Extra email addresses to copy (email tickets).", str(""), 20),
+				"direction": enum("outbound (default) sends a reply from the team. inbound records the body as the customer's own message and sends nothing; it takes no cc.", "outbound", "inbound"),
 			}, "ticket", "body"),
 			Run: replyToTicket,
 		},
@@ -125,13 +128,16 @@ func ticketTools() []*tool {
 			Name: "create_ticket", Title: "Create a ticket", Scopes: []string{auth.ScopeTicketsWrite}, OpenWorld: true,
 			Description: "Create a ticket for a contact by email (the contact is created when new). The body is the first message: " +
 				"a reply (default) or an internal note. With mailbox_id the ticket is an email ticket and a reply is emailed to the contact; " +
-				"without it the ticket is recorded on the api channel and nothing is sent. Set custom fields with fields, by the keys list_custom_fields returns.",
+				"without it the ticket is recorded on the api channel and nothing is sent. With direction inbound the body is recorded as the customer's own " +
+				"message instead (a request that came in by phone or chat, like Log request in the app): nothing is sent, and the ticket waits for the team's answer. " +
+				"Set custom fields with fields, by the keys list_custom_fields returns.",
 			Schema: obj(map[string]any{
 				"email":      strN("The contact's email address.", 3, 254),
 				"name":       strN("The contact's name, used when the contact is new.", 1, 200),
 				"subject":    strN("The ticket subject.", 1, 500),
 				"body":       strN("The first message, in markdown.", 1, maxBodyChars),
 				"kind":       enum("Whether the body is a reply to the contact (default) or an internal note.", "reply", "note"),
+				"direction":  enum("outbound (default) is the team's message. inbound records the body as the contact's own words and sends nothing; it takes no mailbox_id and is a reply, not a note.", "outbound", "inbound"),
 				"mailbox_id": str("Send from this mailbox: makes an email ticket and emails a reply to the contact."),
 				"status":     enum("Initial status (default open).", statuses...),
 				"priority":   enum("Initial priority (default normal).", priorities...),
@@ -490,7 +496,7 @@ func markdownBody(body string) (string, error) {
 	return ai.MarkdownToHTML(body), nil
 }
 
-func postMessage(ctx context.Context, c *caller, ticket, kind, body string, status string, cc []string) (any, error) {
+func postMessage(ctx context.Context, c *caller, ticket, kind, direction, body string, status string, cc []string) (any, error) {
 	ref, err := ticketRef(ticket)
 	if err != nil {
 		return nil, err
@@ -500,6 +506,9 @@ func postMessage(ctx context.Context, c *caller, ticket, kind, body string, stat
 		return nil, err
 	}
 	req := map[string]any{"kind": kind, "body_html": html}
+	if direction == "inbound" {
+		req["direction"] = direction
+	}
 	if status != "" {
 		if err := oneOf(status, "status", statuses...); err != nil {
 			return nil, err
@@ -530,10 +539,11 @@ func postMessage(ctx context.Context, c *caller, ticket, kind, body string, stat
 
 func replyToTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
 	a, err := decode[struct {
-		Ticket string   `json:"ticket"`
-		Body   string   `json:"body"`
-		Status string   `json:"status"`
-		Cc     []string `json:"cc"`
+		Ticket    string   `json:"ticket"`
+		Body      string   `json:"body"`
+		Status    string   `json:"status"`
+		Cc        []string `json:"cc"`
+		Direction string   `json:"direction"`
 	}](raw)
 	if err != nil {
 		return nil, err
@@ -541,7 +551,13 @@ func replyToTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, er
 	if len(a.Cc) > 20 {
 		return nil, invalid("at most 20 cc addresses")
 	}
-	return postMessage(ctx, c, a.Ticket, "reply", a.Body, a.Status, a.Cc)
+	if err := oneOf(a.Direction, "direction", "outbound", "inbound"); err != nil {
+		return nil, err
+	}
+	if a.Direction == "inbound" && len(a.Cc) > 0 {
+		return nil, invalid("an inbound message takes no cc")
+	}
+	return postMessage(ctx, c, a.Ticket, "reply", a.Direction, a.Body, a.Status, a.Cc)
 }
 
 type draftResult struct {
@@ -591,7 +607,7 @@ func addNote(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return postMessage(ctx, c, a.Ticket, "note", a.Body, "", nil)
+	return postMessage(ctx, c, a.Ticket, "note", "", a.Body, "", nil)
 }
 
 func cleanLabels(in []string) ([]string, error) {
@@ -704,6 +720,7 @@ func createTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, err
 		Subject   string         `json:"subject"`
 		Body      string         `json:"body"`
 		Kind      string         `json:"kind"`
+		Direction string         `json:"direction"`
 		MailboxID string         `json:"mailbox_id"`
 		Status    string         `json:"status"`
 		Priority  string         `json:"priority"`
@@ -741,6 +758,21 @@ func createTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, err
 	}
 	if a.Kind != "" {
 		body["kind"] = a.Kind
+	}
+	if err := oneOf(a.Direction, "direction", "outbound", "inbound"); err != nil {
+		return nil, err
+	}
+	if a.Direction == "inbound" {
+		if a.Kind == "note" {
+			return nil, invalid("an inbound message is a reply, not a note")
+		}
+		if a.MailboxID != "" {
+			return nil, invalid("an inbound message takes no mailbox_id")
+		}
+		if strings.TrimSpace(a.Body) == "" {
+			return nil, invalid("an inbound message needs a body: what the customer said")
+		}
+		body["direction"] = a.Direction
 	}
 	if a.MailboxID != "" {
 		id, err := idRef(a.MailboxID, "mailbox_id")

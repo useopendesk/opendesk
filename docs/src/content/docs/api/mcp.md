@@ -142,11 +142,11 @@ A tool is offered only when the key, or the OAuth connection together with your 
 | `search_tickets` | `tickets:read` | Finds tickets by text, status, priority, severity, assignee, team, label, channel, contact or creation date. At most 50 per call. | No |
 | `get_ticket` | `tickets:read` | Reads a ticket with its thread as plain text, internal notes included. | No |
 | `list_custom_fields` | `tickets:read` | Lists the custom fields: key, name, type, options and whether a ticket needs the field set to be solved. Filter by `entity` (`ticket`, `contact` or `company`); archived fields only with `include_archived`. | No |
-| `reply_to_ticket` | `tickets:write` | Sends a public reply (markdown). The customer receives it. Can set the status after sending. | Yes |
+| `reply_to_ticket` | `tickets:write` | Sends a public reply (markdown). The customer receives it. Can set the status after sending. With `direction: "inbound"` it records what the customer said elsewhere as their own message instead, and sends nothing. | Yes |
 | `draft_reply` | `tickets:write` | Stages a reply (markdown) on the ticket without sending it. Every teammate who opens the ticket finds it in their composer, to edit and send as their own reply. Staging again replaces it; a reply going out clears it. | Yes |
 | `add_note` | `tickets:write` | Adds an internal note the customer never sees. | Yes |
 | `update_ticket` | `tickets:write` | Changes status, priority, severity, assignee, team, labels or custom fields. | Yes |
-| `create_ticket` | `tickets:write` | Creates a ticket for a contact email, optionally with custom field values. With a mailbox, the first reply is emailed to the contact. | Yes |
+| `create_ticket` | `tickets:write` | Creates a ticket for a contact email, optionally with custom field values. With a mailbox, the first reply is emailed to the contact. With `direction: "inbound"` the first message is the contact's own words, like Log request in the app, and nothing is sent. | Yes |
 | `search_contacts` | `contacts:read` | Finds contacts by name, email, phone or field value. | No |
 | `get_contact` | `contacts:read` | Reads a contact by id or email, with their latest tickets when the key also has `tickets:read`. | No |
 | `search_knowledge` | `kb:read` | Searches knowledge base articles and knowledge sources; the top matches come with their full text. | No |
