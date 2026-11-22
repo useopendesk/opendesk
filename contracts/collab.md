@@ -602,12 +602,16 @@ order:
 4. **Ollie**: with `sorting: "ai"`, the account's `ai` on and AI on for the workspace (`settings.ai.enabled`),
    one decision call (contracts/ai.md "Decisions", feature `mail_categorize`) asks for up to 10
    conversations at once, one Choice question each over the categories, with each category's
-   description as its rubric. The state is data, never instructions: the sender's name and address,
+   description as its rubric. Ollie prefers a category other than Primary: Primary is for mail that
+   is important, needs the reader's attention and is not an obvious fit for any other category, so
+   when another category fits, that one is chosen; mail Ollie is unsure of goes to Primary only when
+   it seems to need the reader, otherwise to the category it fits best. The state is data, never instructions: the sender's name and address,
    the subject, the first 1,200 characters of the text and the mail's signals (`list`: List-Id or
    List-Unsubscribe, `bulk`: Precedence bulk or list, `campaign`: a mailing tool's campaign header,
    `auto`: Auto-Submitted, `noreply`: a no-reply sender, `direct`: the account's address in To, and
-   Gmail's tab). On a calibrated engine (Jev) a category other than
-   Primary needs a probability of at least 0.5, so mail Ollie is unsure of stays in Primary.
+   Gmail's tab). On a calibrated engine (Jev) an answer other than Primary with a probability
+   under 0.5 goes to Primary when Primary is the next most likely, and stays where Ollie put it when
+   the doubt is between two other categories.
 5. **Headers** (without Ollie, or when its call fails or the AI balance is too low): for the built-in
    keys only, list mail goes to `promotions` when its subject reads like an offer and `promotions` is
    there, else to `newsletters`, else `promotions`; mail from a social network to `social`; automatic
@@ -636,9 +640,25 @@ placed or that stays in Primary as a reply or a known correspondent's) are sorte
 `collab.categorize` with the examples: the sender's domain, or the address alone at a public mail
 provider such as gmail.com. Like any sorting, they spend the workspace's AI balance and fall back to
 the headers when it is too low. A move on a Gmail-synced account teaches nothing here (Gmail decides).
-History imports are not sorted; when categories are turned on or changed for an account, its inbox
-conversations of the last 30 days (at most 300) are sorted again, except those a person moved.
-Conversations in a category that is removed go back to Primary. Mail is never archived, read or
+History imports are not sorted. **What a change sorts again**: when an account's categories change
+(its workspace's, its team's or its own set, or which of them it follows), only what the change can
+affect is sorted again, among its inbox conversations of the last 30 days (at most 300 per change),
+and never one a person moved. The account records the key, name and description of each category it
+was sorted with (`collab_accounts.category_basis`) and compares:
+
+- a new category: Primary's conversations (and those not sorted yet), to see whether they belong in it;
+  conversations in the other categories stay;
+- a category renamed or with a new description: Primary's conversations and that category's own;
+- Primary's own name or description: Primary's conversations;
+- a removed category: its conversations, which need a new home; one a person moved there goes to Primary;
+- order, colours, the lock (`locked`, "Members choose their own" off) and the team order: nothing,
+  unless they change which categories an account follows, which is then compared like any change.
+
+Turning categories on, a change between Gmail sync and opendesk's own sorting, and turning Ollie's
+sorting on or off for an account sort all of its recent inbox again, except what a person moved.
+An account sorted before the basis was recorded records it on its next sync; a change before then
+sorts Primary's conversations and a removed category's. Re-sorting spends the workspace's AI balance
+like any sorting and falls back to the headers when it is too low. Mail is never archived, read or
 moved by sorting.
 
 **Seeing them.** `MailThread.category` is the conversation's category key for its account (`null` when
@@ -1368,7 +1388,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?, category?, until?}` → `{threads: MailThread[]}`. `done`, `needs_action` and `snooze` are available only for a shared account with handling enabled and do not create a provider job; `snooze` needs `until` in the future ("Snooze"). Threads the caller cannot act on are `404` (all or nothing). `categorize` needs a `category` every one of their accounts has (`422 validation_failed`) |
 | GET | `/v1/collab/categories` | member | `MailCategorySettings` ("Categories") |
-| PUT | `/v1/collab/categories/workspace` | admin | `{enabled, categories?, locked?}` → `MailCategorySettings`. Categories: 2..10, `primary` first, keys and names once each (`422 validation_failed`); names through `internal/displayname`. Every account is sorted again where its categories changed |
+| PUT | `/v1/collab/categories/workspace` | admin | `{enabled, categories?, locked?}` → `MailCategorySettings`. Categories: 2..10, `primary` first, keys and names once each (`422 validation_failed`); names through `internal/displayname`. Each account sorts again only what the change can affect ("What a change sorts again") |
 | DELETE | `/v1/collab/categories/workspace` | admin | → `MailCategorySettings`: no default |
 | PUT | `/v1/collab/categories/teams/{team_id}` | admin | `{enabled, categories?}` → `MailCategorySettings`; a new team set goes last in the order |
 | DELETE | `/v1/collab/categories/teams/{team_id}` | admin | → `MailCategorySettings`: the team follows the workspace |
