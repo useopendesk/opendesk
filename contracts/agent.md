@@ -649,6 +649,9 @@ no severity to filter on, set or create with.
 | `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels, `fields` (custom field values by key, merged; null clears one); returns the ticket with its `fields` |
 | `create_ticket` | `tickets:write` | a ticket for a contact email, with optional `fields`; returns the ticket with its `fields` |
 | `search_contacts` / `get_contact` | `contacts:read` | |
+| `search_companies` / `get_company` | `contacts:read` | a company by id or exact name |
+| `create_contact` / `update_contact` | `contacts:write` | the API's writes: `company` is an id or an exact name (needs `contacts:read`; none or several matches are refused), labels are added or removed by name, `fields` merge, an empty string clears email, phone, external id or notes. An email already on a contact is `409` and the error names it. Delete, merge and block are not tools |
+| `create_company` / `update_company` | `contacts:write` | as the API: `name`, `domain`, `external_id`, labels, `notes`, `fields` |
 | `search_knowledge` | `kb:read` | KB articles and knowledge sources |
 | `create_kb_draft` | `kb:write` | a draft article |
 | `search_wiki` / `get_wiki_page` | `wiki:read` | the team's internal wiki (`contracts/wiki.md`): matching pages with their place and a passage; one page's text in Markdown (as `update_wiki_page` takes it), subpages and `version` |
