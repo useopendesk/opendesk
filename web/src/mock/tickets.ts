@@ -5,6 +5,7 @@ import type {
   Activity,
   Attachment,
   Channel,
+  ContactRef,
   Mailbox,
   Message,
   Priority,
@@ -527,6 +528,8 @@ export type NewMessage = {
   auth_failed?: boolean;
   /** Inbound email: the trusted contact form it came through (the contact is the visitor). */
   form_sender?: string;
+  /** Inbound email the workspace sent its customer, from one of its own addresses, with a copy here. */
+  sender?: ContactRef;
 };
 
 export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
@@ -541,6 +544,9 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
   // An AI reply is sent as the ticket's bot (its widget's or mailbox's, contracts/bots.md).
   const aiBot = m.bot ? botRefFor(ws, m.bot_id ?? botForTicket(ws, t).id, "") : null;
   const botLabel = aiBot?.name ?? m.bot;
+  // The workspace's own mail to its customer is written by its address, to the customer.
+  const author = inbound ? (m.sender ?? contact) : null;
+  const ownMail = inbound && !!m.sender;
   const msg: Message = {
     id: uuid(),
     ticket_id: t.id,
@@ -550,7 +556,7 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     kind: m.kind,
     direction: m.direction,
     author: inbound
-      ? { type: "contact", user: null, contact }
+      ? { type: "contact", user: null, contact: author }
       : m.bot
         ? { type: "system", user: null, contact: null, bot: aiBot }
         : { type: "user", user: m.user ?? null, contact: null },
@@ -558,13 +564,13 @@ export function buildMessage(ws: WsData, t: Ticket, m: NewMessage): Message {
     body_text: stripHtml(m.html),
     has_quoted: m.has_quoted ?? false,
     subject: inbound ? t.subject : `Re: ${t.subject}`,
-    from_email: inbound ? (contact?.email ?? "") : sentFrom ? sendAs(t, sentFrom) : "",
-    from_name: inbound ? (contact?.name ?? "") : sentFrom ? fromName(ws, t, sentFrom, botLabel ?? m.user?.name ?? null) : (botLabel ?? m.user?.name ?? brand),
+    from_email: inbound ? (author?.email ?? "") : sentFrom ? sendAs(t, sentFrom) : "",
+    from_name: inbound ? (author?.name ?? "") : sentFrom ? fromName(ws, t, sentFrom, botLabel ?? m.user?.name ?? null) : (botLabel ?? m.user?.name ?? brand),
     // Inbound: the address it was written to (an alias or the mailbox's own).
-    to: inbound ? (isEmail && (t.received_at || mailbox) ? [t.received_at || mailbox!.email] : []) : (m.to ?? (contact?.email ? [replyRecipient(contact.email, ws.messages.filter((x) => x.ticket_id === t.id))] : [])),
+    to: ownMail ? [contact?.email ?? ""] : inbound ? (isEmail && (t.received_at || mailbox) ? [t.received_at || mailbox!.email] : []) : (m.to ?? (contact?.email ? [replyRecipient(contact.email, ws.messages.filter((x) => x.ticket_id === t.id))] : [])),
     // Inbound: where it arrived (email only); outbound: the address it went from.
     mailbox_id: inbound ? (isEmail ? (t.origin_mailbox_id ?? t.mailbox_id) : null) : (sentFrom?.id ?? null),
-    cc: m.cc ?? [],
+    cc: m.cc ?? (ownMail && mailbox ? [t.received_at || mailbox.email] : []),
     bcc: m.bcc ?? [],
     attachments: m.attachments ?? [],
     delivery_status: m.kind === "note" || inbound || !isEmail ? "none" : (m.delivery ?? "sent"),

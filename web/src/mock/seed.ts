@@ -1021,6 +1021,55 @@ function seedMargin(): WsData {
     bank.updated_at = bank.last_message_at;
   }
 
+  // The workspace's own mail: Margin's billing system sent a customer their receipt with a copy
+  // to support. The ticket dates from before such mail named its customer, so the billing address
+  // was its contact until the customer answered (contracts/api.md "Inbound email").
+  {
+    const buyer = ws.contacts[5];
+    const own: Contact = {
+      ...buyer,
+      id: uuid(),
+      email: "billing@margin.app",
+      emails: [],
+      name: "Margin Billing",
+      phone: "",
+      avatar_url: null,
+      avatar_source: null,
+      company: null,
+      external_id: null,
+      notes: "",
+      custom: {},
+      tags: [],
+      fields: {},
+    };
+    ws.contacts.push(own);
+    const receipt = newTicket(ws, {
+      subject: "Your Margin receipt",
+      contact: contactRef(buyer),
+      channel: "email",
+      priority: "normal",
+      mailbox_id: support.id,
+      assignee: null,
+      team_id: teamId("Support"),
+      tags: [],
+      created_at: ago(2 * DAY),
+    });
+    addMessage(
+      ws,
+      receipt,
+      { kind: "reply", direction: "inbound", sender: contactRef(own), html: textToHtml("Thanks for your payment of 96.00 EUR for Margin Team (yearly).\n\nYour receipt is attached."), at: ago(2 * DAY) },
+      { publish: false },
+    );
+    addActivity(ws, receipt, "contact_changed", { from: { id: own.id, name: own.name }, to: { id: buyer.id, name: buyer.name }, reason: "customer_answered" }, null, ago(80 * MIN), false);
+    addMessage(
+      ws,
+      receipt,
+      { kind: "reply", direction: "inbound", html: textToHtml(`Hi,\n\nThe receipt still shows our old company name. Could you send one with the new name?\n\n${buyer.name.split(" ")[0]}`), at: ago(80 * MIN) },
+      { publish: false },
+    );
+    finalize(ws, receipt, "open");
+  }
+
   // Spam.
   for (const s of SPAM) {
     const t = newTicket(ws, {

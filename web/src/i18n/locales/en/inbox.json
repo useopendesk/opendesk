@@ -494,6 +494,7 @@
     "unassigned": "<b>{{who}}</b> unassigned this ticket",
     "team": "<b>{{who}}</b> moved this to <b>{{team}}</b>",
     "contactChanged": "<b>{{who}}</b> changed the contact from <b>{{from}}</b> to <b>{{to}}</b>",
+    "contactAnswered": "<b>{{to}}</b> answered mail from <b>{{from}}</b> and is now the contact",
     "noContact": "no contact",
     "teamRemoved": "<b>{{who}}</b> removed the team",
     "tagged": "<b>{{who}}</b> added",

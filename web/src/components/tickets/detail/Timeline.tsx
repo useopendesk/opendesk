@@ -195,7 +195,11 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     case "contact_changed":
       return {
         icon: <Users />,
-        text: line("activity.contactChanged", { from: contactLabel(d.from, t), to: contactLabel(d.to, t) }),
+        // A ticket opened by the workspace's own mail goes to the person who answered it.
+        text: line(d.reason === "customer_answered" ? "activity.contactAnswered" : "activity.contactChanged", {
+          from: contactLabel(d.from, t),
+          to: contactLabel(d.to, t),
+        }),
       };
     case "tagged":
     case "untagged": {

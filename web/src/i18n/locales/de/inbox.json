@@ -490,6 +490,7 @@
     "unassigned": "<b>{{who}}</b> hat die Zuweisung dieses Tickets aufgehoben",
     "team": "<b>{{who}}</b> hat dies nach <b>{{team}}</b> verschoben",
     "contactChanged": "<b>{{who}}</b> hat den Kontakt von <b>{{from}}</b> zu <b>{{to}}</b> geändert",
+    "contactAnswered": "<b>{{to}}</b> hat auf die E-Mail von <b>{{from}}</b> geantwortet und ist jetzt der Kontakt",
     "noContact": "kein Kontakt",
     "teamRemoved": "<b>{{who}}</b> hat das Team entfernt",
     "tagged": "<b>{{who}}</b> fügte hinzu",

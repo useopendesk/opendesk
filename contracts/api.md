@@ -139,7 +139,7 @@ type Message = {
 };
 type Attachment = { id: string; filename: string; content_type: string; size_bytes: number; inline: boolean; url: string };
 type Activity = { id: string; ticket_id: string; actor: { type: string; user: UserRef | null; api_key: { id: string; name: string } | null /* type "api": the key that made the change (data.api_key_id); null for an older entry or a deleted key */ }; type: string; data: Record<string, unknown>; created_at: string };
-// activity types: status_changed{from,to, reason?: "sender_unverified" | "thread_replied", message_id?} (with "sender_unverified", from equals to: a reply that failed sender checks left the status where it was, actor "system"; "thread_replied": an answer in a third-party thread opened a pending or on-hold ticket, actor "system") priority_changed{from,to} severity_changed{from: Severity | null, to: Severity | null} alias_changed{from: string | null, to: string | null} assigned{from,to,via?: "round_robin"|"load_balanced"|"triage"|"previous_ticket"|"chat", previous_ticket_id?, previous_ticket_number? /* via "previous_ticket": the closed ticket a follow-up took its assignee from; both null when it is in another, private team */, mode?: AssignMode /* via "chat" */} (actor "system", or "ai" for via "triage") team_changed{from,to,via: "agent"|"automation"|"api"|"triage"|..., mailbox_from?, mailbox_to? /* the reply address switched with the team */} brand_changed{from,to} mailbox_changed{from,to} /* the reply address */ tagged{tag} untagged{tag} sla_breached{kind} merged{into, into_number /* null when the target is in another, private team */, via?: "import" /* actor "system": an import's sync followed the source's merge */} csat_received{score} linked{link_id,url,title,provider} unlinked{url,title,provider} contact_changed{from,to} /* each {id, name} (the name, else the email) or null */ follow_up_skipped{message_id, reason: "no_mailbox"} /* actor "system": a chat reply was not emailed to the away visitor, contracts/teams.md "Chat follow-up" */
+// activity types: status_changed{from,to, reason?: "sender_unverified" | "thread_replied", message_id?} (with "sender_unverified", from equals to: a reply that failed sender checks left the status where it was, actor "system"; "thread_replied": an answer in a third-party thread opened a pending or on-hold ticket, actor "system") priority_changed{from,to} severity_changed{from: Severity | null, to: Severity | null} alias_changed{from: string | null, to: string | null} assigned{from,to,via?: "round_robin"|"load_balanced"|"triage"|"previous_ticket"|"chat", previous_ticket_id?, previous_ticket_number? /* via "previous_ticket": the closed ticket a follow-up took its assignee from; both null when it is in another, private team */, mode?: AssignMode /* via "chat" */} (actor "system", or "ai" for via "triage") team_changed{from,to,via: "agent"|"automation"|"api"|"triage"|..., mailbox_from?, mailbox_to? /* the reply address switched with the team */} brand_changed{from,to} mailbox_changed{from,to} /* the reply address */ tagged{tag} untagged{tag} sla_breached{kind} merged{into, into_number /* null when the target is in another, private team */, via?: "import" /* actor "system": an import's sync followed the source's merge */} csat_received{score} linked{link_id,url,title,provider} unlinked{url,title,provider} contact_changed{from,to, reason?: "customer_answered"} /* each {id, name} (the name, else the email) or null; "customer_answered": actor "system", someone outside answered a ticket whose contact was a workspace address (Inbound email) */ follow_up_skipped{message_id, reason: "no_mailbox"} /* actor "system": a chat reply was not emailed to the away visitor, contracts/teams.md "Chat follow-up" */
 // thread_started{thread_id, subject, to} thread_closed{thread_id, subject} thread_reopened{thread_id, subject} ("Threads"); note_edited{message_id} and note_deleted{message_id} record internal note changes without the note text; reply_retracted{message_id} records a chat reply taken back from the customer; message_deleted{message_id}, message_restored{message_id} and message_purged{message_id} record deletions of messages other than notes; note_sent_as_reply{message_id, reply_id} records a note sent as the reply written from it; deleted{} and restored{} record the ticket put in the trash and brought back (an automation's delete carries its automation_id and automation_name)
 // field_changed{key, name, from, to} (one per custom field; from/to are FieldValue | null)
 // call{CallData} (actor "system", contracts/phone.md "Timeline"): one per phone call, updated in place as the call moves on (activity.updated)
@@ -1391,17 +1391,38 @@ from a forwarding address, or is mail we sent coming back: every message we send
 (or addresses) there is dropped. Mail from a workspace address, including the receiving mailbox's
 own address, connected account and aliases, opens a ticket here unless its `Message-ID` is in our
 own format. It threads only into a
-conversation whose customer is that address, and gets no auto-reply and no Ollie answer. A new email
+conversation whose customer is that address or the customer it is written to (below), and gets no
+auto-reply and no Ollie answer. A new email
 ticket is routed (contracts/teams.md "Routing"); every inbound message records the mailbox it arrived
 at (`mailbox_id`).
 
 - **Identity.** The customer is the `From` address: the contact, the message author and every
-  threading check use it. `Reply-To` is kept on the message (`reply_to`). When it is at the same
+  threading check use it, except for the workspace's own mail below. `Reply-To` is kept on the message (`reply_to`). When it is at the same
   organisation as `From` (one registrable domain: `alerts@updates.acme.com` and `jane@acme.com`)
   and the message did not fail sender authentication, it is the message's `reply_address`, and
   every email to the customer goes there while it is their latest: agent replies, automation
   replies, auto-replies and surveys. An agent's reply may name its own `to` instead. Their contact stays the `From` address. A `Reply-To` at
   another organisation is only shown to agents.
+- **The workspace's own mail to its customer.** Mail the workspace sent someone with a copy to a
+  mailbox (a shop's order confirmation, a teammate writing to a customer) is about them. It is the
+  workspace's own mail when `From` is a workspace address, or when it passed DMARC at a trusted
+  receiving server (below) from another address at the registrable domain of a workspace address
+  (never a public email provider's), names no workspace address in `To` and is written to someone
+  outside that domain. Its customer is the first address in `To`, then `Cc`, that is not a workspace
+  address or on the forwarding domain: the ticket's contact, where every email to the customer goes,
+  and whose conversations it threads into. The message keeps `From` as its `from_email`, `from_name`
+  and author contact, and is handled as mail from a workspace address; on an existing ticket it runs
+  no `customer_replied` automations, and a ticket whose contact is a workspace address moves to its
+  customer (next). Mail that failed sender authentication, or names no such address, keeps `From` as
+  the customer.
+- **A workspace address answered.** When an email ticket's contact is a workspace address (its
+  mailbox addresses, connected accounts and aliases, or the forwarding domain) and someone outside
+  answers who is not new to the conversation (below: the contact or the team wrote to or copied
+  them) and did not fail sender authentication, they become its contact, as does the customer the
+  workspace's own mail on it is written to. The timeline
+  records `contact_changed` (actor `system`, `data.reason: "customer_answered"`), and
+  `ticket.updated` names `contact_id`. A contact who is not a workspace address is never replaced
+  this way.
 - **Contact forms.** A website form sends `From` the site with the visitor in `Reply-To`. When `From`
   matches the receiving mailbox's `trusted_form_senders` (an exact address, or `@domain` for that
   domain only) **and** the message passed DMARC at a trusted receiving server (below), the

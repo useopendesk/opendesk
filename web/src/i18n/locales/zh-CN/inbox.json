@@ -470,6 +470,7 @@
     "unassigned": "<b>{{who}}</b> 取消了这个工单的分配",
     "team": "<b>{{who}}</b> 把工单移到了<b>{{team}}</b>",
     "contactChanged": "<b>{{who}}</b> 把联系人从<b>{{from}}</b>改为<b>{{to}}</b>",
+    "contactAnswered": "<b>{{to}}</b>回复了来自<b>{{from}}</b>的邮件，现在是联系人",
     "noContact": "无联系人",
     "teamRemoved": "<b>{{who}}</b> 移除了团队",
     "tagged": "<b>{{who}}</b> 添加了",

@@ -518,6 +518,7 @@
     "unassigned": "<b>{{who}}</b> quitó la asignación de este ticket",
     "team": "<b>{{who}}</b> movió esto a <b>{{team}}</b>",
     "contactChanged": "<b>{{who}}</b> cambió el contacto de <b>{{from}}</b> a <b>{{to}}</b>",
+    "contactAnswered": "<b>{{to}}</b> respondió al correo de <b>{{from}}</b> y ahora es el contacto",
     "noContact": "sin contacto",
     "teamRemoved": "<b>{{who}}</b> quitó el equipo",
     "tagged": "<b>{{who}}</b> añadió",

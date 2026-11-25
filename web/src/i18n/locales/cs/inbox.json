@@ -542,6 +542,7 @@
     "unassigned": "Přiřazení tiketu zrušeno uživatelem <b>{{who}}</b>",
     "team": "Přesunuto do týmu <b>{{team}}</b> uživatelem <b>{{who}}</b>",
     "contactChanged": "Kontakt změněn z <b>{{from}}</b> na <b>{{to}}</b> uživatelem <b>{{who}}</b>",
+    "contactAnswered": "Kontaktem je teď <b>{{to}}</b>, z odpovědi na e-mail od <b>{{from}}</b>",
     "noContact": "žádný kontakt",
     "teamRemoved": "Tým odebrán uživatelem <b>{{who}}</b>",
     "tagged": "Přidáno uživatelem <b>{{who}}</b>",
