@@ -146,13 +146,10 @@ func (s *Service) Search(ctx context.Context, p *auth.Principal, q string) (*AIS
 		match := `t.search @@ ` + tsq + `
 			OR t.id IN (SELECT m.ticket_id FROM messages m WHERE m.workspace_id = $1 AND m.deleted_at IS NULL AND m.search @@ ` + tsq + `)
 			OR t.contact_id IN (SELECT c.id FROM contacts c WHERE c.workspace_id = $1 AND c.search @@ ` + tsq + `)`
-		fargs := []any{wid, args[0], args[1]}
 		// One address-like word: the tickets of that address, by their customer's addresses and
 		// their messages' from, to and cc, newest first.
 		var byAddress []uuid.UUID
 		if aq != "" {
-			match += ` OR t.id IN (` + domain.AddressTicketsSQL("$1", "$4") + `)`
-			fargs = append(fargs, aq)
 			var err error
 			byAddress, err = collectIDs(pool.Query(ctx, `SELECT t.id FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam
 				AND t.id IN (`+domain.AddressTicketsSQL("$1", "$2")+`) ORDER BY t.last_message_at DESC LIMIT `+strconv.Itoa(candidates), wid, aq))
@@ -162,7 +159,7 @@ func (s *Service) Search(ctx context.Context, p *auth.Principal, q string) (*AIS
 		}
 		fts, err := collectIDs(pool.Query(ctx, `SELECT t.id FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam
 			AND (`+match+`)
-			ORDER BY ts_rank(t.search, `+tsq+`) DESC, t.last_message_at DESC LIMIT `+strconv.Itoa(candidates), fargs...))
+			ORDER BY ts_rank(t.search, `+tsq+`) DESC, t.last_message_at DESC LIMIT `+strconv.Itoa(candidates), wid, args[0], args[1]))
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +167,7 @@ func (s *Service) Search(ctx context.Context, p *auth.Principal, q string) (*AIS
 		if err != nil {
 			return nil, err
 		}
-		if len(fts) == 0 && len(sem) == 0 {
+		if len(fts) == 0 && len(sem) == 0 && len(byAddress) == 0 {
 			fts, err = collectIDs(pool.Query(ctx, `SELECT t.id FROM tickets t WHERE t.workspace_id = $1 AND t.deleted_at IS NULL AND NOT t.spam
 				AND t.search @@ to_tsquery('simple', $2) ORDER BY ts_rank_cd(t.search, to_tsquery('simple', $2)) DESC LIMIT $3`,
 				wid, args[2], candidates))
