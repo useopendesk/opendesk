@@ -95,7 +95,10 @@
     "notFoundHint": "Es wurde vielleicht gelöscht oder zusammengeführt.",
     "loadError": "Dieses Ticket konnte nicht geladen werden",
     "back": "Zurück zur Liste",
-    "movedPrivate": "Dieses Ticket wurde in ein privates Team verschoben"
+    "movedPrivate": "Dieses Ticket wurde in ein privates Team verschoben",
+    "followUpOf": "Folgeanfrage zu #{{number}}",
+    "followUpHidden": "Folgeanfrage zu einem früheren Ticket",
+    "followUpHint": "Der Kunde hat erneut geschrieben, nachdem #{{number}} geschlossen wurde"
   },
   "commands": {
     "reply": "Antworten",
@@ -270,6 +273,10 @@
       "description": "Neue Unterhaltungen landen hier, wenn eine Adresse, ein Widget oder eine Routing-Regel sie an dieses Team schickt.",
       "seeOpen": "Offene Tickets ansehen",
       "seeUnassigned": "Nicht zugewiesene ansehen"
+    },
+    "all": {
+      "title": "Noch keine Tickets",
+      "description": "Hier steht jedes Ticket, egal in welchem Status, außer Spam."
     }
   },
   "error": {

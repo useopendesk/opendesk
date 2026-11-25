@@ -880,6 +880,16 @@ function seedMargin(): WsData {
     if (chance(0.22) && t.priority !== "urgent") t.sla = null;
   });
 
+  // A customer answered a closed ticket: their email opened a follow-up (custom.previous_ticket_id).
+  const closedOne = ws.tickets.find((t) => t.status === "closed" && t.contact && !t.team_id);
+  if (closedOne) {
+    const c = ws.contacts.find((x) => x.id === closedOne.contact!.id)!;
+    const followUp = newTicket(ws, { subject: closedOne.subject, contact: closedOne.contact, channel: "email", mailbox_id: support.id, created_at: ago(90 * MIN) });
+    followUp.custom = { ...followUp.custom, previous_ticket_id: closedOne.id };
+    addMessage(ws, followUp, { kind: "reply", direction: "inbound", html: textToHtml(`Hi,\n\nThis came back again since we last spoke. Same order as before.\n\n${c.name.split(" ")[0]}`), user: null, at: ago(90 * MIN) }, { publish: false });
+    finalize(ws, followUp, "open");
+  }
+
   // Work for the private teams, Partnerships and the second brand.
   const extra: {
     subject: string;

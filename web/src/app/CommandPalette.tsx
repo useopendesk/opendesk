@@ -13,6 +13,7 @@ import {
   Inbox,
   Keyboard,
   Layers,
+  List,
   Mail,
   Moon,
   Newspaper,
@@ -34,8 +35,9 @@ import { EmptyState } from "@/components/ui/empty";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusIcon } from "@/components/tickets/bits";
+import { FollowUpHint } from "@/components/tickets/followUp";
 import { Requester } from "@/components/tickets/requester";
-import { folders } from "@/lib/folders";
+import { allFolder, folders } from "@/lib/folders";
 import { relShort } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { quickAdd } from "@/app/quickAdd";
@@ -274,17 +276,11 @@ export function CommandPalette() {
                     appHelp.mutate({ question: aiQuery, language: uiLanguage(), sources: [...app.settings.slice(0, 4), ...app.docs.slice(0, 4)].map(asSource) })
                   }
                   ticket={(id) => link({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "open", ticketId: id } })}
+                  contact={(id) => link({ to: "/contacts/{-$contactId}", params: { contactId: id } })}
                   article={(id) => link({ to: "/kb/articles/$articleId", params: { articleId: id }, search: { collection: undefined } })}
                 />
               ) : (
               <>
-              {ai.enabled && query.trim().length > 2 && (
-                <Command.Group forceMount className={groupCls}>
-                  <Item forceMount value={`ask ai ${query}`} icon={<AiIcon className="text-fg-3" />} hint={<Kbd>tab</Kbd>} onSelect={() => setAiMode(true)}>
-                    <span className="truncate">{t("palette.ask_item", { query: query.trim() })}</span>
-                  </Item>
-                </Command.Group>
-              )}
               {!hasResults && !appResults && !(ai.enabled && query.trim().length > 2) && (
                 <Command.Empty>
                   {deferred.length > 1 && search.isFetching ? (
@@ -310,9 +306,19 @@ export function CommandPalette() {
                       <span className="truncate" data-ph-mask>
                         {t.subject}
                       </span>
+                      <FollowUpHint ticket={t} />
                       <Requester contact={t.contact} className="ml-auto" />
                     </Item>
                   ))}
+                  {/* Every ticket the search finds, whatever its status, in a list that pages. */}
+                  <Item
+                    forceMount
+                    value={`see all tickets ${deferred}`}
+                    icon={<List />}
+                    {...link({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "all", ticketId: undefined }, search: { q: deferred } })}
+                  >
+                    <span className="truncate text-fg-2">{tNav("command.seeAll", { query: deferred })}</span>
+                  </Item>
                 </Command.Group>
               )}
               {hasResults && results.contacts.length > 0 && (
@@ -395,6 +401,15 @@ export function CommandPalette() {
                 </Command.Group>
               )}
 
+              {/* After what the search found, so Enter opens the top result; Tab asks at any time. */}
+              {ai.enabled && query.trim().length > 2 && (
+                <Command.Group forceMount className={groupCls}>
+                  <Item forceMount value={`ask ai ${query}`} icon={<AiIcon className="text-fg-3" />} hint={<Kbd>tab</Kbd>} onSelect={() => setAiMode(true)}>
+                    <span className="truncate">{t("palette.ask_item", { query: query.trim() })}</span>
+                  </Item>
+                </Command.Group>
+              )}
+
               {pageCommands.length > 0 && (
                 <Command.Group heading={tNav("command.thisTicket")} className={groupCls}>
                   {pageCommands.map((c) => (
@@ -406,12 +421,12 @@ export function CommandPalette() {
               )}
 
               <Command.Group heading={tNav("command.goTo")} className={groupCls}>
-                {ticketsOn && folders.map((f) => (
+                {ticketsOn && [...folders, allFolder].map((f) => (
                   <Item
                     key={f.id}
                     value={`go inbox ${f.id}`}
                     keywords={[tNav(f.labelKey)]}
-                    icon={f.id === "unassigned" ? <CircleDashed /> : f.id === "mine" ? <User /> : <Inbox />}
+                    icon={f.id === "unassigned" ? <CircleDashed /> : f.id === "mine" ? <User /> : f.id === "all" ? <Layers /> : <Inbox />}
                     {...link({ to: "/inbox/$folder/{-$ticketId}", params: { folder: f.id, ticketId: undefined } })}
                   >
                     {tNav(f.labelKey)}

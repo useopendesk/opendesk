@@ -95,7 +95,10 @@
     "notFoundHint": "Puede que se haya eliminado o fusionado.",
     "loadError": "No se pudo cargar este ticket",
     "back": "Volver a la lista",
-    "movedPrivate": "Este ticket pasó a un equipo privado"
+    "movedPrivate": "Este ticket pasó a un equipo privado",
+    "followUpOf": "Seguimiento de #{{number}}",
+    "followUpHidden": "Seguimiento de un ticket anterior",
+    "followUpHint": "El cliente volvió a escribir después de cerrarse #{{number}}"
   },
   "commands": {
     "reply": "Responder",
@@ -276,6 +279,10 @@
       "description": "Las conversaciones nuevas llegan aquí cuando una dirección, un widget o una regla de enrutamiento las envía a este equipo.",
       "seeOpen": "Ver los tickets abiertos",
       "seeUnassigned": "Ver sin asignar"
+    },
+    "all": {
+      "title": "Aún no hay tickets",
+      "description": "Aquí aparece cada ticket, sea cual sea su estado, salvo el spam."
     }
   },
   "error": {

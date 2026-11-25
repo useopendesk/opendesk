@@ -95,7 +95,10 @@
     "notFoundHint": "Il a peut-être été supprimé ou fusionné.",
     "loadError": "Impossible de charger ce ticket",
     "back": "Retour à la liste",
-    "movedPrivate": "Ce ticket a été déplacé vers une équipe privée"
+    "movedPrivate": "Ce ticket a été déplacé vers une équipe privée",
+    "followUpOf": "Suite de #{{number}}",
+    "followUpHidden": "Suite d’un ticket précédent",
+    "followUpHint": "Le client a réécrit après la clôture de #{{number}}"
   },
   "commands": {
     "reply": "Répondre",
@@ -276,6 +279,10 @@
       "description": "Les nouvelles conversations arrivent ici lorsqu’une adresse, un widget ou une règle de routage les envoie à cette équipe.",
       "seeOpen": "Voir les tickets ouverts",
       "seeUnassigned": "Voir les tickets non attribués"
+    },
+    "all": {
+      "title": "Aucun ticket pour l’instant",
+      "description": "Chaque ticket s’affiche ici, quel que soit son statut, sauf les indésirables."
     }
   },
   "error": {

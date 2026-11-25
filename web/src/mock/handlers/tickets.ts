@@ -8,7 +8,7 @@ import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, pos
 import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
-import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, refreshLastNote, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
+import { addActivity, addMessage, addressHit, addressMatch, addressQuery, contactAddresses, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, refreshLastNote, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
 import { DAY, escapeHtml, isRecord, nowIso, parseUUID, uuid } from "../util";
 import { clearDraft, clearOwnDraft } from "./drafts";
 import { renderSentReply } from "./templates";
@@ -738,8 +738,12 @@ export function registerTickets() {
     const q = (ctx.query.get("q") ?? "").trim().toLowerCase();
     if (!q) return { tickets: [], contacts: [], articles: [], wiki_pages: [] };
     const ws = ctx.ws;
-    const tickets = sortTickets(ws.tickets.filter((t) => matches(ws, t, { q }, db.meId)), "last_message_at", "desc").slice(0, 5);
-    const contacts = ws.contacts.filter((c) => [c.name, c.email ?? "", c.company?.name ?? ""].join(" ").toLowerCase().includes(q)).slice(0, 5);
+    // The address's own tickets first (contracts/api.md "Search"), then the rest; 8 in all.
+    const found = sortTickets(ws.tickets.filter((t) => matches(ws, t, { q }, db.meId)), "last_message_at", "desc");
+    const tickets = [...found.filter((t) => addressMatch(ws, t, q)), ...found.filter((t) => !addressMatch(ws, t, q))].slice(0, 8);
+    const contacts = ws.contacts
+      .filter((c) => [c.name, c.email ?? "", ...(c.emails ?? []), c.company?.name ?? ""].join(" ").toLowerCase().includes(q) || (!!addressQuery(q) && contactAddresses(ws, c.id).some((a) => addressHit(a, q))))
+      .slice(0, 5);
     const articles = ws.articles.filter((a) => (a.title + " " + a.excerpt).toLowerCase().includes(q)).slice(0, 5);
     return { tickets, contacts, articles, wiki_pages: searchWiki(ws, q, 5) };
   });

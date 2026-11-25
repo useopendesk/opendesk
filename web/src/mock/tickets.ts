@@ -176,9 +176,50 @@ export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): 
   if (f.q) {
     const q = f.q.toLowerCase().trim().replace(/^#/, "");
     const hay = [t.subject, t.last_message_preview, t.contact?.name ?? "", t.contact?.email ?? "", String(t.number), t.alias ?? "", fieldsText(t.fields)].join(" ").toLowerCase();
-    if (!hay.includes(q)) return false;
+    if (!hay.includes(q) && !messageText(ws, t).includes(q) && !addressMatch(ws, t, f.q)) return false;
   }
   return true;
+}
+
+/** The words of a ticket's messages, lowercased. */
+function messageText(ws: WsData, t: Ticket): string {
+  return ws.messages
+    .filter((m) => m.ticket_id === t.id && !m.deleted_at)
+    .map((m) => m.body_text || stripHtml(m.body_html))
+    .join(" ")
+    .toLowerCase();
+}
+
+/** One address-like word (contracts/api.md "Search"): a whole address, its local part or its domain. */
+export function addressQuery(q: string): string | null {
+  const s = q.trim().toLowerCase();
+  return s.length >= 2 && s.length <= 254 && /^[\p{L}\p{N}@.+_-]+$/u.test(s) && /\p{L}/u.test(s) ? s : null;
+}
+
+/** An address the query finds: words split at @, dots, plus signs, underscores and hyphens; the query's words in order, the last a prefix. */
+export function addressHit(address: string, q: string): boolean {
+  const words = (x: string) => x.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const a = words(address);
+  const w = words(q);
+  if (!w.length) return false;
+  for (let i = 0; i + w.length <= a.length; i++) {
+    if (w.every((x, j) => (j === w.length - 1 ? a[i + j].startsWith(x) : a[i + j] === x))) return true;
+  }
+  return false;
+}
+
+/** A contact's addresses, primary and extra. */
+export function contactAddresses(ws: WsData, id: string | undefined): string[] {
+  const c = id ? ws.contacts.find((x) => x.id === id) : undefined;
+  return c ? [c.email ?? "", ...(c.emails ?? [])].filter(Boolean) : [];
+}
+
+/** The ticket's customer, or one of its messages' from, to or cc, has an address the query finds. */
+export function addressMatch(ws: WsData, t: Ticket, q: string): boolean {
+  if (!addressQuery(q)) return false;
+  const addrs = [t.contact?.email ?? "", ...contactAddresses(ws, t.contact?.id)];
+  for (const m of ws.messages) if (m.ticket_id === t.id && !m.deleted_at) addrs.push(m.from_email, ...m.to, ...m.cc);
+  return addrs.some((a) => a && addressHit(a, q));
 }
 
 /** Awaiting a reply (the customer wrote last), urgent, and overdue (past the due time that applies, or breached). */

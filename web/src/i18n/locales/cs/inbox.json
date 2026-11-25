@@ -95,7 +95,10 @@
     "notFoundHint": "Mohl být smazán nebo sloučen.",
     "loadError": "Tento tiket se nepodařilo načíst",
     "back": "Zpět na seznam",
-    "movedPrivate": "Tento tiket byl přesunut do soukromého týmu"
+    "movedPrivate": "Tento tiket byl přesunut do soukromého týmu",
+    "followUpOf": "Navazuje na #{{number}}",
+    "followUpHidden": "Navazuje na dřívější tiket",
+    "followUpHint": "Zákazník napsal znovu po uzavření #{{number}}"
   },
   "commands": {
     "reply": "Odpovědět",
@@ -282,6 +285,10 @@
       "description": "Nové konverzace se zde objeví, když je do tohoto týmu nasměruje adresa, widget nebo pravidlo směrování.",
       "seeOpen": "Zobrazit otevřené tikety",
       "seeUnassigned": "Zobrazit nepřiřazené"
+    },
+    "all": {
+      "title": "Zatím žádné tikety",
+      "description": "Zde jsou všechny tikety bez ohledu na stav, kromě spamu."
     }
   },
   "error": {

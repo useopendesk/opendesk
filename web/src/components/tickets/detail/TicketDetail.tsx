@@ -46,6 +46,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { TicketProperties, TicketPropertiesBar, type PropPicker } from "./TicketProperties";
 import { useTicketPropertiesPlace } from "@/lib/ticketPropertiesPlace";
 import { MergeDialog } from "./MergeDialog";
+import { FollowUpOf } from "./FollowUpOf";
 import { PrintDialog } from "./PrintDialog";
 import { TicketTeamChips, useTeamsCtx } from "../teams";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -375,6 +376,7 @@ export default function TicketDetail({
               <TicketNumber n={t.number} className="shrink-0" />
               <SubjectEditor value={t.subject} disabled={!canEdit} onSave={(subject) => update.mutate({ id: t.id, patch: { subject } })} />
               <HeaderPills t={t} bar={bar} />
+              <FollowUpOf ticket={t} />
             </>
           ) : (
             <Skeleton className="h-3 w-64" />
