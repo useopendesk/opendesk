@@ -274,8 +274,6 @@
     "showQuoted": "显示引用文本",
     "hideQuoted": "隐藏引用文本",
     "download": "下载 {{name}}",
-    "preview": "预览 {{name}}",
-    "fullSize": "打开原图",
     "readOnly": "你可以阅读此会话。客服及以上角色可以对其操作。",
     "showComments": "显示评论",
     "replyOrComment": "选择回复发件人，还是为团队添加评论",

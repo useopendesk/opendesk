@@ -1,6 +1,7 @@
 // Builds the mock database: the Margin workspace (rich) and Lumen Labs (small).
 
 import { seedPortalAccess } from "./handlers/portalInvites";
+import { samplePdf } from "./samplePdf";
 import { normalizeAliases, setGmailSendAs } from "./aliases";
 import { applyDecisions, severityFor } from "./decisions";
 import type {
@@ -95,6 +96,19 @@ function voiceWav(seconds = 4, rate = 8000): string {
   return `data:audio/wav;base64,${btoa(bin)}`;
 }
 
+const MOCK_PDF = samplePdf("Invoice INV-2026-0412", ["Example Co, 1 Example Street", "Billed to: customer@example.com", "", "Pro plan, 12 seats    $348.00", "Tax                   $0.00", "Total                 $348.00"]);
+const MOCK_LOG = `data:text/plain;charset=utf-8,${encodeURIComponent(
+  [
+    "2026-10-11 09:14:02.118 [main] INFO  app started, version 4.2.1",
+    "2026-10-11 09:14:05.402 [sync] WARN  retrying request to https://api.example.com (1 of 3)",
+    "2026-10-11 09:14:07.913 [sync] ERROR request failed: timeout after 2500 ms",
+    "Thread 0 Crashed: EXC_BAD_ACCESS (SIGSEGV)",
+    "0   libsystem_kernel.dylib   0x00000001a2b3c4d5 __pthread_kill + 8",
+    "1   Example                  0x0000000100a1b2c3 SyncEngine.flush() + 212",
+    "2   Example                  0x0000000100a1b9f0 AppDelegate.applicationWillTerminate + 48",
+  ].join("\n"),
+)}`;
+
 function makeAttachment(kind: "screenshot" | "screenshot2" | "pdf" | "log" | "voice"): Attachment {
   const a: Attachment =
     kind === "screenshot"
@@ -104,8 +118,8 @@ function makeAttachment(kind: "screenshot" | "screenshot2" | "pdf" | "log" | "vo
         : kind === "voice"
           ? { id: uuid(), filename: "Voice message.wav", content_type: "audio/wav", size_bytes: 32_044, inline: false, url: voiceWav() }
           : kind === "pdf"
-            ? { id: uuid(), filename: kind === "pdf" ? "document.pdf" : "file", content_type: "application/pdf", size_bytes: 1_204_118, inline: false, url: "data:text/plain;charset=utf-8,Mock%20PDF%20attachment" }
-            : { id: uuid(), filename: "crash-report.log", content_type: "text/plain", size_bytes: 48_220, inline: false, url: "data:text/plain;charset=utf-8,Thread%200%20Crashed%3A%20EXC_BAD_ACCESS" };
+            ? { id: uuid(), filename: "document.pdf", content_type: "application/pdf", size_bytes: 1_204_118, inline: false, url: MOCK_PDF }
+            : { id: uuid(), filename: "crash-report.log", content_type: "text/plain", size_bytes: 48_220, inline: false, url: MOCK_LOG };
   db.attachments.push(a);
   return a;
 }

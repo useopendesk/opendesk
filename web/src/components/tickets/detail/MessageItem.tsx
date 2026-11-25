@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileCode, FileText, Forward, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Printer, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, CheckCheck, FileCode, Forward, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Printer, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import { memo, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
@@ -10,11 +10,10 @@ import { q, qk } from "@/lib/queries";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { isBlankHtml } from "@/lib/collab/html";
 import { loadImagesFor, useAlwaysShowImages, useImagesLoadedFor } from "@/lib/alwaysShowImages";
-import { bytes, fullDate, messageTime } from "@/lib/format";
+import { fullDate, messageTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { OllieAvatar, useAssistantName } from "../ollie";
@@ -28,6 +27,7 @@ import { RichEditor } from "@/components/editor/RichEditor";
 import { mentionExtension, useSuggest } from "./suggestions";
 import { useConfirm } from "@/components/ui/confirm";
 import { SourceDialog } from "@/components/messages/SourceDialog";
+import { AttachmentList } from "@/components/messages/Attachments";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { toast } from "@/components/ui/toast";
 import { useNow } from "@/lib/useNow";
@@ -81,82 +81,9 @@ function Original({ id, inbound, remote, onLoadImages }: { id: string; inbound: 
   );
 }
 
-function isImage(a: Attachment) {
-  return a.content_type.startsWith("image/");
-}
-
-function isAudio(a: Attachment) {
-  return a.content_type.startsWith("audio/");
-}
-
 export function Attachments({ items }: { items: Attachment[] }) {
-  const { t } = useTranslation("inbox");
-  const [preview, setPreview] = useState<Attachment | null>(null);
-  const visible = items.filter((a) => !a.inline);
-  if (!visible.length) return null;
-  const images = visible.filter(isImage);
-  const audio = visible.filter(isAudio);
-  const files = visible.filter((a) => !isImage(a) && !isAudio(a));
-  return (
-    <div className="mt-3 flex flex-col gap-2">
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {images.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => setPreview(a)}
-              className="group relative h-[88px] w-[124px] overflow-hidden rounded-md border border-line bg-sunken"
-              aria-label={t("message.preview", { name: a.filename })}
-            >
-              <img src={a.url} alt="" loading="lazy" className="ph-no-capture size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
-              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/55 to-transparent px-1.5 pb-1 pt-4 text-left text-[10.5px] text-white">
-                {a.filename}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-      {audio.map((a) => (
-        <div key={a.id} className="flex max-w-[360px] items-center gap-2">
-          <audio controls preload="metadata" src={a.url} aria-label={a.filename} className="ph-no-capture h-9 min-w-0 flex-1" />
-          <a href={a.url} target="_blank" rel="noopener noreferrer" aria-label={t("message.download", { name: a.filename })} className="shrink-0 text-fg-4 hover:text-fg">
-            <Download className="size-3.5" />
-          </a>
-        </div>
-      ))}
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {files.map((a) => (
-            <a
-              key={a.id}
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex h-10 max-w-[260px] items-center gap-2.5 rounded-md border border-line bg-surface pl-2.5 pr-3 hover:border-line-strong"
-            >
-              <FileText className="size-4 shrink-0 text-fg-3" />
-              <span className="min-w-0">
-                <span className="block truncate text-[12.5px] text-fg">{a.filename}</span>
-                <span className="mono block text-[10.5px] text-fg-4">{bytes(a.size_bytes)}</span>
-              </span>
-              <Download className="ml-1 size-3.5 shrink-0 text-fg-4 group-hover:text-fg" />
-            </a>
-          ))}
-        </div>
-      )}
-      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)} title={preview?.filename ?? ""} size="xl">
-        {preview && (
-          <div className="flex flex-col items-center gap-3 pb-2">
-            <img src={preview.url} alt={preview.filename} className="ph-no-capture max-h-[60vh] max-w-full rounded-md border border-line" />
-            <a href={preview.url} target="_blank" rel="noopener noreferrer" className="text-xs text-fg-3 underline underline-offset-2 hover:text-fg">
-              {t("message.fullSize")}
-            </a>
-          </div>
-        )}
-      </Dialog>
-    </div>
-  );
+  const files = items.filter((a) => !a.inline).map((a) => ({ ...a, size: a.size_bytes, imageUrl: a.url }));
+  return <AttachmentList files={files} />;
 }
 
 /** A note sent as a reply: it stays where it was written, pointing at the reply below. What it

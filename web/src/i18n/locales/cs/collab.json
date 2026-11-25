@@ -340,8 +340,6 @@
     "showQuoted": "Zobrazit citovaný text",
     "hideQuoted": "Skrýt citovaný text",
     "download": "Stáhnout: {{name}}",
-    "preview": "Zobrazit náhled: {{name}}",
-    "fullSize": "Otevřít v plné velikosti",
     "readOnly": "Tuto konverzaci můžete číst. Pracovat s ní mohou agenti a vyšší role.",
     "showComments": "Zobrazit komentáře",
     "replyOrComment": "Zvolte, zda odpovědět odesílateli, nebo napsat komentář pro tým",

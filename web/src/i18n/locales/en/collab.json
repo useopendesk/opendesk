@@ -299,8 +299,6 @@
     "showQuoted": "Show quoted text",
     "hideQuoted": "Hide quoted text",
     "download": "Download {{name}}",
-    "preview": "Preview {{name}}",
-    "fullSize": "Open full size",
     "readOnly": "You can read this conversation. Agents and above can act on it.",
     "showComments": "Show comments",
     "replyOrComment": "Choose whether to reply to the sender or comment for your team",
