@@ -765,6 +765,8 @@
     "startTyping": "开始输入",
     "use": "使用",
     "change": "更改",
+    "addTo": "添加收件人",
+    "addCopies": "添加抄送或密送",
     "noMailbox": "没有邮箱",
     "bodyReply": "写你的消息",
     "bodyNote": "描述问题",

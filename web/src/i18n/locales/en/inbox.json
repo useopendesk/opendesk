@@ -795,6 +795,8 @@
     "startTyping": "Start typing",
     "use": "Use",
     "change": "Change",
+    "addTo": "Add someone",
+    "addCopies": "Add Cc or Bcc",
     "noMailbox": "No mailbox",
     "bodyReply": "Write your message",
     "bodyNote": "Describe the issue",

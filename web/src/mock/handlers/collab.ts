@@ -825,6 +825,9 @@ function seesAccount(ws: WsData, a: Account, uid: string) {
   return a.visibility === "shared" && inAudience(ws, a.shared_with, uid);
 }
 
+/** Whether I see this Collab account: a reply draft keeps it as its address only then. */
+export const canSeeAccount = (ws: WsData, id: string) => visibleAccounts(ws).some((a) => a.id === id);
+
 function visibleAccounts(ws: WsData): Account[] {
   const s = state(ws);
   const me = db.meId;

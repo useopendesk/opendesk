@@ -313,6 +313,8 @@ export function registerTickets() {
     return ticketSummary(ctx.ws.tickets.filter((t) => matches(ctx.ws, t, f, db.meId)), resolveFilters(ctx.ws, f));
   });
 
+  const moreToOf = (v: unknown): { contact_id?: string; email?: string }[] =>
+    Array.isArray(v) ? v.filter(isRecord).map((r) => ({ contact_id: typeof r.contact_id === "string" ? r.contact_id : undefined, email: typeof r.email === "string" ? r.email : undefined })) : [];
   post("/v1/tickets", (ctx) => {
     const ws = ctx.ws;
     const channel = (s(ctx, "channel") as Channel | undefined) ?? "email";
@@ -348,7 +350,24 @@ export function registerTickets() {
     const inbound = s(ctx, "direction") === "inbound";
     if (inbound && s(ctx, "kind") === "note") throw invalid("an inbound message is a reply, not a note");
     if (inbound && !contact) throw invalid("an inbound message needs a contact to speak for");
-    if (inbound && (strArr(ctx.body.cc)?.length || strArr(ctx.body.bcc)?.length)) throw invalid("cc and bcc are for messages sent");
+    if (inbound && (moreToOf(ctx.body.to).length || strArr(ctx.body.cc)?.length || strArr(ctx.body.bcc)?.length)) throw invalid("to, cc and bcc are for messages sent");
+    // More people the first email goes to, after the contact: this workspace's contacts or addresses.
+    const moreTo = moreToOf(ctx.body.to);
+    if (moreTo.length && (channel !== "email" || s(ctx, "kind") === "note")) throw invalid("to applies to an email ticket's first reply");
+    if (moreTo.length > 19) throw invalid("to takes at most 19 more addresses");
+    const seen = new Set([contact?.email?.toLowerCase()]);
+    const extraTo: string[] = [];
+    for (const r of moreTo) {
+      if (r.contact_id && r.email) throw invalid("each of to is a contact_id or an email, not both");
+      const email = r.contact_id ? ws.contacts.find((c) => c.id === r.contact_id)?.email : r.email?.trim().toLowerCase();
+      if (r.contact_id && !ws.contacts.some((c) => c.id === r.contact_id)) throw invalid("contact not found in this workspace");
+      if (!email) throw invalid(r.contact_id ? "a contact in to has no email address" : "each of to is a contact_id or an email");
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email)) throw invalid(`"${email}" is not a valid email address`);
+      if (!seen.has(email.toLowerCase())) {
+        seen.add(email.toLowerCase());
+        extraTo.push(email.toLowerCase());
+      }
+    }
     if (box && !inbound && (s(ctx, "kind") ?? "reply") === "reply" && sendingOf(box) === "system_off") throw cannotSend();
     const t = newTicket(ws, {
       subject,
@@ -374,7 +393,7 @@ export function registerTickets() {
     } else if (body) {
       const kind = s(ctx, "kind") === "note" ? "note" : "reply";
       // Copies go with an emailed reply only, like the API's.
-      const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc) } : {};
+      const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc), ...(extraTo.length && contact?.email ? { to: [contact.email, ...extraTo] } : {}) } : {};
       const attachments = attachmentsFor(strArr(ctx.body.attachment_ids));
       const msg = addMessage(ws, t, { kind, direction: "outbound", html: body, user: userRef(db.meId), ...copies, attachments, delivery: "pending" }, { status: p.status, actor: userRef(db.meId) });
       if (msg.delivery_status === "pending") simulateDelivery(ws, t, msg.id);

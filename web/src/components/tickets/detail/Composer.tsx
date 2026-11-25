@@ -430,8 +430,11 @@ export const Composer = forwardRef<
     enabled: mode === "reply" && !disabled,
     html: draft.html,
     attachmentIds: uploads.filter((u) => u.status === "done" && u.attachment).map((u) => u.attachment!.id),
-    onRestore: (d) => {
-      setDraft({ mode: "reply", html: d.body_html });
+    recipients: draft,
+    ticketMailboxId: ticket.mailbox_id,
+    onRestore: (d, recipients) => {
+      // Its recipients and address come back with it; Cc opens when it holds any.
+      setDraft({ mode: "reply", html: d.body_html, ...recipients, showCc: !!(recipients.to || recipients.cc.length || recipients.bcc.length) });
       editor.current?.setHtml(d.body_html);
       setUploads(d.attachments.map((a) => ({ key: a.id, file: new File([], a.filename, { type: a.content_type }), status: "done" as const, attachment: a })));
     },

@@ -822,6 +822,8 @@
     "startTyping": "Empieza a escribir",
     "use": "Usar",
     "change": "Cambiar",
+    "addTo": "Añadir a alguien",
+    "addCopies": "Añadir Cc o CCO",
     "noMailbox": "Sin buzón",
     "bodyReply": "Escribe tu mensaje",
     "bodyNote": "Describe el problema",
