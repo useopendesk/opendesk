@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileCode, FileText, Forward, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Printer, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, CheckCheck, ClipboardCopy, Download, FileCode, FileText, Forward, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Printer, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import { memo, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
@@ -547,6 +547,7 @@ export const MessageItem = memo(function MessageItem({
   onToReply,
   onRetract,
   onForward,
+  onCopyForAgent,
   highlight,
   receivedAt,
   thread,
@@ -563,6 +564,8 @@ export const MessageItem = memo(function MessageItem({
   onRetract?: (m: Message) => void;
   /** Starts a side conversation that forwards this email in full. */
   onForward?: (m: Message) => void;
+  /** Copies it as a prompt for an AI agent (copyForAgent.ts). */
+  onCopyForAgent?: (m: Message) => void;
   highlight?: boolean;
   /** The ticket's first address, for inbound messages that don't record one; null when the ticket isn't email. */
   receivedAt?: string | null;
@@ -747,6 +750,11 @@ export const MessageItem = memo(function MessageItem({
               {hasSource && (
                 <MenuItem icon={<FileCode />} onSelect={() => setSource(true)}>
                   {t("message.viewSource")}
+                </MenuItem>
+              )}
+              {onCopyForAgent && (
+                <MenuItem icon={<ClipboardCopy />} onSelect={() => onCopyForAgent(m)}>
+                  {t("message.copyForAgent")}
                 </MenuItem>
               )}
               <MenuItem icon={<Printer />} onSelect={print}>

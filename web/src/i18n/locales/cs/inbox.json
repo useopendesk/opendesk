@@ -95,7 +95,8 @@
     "notFoundHint": "Mohl být smazán nebo sloučen.",
     "loadError": "Tento tiket se nepodařilo načíst",
     "back": "Zpět na seznam",
-    "movedPrivate": "Tento tiket byl přesunut do soukromého týmu"
+    "movedPrivate": "Tento tiket byl přesunut do soukromého týmu",
+    "copyForAgent": "Kopírovat tiket pro AI agenta"
   },
   "commands": {
     "reply": "Odpovědět",
@@ -120,7 +121,9 @@
     "unspammed": "Přesunuto ze spamu",
     "deleted": "Tiket #{{number}} smazán",
     "snoozed": "Odloženo",
-    "linkCopied": "Odkaz zkopírován"
+    "linkCopied": "Odkaz zkopírován",
+    "copiedForAgent": "Zkopírováno. Vložte to do svého AI agenta.",
+    "copyFailed": "Kopírování se nezdařilo. Zkuste to znovu."
   },
   "finish": {
     "close": {
@@ -810,7 +813,8 @@
     "showReply": "Zobrazit odpověď",
     "showNote": "Zobrazit poznámku",
     "hideNote": "Skrýt poznámku",
-    "forward": "Přeposlat"
+    "forward": "Přeposlat",
+    "copyForAgent": "Kopírovat pro AI agenta"
   },
   "merge": {
     "title": "Sloučit #{{number}} s jiným tiketem",

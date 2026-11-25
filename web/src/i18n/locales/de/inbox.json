@@ -95,7 +95,8 @@
     "notFoundHint": "Es wurde vielleicht gelöscht oder zusammengeführt.",
     "loadError": "Dieses Ticket konnte nicht geladen werden",
     "back": "Zurück zur Liste",
-    "movedPrivate": "Dieses Ticket wurde in ein privates Team verschoben"
+    "movedPrivate": "Dieses Ticket wurde in ein privates Team verschoben",
+    "copyForAgent": "Ticket für KI-Agent kopieren"
   },
   "commands": {
     "reply": "Antworten",
@@ -120,7 +121,9 @@
     "unspammed": "Aus Spam verschoben",
     "deleted": "#{{number}} gelöscht",
     "snoozed": "Zurückgestellt",
-    "linkCopied": "Link kopiert"
+    "linkCopied": "Link kopiert",
+    "copiedForAgent": "Kopiert. Füge es in deinen KI-Agenten ein.",
+    "copyFailed": "Kopieren fehlgeschlagen. Versuch es noch einmal."
   },
   "finish": {
     "close": {
@@ -755,7 +758,8 @@
     "showNote": "Notiz anzeigen",
     "hideNote": "Notiz ausblenden",
     "forward": "Weiterleiten",
-    "viewSource": "Quelltext anzeigen"
+    "viewSource": "Quelltext anzeigen",
+    "copyForAgent": "Für KI-Agent kopieren"
   },
   "merge": {
     "title": "#{{number}} mit anderem Ticket zusammenführen",

@@ -405,6 +405,7 @@ export function Timeline({
   onToReply,
   onRetract,
   onForward,
+  onCopyForAgent,
   contactName,
   receivedAt,
   threads,
@@ -421,6 +422,8 @@ export function Timeline({
   onRetract?: (m: Message) => void;
   /** Starts a side conversation forwarding an email of the conversation. */
   onForward?: (m: Message) => void;
+  /** Copies a message as a prompt for an AI agent (copyForAgent.ts). */
+  onCopyForAgent?: (m: Message) => void;
   contactName?: string;
   /** The address the customer first wrote to, for inbound messages that don't say. */
   receivedAt?: string | null;
@@ -563,6 +566,7 @@ export function Timeline({
                       onToReply={onToReply}
                       onRetract={onRetract}
                       onForward={onForward}
+                      onCopyForAgent={onCopyForAgent}
                       highlight={pointed.id === it.m.id}
                       receivedAt={receivedAt}
                       thread={it.m.thread_id ? threadById.get(it.m.thread_id) : undefined}

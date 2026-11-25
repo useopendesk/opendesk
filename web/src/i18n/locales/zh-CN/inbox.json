@@ -95,7 +95,8 @@
     "notFoundHint": "它可能已被删除或合并。",
     "loadError": "无法加载这个工单",
     "back": "返回列表",
-    "movedPrivate": "这个工单已移到私有团队"
+    "movedPrivate": "这个工单已移到私有团队",
+    "copyForAgent": "复制工单给 AI 智能体"
   },
   "commands": {
     "reply": "回复",
@@ -120,7 +121,9 @@
     "unspammed": "已移出垃圾邮件",
     "deleted": "已删除 #{{number}}",
     "snoozed": "已设为稍后处理",
-    "linkCopied": "链接已复制"
+    "linkCopied": "链接已复制",
+    "copiedForAgent": "已复制，请粘贴到你的 AI 智能体中。",
+    "copyFailed": "复制失败，请重试。"
   },
   "finish": {
     "close": {
@@ -729,7 +732,8 @@
     "showReply": "显示回复",
     "showNote": "显示备注",
     "hideNote": "隐藏备注",
-    "forward": "转发"
+    "forward": "转发",
+    "copyForAgent": "复制给 AI 智能体"
   },
   "merge": {
     "title": "把 #{{number}} 合并到其他工单",

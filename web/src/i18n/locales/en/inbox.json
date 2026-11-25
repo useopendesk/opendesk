@@ -95,7 +95,8 @@
     "notFoundHint": "It may have been deleted or merged.",
     "loadError": "Couldn't load this ticket",
     "back": "Back to the list",
-    "movedPrivate": "This ticket moved to a private team"
+    "movedPrivate": "This ticket moved to a private team",
+    "copyForAgent": "Copy ticket for AI agent"
   },
   "commands": {
     "reply": "Reply",
@@ -120,7 +121,9 @@
     "unspammed": "Moved out of spam",
     "deleted": "Deleted #{{number}}",
     "snoozed": "Snoozed",
-    "linkCopied": "Link copied"
+    "linkCopied": "Link copied",
+    "copiedForAgent": "Copied. Paste it into your AI agent.",
+    "copyFailed": "Couldn't copy. Try again."
   },
   "finish": {
     "close": {
@@ -759,7 +762,8 @@
     "showNote": "Show note",
     "hideNote": "Hide note",
     "forward": "Forward",
-    "viewSource": "View source"
+    "viewSource": "View source",
+    "copyForAgent": "Copy for AI agent"
   },
   "merge": {
     "title": "Merge #{{number}} into another ticket",

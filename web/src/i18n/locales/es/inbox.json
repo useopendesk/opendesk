@@ -95,7 +95,8 @@
     "notFoundHint": "Puede que se haya eliminado o fusionado.",
     "loadError": "No se pudo cargar este ticket",
     "back": "Volver a la lista",
-    "movedPrivate": "Este ticket pasó a un equipo privado"
+    "movedPrivate": "Este ticket pasó a un equipo privado",
+    "copyForAgent": "Copiar ticket para agente de IA"
   },
   "commands": {
     "reply": "Responder",
@@ -120,7 +121,9 @@
     "unspammed": "Sacado de spam",
     "deleted": "Eliminado #{{number}}",
     "snoozed": "Pospuesto",
-    "linkCopied": "Enlace copiado"
+    "linkCopied": "Enlace copiado",
+    "copiedForAgent": "Copiado. Pégalo en tu agente de IA.",
+    "copyFailed": "No se pudo copiar. Inténtalo de nuevo."
   },
   "finish": {
     "close": {
@@ -786,7 +789,8 @@
     "showNote": "Mostrar la nota",
     "hideNote": "Ocultar la nota",
     "forward": "Reenviar",
-    "viewSource": "Ver el origen"
+    "viewSource": "Ver el origen",
+    "copyForAgent": "Copiar para agente de IA"
   },
   "merge": {
     "title": "Fusionar #{{number}} en otro ticket",

@@ -95,7 +95,8 @@
     "notFoundHint": "Il a peut-être été supprimé ou fusionné.",
     "loadError": "Impossible de charger ce ticket",
     "back": "Retour à la liste",
-    "movedPrivate": "Ce ticket a été déplacé vers une équipe privée"
+    "movedPrivate": "Ce ticket a été déplacé vers une équipe privée",
+    "copyForAgent": "Copier le ticket pour un agent IA"
   },
   "commands": {
     "reply": "Répondre",
@@ -120,7 +121,9 @@
     "unspammed": "Retiré des indésirables",
     "deleted": "#{{number}} supprimé",
     "snoozed": "Mis en attente",
-    "linkCopied": "Lien copié"
+    "linkCopied": "Lien copié",
+    "copiedForAgent": "Copié. Collez-le dans votre agent IA.",
+    "copyFailed": "Impossible de copier. Réessayez."
   },
   "finish": {
     "close": {
@@ -739,7 +742,8 @@
     "unverifiedHint": "Le domaine de l’expéditeur a échoué à la vérification d’authentification des e-mails. L’expéditeur n’est peut-être pas celui qu’il prétend être. Soyez prudent avec les liens et les demandes de ce message.",
     "viaForm": "Envoyé via le formulaire à l’adresse <m>{{address}}</m>",
     "forward": "Transférer",
-    "viewSource": "Afficher la source"
+    "viewSource": "Afficher la source",
+    "copyForAgent": "Copier pour un agent IA"
   },
   "merge": {
     "title": "Fusionner #{{number}} avec un autre ticket",
