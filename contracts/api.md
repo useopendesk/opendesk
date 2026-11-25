@@ -1440,7 +1440,26 @@ at (`mailbox_id`).
   mailboxes and Microsoft's for Microsoft 365 ones; mail to a forwarding address, through
   `POST /v1/inbound/email` or from a relay in `INBOUND_SMTP_RELAYS` to the built-in SMTP receiver,
   believes `INBOUND_AUTHSERV_ID` alone; mail the built-in receiver takes straight from the sending
-  server, and an answer read from a member's own Collab account, believe none. The first such header from the top is the verdict. A DMARC `fail` opens a
+  server, and an answer read from a member's own Collab account, believe none. The first such header from the top is the verdict. A DMARC `fail` in it
+  still passes when the same header shows the original passed before it was forwarded (a group,
+  alias or forwarding rule breaks SPF alignment and often DKIM):
+  - `compauth=pass`: Microsoft's composite verdict, which already weighed ARC and the tenant's
+    trusted sealers. `softpass`, `fail` and `none` do not count.
+  - `arc=pass`, and the message's ARC chain (RFC 8617) has, for every instance 1 to N, exactly one
+    `ARC-Seal` and one `ARC-Authentication-Results`; every seal is by a trusted sealer writing its
+    own authserv-id; and instance 1 says `dmarc=pass` with `header.from` the domain of the message's
+    single `From`. Trusted sealers, by the seal's `d=`: `google.com` (`mx.google.com`),
+    `microsoft.com` (`mx.microsoft.com`), `email.cloudflare.net` and `cloudflare-email.net`
+    (`mx.cloudflare.net`), plus an authserv-id trusted for the route sealed by its own host name
+    or the domain above it (`mx.example.org` by `example.org`).
+    opendesk does not verify ARC signatures itself: the trusted receiver's `arc=pass` says every seal
+    verified and that the newest message signature covers the message as it arrived. A seal covers
+    only the ARC headers, so a sealer vouches only for what it received and passed on. Hence every
+    sealer must be trusted, not only the first: a sealer of anyone's choosing, anywhere in the chain,
+    could have changed the message or replayed a trusted sealer's results onto another one, and its
+    own results name any authserv-id it likes.
+
+  A DMARC `fail` that stands opens a
   new ticket as spam; on an existing conversation the message is stored with `auth_failed`, the
   ticket's status does not change (it is never reopened; a `status_changed` activity with
   `from` = `to`, `reason: "sender_unverified"` and the `message_id` records that it was kept), and no
