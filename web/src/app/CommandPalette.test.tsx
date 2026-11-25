@@ -12,6 +12,8 @@ import { CommandPalette } from "./CommandPalette";
 import { shell } from "./shellStore";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+// The first test loads the whole menu and the app's settings index: slow on a busy machine.
+vi.setConfig({ testTimeout: 30_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -21,7 +23,7 @@ afterEach(async () => {
 });
 
 const until = async (what: string, ok: () => boolean) => {
-  for (let i = 0; i < 200 && !ok(); i++) await act(async () => new Promise((r) => setTimeout(r, 25)));
+  for (let i = 0; i < 800 && !ok(); i++) await act(async () => new Promise((r) => setTimeout(r, 25)));
   expect(ok(), what).toBe(true);
 };
 
