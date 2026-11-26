@@ -98,7 +98,8 @@
     "movedPrivate": "This ticket moved to a private team",
     "followUpOf": "Follow-up of #{{number}}",
     "followUpHidden": "Follow-up of an earlier ticket",
-    "followUpHint": "The customer wrote again after #{{number}} was closed"
+    "followUpHint": "The customer wrote again after #{{number}} was closed",
+    "copyForAgent": "Copy ticket for AI agent"
   },
   "commands": {
     "reply": "Reply",
@@ -123,7 +124,9 @@
     "unspammed": "Moved out of spam",
     "deleted": "Deleted #{{number}}",
     "snoozed": "Snoozed",
-    "linkCopied": "Link copied"
+    "linkCopied": "Link copied",
+    "copiedForAgent": "Copied. Paste it into your AI agent.",
+    "copyFailed": "Couldn't copy. Try again."
   },
   "finish": {
     "close": {
@@ -501,6 +504,7 @@
     "unassigned": "<b>{{who}}</b> unassigned this ticket",
     "team": "<b>{{who}}</b> moved this to <b>{{team}}</b>",
     "contactChanged": "<b>{{who}}</b> changed the contact from <b>{{from}}</b> to <b>{{to}}</b>",
+    "contactAnswered": "<b>{{to}}</b> answered mail from <b>{{from}}</b> and is now the contact",
     "noContact": "no contact",
     "teamRemoved": "<b>{{who}}</b> removed the team",
     "tagged": "<b>{{who}}</b> added",
@@ -561,6 +565,9 @@
     "theCustomer": "the customer",
     "noteHint": "Only your team sees notes. Type @ to mention someone.",
     "ccBcc": "Cc / Bcc",
+    "replyAll": "Reply all",
+    "replyAllHint": "Reply all: also send this reply to {{list}}, in Cc",
+    "replyAllOff": "Back to Reply: takes {{list}} out of Cc",
     "cc": "Cc",
     "bcc": "Bcc",
     "replyPlaceholder": "Write a reply. Type / for saved replies, {{braces}} for this ticket's details.",
@@ -766,7 +773,8 @@
     "showNote": "Show note",
     "hideNote": "Hide note",
     "forward": "Forward",
-    "viewSource": "View source"
+    "viewSource": "View source",
+    "copyForAgent": "Copy for AI agent"
   },
   "merge": {
     "title": "Merge #{{number}} into another ticket",

@@ -98,7 +98,8 @@
     "movedPrivate": "Dieses Ticket wurde in ein privates Team verschoben",
     "followUpOf": "Folgeanfrage zu #{{number}}",
     "followUpHidden": "Folgeanfrage zu einem früheren Ticket",
-    "followUpHint": "Der Kunde hat erneut geschrieben, nachdem #{{number}} geschlossen wurde"
+    "followUpHint": "Der Kunde hat erneut geschrieben, nachdem #{{number}} geschlossen wurde",
+    "copyForAgent": "Ticket für KI-Agent kopieren"
   },
   "commands": {
     "reply": "Antworten",
@@ -123,7 +124,9 @@
     "unspammed": "Aus Spam verschoben",
     "deleted": "#{{number}} gelöscht",
     "snoozed": "Zurückgestellt",
-    "linkCopied": "Link kopiert"
+    "linkCopied": "Link kopiert",
+    "copiedForAgent": "Kopiert. Füge es in deinen KI-Agenten ein.",
+    "copyFailed": "Kopieren fehlgeschlagen. Versuch es noch einmal."
   },
   "finish": {
     "close": {
@@ -497,6 +500,7 @@
     "unassigned": "<b>{{who}}</b> hat die Zuweisung dieses Tickets aufgehoben",
     "team": "<b>{{who}}</b> hat dies nach <b>{{team}}</b> verschoben",
     "contactChanged": "<b>{{who}}</b> hat den Kontakt von <b>{{from}}</b> zu <b>{{to}}</b> geändert",
+    "contactAnswered": "<b>{{to}}</b> hat auf die E-Mail von <b>{{from}}</b> geantwortet und ist jetzt der Kontakt",
     "noContact": "kein Kontakt",
     "teamRemoved": "<b>{{who}}</b> hat das Team entfernt",
     "tagged": "<b>{{who}}</b> fügte hinzu",
@@ -557,6 +561,9 @@
     "theCustomer": "den Kunden",
     "noteHint": "Notizen sieht nur dein Team. Tippe @, um jemanden zu erwähnen.",
     "ccBcc": "Cc / Bcc",
+    "replyAll": "Allen antworten",
+    "replyAllHint": "Allen antworten: diese Antwort auch an {{list}} senden, in Cc",
+    "replyAllOff": "Zurück zu Antworten: nimmt {{list}} aus Cc heraus",
     "cc": "Cc",
     "bcc": "Bcc",
     "replyPlaceholder": "Schreib eine Antwort. Tippe / für Textbausteine, {{braces}} für die Details dieses Tickets.",
@@ -762,7 +769,8 @@
     "showNote": "Notiz anzeigen",
     "hideNote": "Notiz ausblenden",
     "forward": "Weiterleiten",
-    "viewSource": "Quelltext anzeigen"
+    "viewSource": "Quelltext anzeigen",
+    "copyForAgent": "Für KI-Agent kopieren"
   },
   "merge": {
     "title": "#{{number}} mit anderem Ticket zusammenführen",

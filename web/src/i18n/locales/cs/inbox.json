@@ -98,7 +98,8 @@
     "movedPrivate": "Tento tiket byl přesunut do soukromého týmu",
     "followUpOf": "Navazuje na #{{number}}",
     "followUpHidden": "Navazuje na dřívější tiket",
-    "followUpHint": "Zákazník napsal znovu po uzavření #{{number}}"
+    "followUpHint": "Zákazník napsal znovu po uzavření #{{number}}",
+    "copyForAgent": "Kopírovat tiket pro AI agenta"
   },
   "commands": {
     "reply": "Odpovědět",
@@ -123,7 +124,9 @@
     "unspammed": "Přesunuto ze spamu",
     "deleted": "Tiket #{{number}} smazán",
     "snoozed": "Odloženo",
-    "linkCopied": "Odkaz zkopírován"
+    "linkCopied": "Odkaz zkopírován",
+    "copiedForAgent": "Zkopírováno. Vložte to do svého AI agenta.",
+    "copyFailed": "Kopírování se nezdařilo. Zkuste to znovu."
   },
   "finish": {
     "close": {
@@ -549,6 +552,7 @@
     "unassigned": "Přiřazení tiketu zrušeno uživatelem <b>{{who}}</b>",
     "team": "Přesunuto do týmu <b>{{team}}</b> uživatelem <b>{{who}}</b>",
     "contactChanged": "Kontakt změněn z <b>{{from}}</b> na <b>{{to}}</b> uživatelem <b>{{who}}</b>",
+    "contactAnswered": "Kontaktem je teď <b>{{to}}</b>, z odpovědi na e-mail od <b>{{from}}</b>",
     "noContact": "žádný kontakt",
     "teamRemoved": "Tým odebrán uživatelem <b>{{who}}</b>",
     "tagged": "Přidáno uživatelem <b>{{who}}</b>",
@@ -613,6 +617,9 @@
     "theCustomer": "zákazník",
     "noteHint": "Poznámky vidí pouze váš tým. Znakem @ můžete někoho zmínit.",
     "ccBcc": "Kopie / Skrytá kopie",
+    "replyAll": "Odpovědět všem",
+    "replyAllHint": "Odpovědět všem: poslat tuto odpověď také {{list}}, v kopii",
+    "replyAllOff": "Zpět na Odpovědět: odebere {{list}} z kopie",
     "cc": "Kopie",
     "bcc": "Skrytá kopie",
     "replyPlaceholder": "Napište odpověď. Znakem / vložíte připravené odpovědi, pomocí {{braces}} podrobnosti tohoto tiketu.",
@@ -817,7 +824,8 @@
     "showReply": "Zobrazit odpověď",
     "showNote": "Zobrazit poznámku",
     "hideNote": "Skrýt poznámku",
-    "forward": "Přeposlat"
+    "forward": "Přeposlat",
+    "copyForAgent": "Kopírovat pro AI agenta"
   },
   "merge": {
     "title": "Sloučit #{{number}} s jiným tiketem",
