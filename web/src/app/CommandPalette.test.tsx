@@ -89,6 +89,9 @@ it("highlights the top ticket when tickets arrive after the settings hits, so En
   const { router, input, selected, answer } = await setup();
   await answer(found);
   await until("the ticket is highlighted", () => selected().includes("Two factor codes stopped working"));
+  // See all names the query, so cmdk would score it above the tickets it lists.
+  const items = [...document.querySelectorAll("[cmdk-item]")].map((e) => e.textContent ?? "");
+  expect(items.findIndex((x) => x.startsWith("See all tickets"))).toBe(items.findIndex((x) => x.includes("Two factor codes stopped working")) + 1);
   await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
   expect(router.state.location.pathname).toBe("/inbox/open/t1");
 });

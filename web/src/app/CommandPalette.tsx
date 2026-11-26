@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState, type NavigateOptions } from "@tanstack/react-router";
-import { Command } from "cmdk";
+import { Command, defaultFilter } from "cmdk";
 import { Dialog as D } from "radix-ui";
 import {
   ArrowRight,
@@ -76,6 +76,10 @@ import { useOpenHit } from "@/lib/appSearch/open";
 import { useSettingsAccess } from "@/lib/settingsAccess";
 import { api } from "@/lib/api/endpoints";
 import { uiLanguage } from "@/i18n";
+
+/** See all tickets: scored 0 so cmdk, which sorts a group's items by score, keeps it under the tickets it lists. */
+const SEE_ALL = "see all tickets";
+const score = (value: string, search: string, keywords?: string[]) => (value === SEE_ALL ? 0 : defaultFilter(value, search, keywords));
 
 /** Settings pages Go to lists by name. */
 const GO_SETTINGS_PAGES = [
@@ -213,7 +217,7 @@ export function CommandPalette() {
           className="fixed left-1/2 top-[14vh] z-50 w-[calc(100vw-32px)] max-w-[620px] -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-raised shadow-float origin-top outline-none data-[state=open]:animate-palette-in data-[state=closed]:animate-palette-out motion-reduce:animate-none"
         >
           <D.Title className="sr-only">{tNav("command.menu")}</D.Title>
-          <Command ref={root} loop shouldFilter={!aiMode} value={active} onValueChange={setActive} className="flex flex-col">
+          <Command ref={root} loop shouldFilter={!aiMode} filter={score} value={active} onValueChange={setActive} className="flex flex-col">
             <div className="relative flex h-12 items-center gap-2.5 border-b border-line px-4">
               {aiMode ? (
                 <button
@@ -313,7 +317,7 @@ export function CommandPalette() {
                   {/* Every ticket the search finds, whatever its status, in a list that pages. */}
                   <Item
                     forceMount
-                    value={`see all tickets ${deferred}`}
+                    value={SEE_ALL}
                     icon={<List />}
                     {...link({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "all", ticketId: undefined }, search: { q: deferred } })}
                   >
