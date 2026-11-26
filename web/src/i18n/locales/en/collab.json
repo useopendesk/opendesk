@@ -228,7 +228,10 @@
     "shareWith": "Share with…",
     "moveTo": "Move to…",
     "labelAs": "Label as…",
-    "newTab": "Open in new tab"
+    "newTab": "Open in new tab",
+    "copyForAgent": "Copy for AI agent",
+    "copiedForAgent": "Copied. Paste it into your AI agent.",
+    "copyFailed": "Couldn't copy. Try again."
   },
   "drop": {
     "otherAccount": "Those conversations are in another account.",
