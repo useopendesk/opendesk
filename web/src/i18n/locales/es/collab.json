@@ -237,7 +237,10 @@
     "shareWith": "Compartir con…",
     "moveTo": "Mover a…",
     "labelAs": "Etiquetar como…",
-    "newTab": "Abrir en una pestaña nueva"
+    "newTab": "Abrir en una pestaña nueva",
+    "copyForAgent": "Copiar para agente de IA",
+    "copiedForAgent": "Copiado. Pégalo en tu agente de IA.",
+    "copyFailed": "No se pudo copiar. Inténtalo de nuevo."
   },
   "drop": {
     "otherAccount": "Esas conversaciones están en otra cuenta.",

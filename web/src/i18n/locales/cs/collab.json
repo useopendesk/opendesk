@@ -243,7 +243,10 @@
     "shareWith": "Sdílet s…",
     "moveTo": "Přesunout do…",
     "labelAs": "Označit štítkem…",
-    "newTab": "Otevřít na nové kartě"
+    "newTab": "Otevřít na nové kartě",
+    "copyForAgent": "Kopírovat pro AI agenta",
+    "copiedForAgent": "Zkopírováno. Vložte to do svého AI agenta.",
+    "copyFailed": "Kopírování se nezdařilo. Zkuste to znovu."
   },
   "drop": {
     "otherAccount": "Tyto konverzace jsou v jiném účtu.",
