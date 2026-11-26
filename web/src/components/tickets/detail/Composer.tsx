@@ -436,8 +436,9 @@ export const Composer = forwardRef<
     recipients: draft,
     ticketMailboxId: ticket.mailbox_id,
     onRestore: (d, recipients) => {
-      // Its recipients and address come back with it; Cc opens when it holds any.
-      setDraft({ mode: "reply", html: d.body_html, ...recipients, showCc: !!(recipients.to || recipients.cc.length || recipients.bcc.length) });
+      // Its recipients and address come back with it; Cc opens when it holds any. Its Cc is its
+      // own: Reply all adds to it only when clicked again.
+      setDraft({ mode: "reply", html: d.body_html, ...recipients, replyAll: undefined, showCc: !!(recipients.to || recipients.cc.length || recipients.bcc.length) });
       editor.current?.setHtml(d.body_html);
       setUploads(d.attachments.map((a) => ({ key: a.id, file: new File([], a.filename, { type: a.content_type }), status: "done" as const, attachment: a })));
     },
