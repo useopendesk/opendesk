@@ -3,8 +3,10 @@ package widget
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -13,15 +15,18 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/audit"
+	"github.com/useopendesk/opendesk/internal/config"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
+	"github.com/useopendesk/opendesk/internal/helpdesk/helpsite"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/templates"
 )
 
 // A chat visitor verifies the address they gave in the widget with a link we email them
@@ -114,20 +119,65 @@ func nextVerification(ctx context.Context, q db.Querier, wid, cid uuid.UUID, add
 	return at, nil
 }
 
-// sendVerification creates a link for the contact's address and queues its email in tx.
-func (h *handler) sendVerification(ctx context.Context, tx pgx.Tx, g widgetRow, cid uuid.UUID, addr string, now time.Time) error {
+// sendVerification creates a link for the contact's address and queues its email in tx, in
+// lang (the widget's language) else the brand's or the workspace's.
+func (h *handler) sendVerification(ctx context.Context, tx pgx.Tx, g widgetRow, cid uuid.UUID, addr, lang string, now time.Time) error {
 	token := crypto.RandomToken(32)
 	if _, err := tx.Exec(ctx, `INSERT INTO contact_email_verifications (id, workspace_id, contact_id, widget_id, email, token_hash, created_at, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, ids.New(), g.WorkspaceID, cid, g.ID, addr, crypto.HashToken(token), now, now.Add(verifyLinkTTL)); err != nil {
 		return err
 	}
-	site := emails.SiteFrom(h.d.Cfg)
 	// The token rides in the fragment, which browsers never send to a server.
-	link := site.App("/chat/verify") + "#token=" + url.QueryEscape(token)
-	m := emails.ChatVerification(site, g.BrandName, link, int(verifyLinkTTL/time.Hour))
-	_, err := h.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: addr, Subject: m.Subject, HTML: m.HTML, Text: m.Text, Headers: m.Headers},
+	link := emails.SiteFrom(h.d.Cfg).App("/chat/verify") + "#token=" + url.QueryEscape(token)
+	for _, l := range []string{lang, g.BrandLocale, g.WSSettings.Locale} {
+		if lang = helpsite.MatchLocale(l); lang != "" {
+			break
+		}
+	}
+	subject, m, err := verificationEmail(ctx, tx, h.d.Cfg, g, lang, link, now)
+	if err != nil {
+		return err
+	}
+	_, err = h.d.Jobs.InsertTx(ctx, tx, jobs.SystemEmailArgs{To: addr, Subject: subject, HTML: m.HTML, Text: m.Text},
 		&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8})
 	return err
+}
+
+// verificationEmail is the link's email: the words of the customer-facing catalogs in lang
+// (chat_verify.email_*), in the brand's email layout (contracts/templates.md "Email design").
+func verificationEmail(ctx context.Context, q db.Querier, cfg *config.Config, g widgetRow, lang, link string, now time.Time) (string, templates.Email, error) {
+	brandID := g.BrandID
+	tc, err := templates.Load(ctx, q, cfg, templates.Ref{WorkspaceID: g.WorkspaceID, BrandID: &brandID, Now: now})
+	if err != nil {
+		return "", templates.Email{}, err
+	}
+	design, err := templates.LoadDesign(ctx, q, g.WorkspaceID, g.BrandID)
+	if err != nil {
+		return "", templates.Email{}, err
+	}
+	brand := tc.BrandName
+	if brand == "" {
+		brand = g.BrandName
+	}
+	t := func(key string) string {
+		return helpsite.T(lang, "chat_verify."+key, "brand", brand, "hours", int(verifyLinkTTL/time.Hour))
+	}
+	accent := design.Layout.Accent
+	if !templates.ValidColor(accent) {
+		accent = tc.BrandColor
+	}
+	dir := "ltr"
+	if helpsite.RTL(lang) {
+		dir = "rtl"
+	}
+	p := func(s string) string { return "<p>" + html.EscapeString(s) + "</p>" }
+	body := `<div dir="` + dir + `">` + `<p><strong>` + html.EscapeString(t("title")) + `</strong></p>` +
+		p(t("email_intro")) + p(t("email_meanwhile")) +
+		`<p style="margin:20px 0"><a href="` + html.EscapeString(link) + `" style="display:inline-block;padding:10px 18px;border:2px solid ` + accent +
+		`;border-radius:8px;background-color:#FFFFFF;color:#0A0A0A;text-decoration:none;font-weight:600">` + html.EscapeString(t("button")) + `</a></p>` +
+		p(t("email_expiry")) + `<p style="font-size:13px;color:#737373">` + html.EscapeString(t("email_reason")) + `</p></div>`
+	text := strings.Join([]string{t("title"), t("email_intro"), t("email_meanwhile"), t("button") + ": " + link, t("email_expiry"), t("email_reason")}, "\n\n")
+	return t("email_subject"), tc.RenderEmail(design, templates.Parts{Content: body, ContentText: text}), nil
 }
 
 // chatVerificationPage is what the verification page shows of a link.
@@ -337,7 +387,8 @@ func (h *handler) registerVerification(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Origin string `header:"Origin"`
 			Body   struct {
-				Resend bool `json:"resend,omitempty" doc:"Send another link although one still works"`
+				Resend bool   `json:"resend,omitempty" doc:"Send another link although one still works"`
+				Locale string `json:"locale,omitempty" maxLength:"35" doc:"The language the widget shows the visitor (BCP 47), which the email uses; else the brand's, else the workspace's"`
 			}
 		}) (*struct{ Body visitorVerification }, error) {
 			p, g, err := h.visitorWidget(ctx, in.Origin)
@@ -373,7 +424,7 @@ func (h *handler) registerVerification(api huma.API) {
 				if !h.d.Limiter.Allow("widget:verify:"+clientIP(ctx), verifyPerIP, time.Hour) {
 					return httpx.RateLimited()
 				}
-				if err := h.sendVerification(ctx, tx, g, c.ID, *out.Email, now); err != nil {
+				if err := h.sendVerification(ctx, tx, g, c.ID, *out.Email, in.Body.Locale, now); err != nil {
 					return err
 				}
 				out, err = verificationOf(ctx, tx, p.WorkspaceID, c, now)

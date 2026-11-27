@@ -59,14 +59,14 @@ The session also carries `verification`: `status` is `verified` (the visitor con
 curl https://api.opendesk.sh/v1/widget/verification \
   -H "Authorization: Visitor od_vis_..." \
   -H "Content-Type: application/json" \
-  -d '{ "resend": false }'
+  -d '{ "resend": false, "locale": "fr" }'
 ```
 
 ```json
 { "status": "unverified", "email": "ana@example.com", "sent_at": "2026-11-13T10:00:00Z", "resend_at": "2026-11-13T10:01:00Z" }
 ```
 
-Emails the visitor a link to verify the address they gave. While a link still works, nothing is sent unless `resend` is `true`, so calling it again never sends a duplicate. A verified visitor, or one without an address, gets nothing. Resending waits a minute after the last link, and one visitor or one address gets at most five a day: before `resend_at` the answer is `429 verification_too_soon`. The chat works whether or not the visitor verifies. When they confirm the link, the widget's socket gets `contact.verified`, and agents see the contact's `verification` change through `contact.updated`.
+Emails the visitor a link to verify the address they gave, in `locale` (the language the widget shows them; else the brand's, else the workspace's) and in the brand's email design. While a link still works, nothing is sent unless `resend` is `true`, so calling it again never sends a duplicate. A verified visitor, or one without an address, gets nothing. Resending waits a minute after the last link, and one visitor or one address gets at most five a day: before `resend_at` the answer is `429 verification_too_soon`. The chat works whether or not the visitor verifies. When they confirm the link, the widget's socket gets `contact.verified`, and agents see the contact's `verification` change through `contact.updated`.
 
 ## Conversations
 

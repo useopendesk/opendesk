@@ -80,20 +80,20 @@ describe("chat verification page", () => {
     expect(calls.map((c) => c.path)).toEqual(["/v1/public/chat-verification"]);
     expect(calls[0].body).toEqual({ token: "tok" });
     expect(host.textContent).toContain("ada@example.com");
-    expect(host.textContent).toContain("so Lumen knows the chat is from you");
+    expect(host.textContent).toContain("so Lumen knows the chat is really from you");
     expect(verified).toBe(false);
 
-    const button = [...host.querySelectorAll("button")].find((b) => b.textContent === "Verify account")!;
+    const button = [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm email address")!;
     await act(async () => button.click());
     await vi.waitFor(() => expect(host.querySelector("[data-testid=chat-verified]")).not.toBeNull());
     expect(verified).toBe(true);
     expect(calls.map((c) => c.path)).toEqual(["/v1/public/chat-verification", "/v1/public/chat-verification/confirm"]);
-    expect(host.textContent).toContain("Your account is verified");
+    expect(host.textContent).toContain("Your email address is confirmed");
   });
 
   it("says an address is already verified, and a dead link is not valid", async () => {
     await open("#token=used", () => json(page("verified")));
-    expect(host.textContent).toContain("Your account is already verified");
+    expect(host.textContent).toContain("Your email address is already confirmed");
     act(() => root.unmount());
     root = createRoot(host);
     await open("#token=gone", () => json({ status: 404, code: "invalid_link", detail: "This link has expired or was already used." }, 404));

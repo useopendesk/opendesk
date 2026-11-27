@@ -128,7 +128,10 @@ func TestVerificationSendsOneLinkAndLimitsResends(t *testing.T) {
 		t.Fatalf("first request: %+v", v)
 	}
 	mails := verifyMails(t, e, addr)
-	if len(mails) != 1 || !strings.Contains(mails[0].Subject, "Verify your email") || !strings.Contains(mails[0].HTML, "Verify account") {
+	// It asks to confirm an address, in the brand's email layout, and in English when neither the
+	// widget nor the workspace names a language.
+	if len(mails) != 1 || !strings.HasPrefix(mails[0].Subject, "Confirm your email address for ") || !strings.Contains(mails[0].HTML, ">Confirm email address</a>") ||
+		!strings.HasPrefix(mails[0].HTML, "<!doctype html>") || strings.Contains(mails[0].HTML+mails[0].Text, "account") {
 		t.Fatalf("mails: %+v", mails)
 	}
 	linkToken(t, mails[0])
@@ -144,9 +147,11 @@ func TestVerificationSendsOneLinkAndLimitsResends(t *testing.T) {
 	e.Do("POST", "/v1/widget/verification", a, map[string]any{"resend": true}).Want(t, 429)
 
 	e.Exec(`UPDATE contact_email_verifications SET created_at = created_at - interval '2 minutes' WHERE contact_id = $1`, s.Contact.ID)
-	requestVerification(t, e, a, true, 200)
-	if n := len(verifyMails(t, e, addr)); n != 2 {
-		t.Fatalf("resend: %d mails", n)
+	// The email speaks the language the widget shows the visitor.
+	e.Do("POST", "/v1/widget/verification", a, map[string]any{"resend": true, "locale": "fr-FR"}).Want(t, 200)
+	if mails := verifyMails(t, e, addr); len(mails) != 2 || !strings.HasPrefix(mails[1].Subject, "Confirmez votre adresse e-mail pour ") ||
+		!strings.Contains(mails[1].Text, "Confirmer l’adresse e-mail: ") {
+		t.Fatalf("resend: %+v", mails)
 	}
 
 	// Five a day for the address, whichever contact asks.

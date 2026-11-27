@@ -82,7 +82,7 @@ describe("verification", () => {
     const s = c.store.get();
     expect(s.session?.verification?.status).toBe("verified");
     expect(s.verify.verifiedNow).toBe(true);
-    expect(said).toEqual(["Your account is verified"]);
+    expect(said).toEqual(["Your email address is confirmed"]);
 
     const after = c.requestVerification(true);
     await vi.advanceTimersByTimeAsync(61_000);
@@ -92,7 +92,7 @@ describe("verification", () => {
     c.stop();
   });
 
-  it("starts over as a new visitor when the chat went to the account that has the address", async () => {
+  it("starts over as a new visitor when the chat went to the contact that has the address", async () => {
     const { mock, c } = await setup();
     const sent = c.captureEmail("Ada", "ada@example.com");
     await vi.advanceTimersByTimeAsync(100);

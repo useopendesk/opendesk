@@ -5,7 +5,7 @@
 import { WidgetApi, WidgetError, type Fetcher } from "./api";
 import { isAiAnswer, keyBot } from "./ai";
 import { pageUrl, readBotRef, resolveConfig } from "./config";
-import { t } from "./i18n";
+import { current, t } from "./i18n";
 import { dropLive, liveMessage, reduceLive } from "./live";
 import { plainText } from "./markdown";
 import { Live, type SocketFactory } from "./realtime";
@@ -410,7 +410,7 @@ export class Controller {
     if (preview || verify.busy || session?.verification?.status !== "unverified") return;
     this.set((s) => ({ verify: { ...s.verify, busy: true, note: null } }));
     try {
-      const v = await this.api.verification(resend);
+      const v = await this.api.verification(resend, current());
       this.set((s) => ({
         session: s.session ? { ...s.session, verification: v } : s.session,
         verify: { ...s.verify, busy: false, note: resend && v.status === "unverified" ? "resent" : null },

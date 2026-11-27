@@ -80,9 +80,12 @@ export class WidgetApi {
     await this.req<void>("DELETE", "/v1/widget/session");
   }
 
-  /** Email the visitor a link to verify their address; nothing is sent while one still works, unless `resend`. */
-  verification(resend = false) {
-    return this.req<Verification>("POST", "/v1/widget/verification", resend ? { resend: true } : {});
+  /**
+   * Email the visitor a link to verify their address, in `locale` (the language the widget shows them);
+   * nothing is sent while one still works, unless `resend`.
+   */
+  verification(resend: boolean, locale: string) {
+    return this.req<Verification>("POST", "/v1/widget/verification", resend ? { resend: true, locale } : { locale });
   }
 
   async conversations() {
