@@ -134,28 +134,6 @@ func listLinks(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID) ([]Li
 	return out, rows.Err()
 }
 
-// visibleTicket answers not found for a ticket p may not see (contracts/teams.md "Visibility"),
-// the same as for a missing one.
-func visibleTicket(ctx context.Context, q db.Querier, p *auth.Principal, id uuid.UUID) error {
-	var team, assignee *uuid.UUID
-	err := q.QueryRow(ctx, `SELECT team_id, assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL`,
-		p.WorkspaceID, id).Scan(&team, &assignee)
-	if db.IsNotFound(err) {
-		return httpx.NotFound("Ticket")
-	}
-	if err != nil {
-		return err
-	}
-	ok, err := domain.CanSee(ctx, q, p, team, assignee)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return httpx.NotFound("Ticket")
-	}
-	return nil
-}
-
 func actorType(p *auth.Principal) string {
 	switch {
 	case p.Kind == auth.KindUser && p.Assistant:
@@ -282,11 +260,8 @@ func (s *Service) registerLinks(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, ok := ids.Parse(in.ID)
-			if !ok {
-				return nil, httpx.NotFound("Ticket")
-			}
-			if err := visibleTicket(ctx, s.d.DB.Pool, p, tid); err != nil {
+			tid, err := domain.ResolveVisibleTicket(ctx, s.d.DB.Pool, p, in.ID)
+			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			out := &struct {
@@ -315,10 +290,6 @@ func (s *Service) registerLinks(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, ok := ids.Parse(in.ID)
-			if !ok {
-				return nil, httpx.NotFound("Ticket")
-			}
 			link, err := s.linkURL(in.Body.URL)
 			if err != nil {
 				return nil, err
@@ -339,10 +310,10 @@ func (s *Service) registerLinks(api huma.API) {
 			}
 			var l Link
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if err := visibleTicket(ctx, tx, p, tid); err != nil {
+				tid, err := domain.ResolveVisibleTicket(ctx, tx, p, in.ID)
+				if err != nil {
 					return err
 				}
-				var err error
 				l, err = s.linkTicket(ctx, tx, p.WorkspaceID, tid, iid, prov, link, title, actorType(p), p.ActorUserID())
 				return err
 			})
@@ -363,13 +334,13 @@ func (s *Service) registerLinks(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			tid, ok1 := ids.Parse(in.ID)
-			lid, ok2 := ids.Parse(in.LinkID)
-			if !ok1 || !ok2 {
+			lid, ok := ids.Parse(in.LinkID)
+			if !ok {
 				return nil, httpx.NotFound("Link")
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if err := visibleTicket(ctx, tx, p, tid); err != nil {
+				tid, err := domain.ResolveVisibleTicket(ctx, tx, p, in.ID)
+				if err != nil {
 					return err
 				}
 				l, err := scanLink(tx.QueryRow(ctx, `DELETE FROM ticket_links WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3

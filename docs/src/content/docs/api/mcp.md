@@ -140,11 +140,12 @@ A tool is offered only when the key, or the OAuth connection together with your 
 | Tool | Scope | What it does | Changes data |
 | --- | --- | --- | --- |
 | `search_tickets` | `tickets:read` | Finds tickets by text, status, priority, severity, assignee, team, label, channel, contact or creation date. At most 50 per call. | No |
-| `get_ticket` | `tickets:read` | Reads a ticket with its thread as plain text, internal notes included. | No |
+| `get_ticket` | `tickets:read` | Reads a ticket with its thread as plain text, internal notes included, and the links it has to items in other tools. | No |
 | `list_custom_fields` | `tickets:read` | Lists the custom fields: key, name, type, options and whether a ticket needs the field set to be solved. Filter by `entity` (`ticket`, `contact` or `company`); archived fields only with `include_archived`. | No |
 | `reply_to_ticket` | `tickets:write` | Sends a public reply (markdown), optionally with files. The customer receives it. Can set the status after sending. With `direction: "inbound"` it logs what the customer said elsewhere, such as on a call, as their own message instead, and sends nothing. | Yes |
 | `draft_reply` | `tickets:write` | Stages a reply (markdown) on the ticket without sending it. Every teammate who opens the ticket finds it in their composer, to edit and send as their own reply. Staging again replaces it; a reply going out clears it. | Yes |
 | `add_note` | `tickets:write` | Adds an internal note the customer never sees, optionally with files. | Yes |
+| `link_ticket` | `tickets:write` | Adds a link from a ticket to an issue, task or page in another tool, by its https URL and an optional title. Linking the same URL again returns the existing link. | Yes |
 | `update_ticket` | `tickets:write` | Changes status, priority, severity, assignee, team, labels or custom fields. | Yes |
 | `create_ticket` | `tickets:write` | Creates a ticket for a contact email, optionally with custom field values and files. With a mailbox, the first reply is emailed to the contact. With `direction: "inbound"` the first message is logged as the contact's own request, for one that came in by phone or in person, and nothing is sent. | Yes |
 | `upload_attachment` | `tickets:write` | Uploads a file from an https URL (up to 25 MB) or as base64 (up to 6 MB) and returns its `attachment_id`, for `attachment_ids` on the three tools above. | Yes |

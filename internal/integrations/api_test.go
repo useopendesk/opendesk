@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -311,6 +312,26 @@ func TestTicketLinks(t *testing.T) {
 	if acts != 2 {
 		t.Fatalf("activities = %d", acts)
 	}
+}
+
+func TestTicketLinksTakeANumber(t *testing.T) {
+	e, ws := apiEnv(t)
+	agent := ws.Agent.As(ws)
+	var tk struct {
+		ID     string `json:"id"`
+		Number int64  `json:"number"`
+	}
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Broken export", "body_html": "It fails"}).Want(t, 201).JSON(t, &tk)
+	byNumber := fmt.Sprintf("/v1/tickets/%%23%d/links", tk.Number)
+	l := e.Do("POST", byNumber, agent, map[string]any{"url": "https://linear.app/a/issue/A-1"}).Want(t, 201).Map(t)
+	if l["ticket_id"] != tk.ID {
+		t.Fatalf("link = %v", l)
+	}
+	if n := len(e.Do("GET", byNumber, agent, nil).Want(t, 200).Map(t)["data"].([]any)); n != 1 {
+		t.Fatalf("links = %d", n)
+	}
+	e.Do("DELETE", byNumber+"/"+l["id"].(string), agent, nil).Want(t, 204)
+	e.Do("GET", fmt.Sprintf("/v1/tickets/%%23%d/links", tk.Number+1000), agent, nil).Want(t, 404)
 }
 
 func TestTicketLinksFollowVisibility(t *testing.T) {
