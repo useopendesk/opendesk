@@ -199,7 +199,7 @@ func (s *Service) WidgetAnswer(ctx context.Context, a jobs.AIWidgetAnswerArgs) e
 	}
 	if capped, err := s.agentCapped(ctx, a.WorkspaceID, ac.set); err != nil || capped {
 		if capped {
-			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipMonthlyCap)
+			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipMonthlyCap, ac.bot)
 		}
 		return err
 	}
@@ -488,15 +488,15 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 	return messageID, actionID, err
 }
 
-// decline records that the agent did not reply to this message; the team handles it.
-func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID, reason string) error {
+// decline records that the agent (bot) did not reply to this message and why; the team handles it.
+func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID, reason string, bot bots.Bot) error {
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `INSERT INTO ai_widget_answers (message_id, workspace_id, ticket_id, answered) VALUES ($1, $2, $3, false)
 			ON CONFLICT DO NOTHING`, mid, wid, tid)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
-		return logAISkipped(ctx, tx, wid, tid, reason)
+		return logAISkipped(ctx, tx, wid, tid, reason, bot)
 	})
 	if err != nil {
 		return err
@@ -505,13 +505,20 @@ func (s *Service) decline(ctx context.Context, wid, tid, mid uuid.UUID, reason s
 }
 
 // logAISkipped records on the ticket why the agent left the customer's message unanswered,
-// for the team only (contracts/agent.md "Why it did not answer").
-func logAISkipped(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, reason string) error {
+// and the bot it answers as, for the team only (contracts/agent.md "Why it did not answer").
+func logAISkipped(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, reason string, bot bots.Bot) error {
 	var live bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL)`, wid, tid).Scan(&live); err != nil || !live {
 		return err
 	}
-	_, err := domain.LogActivity(ctx, tx, wid, tid, "ai", nil, "ai_skipped", map[string]any{"reason": reason})
+	data := map[string]any{"reason": reason}
+	if bot.Name != "" {
+		data["bot"] = bot.Name
+	}
+	if id := bot.IDPtr(); id != nil {
+		data["bot_id"] = id.String()
+	}
+	_, err := domain.LogActivity(ctx, tx, wid, tid, "ai", nil, "ai_skipped", data)
 	return err
 }
 

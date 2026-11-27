@@ -949,7 +949,8 @@ function seedWaitingChats(ws: WsData, bot: string) {
       ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_handoff", data: { bot: handedBy.name, bot_id: handedBy.id }, created_at: at });
     }
     if (c.skipped) {
-      ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_skipped", data: { reason: c.skipped }, created_at: ago((c.thread[0].sec - 2) * 1000) });
+      const leftBy = botForTicket(ws, t);
+      ws.activities.push({ id: uuid(), ticket_id: t.id, actor: { type: "ai", user: null }, type: "ai_skipped", data: { reason: c.skipped, bot: leftBy.name, bot_id: leftBy.id }, created_at: ago((c.thread[0].sec - 2) * 1000) });
     }
     contact.ticket_count++;
   });

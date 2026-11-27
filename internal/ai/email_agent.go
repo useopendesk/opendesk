@@ -103,9 +103,6 @@ func (w *EmailAnswerWorker) Work(ctx context.Context, job *river.Job[jobs.AIEmai
 	err := w.S.EmailAnswer(ctx, job.Args)
 	if err != nil && skippable(err) {
 		w.S.d.Log.Info("email answer skipped", "ticket_id", job.Args.TicketID, "reason", errReason(err))
-		if isNoBalance(err) {
-			return w.S.decline(ctx, job.Args.WorkspaceID, job.Args.TicketID, job.Args.MessageID, hd.SkipNoBalance)
-		}
 		return nil
 	}
 	return err
@@ -266,7 +263,7 @@ func (s *Service) EmailAnswer(ctx context.Context, a jobs.AIEmailAnswerArgs) err
 			return err
 		}
 		if recent >= emailContactHourly {
-			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipContactLimit)
+			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipContactLimit, ec.bot)
 		}
 	}
 	if ec.replies >= max(ec.set.WidgetMaxReplies, 1) {
@@ -274,7 +271,7 @@ func (s *Service) EmailAnswer(ctx context.Context, a jobs.AIEmailAnswerArgs) err
 	}
 	if capped, err := s.agentCapped(ctx, a.WorkspaceID, ec.set); err != nil || capped {
 		if capped {
-			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipMonthlyCap)
+			return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipMonthlyCap, ec.bot)
 		}
 		return err
 	}
@@ -289,6 +286,9 @@ func (s *Service) EmailAnswer(ctx context.Context, a jobs.AIEmailAnswerArgs) err
 	}
 	in := ec.input(a.WorkspaceID, a.TicketID)
 	res, err := s.runAgent(ctx, in, agentEvents{})
+	if isNoBalance(err) {
+		return s.decline(ctx, a.WorkspaceID, a.TicketID, a.MessageID, hd.SkipNoBalance, ec.bot)
+	}
 	if err != nil {
 		return err
 	}

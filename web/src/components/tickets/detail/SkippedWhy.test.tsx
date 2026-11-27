@@ -21,18 +21,25 @@ afterEach(async () => {
 });
 
 async function open(data: Record<string, unknown>) {
-  await act(async () => root.render(<SkippedWhy data={data} />));
+  await act(async () => root.render(<SkippedWhy data={data} ollie="Ollie" />));
   const button = container.querySelector("button");
   if (button) await act(async () => button.click());
   return button;
 }
 
 describe("SkippedWhy", () => {
-  it("says why the agent left the message", async () => {
+  it("says why Ollie left the message", async () => {
     await open({ reason: "monthly_cap" });
     const text = document.body.textContent ?? "";
-    expect(text).toContain("monthly cap");
+    expect(text).toContain("Ollie had used its monthly cap.");
     expect(text).toContain("Only the team sees this.");
+  });
+
+  it("names the workspace's own bot when one left it", async () => {
+    await open({ reason: "contact_limit", bot: "Pip" });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("answers Pip gives one person");
+    expect(text).not.toContain("Ollie");
   });
 
   it("shows nothing for an unknown reason", async () => {

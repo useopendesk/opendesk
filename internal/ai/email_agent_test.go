@@ -15,6 +15,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/plan"
 )
 
 // emailMailbox inserts a mailbox; mode "" leaves email answers off.
@@ -349,6 +350,11 @@ func TestEmailAgentSaysWhyItStaysSilent(t *testing.T) {
 	if got := skipped(tid); !slices.Equal(got, []string{hd.SkipMonthlyCap}) {
 		t.Fatalf("cap reasons %v", got)
 	}
+	var bot string
+	e.Scalar(`SELECT coalesce(data->>'bot', '') FROM activities WHERE ticket_id = $1 AND type = 'ai_skipped'`, &bot, tid)
+	if bot == "" {
+		t.Fatal("the skipped line names no bot")
+	}
 	e.settings(map[string]any{"widget_monthly_cap_usd": 0})
 
 	// The customer reached the hourly limit.
@@ -366,5 +372,16 @@ func TestEmailAgentSaysWhyItStaysSilent(t *testing.T) {
 	}
 	if got := skipped(tid); !slices.Equal(got, []string{hd.SkipContactLimit}) {
 		t.Fatalf("limit reasons %v", got)
+	}
+
+	// The AI balance is used up.
+	if err := plan.Ensure(e.Ctx, e.D.DB.Pool, e.WS.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.Exec(`UPDATE ai_balances SET included_used_micro_usd = $2 WHERE workspace_id = $1`, e.WS.ID, plan.FreeMonthlyUSD)
+	tid, mid = e.emailTicket(mb, customerEmail(), "Password", "How do I reset my password?")
+	e.emailAnswer(tid, mid)
+	if got := skipped(tid); !slices.Equal(got, []string{hd.SkipNoBalance}) {
+		t.Fatalf("balance reasons %v", got)
 	}
 }
