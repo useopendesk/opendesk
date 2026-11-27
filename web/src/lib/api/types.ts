@@ -24,6 +24,9 @@ export type User = {
 export type TimeFormat = "auto" | "12h" | "24h";
 export type UserRef = { id: string; name: string; email: string; avatar_url: string | null };
 
+/** POST /v1/signature-images: a stored signature picture, a PNG of at most 600 px on its longer side. */
+export type SignatureImage = { url: string; width: number; height: number };
+
 export type WorkspaceSettings = {
   /** Whether ticketing is enabled for this workspace. Defaults to true. */
   tickets_enabled?: boolean;
@@ -672,6 +675,8 @@ export type CallData = {
   asset_url: string;
   /** Direct links, working until links_expire_at. */
   recording_url: string;
+  /** The provider only serves the recording to the connection: it plays through the app. */
+  recording_stream?: boolean;
   voicemail_url: string;
   links_expire_at: string | null;
   tags: string[];
@@ -1465,7 +1470,21 @@ export type PanelBlock =
   | { type: "card"; id?: string; title: string; url?: string; subtitle?: string; badges?: PanelBadge[]; links?: PanelLink[]; collapsed?: boolean; fields?: PanelField[]; lines?: PanelLine[]; footer?: PanelField[] }
   | { type: "fields"; title?: string; items: PanelField[] }
   | { type: "list"; title?: string; items: PanelListItem[] }
-  | { type: "note"; text: string; tone: PanelTone };
+  | { type: "note"; text: string; tone: PanelTone }
+  | { type: "actions"; actions: PanelAction[] };
+/** A button of an http panel: it sends a signed request back to the panel's URL (contracts/integrations.md "Actions"). */
+export type PanelAction = { id: string; label: string; tone?: "neutral" | "danger"; confirm?: string; inputs?: PanelInput[] };
+export type PanelInput = {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "select";
+  required?: boolean;
+  placeholder?: string;
+  default?: string;
+  max_length?: number;
+  options?: { value: string; label: string }[];
+};
+export type PanelActionResult = { ok: boolean; message: string; tone: PanelTone; data?: TicketPanelData };
 export type TicketPanelErrorCode = "timeout" | "rate_limited" | "ticket" | "refused" | "status" | "answer";
 
 export type TicketPanelData = {
@@ -1523,6 +1542,18 @@ export type WebhookDelivery = {
   response_code: number | null;
   duration_ms: number | null;
   created_at: string;
+};
+/** One of the customer's other tickets (GET /v1/tickets/{id}/customer-tickets), with the contact it is filed under. */
+export type CustomerPastTicket = {
+  id: string;
+  number: number;
+  subject: string;
+  status: TicketStatus;
+  channel: string;
+  message_count: number;
+  last_message_at: string;
+  /** email: the contact's address, or the one it typed in the chat. */
+  contact: { id: string; name: string; email: string };
 };
 /** A row of the trash (GET /v1/tickets/deleted): a deleted ticket, who deleted it and when. */
 export type DeletedTicket = {
@@ -2276,8 +2307,14 @@ export type TicketPatch = {
 };
 
 export type ReportsRange = { from: string; to: string };
-/** The overview's query: a range, narrowed to a team (`none`: no team) and a brand. */
-export type ReportsQuery = ReportsRange & { team_id?: string; brand_id?: string };
+/** The overview's query: a range, narrowed to a team (`none`: no team), a brand, a mailbox (`none`: no mailbox) and a member. */
+export type ReportsQuery = ReportsRange & {
+  team_id?: string;
+  brand_id?: string;
+  mailbox_id?: string;
+  /** One member's tickets (overview), their row alone (agents). */
+  assignee_id?: string;
+};
 
 // Billing (contracts/billing.md).
 export type Plan = "free" | "pro" | "collab" | "self_hosted";
@@ -2580,6 +2617,8 @@ export type Suggestion = {
   probability: number | null;
   model: string;
   decided_at: string;
+  /** Why it was not applied; absent on older suggestions. */
+  reason?: "below_threshold" | "field_off" | "not_on_team";
 };
 export type AISuggestions = Partial<Record<SuggestionField, Suggestion>>;
 export type KBSource = { article_id: string; title: string; url: string };
@@ -3093,7 +3132,33 @@ export type EmailTemplate = {
 };
 export type EmailTemplates = { layout: EmailTemplate; csat: EmailTemplate };
 
-export type PreviewKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat";
+/** notice: a message to many customers (contracts/api.md "Messages to many customers"): its own subject, no history. */
+export type PreviewKind = "reply" | "notice" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat";
+/** A message sent to many customers, and how far it got (contracts/api.md "Messages to many customers"). */
+export type ContactMessage = {
+  id: string;
+  subject: string;
+  /** The label every ticket of this message carries. */
+  label: string;
+  /** What the tickets start as. */
+  status: "open" | "pending" | "solved";
+  state: "sending" | "done" | "cancelled";
+  mailbox_id: string | null;
+  created_by: string | null;
+  /** Customers it reaches. */
+  total: number;
+  /** Tickets created so far. */
+  sent: number;
+  failed: number;
+  last_error: string;
+  /** Customers left out when it was made, by reason. */
+  skipped: Partial<Record<"no_email" | "blocked", number>>;
+  created_at: string;
+  finished_at: string | null;
+};
+/** Who a send would reach, and who it would leave out. */
+export type NoticePreview = { reaches: number; skipped: Partial<Record<"no_email" | "blocked", number>> };
+
 export type TemplatePreviewBody = {
   kind: PreviewKind;
   body_html?: string;
@@ -3756,3 +3821,43 @@ export type Space = {
 
 /** GET and PUT /v1/me/spaces. `saved` false: nothing saved yet (no Spaces). */
 export type SpacesResponse = { spaces: Space[]; saved: boolean };
+
+/** The CSV column that fills each contact field ("" or absent leaves it unset); contracts/imports.md "Contacts". */
+export type ContactImportMapping = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  external_id?: string;
+  notes?: string;
+  labels?: string;
+  /** A custom field's key to its column. */
+  fields?: Record<string, string>;
+};
+export type ContactImportUpload = {
+  upload_id: string;
+  filename: string;
+  rows: number;
+  columns: { name: string; samples: string[] }[];
+  suggested: ContactImportMapping;
+};
+export type ContactImportMatch = "email" | "external_id";
+export type ContactImportOnMatch = "skip" | "fill" | "overwrite";
+export type ContactImport = {
+  id: string;
+  filename: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  match_on: ContactImportMatch;
+  on_match: ContactImportOnMatch;
+  total: number;
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  /** The first rows that could not be imported, with the line each is on. */
+  errors: { line: number; message: string }[];
+  error: string;
+  created_at: string;
+  finished_at: string | null;
+};

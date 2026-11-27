@@ -93,6 +93,7 @@ view to its owner.
 | `member.added` / `member.updated` / `member.removed` | agents | `user:<uid>` | `{ "member": Member }` / `{ "user_id" }`. `member.updated` also on availability, profile and picture changes (in every workspace of that user) |
 | `workspace.updated`      | agents     | —                                     | `{ "workspace": Workspace }` (name, settings, logo and brand images) |
 | `notification.created`   | agents     | `private`, `user:<uid>` (the recipient alone) | `{ "notification": Notification }` |
+| `contact_message.updated` | agents     | `private`, `user:<uid>` (the member who sent it alone) | `{ "contact_message": ContactMessage }`: a message to many customers as it goes (contracts/api.md "Messages to many customers") |
 | `notification.read`      | agents     | `private`, `user:<uid>` (the reader alone) | `{ "ids": string[], "read_at": string }`, or `{ "all": true, "read_at": string }` when more than 200 were read at once (every notification created up to `read_at`): `POST /v1/notifications/read` from any window or device, so the bell and the desktop badge everywhere else follow |
 | `notification.deleted`   | agents     | `private`, `user:<uid>` (the recipient alone) | `{ "ids": string[] }`: notifications removed with what they were about (a deleted message's mention); a phone whose unread count fell gets a badge update |
 | `ai_suggested_reply.created` / `ai_suggested_reply.updated` | agents | — | `{ "ticket_id": "...", "suggested_reply": SuggestedReply }` (`contracts/agent.md` "Email"). `created` when the agent suggests a reply on an email ticket (it supersedes the pending one); `updated` when a teammate sends or discards it |
@@ -123,6 +124,7 @@ view to its owner.
 | `ticket_link.created` / `ticket_link.updated` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |
 | `ticket_panel.created` / `ticket_panel.updated` / `ticket_panel.deleted` | agents | — | `{ "panel": TicketPanel }` / `{ "panel_id" }` (`contracts/integrations.md` "Ticket panels"; never a token, a secret or a URL's path). Updated too when a lookup finds the credentials refused, or working again |
 | `import.created` / `import.updated` | agents | — | `{ "import": Import }` (`contracts/imports.md`; never credentials). `updated` on every state change and as it writes, at most once a second and after every page. Imported tickets, messages, contacts and articles publish no events of their own: refetch lists |
+| `contact_import.updated` | agents | `private`, `user:<uid>` (who started it alone) | `{ "import": ContactImport }` (`contracts/imports.md` "Contacts"): after each chunk of a people import and when it ends. Rows' messages ride along, so it never reaches the workspace |
 | `collab.changed` / `collab.accounts` / `collab.sidebar` | agents | scoped to people | ids only (contracts/collab.md "Events") |
 | `chat.typing` (not stored; gateway only) | public | `contact:<wid>:<cid>` | `{ "ticket_id": "...", "user": {"id","name"} }` |
 

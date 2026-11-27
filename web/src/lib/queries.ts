@@ -87,6 +87,8 @@ export const qk = {
   /** The ticket's shared draft (contracts/api.md "Drafts"). */
   ticketDraft: (id: string) => w(["tickets", "draft", id] as const),
   replyDraft: (id: string) => w(["tickets", "reply-draft", id] as const),
+  /** The customer's other tickets, from every address they wrote from. */
+  customerTickets: (id: string) => w(["tickets", "customer-tickets", id] as const),
   get contactLists() {
     return w(["contacts", "list"] as const);
   },
@@ -129,6 +131,9 @@ export const qk = {
   },
   get mailboxes() {
     return w(["mailboxes"] as const);
+  },
+  get contactMessages() {
+    return w(["contact-messages"] as const);
   },
   mailboxImapFolders: (id: string) => w(["mailboxes", id, "imap-folders"] as const),
   get members() {
@@ -474,6 +479,7 @@ export const q = {
     }),
   contact: (id: string) => queryOptions({ queryKey: qk.contact(id), queryFn: () => api.contacts.get(id) }),
   contactTickets: (id: string) => list(qk.contactTickets(id), () => api.contacts.tickets(id, { limit: 20 })),
+  customerTickets: (id: string) => queryOptions({ queryKey: qk.customerTickets(id), queryFn: () => api.tickets.customerTickets(id) }),
   contactPortal: (id: string) => queryOptions({ queryKey: qk.contactPortal(id), queryFn: () => api.contacts.portal(id) }),
   companies: (query: Omit<CompanyListQuery, "limit" | "cursor">) =>
     infiniteQueryOptions({
@@ -495,6 +501,8 @@ export const q = {
   slaPolicies: () => list(qk.slaPolicies, () => api.slaPolicies.list({ limit: 100 })),
   automations: () => list(qk.automations, () => api.automations.list({ limit: 100 })),
   mailboxes: () => list(qk.mailboxes, () => api.mailboxes.list({ limit: 100 })),
+  /** The latest messages sent to many customers, with how far each got. */
+  contactMessages: () => queryOptions({ queryKey: qk.contactMessages, queryFn: async () => (await api.contactMessages.list()).data }),
   members: () => queryOptions({ queryKey: qk.members, queryFn: () => allPages(api.members.list) }),
   invitations: () => list(qk.invitations, () => api.invitations.list()),
   teams: () => list(qk.teams, () => api.teams.list({ limit: 100 })),

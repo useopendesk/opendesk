@@ -235,6 +235,8 @@ An email reply goes to the customer's address, or to the `Reply-To` their latest
 
 An email the customer sent to several people lists all of them, its **To** then its **Cc**, under its header. When their latest email named someone your reply would not reach, **Reply all** shows beside **Cc / Bcc**: it adds those people to **Cc**, leaving out your own addresses (forwarding addresses included), the ones the reply already goes to and those in **Bcc**. The sender counts at the address replies to them go to, and an email that failed sender checks adds nobody. Click it again to take out exactly what it added; a **Cc** you typed stays. The next reply starts as a plain reply again.
 
+To fix a typo in an address you already added, in **To**, **Cc** or **Bcc**, in a side conversation's addresses, or in the address a new ticket goes to, click it: it opens as text with the cursor at the end. <kbd>enter</kbd>, <kbd>tab</kbd>, a comma or clicking away puts it back, <kbd>esc</kbd> keeps the old address, and an emptied address is removed. An address that is not valid stays open in red until you fix it.
+
 On a busy ticket, **⋯ → Hide ticket history** keeps the messages and calls only; **Show ticket history** brings the activity back. It applies to the browser you set it in, and the history shows by default.
 
 To read a ticket like a chat, turn on **Conversation layout** in **Settings → Profile → Appearance**: the customer's messages sit on the left, and your team's replies and internal notes, Ollie's and automations' included, on the right. Activity stays full width, and on a narrow screen every message does. It applies to the browser you set it in.
@@ -298,6 +300,16 @@ Every customer is a **contact**, matched by email address, or by your own user i
 Beside the search, the **People** and **Companies** lists have a **Label** filter, a **Field** filter for your custom fields and a sort menu. A field with options, people or yes and no filters on the values you tick; any other field on whether it **Has a value** or **Is empty**. People can also be filtered to one **Company** (or **No company**) and to those who are **Blocked** or **Not blocked**, and sorted by name, by when they were added or last updated, or by how many tickets they have; companies by name, age, last update or how many people they have. Each filter shows as a chip you can clear. The filters and sort are in the page's address, so you can share a filtered list.
 
 Tick rows to act on many at once: add or remove a label, set or clear a custom field, set a company (People), or delete. **Select everyone who matches** extends the selection to every record the search and filters find, up to 1000. Deleting a person keeps their tickets, without a customer; deleting a company keeps its people, without a company. A deletion cannot be undone.
+
+### Send a message to many people
+
+To tell several customers the same thing, such as an outage or a change to your terms, tick them in **People** (up to 100), or use **Select everyone who matches** after a search or filter (up to 1000), and choose **Send message**.
+
+Write the subject and message, and choose the address it comes from. The message can use the customer's details, such as their first name: type `{{` to insert them. On the right you see the email as a customer gets it, and **Send test** emails it to you first. The footer says how many customers it reaches, and who it leaves out: people without an email address and blocked people.
+
+Each person gets **their own ticket**, so a reply lands in that person's ticket and nobody sees another customer's address. All of them carry one **Label**, named after the subject until you change it, so you can follow the replies: choose **See replies** once it is sent to see the open tickets with that label. **Tickets start as** is **Solved** unless you change it: most people will not answer, and anyone who does reopens theirs. A solved notice does not ask for a satisfaction rating.
+
+A big send goes out a few at a time, over a few minutes, so it spares your mailbox's sending limits. Before anything goes out, you confirm how many customers it reaches. A strip above your People list shows how far your message got, and **Stop** keeps the rest from going out; the tickets already made stay. One message sends at a time, and a workspace can send 10 in a day.
 
 ### Invite people to the customer portal
 
