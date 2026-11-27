@@ -226,8 +226,7 @@ function Body({ initial, onDone, onCancel }: { initial?: SignaturePicture; onDon
         </div>
       ) : (
         <div className="flex flex-col items-start gap-1.5">
-          <Button type="button" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-            <ImageIcon className="size-3.5" aria-hidden />
+          <Button type="button" size="sm" disabled={uploading} icon={<ImageIcon className="size-3.5" aria-hidden />} onClick={() => fileRef.current?.click()}>
             {ui("signatureImage.choose")}
           </Button>
           <p className="text-[12px] leading-[17px] text-fg-3">{ui("signatureImage.formats")}</p>

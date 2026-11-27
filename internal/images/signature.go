@@ -103,6 +103,8 @@ func RegisterSignature(d *deps.Deps, api huma.API) {
 			"A picture the member already uploaded is given back (200) rather than stored again. Once a saved signature names it, it stays while " +
 			"the member is in the workspace, since emails already sent show it; one no saved signature named is removed a day after its upload."}),
 		func(ctx context.Context, in *UploadInput) (*signatureOutput, error) {
+			// Viewers too: a member's own signature and Collab accounts are theirs to edit at any
+			// role (update-member-profile, update-collab-account), and the picture is theirs.
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, "")
 			if err != nil {
 				return nil, httpx.Wrap(err)
