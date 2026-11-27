@@ -2256,10 +2256,11 @@ export type TicketPatch = {
 };
 
 export type ReportsRange = { from: string; to: string };
-/** The overview's query: a range, narrowed to a team (`none`: no team), a brand and a member. */
+/** The overview's query: a range, narrowed to a team (`none`: no team), a brand, a mailbox (`none`: no mailbox) and a member. */
 export type ReportsQuery = ReportsRange & {
   team_id?: string;
   brand_id?: string;
+  mailbox_id?: string;
   /** One member's tickets (overview), their row alone (agents). */
   assignee_id?: string;
 };

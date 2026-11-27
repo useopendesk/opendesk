@@ -8,6 +8,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
+	"github.com/useopendesk/opendesk/internal/ids"
 )
 
 func TestReportsPersonFilter(t *testing.T) {
@@ -67,5 +68,34 @@ func TestReportsPersonFilter(t *testing.T) {
 	key := hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeTicketsRead)}
 	if r = agentsReport(t, e, key, march+"&assignee_id="+anna); len(r.Data) != 1 || r.Data[0].Solved != 3 || r.Data[0].OnlineMinutes != nil {
 		t.Fatalf("key rows %+v", r.Data)
+	}
+}
+
+// A person and a mailbox together: the person's tickets that reply from the mailbox, and in
+// Agents their row alone with their work on that mailbox's tickets.
+func TestReportsPersonAndMailbox(t *testing.T) {
+	e, _ := newEnv(t)
+	f := seedAgents(t, e)
+	ws := f.ws
+	support := ids.New()
+	e.Exec(`INSERT INTO mailboxes (id, workspace_id, name, email, inbound_kind, forwarding_token, outbound_kind, brand_id)
+		VALUES ($1, $2, 'Support', $3, 'forwarding', $4, 'system', $5)`, support, ws.ID, "support-"+ws.Slug+"@acme.test", "t-support-"+ws.Slug, ws.BrandID)
+	// t1 and t3 reply from Support: both Anna's.
+	e.Exec(`UPDATE tickets SET mailbox_id = $2 WHERE workspace_id = $1 AND number IN (1, 3)`, ws.ID, support)
+	q := march + "&mailbox_id=" + support.String() + "&assignee_id=" + ws.Agent.ID.String()
+
+	var o tickets.ReportOverview
+	e.Do("GET", "/v1/reports/overview?"+q, ws.Admin.As(ws), nil).Want(t, 200).JSON(t, &o)
+	if o.Created != 1 || o.Solved != 2 || len(o.ByAgent) != 1 || o.ByAgent[0].User.ID != ws.Agent.ID {
+		t.Fatalf("anna support overview %+v", o)
+	}
+	r := agentsReport(t, e, ws.Admin.As(ws), q)
+	if len(r.Data) != 1 || r.Data[0].User.ID != ws.Agent.ID || r.Data[0].Solved != 2 || r.Data[0].Replies != 3 || r.Data[0].Notes != 1 {
+		t.Fatalf("anna support rows %+v", r.Data)
+	}
+	// Bea's only ticket replies from no mailbox.
+	e.Do("GET", "/v1/reports/overview?"+march+"&mailbox_id="+support.String()+"&assignee_id="+f.bea.ID.String(), ws.Admin.As(ws), nil).Want(t, 200).JSON(t, &o)
+	if o.Created != 0 || o.Solved != 0 || o.OpenNow != 0 {
+		t.Fatalf("bea support overview %+v", o)
 	}
 }
