@@ -262,6 +262,7 @@ type widgetSessionInput struct {
 		UserID       string         `json:"user_id,omitempty" maxLength:"200"`
 		UserHash     string         `json:"user_hash,omitempty" maxLength:"128"`
 		AvatarURL    string         `json:"avatar_url,omitempty" maxLength:"2000" doc:"https picture of the signed-in user; used only with a valid user_hash"`
+		Phone        string         `json:"phone,omitempty" maxLength:"200" doc:"The signed-in user's phone number (up to 50 characters, else ignored); used only with a valid user_hash, and only when the contact has none yet"`
 		Company      *widgetCompany `json:"company,omitempty" doc:"The signed-in user's account in your product; used only with a valid user_hash"`
 		Fields       map[string]any `json:"fields,omitempty" doc:"Contact custom fields to set, by key; used only with a valid user_hash, and only fields whose key starts with widget_ (anything else is ignored)"`
 	}
@@ -526,7 +527,7 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 			}
 		}
 		if verified {
-			if err := syncProfile(ctx, tx, wid, contactID, b.Company, b.Fields); err != nil {
+			if err := syncProfile(ctx, tx, wid, contactID, b.Company, b.Fields, b.Phone); err != nil {
 				return err
 			}
 		}
