@@ -101,6 +101,26 @@ describe("panel actions", () => {
     expect(spy).toHaveBeenCalledWith("t1", "p1", { action: "remind", inputs: { invoice: "INV-1", note: "Please pay today" } });
   });
 
+  it("keeps the form and what was filled in when the URL refuses the action, and closes it once it goes through", async () => {
+    const spy = vi.spyOn(api.tickets, "panelAction").mockResolvedValueOnce({ ok: false, message: "Invoice INV-1 is already paid", tone: "danger" }).mockResolvedValueOnce(ok);
+    await show([form]);
+    await act(async () => buttons()[0].click());
+    const note = document.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      set.call(note, "Please pay today");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => dialogButton("Send reminder")!.click());
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.value).toBe("Please pay today");
+    await act(async () => dialogButton("Send reminder")!.click());
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[role="dialog"] textarea')).toBeNull();
+  });
+
   it("does nothing without a ticket and panel to act on (settings' preview)", async () => {
     const spy = vi.spyOn(api.tickets, "panelAction").mockResolvedValue(ok);
     await show([plain], null);

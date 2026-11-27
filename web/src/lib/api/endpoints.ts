@@ -666,13 +666,13 @@ export const api = {
     links: (id: string) => http.get<{ data: T.TicketLink[] }>(`/v1/tickets/${id}/links`),
     /** Wiki pages the caller can see that mention the ticket, newest edit first. */
     wiki: (id: string) => http.get<{ data: T.WikiNode[] }>(`/v1/tickets/${encodeURIComponent(id)}/wiki`),
+    /** Presses an action of an http panel's answer; the URL's own words come back, and the panel as it is now. */
+    panelAction: (id: string, panelId: string, b: { action: string; inputs?: Record<string, string> }) =>
+      http.post<T.PanelActionResult>(`/v1/tickets/${id}/panels/${panelId}/actions`, { ...b, locale: uiLanguage() }),
     /**
      * What a ticket panel's product knows about the ticket's contact; `refresh` asks it again. An
      * http panel's URL is told the app's language, so it can answer in it.
      */
-    /** Presses an action of an http panel's answer; the URL's own words come back, and the panel as it is now. */
-    panelAction: (id: string, panelId: string, b: { action: string; inputs?: Record<string, string> }) =>
-      http.post<T.PanelActionResult>(`/v1/tickets/${id}/panels/${panelId}/actions`, { ...b, locale: uiLanguage() }),
     panel: (id: string, panelId: string, refresh = false) =>
       http.get<T.TicketPanelData>(`/v1/tickets/${id}/panels/${panelId}`, { query: { refresh: refresh || undefined, locale: uiLanguage() } }),
     addLink: (id: string, b: { url: string; title?: string; integration_id?: string }) => http.create<T.TicketLink>(`/v1/tickets/${id}/links`, b),

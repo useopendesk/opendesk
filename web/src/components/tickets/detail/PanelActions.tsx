@@ -31,9 +31,11 @@ export function ActionsBlock({ actions }: { actions: PanelAction[] }) {
       if (r.data) qc.setQueryData(qk.ticketPanel(ctx!.ticketId, ctx!.panelId), r.data);
       // The timeline got an entry for it.
       void qc.invalidateQueries({ queryKey: qk.activities(ctx!.ticketId) });
-      if (r.ok) toast.success(r.message);
-      else toast.error(r.message);
-      setForm(null);
+      // A refusal keeps the form open with what the agent filled in, so they can correct it.
+      if (r.ok) {
+        toast.success(r.message);
+        setForm(null);
+      } else toast.error(r.message);
     },
     onError: (e) => toast.error(e, t("panels.actions.error")),
   });
