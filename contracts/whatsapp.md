@@ -58,7 +58,6 @@ type WhatsAppDeliveryMeta = { provider_status?: "sent" | "delivered" | "read" | 
   provider_status_updated_at?: string; provider_sent_at?: string; provider_failed_at?: string;
   provider_error?: string;       // Meta's safe reason, the text delivery_error also carries
   provider_error_code?: number;  // Meta's error code
-  template_send_attempts?: number; // a template send retried for a transient Meta error
   whatsapp_template?: { id?: string; name: string; language: string; body?: string;
     params?: Record<string, string>; header_type?: string; header_text?: string;
     header_attachment_id?: string; button_urls?: Record<string, string> } };
@@ -68,8 +67,19 @@ type WhatsAppDeliveryMeta = { provider_status?: "sent" | "delivered" | "read" | 
 to the message they are about. Neither carries anything on an email message.
 `messages.delivery_status` stays the coarse state (`pending`, `sent`, `failed`); the
 `provider_status` in `delivery_meta` is what the app shows as one tick, two ticks or blue
-ticks. A WhatsApp ticket records the connection it was opened through in
-`tickets.custom.whatsapp_connection_id`.
+ticks. A WhatsApp ticket records its conversation in `whatsapp_tickets`: the number the
+customer wrote to (`phone_number_id`) and the `wa_id` they wrote from. Replies go to that
+`wa_id` through whichever connection holds that number now, so a number disconnected and
+connected again keeps its tickets.
+
+```ts
+type WhatsAppTicketState = {
+  connection_id: string | null;   // the connection that holds the ticket's number now
+  connection_name: string; display_phone_number: string;
+  window_open: boolean;           // a free-form reply may go out now
+  window_closes_at: string | null; // null when the customer never wrote to this number
+};
+```
 
 | method | path | role | body → response |
 | --- | --- | --- | --- |
@@ -83,8 +93,9 @@ ticks. A WhatsApp ticket records the connection it was opened through in
 | POST | `/v1/whatsapp/hooks/{connection}` | Meta (public, signed) | one raw delivery → 200 `{"status":"ok"}`; 400 a signed body that is not JSON; 401 bad signature; 403 no app secret; 404 unknown connection; 413 body over 1 MiB; 429 rate limited; 500 store failure |
 | GET | `/v1/whatsapp/templates` | viewer, `settings:read` | `?connection_id` → `{data: WhatsAppTemplate[]}`; a bad id is 422 `validation_failed`, another workspace's id matches nothing |
 | POST | `/v1/whatsapp/templates/sync` | admin user | `{connection_id?}` (optional body; empty syncs every connection) → `{data: WhatsAppTemplate[], synced: number}`; 404 unknown connection; 422 `whatsapp_templates_refused`; 502 `whatsapp_templates_failed` |
-| POST | `/v1/tickets/{id}/messages` | agent, `tickets:write` | the normal message body (`contracts/api.md`); on a WhatsApp ticket a `reply` is a free-form WhatsApp reply and returns 201 `Message` with `delivery_status: "pending"`; 404; 409 `whatsapp_not_configured`; 422 `whatsapp_window_closed`; 422 `validation_failed` (no contact, more than one file, 4096/1024 limits) |
-| POST | `/v1/tickets/{id}/whatsapp-template` | agent, `tickets:write` | `WhatsAppTemplateSendBody` → 201 `Message`; 404 ticket or template; 409 `whatsapp_not_configured`; 422 `not_whatsapp_ticket`, `whatsapp_no_contact`, `whatsapp_no_number`, `whatsapp_template_not_approved`, `whatsapp_template_params_missing`, `whatsapp_template_header_unsupported`, `whatsapp_template_file_missing`, `whatsapp_template_file_unsupported`, `validation_failed` |
+| GET | `/v1/tickets/{id}/whatsapp` | viewer, `tickets:read` | → `WhatsAppTicketState`, what the composer shows; 404 (a ticket the caller can't see too); 422 `not_whatsapp_ticket` |
+| POST | `/v1/tickets/{id}/messages` | agent, `tickets:write` | the normal message body (`contracts/api.md`); on a WhatsApp ticket a `reply` is a free-form WhatsApp reply and returns 201 `Message` with `delivery_status: "pending"`; 404; 409 `whatsapp_no_conversation`, `whatsapp_disconnected`; 422 `whatsapp_window_closed`; 422 `validation_failed` (more than one file, 4096/1024 limits) |
+| POST | `/v1/tickets/{id}/whatsapp-template` | agent, `tickets:write` | `WhatsAppTemplateSendBody` → 201 `Message`; 404 ticket or template; 409 `whatsapp_no_conversation`, `whatsapp_disconnected`; 422 `not_whatsapp_ticket`, `whatsapp_template_not_approved`, `whatsapp_template_params_missing`, `whatsapp_template_header_unsupported`, `whatsapp_template_file_missing`, `whatsapp_template_file_unsupported`, `validation_failed` |
 
 "Admin user" routes need a workspace admin signed in as a person: connecting a number hands
 its messages to Meta, so an API key gets `403` (an admin person's OAuth grant with
@@ -97,8 +108,8 @@ Errors use the API's usual problem body (`contracts/api.md`) with a stable `code
 channel's own codes are `whatsapp_credentials_refused`, `whatsapp_subscribe_refused` and
 `whatsapp_templates_refused` (422: Meta refused, the detail is its wording),
 `whatsapp_subscribe_failed` and `whatsapp_templates_failed` (502: Meta could not be reached),
-`whatsapp_not_configured` (409), `whatsapp_window_closed`, `not_whatsapp_ticket`,
-`whatsapp_no_contact`, `whatsapp_no_number`, `whatsapp_template_not_approved`,
+`whatsapp_not_configured`, `whatsapp_no_conversation` and `whatsapp_disconnected` (409),
+`whatsapp_window_closed`, `not_whatsapp_ticket`, `whatsapp_template_not_approved`,
 `whatsapp_template_params_missing`, `whatsapp_template_header_unsupported`,
 `whatsapp_template_file_missing` and `whatsapp_template_file_unsupported` (422). Elsewhere the
 routes answer `validation_failed` (422), `invalid_name` (422), `conflict` (409), `not_found`
@@ -112,7 +123,9 @@ account's number list with `GET /{waba_id}/phone_numbers?fields=id&limit=100` mu
 that number (a WABA with more than 100 numbers is not supported by this check). The verified
 name names the connection when no name is given, the brand is checked to be the workspace's
 (default brand when empty), a verify token is generated when empty (16 random bytes, hex) and
-the API version defaults to `v26.0`. The credentials are sealed and stored; Meta's refusal is
+the API version defaults to `v26.0`. The phone number ID and account ID must be digits and
+the API version `vN.N`, since all three go into Graph API paths (else 422
+`validation_failed`). The credentials are sealed and stored; Meta's refusal is
 422 `whatsapp_credentials_refused` with Meta's own wording, and a second connection for the
 same number is 409 `conflict`.
 
@@ -133,10 +146,11 @@ delivers that WABA's messages to this connection. A refused subscription is 422
 `webhook_url` is the configured API URL followed by `/v1/whatsapp/hooks/{id}`; it carries
 no secret.
 
-Deleting a connection removes its inbound events, contact windows and templates with it. Its
-tickets stay, and their `custom.whatsapp_connection_id` then names a connection that is gone:
-a reply falls back to the workspace's first connection, and a template send to its only
-connection (asking for one when there are several).
+Deleting a connection removes its inbound events and templates with it. Its tickets and the
+customers' windows stay with the number: while it is not connected, a reply or template send
+on those tickets is 409 `whatsapp_disconnected`; connecting the same number again (a new
+connection, for instance with a new token) picks them up where they were, window included.
+To replace the token or app secret without disconnecting, `PATCH` the connection.
 
 ## Inbound deliveries
 
@@ -205,18 +219,23 @@ WhatsApp profile name, else the number, and publishes `contact.created`. A block
 message opens no ticket and writes no message; the delivery is still stored and
 acknowledged.
 
-Every inbound message advances the connection's 24-hour window for that contact:
-`whatsapp_contacts` maps `(connection_id, wa_id)` to the contact and stores the latest
-`last_inbound_at` and the latest non-empty profile name. The window is per connection, not
-per workspace.
+Every inbound message advances the 24-hour window of that `wa_id` on that number:
+`whatsapp_contacts` maps `(workspace_id, phone_number_id, wa_id)` to the contact and stores
+the latest `last_inbound_at` (an older message never moves it back) and the latest non-empty
+profile name. The window is per number, not per connection or workspace, as Meta's is.
 
-A message goes on the contact's open WhatsApp ticket (open, pending or on hold, most
-recently active) on the same workspace; else it opens a ticket: channel `whatsapp`, the
-connection's brand, routed like any new ticket (`routing.Resolve` with channel `whatsapp`, so
-routing rules can send WhatsApp tickets to a team), subject the first 80 characters of the
-text or "WhatsApp message" when it has none, and `custom.whatsapp_connection_id` set to the
-connection. The ticket is published as `ticket.created`, and the connection id makes later
-replies and template sends go out from the number the customer wrote to.
+A message goes on the open WhatsApp ticket (open, pending or on hold, most recently active)
+of the same conversation, the same `wa_id` writing to the same number; else it opens a
+ticket: channel `whatsapp`, the connection's brand, routed like any new ticket
+(`routing.Resolve` with channel `whatsapp`, so routing rules can send WhatsApp tickets to a
+team), subject the first 80 characters of the text or "WhatsApp message" when it has none,
+and its conversation recorded in `whatsapp_tickets`. The ticket is published as
+`ticket.created`, and later replies and template sends go out from the number the customer
+wrote to, to the `wa_id` they wrote from.
+
+A delivery's messages are applied to the connection whose `phone_number_id` the payload
+names, looked up in the URL connection's workspace only; a number that workspace has not
+connected is dropped.
 
 The message is stored as a `reply` with direction `inbound`, author the contact, one
 attachment at most, delivery status `none`, and the text (`text`, else `caption`, else the
@@ -263,16 +282,17 @@ own safe reason.
 Meta allows a free-form message for 24 hours after the customer's latest message. Meta's
 window also counts a call from the customer, but this channel tracks messages only, so here
 only a message opens or extends it. Every new inbound message advances the window; Meta's
-retry of one already applied changes nothing, and a contact who never wrote through the
-connection has no window at all.
+retry of one already applied changes nothing, and a customer who never wrote to the number
+has no window at all.
 
 A free-form reply (`POST /v1/tickets/{id}/messages` with `kind: "reply"` on a WhatsApp
 ticket) is checked when it is written and again when it is sent:
 
-- The connection is the ticket's `custom.whatsapp_connection_id`, else the workspace's first
-  connection. No connection is 409 `whatsapp_not_configured`.
+- The ticket needs its conversation (else 409 `whatsapp_no_conversation`, for example a
+  ticket created on the `whatsapp` channel through the API) and a connection for its number
+  (else 409 `whatsapp_disconnected`).
 - A window that has closed is 422 `whatsapp_window_closed`: "The 24-hour WhatsApp reply
-  window has closed. The customer must message again before a free-form reply can go out."
+  window has closed. Send a template, or wait for the customer to message again."
   The send worker checks the window again, because the job can run seconds later, and fails
   the message with the same words if it closed in between.
 - One file at most; a caption of at most 1,024 characters when the reply carries a file,
@@ -294,15 +314,18 @@ outbound message with that `provider_message_id`: `delivery_meta.provider_status
 `provider_status_updated_at` always, and on a failure also `provider_error_code` and
 `provider_error` (Meta's user-facing text first, then its details, then its message).
 `delivery_status` becomes `failed` on a failed receipt and stays `sent` for the rest; once
-failed it never changes again. A receipt for a message this instance did not send is
-ignored. Every applied receipt publishes `message.updated`, which is what moves the tick in
+failed it never changes again. Receipts only move forward, because Meta may deliver them out
+of order: `sent`, then `delivered`, then `read`; `failed` replaces `sent` or `delivered` but
+never `read`, and a receipt at or below the stored status changes nothing. A receipt of a
+kind this channel does not show, or for a message this instance did not send, is ignored. Every applied receipt publishes `message.updated`, which is what moves the tick in
 the ticket.
 
 A send that never left, or that the window closed on, is failed: `delivery_status:
 "failed"`, `delivery_error` the safe reason (at most 500 characters) and
 `delivery_meta.provider_status: "failed"` with `provider_failed_at`. A send is not retried
 once it may have reached Meta: only a `429` or `5xx` refusal, which means Meta accepted
-nothing, is retried while the job has attempts left, after which it fails too. A transport
+nothing, is retried while the job has attempts left (five, free-form and template sends
+alike), after which it fails too. A transport
 error fails the message rather than retries it, for the same reason.
 
 ## Templates
@@ -334,28 +357,30 @@ name, language, body and header, so what Meta knows is what is sent.
 - The ticket must be visible to the caller and on the `whatsapp` channel (else 422
   `not_whatsapp_ticket`). The template must be in the workspace, belong to the ticket's
   connection and be approved (404, 422 `validation_failed` or 422
-  `whatsapp_template_not_approved`). The ticket's connection is the one it was opened on;
-  when the ticket does not name one, the workspace's only connection is used, several
-  connections are 422 `validation_failed`, and none is 409 `whatsapp_not_configured`.
-- The customer is the ticket's contact, and the number is the `wa_id` that contact wrote
-  from on that connection: no contact is 422 `whatsapp_no_contact`, no number is 422
-  `whatsapp_no_number`.
+  `whatsapp_template_not_approved`). The ticket's connection is the one that holds its number
+  now (409 `whatsapp_no_conversation` or `whatsapp_disconnected` as for a reply).
+- The template goes to the `wa_id` of the ticket's conversation.
 - `params` fills the body's placeholders by name or number: at most 50 values, each at most
   1,024 characters, and every placeholder the body names must have a non-empty value (else
   422 `whatsapp_template_params_missing`). Extra keys are ignored.
 - A `TEXT` header with a variable takes `header_text` (the value, never the approved text),
   at most 60 characters; a static header takes none. An `IMAGE`, `VIDEO` or `DOCUMENT`
-  header takes `header_media_id`, an opendesk attachment that must belong to the workspace,
-  match the header's shape and stay inside its cap (image 5 MiB, video 16 MiB, document
-  25 MiB); a missing file is 422 `whatsapp_template_file_missing` and a wrong or too large
-  one 422 `whatsapp_template_file_unsupported`. A header this channel cannot fill (for
+  header takes `header_media_id`: the caller's own upload that no message holds yet (as
+  `attachment_ids` on a reply), which the template reply then holds, or a file already on one
+  of this ticket's messages. Any other file is 422 `whatsapp_template_file_missing`, so a
+  file of a private team's ticket, a Collab message or another member's upload never goes out
+  through a template. It must match the header's shape and stay inside its cap (image 5 MiB,
+  video 16 MiB, document 25 MiB, else 422 `whatsapp_template_file_unsupported`). The send
+  reads the file again, only from a message of this ticket. A header this channel cannot fill (for
   example a location header) is 422 `whatsapp_template_header_unsupported`.
 - `button_urls` fills the URL buttons whose URL has a variable, keyed by the button's index
   in the template's buttons array: exactly those buttons, non-empty, at most 2,000
   characters each (422 `whatsapp_template_params_missing` for missing; 422
   `validation_failed` for a bad key or too long a value).
 - The message's text is the template's body with the values filled in, so the timeline shows
-  what the customer gets, and `delivery_meta.whatsapp_template` keeps the template's name,
+  what the customer gets (this copy is filled here for display only; Meta fills the message
+  the customer receives from its own approved template, so it is not customer-facing text
+  in the `internal/templates` sense), and `delivery_meta.whatsapp_template` keeps the template's name,
   language, raw body, values, header and button values for the send. The message is stored
   as a pending reply and the `whatsapp.send` job is queued in the same transaction, without a
   window check.
@@ -452,9 +477,10 @@ no audit entry of their own; the first two only publish `whatsapp_connection.upd
   `(workspace_id, phone_number_id)`, sealed `credentials_enc`, status and last error, the
   brand it opens tickets for), `whatsapp_inbound_events` (one verified delivery's jsonb body,
   unique by `(connection_id, external_event_id)`, cascade with the connection) and
-  `whatsapp_contacts` (the `wa_id` of a contact on one connection and the 24-hour window's
-  `last_inbound_at`, primary key `(connection_id, wa_id)`, cascade with the connection and
-  the contact). It also adds `messages.provider_message_id` and `messages.delivery_meta` and
+  `whatsapp_contacts` (a `wa_id` writing to one of the workspace's numbers, its contact and
+  the 24-hour window's `last_inbound_at`, primary key `(workspace_id, phone_number_id,
+  wa_id)`, cascade with the workspace and the contact; a contact merge moves it) and
+  `whatsapp_tickets` (a WhatsApp ticket's number and `wa_id`, cascade with the ticket). It also adds `messages.provider_message_id` and `messages.delivery_meta` and
   a unique index on `(workspace_id, provider_message_id)` where the id is set.
 - `000782_whatsapp_channel` replaces the `tickets_channel_check` constraint so a ticket may
   be on the `whatsapp` channel beside email, chat, api, portal and phone. Its down migration
@@ -467,8 +493,8 @@ no audit entry of their own; the first two only publish `whatsapp_connection.upd
 
 Tickets keep WhatsApp messages as `messages` rows, so a deleted ticket keeps its messages and
 a deleted connection keeps the tickets its messages opened: the connection's own rows cascade,
-the tickets do not. A deleted contact clears `contact_id` on the messages, and the
-connection's window row for it goes.
+the tickets and windows do not. A deleted contact clears `contact_id` on the messages, and
+its window rows go.
 
 ## Limits and caveats
 
@@ -485,9 +511,9 @@ connection's window row for it goes.
 - A `system` message is ignored, so a customer's number change is not applied to the
   contact; a new number makes a new contact.
 - A sticker is stored as an image (Meta serves it as WebP).
-- opendesk does not send read receipts to the customer; the client's `mark read` call is not
-  used. Delivery receipts for opendesk's own messages are read and shown.
-- The API version is only length-checked; a wrong one fails at Meta and shows as
+- opendesk does not send read receipts to the customer. Delivery receipts for opendesk's own
+  messages are read and shown.
+- An API version of the right shape that Meta does not know fails at Meta and shows as
   `whatsapp_credentials_refused` on connect or test.
 - A test, a subscribe or a verified delivery can clear a connection's error state, and a
   refused subscription leaves the connection's status as it was.
@@ -497,16 +523,10 @@ connection's window row for it goes.
   again.
 - The phone number ID is unique per workspace, not globally; Meta itself ensures a number
   belongs to one app.
-- A free-form reply with several connections falls back to the workspace's first connection
-  when the ticket names none, while a template send refuses that case and asks for the
-  connection. A ticket whose recorded connection was disconnected falls back to the
-  workspace's current connection for both, and its free-form reply still needs a window and
-  a number on that connection.
-- A contact's open WhatsApp ticket is reused whichever connected number they wrote to, so a
-  message on a second number joins the conversation opened through the first. The window is
-  advanced on the connection that received the message, while a reply and a template send go
-  out through the ticket's recorded connection; a message on another number can therefore
-  leave the ticket's own window closed for a free-form reply.
+- A customer who writes to two of the workspace's numbers has a ticket on each: a ticket is
+  one conversation with one number, and its replies always leave from that number.
+- A receipt that arrives before the send recorded Meta's message id finds no message and is
+  dropped; Meta sends its receipts after it answered the send, so this is rare.
 - Sending needs no person: an API key with `tickets:write` may reply and send templates.
 - The default Graph API version is `v26.0`, and a connection may name another one. A number
   starts receiving deliveries only once its WhatsApp Business account is subscribed to the
