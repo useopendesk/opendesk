@@ -158,6 +158,8 @@ export default function WorkspaceSettings() {
       void qc.invalidateQueries({ queryKey: qk.collabStatus });
       // Tickets turned back on: the counts read while it was off are all zero.
       void qc.invalidateQueries({ queryKey: qk.counts });
+      // Counting a team by its people, and online time, change what the reports answer.
+      void qc.invalidateQueries({ queryKey: qk.reportsAll });
       toast.success(t("workspace.saved"));
     },
   });

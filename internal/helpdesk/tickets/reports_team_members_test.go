@@ -131,6 +131,34 @@ func TestReportsTeamMembers(t *testing.T) {
 		t.Fatalf("anna's team rows %+v", r.Data)
 	}
 
+	// A person picked too (assignee_id). Bea, a member: her tickets among the team's (t4, t7,
+	// t9), and in Agents her row alone, as without either filter.
+	who := func(id uuid.UUID) string { return "&assignee_id=" + id.String() }
+	if o := overview(march + team + who(bea)); o.Created != 3 || o.Solved != 1 || o.OpenNow != 2 || len(o.ByAgent) != 1 || o.ByAgent[0].User.ID != bea {
+		t.Fatalf("team and bea overview %+v", o)
+	}
+	if r := agentsReport(t, e, ws.Admin.As(ws), march+team+who(bea)); len(r.Data) != 1 || !reflect.DeepEqual(r.Data[0], *rowOf(t, all, bea)) {
+		t.Fatalf("team and bea rows %+v", r.Data)
+	}
+	if r := agentsReport(t, e, f.bea.As(ws), march+team+who(bea)); len(r.Data) != 1 || r.Data[0].User.ID != bea {
+		t.Fatalf("bea's own team and bea rows %+v", r.Data)
+	}
+	// Anna, not on the team: the team's ticket she holds (t8) counts, but neither by_agent nor
+	// Agents has a row for her, as with the team alone.
+	if o := overview(march + team + who(anna)); o.Created != 1 || o.OpenNow != 1 || len(o.ByAgent) != 0 {
+		t.Fatalf("team and anna overview %+v", o)
+	}
+	if r := agentsReport(t, e, ws.Admin.As(ws), march+team+who(anna)); len(r.Data) != 0 {
+		t.Fatalf("team and anna rows %+v", r.Data)
+	}
+	// Carl only observes the team: nothing.
+	if o := overview(march + team + who(carl)); o.Created != 0 || o.OpenNow != 0 {
+		t.Fatalf("team and carl overview %+v", o)
+	}
+	if r := agentsReport(t, e, ws.Admin.As(ws), march+team+who(carl)); len(r.Data) != 0 {
+		t.Fatalf("team and carl rows %+v", r.Data)
+	}
+
 	// The ticket list behind the page's open-work cards: team_members adds the members' tickets.
 	open := "status=open,pending,on_hold&team_id=" + f.team.String()
 	if got := idsOf(list(t, e, ws.Admin.As(ws), open)); !sameSet(got, []uuid.UUID{t4, t8}) {
