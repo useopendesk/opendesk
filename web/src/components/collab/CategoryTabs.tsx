@@ -8,7 +8,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SlidersHorizontal, X } from "lucide-react";
 import { motion, type MotionValue } from "motion/react";
-import { useId, useState, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/endpoints";
 import type { MailAccount, MailCategory, MailCategorySettings } from "@/lib/api/types";
@@ -126,29 +127,58 @@ export function CategoryTabs({
   );
 }
 
-/** One tab; conversations dragged from the list drop on it, except on the tab in view, where they already are. */
+/**
+ * One tab; conversations dragged from the list drop on it, except on the tab in view, where they already are. Those whose
+ * account lacks its category (an inbox spanning accounts shows every account's categories) cannot: the tab says why.
+ */
 function CategoryTabLink({ tab: c, on, search, lifted, describedBy }: { tab: CategoryTab; on: boolean; search: MailSearch; lifted: boolean; describedBy?: string }) {
+  const { t } = useTranslation("collab");
   const drop = useThreadDrop(on ? null : { box: "inbox", category: c.key });
+  const ref = useRef<HTMLAnchorElement>(null);
   return (
-    <Link
-      {...drop.props}
-      to="/mail/$box/{-$threadId}"
-      params={{ box: "inbox", threadId: undefined }}
-      search={{ ...search, category: c.key === PRIMARY ? undefined : c.key }}
-      aria-current={on ? "page" : undefined}
-      aria-describedby={describedBy}
-      title={c.description || undefined}
-      className={cn(
-        "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:shadow-[0_0_0_2px_var(--focus)] motion-reduce:transition-none",
-        on ? "bg-active font-medium text-fg" : "text-fg-3 hover:bg-hover hover:text-fg-2",
-        drop.over && cn(dropOverCls, "text-fg"),
-        lifted && "bg-surface text-fg shadow-[0_0_0_1px_var(--line),0_2px_8px_rgb(0_0_0/0.08)]",
-      )}
+    <>
+      <Link
+        {...drop.props}
+        ref={ref}
+        to="/mail/$box/{-$threadId}"
+        params={{ box: "inbox", threadId: undefined }}
+        search={{ ...search, category: c.key === PRIMARY ? undefined : c.key }}
+        aria-current={on ? "page" : undefined}
+        aria-describedby={describedBy}
+        title={c.description || undefined}
+        className={cn(
+          "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:shadow-[0_0_0_2px_var(--focus)] motion-reduce:transition-none",
+          on ? "bg-active font-medium text-fg" : "text-fg-3 hover:bg-hover hover:text-fg-2",
+          drop.over && cn(dropOverCls, "text-fg"),
+          lifted && "bg-surface text-fg shadow-[0_0_0_1px_var(--line),0_2px_8px_rgb(0_0_0/0.08)]",
+        )}
+      >
+        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", tone[categoryTone(c)].solid)} />
+        <span className="max-w-[160px] truncate">{c.name}</span>
+        {c.unread > 0 && <span className={cn("mono rounded-sm px-1 text-[10.5px] tabular-nums", on ? "text-fg-3" : tone[categoryTone(c)].chip)}>{c.unread > 999 ? "999+" : c.unread}</span>}
+      </Link>
+      {drop.refused > 0 && <DropRefused anchor={ref} text={t("categories.dropRefused", { count: drop.refused, name: c.name })} />}
+    </>
+  );
+}
+
+/** Why a tab does not take the conversations over it, under the tab as its tooltip would show (the row scrolls, so it is not inside it). */
+function DropRefused({ anchor, text }: { anchor: RefObject<HTMLElement | null>; text: string }) {
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = anchor.current?.getBoundingClientRect();
+    setAt(r ? { left: r.left + r.width / 2, top: r.bottom + 6 } : null);
+  }, [anchor]);
+  if (!at) return null;
+  return createPortal(
+    <div
+      role="status"
+      style={{ left: at.left, top: at.top }}
+      className="pointer-events-none fixed z-[60] max-w-[260px] -translate-x-1/2 animate-fade-in rounded-md bg-inverse px-2 py-1 text-center text-xs font-medium text-inverse-fg shadow-pop motion-reduce:animate-none"
     >
-      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", tone[categoryTone(c)].solid)} />
-      <span className="max-w-[160px] truncate">{c.name}</span>
-      {c.unread > 0 && <span className={cn("mono rounded-sm px-1 text-[10.5px] tabular-nums", on ? "text-fg-3" : tone[categoryTone(c)].chip)}>{c.unread > 999 ? "999+" : c.unread}</span>}
-    </Link>
+      {text}
+    </div>,
+    document.body,
   );
 }
 
