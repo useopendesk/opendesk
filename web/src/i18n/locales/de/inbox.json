@@ -533,6 +533,12 @@
     "triagedAs": "<b>{{who}}</b> hat dies als <b>{{category}}</b> eingeordnet",
     "aiAnswered": "<b>{{who}}</b> hat aus der Wissensdatenbank geantwortet",
     "aiAnsweredEmail": "<b>{{who}}</b> hat per E-Mail geantwortet",
+    "aiSkipped": "<b>{{who}}</b> hat diese Nachricht dem Team überlassen",
+    "skippedReason": {
+      "contact_limit": "Der Kunde hat das Limit der Antworten erreicht, die {{who}} einer Person pro Stunde gibt.",
+      "monthly_cap": "{{who}} hatte sein Monatslimit aufgebraucht.",
+      "no_balance": "Das KI-Guthaben ist aufgebraucht, daher konnte {{who}} nicht antworten."
+    },
     "procedureRan": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt",
     "procedureNothing": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt: nichts zu tun",
     "procedureFailed": "<b>{{who}}</b> konnte <b>{{name}}</b> nicht abschließen",
@@ -882,6 +888,7 @@
     "setBy": "Gesetzt von {{name}}",
     "said": "{{name}} hat geantwortet",
     "sure": "{{pct}} % sicher",
+    "threshold": "Schwelle {{pct}} %",
     "setThis": "{{name}} hat das gesetzt"
   },
   "suggest": {
@@ -1073,6 +1080,12 @@
     "line": "Leitung {{line}}",
     "playRecording": "Aufnahme abspielen",
     "playVoicemail": "Mailbox-Nachricht abspielen",
+    "recording": "Aufnahme",
+    "loadingRecording": "Lädt …",
+    "tryAgain": "Erneut versuchen",
+    "recordingNotReady": "Die Aufnahme ist noch nicht bereit. Versuche es in einer Minute erneut.",
+    "recordingRefused": "Der Anbieter hat den Token der Verbindung abgelehnt. Er braucht Zugriff auf Gesprächsaufnahmen.",
+    "recordingError": "Die Aufnahme konnte nicht geladen werden.",
     "openIn": "In {{provider}} öffnen",
     "summary": "Zusammenfassung",
     "showTranscript": "Transkript zeigen",

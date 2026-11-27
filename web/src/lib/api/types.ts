@@ -652,6 +652,8 @@ export type CallData = {
   asset_url: string;
   /** Direct links, working until links_expire_at. */
   recording_url: string;
+  /** The provider only serves the recording to the connection: it plays through the app. */
+  recording_stream?: boolean;
   voicemail_url: string;
   links_expire_at: string | null;
   tags: string[];
@@ -2256,8 +2258,8 @@ export type TicketPatch = {
 };
 
 export type ReportsRange = { from: string; to: string };
-/** The overview's query: a range, narrowed to a team (`none`: no team) and a brand. */
-export type ReportsQuery = ReportsRange & { team_id?: string; brand_id?: string };
+/** The overview's query: a range, narrowed to a team (`none`: no team), a brand and a mailbox (`none`: no mailbox). */
+export type ReportsQuery = ReportsRange & { team_id?: string; brand_id?: string; mailbox_id?: string };
 
 // Billing (contracts/billing.md).
 export type Plan = "free" | "pro" | "collab" | "self_hosted";
@@ -2560,6 +2562,8 @@ export type Suggestion = {
   probability: number | null;
   model: string;
   decided_at: string;
+  /** Why it was not applied; absent on older suggestions. */
+  reason?: "below_threshold" | "field_off" | "not_on_team";
 };
 export type AISuggestions = Partial<Record<SuggestionField, Suggestion>>;
 export type KBSource = { article_id: string; title: string; url: string };

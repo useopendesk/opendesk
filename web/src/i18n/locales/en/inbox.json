@@ -537,6 +537,12 @@
     "triagedAs": "<b>{{who}}</b> triaged this as <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> answered from the knowledge base",
     "aiAnsweredEmail": "<b>{{who}}</b> answered by email",
+    "aiSkipped": "<b>{{who}}</b> left this message for the team",
+    "skippedReason": {
+      "contact_limit": "The customer reached the limit of answers {{who}} gives one person in an hour.",
+      "monthly_cap": "{{who}} had used its monthly cap.",
+      "no_balance": "The AI balance is used up, so {{who}} could not answer."
+    },
     "procedureRan": "<b>{{who}}</b> ran <b>{{name}}</b>",
     "procedureNothing": "<b>{{who}}</b> ran <b>{{name}}</b>: nothing to do",
     "procedureFailed": "<b>{{who}}</b> couldn't finish <b>{{name}}</b>",
@@ -886,6 +892,7 @@
     "setBy": "Set by {{name}}",
     "said": "{{name}} replied",
     "sure": "{{pct}}% sure",
+    "threshold": "threshold {{pct}}%",
     "setThis": "{{name}} set this"
   },
   "suggest": {
@@ -1077,6 +1084,12 @@
     "line": "Line {{line}}",
     "playRecording": "Play recording",
     "playVoicemail": "Play voicemail",
+    "recording": "Recording",
+    "loadingRecording": "Loading…",
+    "tryAgain": "Try again",
+    "recordingNotReady": "The recording is not ready yet. Try again in a minute.",
+    "recordingRefused": "The provider refused the connection's token. It needs access to call recordings.",
+    "recordingError": "The recording could not be loaded.",
     "openIn": "Open in {{provider}}",
     "summary": "Summary",
     "showTranscript": "Show transcript",

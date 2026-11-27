@@ -123,6 +123,15 @@ and are never replayed.
   never in a customer-facing message, the widget or a notification. The inbox shows both behind
   "Why?" on the handoff line. Handoffs from before this have neither, and show no "Why?".
 
+- **Why it did not answer**: when the agent leaves a customer's message unanswered on purpose, the
+  ticket gets an `ai_skipped` activity (actor `ai`, once per message, no event beyond the activity's
+  own) whose `data.reason` is `contact_limit` (the customer already had `5` agent answers or
+  suggestions in the last hour, email), `monthly_cap` (`widget_monthly_cap_usd` was used, chat and
+  email) or `no_balance` (the AI balance was used up, email). Like a handoff it carries the bot the
+  message was for, `data.bot` and `data.bot_id` (no id for the built-in default), and the inbox names
+  that bot on the line and behind its "Why?". It is for the team only. Tickets the agent never considers (AI off, mailbox off, assigned, a
+  teammate replied, spam) get no activity: that is the normal case, not a decision.
+
 ## Visitor actions (confirm before acting)
 
 An MCP tool whose policy is `confirm` is never run by the model alone. When the agent calls it, the

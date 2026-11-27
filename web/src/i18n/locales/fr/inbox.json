@@ -557,6 +557,12 @@
     "triagedAs": "<b>{{who}}</b> a classé ce ticket dans <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> a répondu à partir de la base de connaissances",
     "aiAnsweredEmail": "<b>{{who}}</b> a répondu par e-mail",
+    "aiSkipped": "<b>{{who}}</b> a laissé ce message à l’équipe",
+    "skippedReason": {
+      "contact_limit": "Le client a atteint la limite de réponses que {{who}} donne à une personne en une heure.",
+      "monthly_cap": "{{who}} avait atteint son plafond mensuel.",
+      "no_balance": "Le solde IA est épuisé, {{who}} n’a donc pas pu répondre."
+    },
     "procedureRan": "<b>{{who}}</b> a exécuté <b>{{name}}</b>",
     "procedureNothing": "<b>{{who}}</b> a exécuté <b>{{name}}</b> : rien à faire",
     "procedureFailed": "<b>{{who}}</b> n’a pas pu terminer <b>{{name}}</b>",
@@ -868,6 +874,7 @@
     "setBy": "Défini par {{name}}",
     "said": "{{name}} a répondu",
     "sure": "Confiance de {{pct}} %",
+    "threshold": "seuil {{pct}} %",
     "setThis": "Défini par {{name}}"
   },
   "suggest": {
@@ -1057,6 +1064,12 @@
     "line": "Ligne {{line}}",
     "playRecording": "Écouter l’enregistrement",
     "playVoicemail": "Écouter le message vocal",
+    "recording": "Enregistrement",
+    "loadingRecording": "Chargement…",
+    "tryAgain": "Réessayer",
+    "recordingNotReady": "L’enregistrement n’est pas encore prêt. Réessayez dans une minute.",
+    "recordingRefused": "Le fournisseur a refusé le jeton de la connexion. Il lui faut l’accès aux enregistrements d’appels.",
+    "recordingError": "Impossible de charger l’enregistrement.",
     "openIn": "Ouvrir dans {{provider}}",
     "summary": "Résumé",
     "showTranscript": "Afficher la transcription",

@@ -499,6 +499,8 @@ export const api = {
     rotateWebhook: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/rotate-webhook`),
     disconnect: (id: string) => http.del(`/v1/phone/connections/${id}`),
     lines: () => http.get<{ data: T.PhoneLine[] }>("/v1/phone/lines"),
+    /** A call's recording, for a provider that only serves it to the connection (the audio, not a link). */
+    recording: (callId: string) => download(`/v1/phone/calls/${callId}/recording`),
   },
   ticketPanels: {
     list: () => http.get<{ data: T.TicketPanel[] }>("/v1/ticket-panels"),
@@ -874,7 +876,7 @@ export const api = {
     /** Streams `delta` text; resolves with the full draft at `done`. */
     draft: (ticketId: string, b: { instructions?: string; tone?: string }, h?: StreamHandlers) =>
       stream<T.AIDraft>(`/v1/tickets/${ticketId}/ai/draft`, b, h),
-    summary: (ticketId: string) => http.post<T.AISummary>(`/v1/tickets/${ticketId}/ai/summary`, {}),
+    summary: (ticketId: string, language: string) => http.post<T.AISummary>(`/v1/tickets/${ticketId}/ai/summary`, { language }),
     ask: (ticketId: string, question: string, h?: StreamHandlers) => stream<T.AIAnswer>(`/v1/tickets/${ticketId}/ai/ask`, { question }, h),
     triage: (ticketId: string, apply: boolean) => http.post<T.Triage>(`/v1/tickets/${ticketId}/ai/triage`, { apply }),
     /** Ollie's pending suggested reply on an email ticket, sent or discarded by a teammate. */
