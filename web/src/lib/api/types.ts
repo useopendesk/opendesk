@@ -1307,6 +1307,17 @@ export type WhatsAppConnection = {
   created_at: string;
   updated_at: string;
 };
+/** A WhatsApp ticket's conversation as the server will send on it (contracts/whatsapp.md "Tickets"). */
+export type WhatsAppTicketState = {
+  /** The connection that holds the ticket's number now; null while the number is not connected. */
+  connection_id: string | null;
+  connection_name: string;
+  display_phone_number: string;
+  /** Whether a free-form reply may go out now. A template may go out any time. */
+  window_open: boolean;
+  /** When the 24 hour window closes or closed; null when the customer never wrote to this number. */
+  window_closes_at: string | null;
+};
 /** A template approved at Meta and synced into the workspace (contracts/whatsapp.md "Templates"). */
 export type WhatsAppTemplate = {
   id: string;

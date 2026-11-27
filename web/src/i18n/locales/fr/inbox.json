@@ -688,6 +688,7 @@
     },
     "whatsappWindowOpen": "Fenêtre WhatsApp ouverte. {{left}} pour répondre.",
     "whatsappWindowClosed": "La fenêtre de 24 heures est fermée : seul un modèle peut être envoyé.",
+    "whatsappDisconnected": "Ce numéro WhatsApp n’est pas connecté. Un admin peut le reconnecter dans Paramètres > WhatsApp.",
     "whatsappTemplate": "Envoyer un modèle",
     "whatsappOneFile": "WhatsApp accepte un fichier par message. Retirez le fichier pour en joindre un autre."
   },

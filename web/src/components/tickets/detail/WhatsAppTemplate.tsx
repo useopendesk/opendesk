@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, MessageCircle, Paperclip, Search, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Ticket, WhatsAppTemplate, WhatsAppTemplateButton } from "@/lib/api/types";
+import type { Ticket, WhatsAppTemplate, WhatsAppTemplateButton, WhatsAppTicketState } from "@/lib/api/types";
 import { api, type WhatsAppTemplateSendBody } from "@/lib/api/endpoints";
 import { cn } from "@/lib/cn";
 import { bytes, minutes } from "@/lib/format";
@@ -18,39 +18,48 @@ import { Field, TextInput } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 
-/** Meta's customer service window: free-form replies are allowed for 24 hours after the customer's latest message. */
-export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/** When the window closes for this ticket, or null when the customer never wrote. */
-export function whatsAppWindowEndsAt(ticket: Ticket): number | null {
-  if (!ticket.last_customer_message_at) return null;
-  const at = Date.parse(ticket.last_customer_message_at);
-  return Number.isFinite(at) ? at + WHATSAPP_WINDOW_MS : null;
+/** The ticket's WhatsApp state from the server: the connection a reply goes out from and the window. */
+export function useWhatsAppTicket(ticket: Ticket): WhatsAppTicketState | undefined {
+  return useQuery({ ...q.whatsappTicket(ticket.id), enabled: ticket.channel === "whatsapp" }).data;
 }
 
-/** Whether a free-form reply may go out right now. */
-export function whatsAppWindowOpen(ticket: Ticket): boolean {
-  const ends = whatsAppWindowEndsAt(ticket);
-  return ends !== null && Date.now() < ends;
+/** When the window closes, or null when the customer never wrote to the ticket's number. */
+export function whatsAppWindowEndsAt(state: WhatsAppTicketState): number | null {
+  if (!state.window_closes_at) return null;
+  const at = Date.parse(state.window_closes_at);
+  return Number.isFinite(at) ? at : null;
+}
+
+/** Whether a free-form reply may go out right now: the number is connected and the window open. */
+export function whatsAppWindowOpen(state: WhatsAppTicketState): boolean {
+  const ends = whatsAppWindowEndsAt(state);
+  return !!state.connection_id && ends !== null && Date.now() < ends;
 }
 
 /** The window's state above the composer, with the way to a template either way. */
-export function WhatsAppWindow({ ticket, onTemplates }: { ticket: Ticket; onTemplates: () => void }) {
+export function WhatsAppWindow({ state, onTemplates }: { state: WhatsAppTicketState; onTemplates: () => void }) {
   const { t } = useTranslation("inbox");
-  const ends = whatsAppWindowEndsAt(ticket);
-  const open = ends !== null && Date.now() < ends;
+  const ends = whatsAppWindowEndsAt(state);
+  const connected = !!state.connection_id;
   // Only the countdown needs the clock; a closed window stands still.
-  const now = useNow(open);
+  const now = useNow(connected && ends !== null && Date.now() < ends);
+  const open = connected && ends !== null && now < ends;
   const left = ends === null ? 0 : Math.max(0, ends - now);
   return (
     <div className={cn("mb-2 flex items-center gap-2 rounded-md px-3 py-2 text-[12.5px]", open ? "bg-sunken" : tone.amber.soft)}>
       <MessageCircle className={cn("size-3.5 shrink-0", open ? tone.green.text : tone.amber.text)} />
       <span className="min-w-0 flex-1 text-fg-2">
-        {open ? t("composer.whatsappWindowOpen", { left: minutes(Math.ceil(left / 60_000)) }) : t("composer.whatsappWindowClosed")}
+        {!connected
+          ? t("composer.whatsappDisconnected")
+          : open
+            ? t("composer.whatsappWindowOpen", { left: minutes(Math.ceil(left / 60_000)) })
+            : t("composer.whatsappWindowClosed")}
       </span>
-      <Button size="xs" variant="secondary" icon={<Send className={cn("size-3", tone.green.text)} />} onClick={onTemplates}>
-        {t("composer.whatsappTemplate")}
-      </Button>
+      {connected && (
+        <Button size="xs" variant="secondary" icon={<Send className={cn("size-3", tone.green.text)} />} onClick={onTemplates}>
+          {t("composer.whatsappTemplate")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -145,7 +154,7 @@ function filled(body: string, params: Record<string, string>): string {
 type HeaderMedia = { file: File; status: "uploading" | "done"; attachmentId?: string };
 
 /** Pick an approved template, fill its placeholders and send it, in the window or outside it. */
-export function WhatsAppTemplateDialog({ ticket, connectionId, onClose }: { ticket: Ticket; connectionId?: string; onClose: () => void }) {
+export function WhatsAppTemplateDialog({ ticket, connectionId, onClose }: { ticket: Ticket; connectionId: string; onClose: () => void }) {
   const { t } = useTranslation("inbox");
   const qc = useQueryClient();
   const { data, isLoading } = useQuery(q.whatsappTemplates(connectionId));
@@ -216,6 +225,7 @@ export function WhatsAppTemplateDialog({ ticket, connectionId, onClose }: { tick
       toast.success(t("whatsappTemplate.sent"));
       void qc.invalidateQueries({ queryKey: qk.messages(ticket.id), exact: true });
       void qc.invalidateQueries({ queryKey: qk.ticket(ticket.id) });
+      void qc.invalidateQueries({ queryKey: qk.whatsappTicket(ticket.id), exact: true });
       onClose();
     },
     onError: (e) => toast.error(e, t("whatsappTemplate.error")),

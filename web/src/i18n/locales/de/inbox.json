@@ -671,6 +671,7 @@
     },
     "whatsappWindowOpen": "WhatsApp-Fenster offen. Noch {{left}} zum Antworten.",
     "whatsappWindowClosed": "Das 24-Stunden-Fenster ist geschlossen, daher kann nur eine Vorlage gesendet werden.",
+    "whatsappDisconnected": "Diese WhatsApp-Nummer ist nicht verbunden. Ein Admin kann sie unter Einstellungen > WhatsApp wieder verbinden.",
     "whatsappTemplate": "Vorlage senden",
     "whatsappOneFile": "WhatsApp nimmt eine Datei pro Nachricht. Entferne die Datei, um eine andere anzuhängen."
   },

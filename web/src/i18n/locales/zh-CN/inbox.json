@@ -648,6 +648,7 @@
     },
     "whatsappWindowOpen": "WhatsApp 窗口已开启，还剩 {{left}} 可以回复。",
     "whatsappWindowClosed": "24 小时窗口已关闭，只能发送模板。",
+    "whatsappDisconnected": "此 WhatsApp 号码未连接。管理员可以在 设置 > WhatsApp 中重新连接。",
     "whatsappTemplate": "发送模板",
     "whatsappOneFile": "WhatsApp 每条消息只能带一个文件。移除当前文件才能添加另一个。"
   },

@@ -269,6 +269,8 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
       if (!m || !tid) return;
       mergeMessage(qc, tid, m);
       if (m.author?.type === "api" && !m.author.api_key) void qc.invalidateQueries({ queryKey: qk.messages(tid), exact: true });
+      // A customer's WhatsApp message opens the 24 hour window again.
+      if (env.type === "message.created" && m.direction === "inbound") void qc.invalidateQueries({ queryKey: qk.whatsappTicket(tid), exact: true });
       // A newer message means Ollie's suggestion no longer answers the latest one.
       if (env.type === "message.created" && m.kind === "reply") {
         const s = qc.getQueryData<SuggestedReply | null>(qk.suggestedReply(tid));

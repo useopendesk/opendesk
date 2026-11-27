@@ -675,6 +675,7 @@
     },
     "whatsappWindowOpen": "WhatsApp window open. {{left}} left to reply.",
     "whatsappWindowClosed": "The 24 hour window is closed, so only a template can go out.",
+    "whatsappDisconnected": "This WhatsApp number is not connected. An admin can connect it again in Settings > WhatsApp.",
     "whatsappTemplate": "Send template",
     "whatsappOneFile": "WhatsApp takes one file per message. Remove the file to attach another."
   },

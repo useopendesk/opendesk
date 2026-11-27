@@ -555,6 +555,8 @@ export const api = {
     /** Pulls the templates an admin approved at Meta; every connection's when none is named. */
     syncTemplates: (connectionId?: string) =>
       http.post<{ data: T.WhatsAppTemplate[]; synced: number }>("/v1/whatsapp/templates/sync", connectionId ? { connection_id: connectionId } : {}),
+    /** The connection a WhatsApp ticket's replies go out from and its 24 hour window. */
+    ticket: (ticketId: string) => http.get<T.WhatsAppTicketState>(`/v1/tickets/${ticketId}/whatsapp`),
     /** Sends a template on the ticket's WhatsApp conversation, in the window or outside it. */
     sendTemplate: (ticketId: string, b: WhatsAppTemplateSendBody) => http.create<T.Message>(`/v1/tickets/${ticketId}/whatsapp-template`, b),
   },
