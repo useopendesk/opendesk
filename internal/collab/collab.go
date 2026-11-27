@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/jobs"
+	"github.com/useopendesk/opendesk/internal/mailsource"
 	"github.com/useopendesk/opendesk/internal/products"
 )
 
@@ -32,7 +34,7 @@ const (
 	initialMax      = 500                 // and at most this many messages per account
 	maxFolders      = 200                 // folders and labels kept per account
 	maxIMAPFolders  = 30                  // IMAP folders synced
-	maxRawBytes     = 30 << 20            // a larger message is skipped
+	maxRawBytes     = mailsource.MaxBytes // a larger message is skipped
 	maxSendBytes    = 25 << 20            // files on one sent message
 	maxRecipients   = 100                 // on one sent message
 	activeInterval  = time.Minute         // sync interval while someone with access is active
@@ -72,6 +74,9 @@ type service struct {
 	paceLimits map[string]paceLimit
 	paceMu     sync.Mutex
 	paced      map[uuid.UUID]*pace
+
+	// pushKeys verify Gmail push tokens (push.go); tests replace them.
+	pushKeys oidc.KeySet
 }
 
 func newService(d *deps.Deps) *service {
@@ -110,11 +115,13 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerQueueRoutes(api)
 	s.registerOutcomeRoutes(api)
 	s.registerCommentRoutes(api)
+	s.registerFollowRoutes(api)
 	s.registerDetailRoutes(api)
 	s.registerSidebarRoutes(api)
 	s.registerCategoryRoutes(api)
 	s.registerHandoverRoutes(api)
 	r.Get("/v1/collab/attachments/{message_id}/{index}", s.attachmentHandler)
+	r.Post(gmailPushPath, s.gmailPush)
 	d.Overview.MailCounts = s.overviewCounts
 }
 

@@ -11,7 +11,7 @@ Same code, same API.
 | --- | --- | --- | --- | --- |
 | `free` | $0, per workspace, forever | 1 | 1 | $0.50 per workspace |
 | `pro` | $18 per seat per month (Stripe recurring per-seat price `STRIPE_PRICE_PRO`; optional yearly `STRIPE_PRICE_PRO_YEARLY`) | unlimited | unlimited | $10 per paid seat, pooled |
-| `collab` (hidden, see "Collab") | $38 per seat per month (Stripe recurring per-seat price `STRIPE_PRICE_COLLAB`; optional yearly `STRIPE_PRICE_COLLAB_YEARLY`) | unlimited | unlimited | $20 per paid seat, pooled; plus Collab |
+| `collab` (see "Collab") | $38 per seat per month (Stripe recurring per-seat price `STRIPE_PRICE_COLLAB`; optional yearly `STRIPE_PRICE_COLLAB_YEARLY`) | unlimited | unlimited | $20 per paid seat, pooled; plus Collab |
 | `self_hosted` | free | unlimited | unlimited | unlimited (own key) |
 
 - Every feature is on every plan. Plans differ only in the limits above and the import file
@@ -54,14 +54,14 @@ file is also at most 25 MB, as for any attachment, on every plan.
 
 ## Collab
 
-The `collab` plan is Pro with a larger AI allowance plus Collab (contracts/collab.md). It is
-**hidden**: no workspace sees it, its prices or its card until an instance admin opens it to
-that workspace (contracts/admin.md "Collab access"), as `subscriptions.collab_access`:
+The `collab` plan is Pro with a larger AI allowance plus Collab (contracts/collab.md). Every
+workspace is offered it; an instance admin may hide it from a workspace or give it for free
+(contracts/admin.md "Collab access"), as `subscriptions.collab_access`:
 
 | access | the workspace |
 | --- | --- |
-| `none` (default) | cannot see or buy the collab plan; `prices.collab_month`/`collab_year` are left out of `Billing` |
-| `offered` | may subscribe (`POST /v1/billing/checkout {plan: "collab"}`) or switch a Pro subscription to it (`POST /v1/billing/change-plan`) |
+| `none` (an instance admin hid it) | cannot see or buy the collab plan; `prices.collab_month`/`collab_year` are left out of `Billing` |
+| `offered` (default) | may subscribe (`POST /v1/billing/checkout {plan: "collab"}`) or switch a Pro subscription to it (`POST /v1/billing/change-plan`) |
 | `complimentary` | has the collab plan without a subscription, until `collab_until` (or until changed): plan `collab`, unlimited mailboxes and members, $20 of AI per billed seat (`plan.BilledSeats`, pooled), and Collab. It may still subscribe to pay for it |
 
 - The plan of a Stripe subscription comes from its item's price: a collab price (monthly or
@@ -155,12 +155,13 @@ workspace's chosen models.
 | Ollie, the assistant (each model turn of a run) | `assistant` | $0.02 |
 | A teammate's Ollie answering an ask (one call, paid by the workspace, attributed to the asker) | `assistant_peer` | $0.01 |
 | A procedure an automation has Ollie run on a ticket (each model turn of the run) | `procedure` | $0.02 |
+| A question about using opendesk, answered from the app's settings and docs (contracts/ai.md "Asking about the app") | `app_help` | $0.005 |
 
 A typical call's size (`internal/ai` `typicalTokens`, input / output tokens): summarize 3,000 / 300,
 rewrite 800 / 400, translate 800 / 500, triage 1,500 / 150, decide 1,500 / 100, copilot 4,000 / 400,
 draft_reply 4,000 / 500, answer 5,000 / 400, answer_email 5,000 / 500, playground 5,000 / 400,
 kb_draft 8,000 / 1,500, assistant 6,000 / 400, assistant_peer 4,000 / 400, procedure 6,000 / 400, mail_categorize 3,000 / 100,
-mail_categories 3,000 / 500. A model's `typical_reply_usd` is a draft reply of this size.
+mail_categories 3,000 / 500, app_help 2,000 / 200. A model's `typical_reply_usd` is a draft reply of this size.
 
 Jev decisions cost a fraction of an LLM call (per input token, output free), so triage and the
 widget relevance check use only a little. Usage rows record decision calls with model `jev`.

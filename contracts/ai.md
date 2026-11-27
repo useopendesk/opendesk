@@ -217,7 +217,8 @@ interface AIModel {
 | POST | `/v1/wiki/ai/write` | agent | $0.01 (selection), $0.03 (from the page) | `{mode: "improve"\|"fix_grammar"\|"shorter"\|"longer"\|"simplify"\|"more_formal"\|"friendlier"\|"summarize"\|"action_items"\|"explain"\|"continue"\|"custom", html?: string /* the selection */, context_html?: string /* the page around it */, title?: string, instructions?: string}` → `{html}` (not saved); Ollie writing in the wiki (`contracts/wiki.md` "AI"). Edits of a selection take the fast model; `summarize`, `continue` and `custom` the default one. The output is sanitized as wiki HTML |
 | POST | `/v1/ai/translate` | agent | $0.01 | `{html?: string, text?: string, target: string /* BCP 47 */}` → `{html?, text?, source_language}` |
 | POST | `/v1/kb/articles/ai/draft` | agent | $0.05 | `{ticket_ids?: string[] /* at most 10 */, topic?: string /* up to 300 chars */}` → `{title, body_html, excerpt}` (not saved) |
-| GET | `/v1/ai/search` | viewer | $0 | `?q` semantic search over tickets and articles (embeddings), FTS fallback → same shape as `/v1/search` |
+| GET | `/v1/ai/search` | viewer | $0 | `?q` semantic search over tickets and articles (embeddings) fused with full-text matches (a ticket's words, its messages', its contact's, and addresses: contracts/api.md "Search"), FTS fallback → same shape as `/v1/search`, with matching contacts |
+| POST | `/v1/ai/app-help` | viewer, people only | $0.005 | `{question: string /* 1..500 */, language?: string /* BCP 47, the reader's */, sources: {title: string /* 1..300, where it is */, url?: string /* ..500 */, text?: string /* ..2000 */}[] /* 1..8 */}` → `{answer: string}`: a few sentences of plain text on doing something in opendesk, from the excerpts the app's own search found ("Asking about the app" below); fast model; 20 a minute per person (`429 rate_limited`) |
 
 `{id}` is a ticket uuid, `#123` (URL-encoded `%23123`) or `123`. API keys need the scope
 of the data the route reads or writes: `tickets:read` (summary, ask, search),
@@ -252,6 +253,30 @@ for rewrite) for a live preview only; render and insert the sanitized `done` pay
 error before the first event is a normal problem+json response with its status (so `402
 ai_balance_empty` arrives as JSON even on a streaming request); an error after the stream started
 is `event: error` with the problem object as data, and the stream ends.
+
+### Asking about the app
+
+The command menu's Ask AI also answers questions about opendesk itself
+("how do I customize my sidebar"), from two indexes the web app builds with itself (`web/indexer`), each
+loaded on first use as a chunk of its own:
+
+- **settings**: every settings page's title, sections, rows and the field labels and hints inside
+  them, read from the code (`<SettingsPage>`, `<Section>`, `<Row>`, `<Field>`) as i18n keys and shown in the
+  reader's language. An entry opens its page at `#find=<ns:key>`, which scrolls that section or row into
+  view and highlights it briefly. Entries are left out for whoever cannot use them: the page's rule in
+  `web/src/lib/settingsAccess.ts` (the settings nav reads the same table) and the conditions the code
+  shows the part under (admin, owner, Collab, Tickets, AI, Cloud). A few places that are not settings
+  pages (Customize sidebar, New Space) join them.
+- **docs**: the docs site's pages and their `##` sections with their first words, linking to
+  `docs.opendesk.sh`. Built from `docs/src/content/docs`; nothing is fetched from the docs site at runtime.
+  The larger of the two, it loads only in Ask AI: the menu's normal search lists settings, never docs.
+
+Matching runs in the browser (words anywhere, stems, everyday synonyms, a typo in a word of five letters
+or more and two from eight), with or without AI.
+With AI, **Answer with {assistant}** sends the question and the top excerpts (at most four places and four
+docs sections: the app's own strings and the public docs, never workspace data) to
+`POST /v1/ai/app-help`, which answers from them alone on the fast model, metered as `app_help`. API keys
+and OAuth grants are refused (`403`): it serves the app's own menu.
 
 ### Drafts and connected tools
 
@@ -688,8 +713,13 @@ use `fast_model` (default `AI_FAST_MODEL`). JSON features use structured outputs
 `json_schema` (falling back to `json_object`, then plain) on OpenAI-compatible endpoints.
 System prompts are fixed text and cached (Anthropic prompt caching); workspace guidance
 (tone, language, instructions) is a second cached system block; ticket data is the user
-turn. Data blocks are XML-like tags whose content has `<` and `>` replaced by `‹` and `›`,
-so content cannot close or open a block. Requests time out (90 s, 4 min streaming) and are
+turn. `AI_AGENT_INSTRUCTIONS` (at most 8,000 characters, or the instance refuses to boot) is
+instance-wide guidance for the support agents only, the chat (site) agent and the email agent
+(contracts/agent.md), in an `<instance_guidance>` block before the workspace's; no other feature
+reads it. It holds the operator's universal rules: when guidance conflicts, the bot's
+`<agent_guidance>` wins over `<workspace_guidance>`, which wins over `<instance_guidance>`, and none
+overrides the system prompt. Data blocks are XML-like tags whose content has `<` and `>` replaced by
+`‹` and `›`, so content cannot close or open a block. Requests time out (90 s, 4 min streaming) and are
 retried on 429, 5xx and 529 with backoff honouring `Retry-After`.
 
 ## Voice

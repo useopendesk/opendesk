@@ -38,8 +38,14 @@ export function keyBody(key: readonly unknown[]): readonly unknown[] {
   return keyWorkspace(key) === null ? key : key.slice(1);
 }
 
-/** The roots a user-level key may start with (src/lib/queryKeys.test.ts holds every literal key to it). */
-export const USER_ROOTS = new Set(["auth-config", "me", "public", "invitation-lookup", "oauth", "totp-setup", "customerPortal"]);
+/**
+ * The roots a user-level key may start with (src/lib/queryKeys.test.ts holds every literal key to it).
+ * `appSearch` holds the indexes built with the app itself (lib/appSearch), the same in every workspace.
+ */
+export const USER_ROOTS = new Set(["auth-config", "me", "public", "invitation-lookup", "oauth", "totp-setup", "customerPortal", "appSearch"]);
+
+/** Conversations per page of a Collab mail list. */
+export const MAIL_PAGE_SIZE = 50;
 
 export const qk = {
   /** Every key of one workspace (default: the one in scope). */
@@ -373,6 +379,7 @@ export const qk = {
   mailPerson: (email: string, exclude: string) => w(["collab", "person", email, exclude] as const),
   // Outside "collab": a message's source never changes, and reading it is a call to the provider.
   mailMessageDetails: (id: string) => w(["collabMessageDetails", id] as const),
+  mailMessageSource: (id: string) => w(["collabMessageSource", id] as const),
 };
 
 const list = <R>(key: readonly unknown[], fn: () => Promise<R[] | Page<R> | { data: R[] }>, opts: { staleTime?: number } = {}) =>
@@ -639,7 +646,7 @@ export const q = {
   mailThreads: (query: CollabThreadQuery) =>
     infiniteQueryOptions({
       queryKey: qk.mailThreads(query),
-      queryFn: ({ pageParam }) => api.collab.threads.list({ ...query, limit: 50, cursor: pageParam }),
+      queryFn: ({ pageParam }) => api.collab.threads.list({ ...query, limit: MAIL_PAGE_SIZE, cursor: pageParam }),
       initialPageParam: null as string | null,
       getNextPageParam: (last) => last.next_cursor,
       staleTime: 15_000,
