@@ -362,7 +362,7 @@ func (s *Service) registerAPI(api huma.API, _ chi.Router) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := NewClient(s.http).SubscribeWebhook(ctx, acct, s.webhookURL(c), creds.VerifyToken); err != nil {
+			if err := s.client().SubscribeWebhook(ctx, acct, s.webhookURL(c), creds.VerifyToken); err != nil {
 				if msg := metaRefusal(err); msg != "" {
 					s.d.Log.Info("whatsapp webhook subscription refused", "connection_id", c.ID, "detail", msg)
 					return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_subscribe_refused",
@@ -470,7 +470,7 @@ func newWebhookVerifyToken() (string, error) {
 // refusal is returned as the 422 the API answers with, whose wording (never a credential)
 // is also what last_error records.
 func (s *Service) probeCredentials(ctx context.Context, acct Account) (info AccountInfo, refusal string, err error) {
-	info, err = NewClient(s.http).ValidateCredentials(ctx, acct)
+	info, err = s.client().ValidateCredentials(ctx, acct)
 	if err == nil {
 		return info, "", nil
 	}

@@ -45,6 +45,8 @@ const (
 type Service struct {
 	d    *deps.Deps
 	http *http.Client
+	// graphURL replaces the Graph API host in tests; empty is Meta's.
+	graphURL string
 }
 
 var services sync.Map
@@ -63,6 +65,13 @@ func For(d *deps.Deps) *Service {
 func New(d *deps.Deps) *Service {
 	return &Service{d: d, http: &http.Client{Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
+// client is the Graph API client the engine calls Meta with.
+func (s *Service) client() *Client {
+	c := NewClient(s.http)
+	c.SetBaseURL(s.graphURL)
+	return c
 }
 
 // Register mounts the engine's API and its public Meta webhook.

@@ -155,7 +155,7 @@ func (s *Service) prepareInboundMedia(ctx context.Context, c connection, m Parse
 		s.d.Log.Warn("whatsapp media not downloaded", "connection_id", c.ID, "reason", "credentials", "err", err)
 		return nil, nil
 	}
-	client := NewClient(s.http)
+	client := s.client()
 	info, err := client.GetMediaURL(ctx, acc, m.MediaID)
 	if err != nil {
 		if permanentMediaError(err) {
@@ -280,7 +280,7 @@ func (s *Service) sendMediaMessage(ctx context.Context, c connection, m outbound
 	if err != nil {
 		return s.failMessage(ctx, wid, m.ID, "This WhatsApp connection's credentials could not be read.")
 	}
-	client := NewClient(s.http)
+	client := s.client()
 	mediaID, err := client.UploadMedia(ctx, acc, content, contentType, filename)
 	if err != nil {
 		if metaRetryable(err) {

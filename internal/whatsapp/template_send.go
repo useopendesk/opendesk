@@ -60,7 +60,7 @@ func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outbo
 			return s.failMessage(ctx, c.WorkspaceID, m.ID, reason)
 		}
 	}
-	wamid, err := NewClient(s.http).SendTemplate(ctx, acc, waID, tmpl.Name, tmpl.Language, tmpl.components())
+	wamid, err := s.client().SendTemplate(ctx, acc, waID, tmpl.Name, tmpl.Language, tmpl.components())
 	if err != nil {
 		if metaRetryable(err) && !lastTry {
 			// Meta refused it before accepting: safe to let River try again.
@@ -193,7 +193,7 @@ func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, a
 		return "This template's file is missing.", nil
 	}
 	filename = hd.CleanFilename(filename)
-	mediaID, err := NewClient(s.http).UploadMedia(ctx, acc, content, contentType, filename)
+	mediaID, err := s.client().UploadMedia(ctx, acc, content, contentType, filename)
 	if err != nil {
 		if metaRetryable(err) {
 			return "", err

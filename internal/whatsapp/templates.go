@@ -129,7 +129,7 @@ func (s *Service) syncTemplates(ctx context.Context, q db.Querier, wid uuid.UUID
 	if err != nil {
 		return 0, err
 	}
-	fetched, err := NewClient(s.http).FetchTemplates(ctx, acc)
+	fetched, err := s.client().FetchTemplates(ctx, acc)
 	if err != nil {
 		return 0, err
 	}

@@ -100,7 +100,7 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 	if err != nil {
 		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This WhatsApp connection's credentials could not be read.")
 	}
-	wamid, err := NewClient(s.http).SendText(ctx, acc, waID, body)
+	wamid, err := s.client().SendText(ctx, acc, waID, body)
 	if err != nil {
 		reason := whatsappSendError(err)
 		if metaRetryable(err) && !lastTry {
