@@ -41,10 +41,21 @@ type contactExportOut struct {
 // headers back, so an export can be edited and imported again.
 var exportColumns = []string{"Name", "Email", "Other emails", "Phone", "Company", "External ID", "Notes", "Labels", "Blocked", "Created"}
 
+// csvFormulaStarts are the first characters that make a spreadsheet run a cell as a formula.
+const csvFormulaStarts = "=+-@\t\r"
+
 // csvCell neutralizes a value a spreadsheet would run as a formula.
 func csvCell(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+	if s != "" && strings.ContainsRune(csvFormulaStarts, rune(s[0])) {
 		return "'" + s
+	}
+	return s
+}
+
+// csvUncell reads back a value csvCell neutralized, so an exported file imports as it was.
+func csvUncell(s string) string {
+	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune(csvFormulaStarts, rune(s[1])) {
+		return s[1:]
 	}
 	return s
 }

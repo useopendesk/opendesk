@@ -271,7 +271,12 @@ func (r *importRun) cell(rec []string, cols map[string]int, col string) string {
 	if !ok || i >= len(rec) {
 		return ""
 	}
-	return strings.TrimSpace(rec[i])
+	return importCell(rec[i])
+}
+
+// importCell is a cell's value as an import takes it.
+func importCell(s string) string {
+	return strings.TrimSpace(csvUncell(strings.TrimSpace(s)))
 }
 
 // row adds or updates the person one row describes and says which it did.

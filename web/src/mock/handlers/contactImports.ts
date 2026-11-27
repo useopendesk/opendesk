@@ -24,6 +24,13 @@ function stateOf(ws: WsData): State {
 const CHUNK = 20;
 const TICK = 350;
 
+// A cell as the import takes it: an export's formula guard (a ' before = + - @ tab or CR) comes off,
+// so an exported file imports as it was.
+const cellValue = (v: string) => {
+  const t = v.trim();
+  return (/^'[=+\-@\t\r]/.test(t) ? t.slice(1) : t).trim();
+};
+
 function parseCsv(text: string): string[][] {
   const t = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   const first = t.split(/\r?\n/, 1)[0] ?? "";
@@ -104,7 +111,7 @@ function tick(ws: WsData, run: Run) {
   if (x.status !== "running") return;
   const col = (rec: string[], name?: string) => {
     const i = name ? upload.header.indexOf(name) : -1;
-    return i >= 0 ? (rec[i] ?? "").trim() : "";
+    return i >= 0 ? cellValue(rec[i] ?? "") : "";
   };
   const end = Math.min(x.processed + CHUNK, x.total);
   for (let i = x.processed; i < end; i++) {
@@ -139,7 +146,7 @@ export function registerContactImports() {
       upload_id: uuid(),
       filename: f.name,
       rows: rows.length,
-      columns: header.map((name, i) => ({ name, samples: rows.map((r) => (r[i] ?? "").trim()).filter(Boolean).slice(0, 3).map((v) => v.slice(0, 80)) })),
+      columns: header.map((name, i) => ({ name, samples: rows.map((r) => cellValue(r[i] ?? "")).filter(Boolean).slice(0, 3).map((v) => v.slice(0, 80)) })),
       suggested: suggest(header),
       header,
       data: rows,

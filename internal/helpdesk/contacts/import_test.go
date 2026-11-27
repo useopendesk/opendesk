@@ -183,3 +183,30 @@ func TestContactExport(t *testing.T) {
 	e.Do("POST", "/v1/contacts/export", a, map[string]any{"ids": []string{foreign}}).Want(t, 404)
 	e.Do("POST", "/v1/contacts/export", a, map[string]any{}).Want(t, 422)
 }
+
+// An export imported again leaves people as they were, though its cells are neutralized
+// for spreadsheets: a phone in +1 form goes out as '+1 and comes back as +1.
+func TestContactExportImportRoundTrip(t *testing.T) {
+	e := hdtest.New(t, contacts.Register)
+	ws := e.NewWorkspace()
+	a := ws.Agent.As(ws)
+	e.Exec(`INSERT INTO contacts (id, workspace_id, name, email, phone, notes) VALUES ($1, $2, 'Ann', 'ann@example.com', '+1 555 0134', '=1+1')`, ids.New(), ws.ID)
+	e.Exec(`INSERT INTO contacts (id, workspace_id, name, email, phone, notes) VALUES ($1, $2, 'Bob', 'bob@example.com', '-5', '''kept as typed')`, ids.New(), ws.ID)
+
+	r := e.Do("POST", "/v1/contacts/export", a, map[string]any{"query": map[string]any{}}).Want(t, 200)
+	if !strings.Contains(string(r.Body), "'+1 555 0134") || !strings.Contains(string(r.Body), "'=1+1") {
+		t.Fatalf("export not neutralized:\n%s", r.Body)
+	}
+	x := runImport(t, e, ws, a, string(r.Body), "overwrite", map[string]any{"name": "Name", "email": "Email", "phone": "Phone", "notes": "Notes"})
+	if x.Status != "done" || x.Updated != 2 || x.Failed != 0 {
+		t.Fatalf("round trip %+v", x)
+	}
+	for email, want := range map[string][2]string{"ann@example.com": {"+1 555 0134", "=1+1"}, "bob@example.com": {"-5", "'kept as typed"}} {
+		var phone, notes string
+		e.Scalar(`SELECT phone FROM contacts WHERE workspace_id = $1 AND email = $2`, &phone, ws.ID, email)
+		e.Scalar(`SELECT notes FROM contacts WHERE workspace_id = $1 AND email = $2`, &notes, ws.ID, email)
+		if phone != want[0] || notes != want[1] {
+			t.Fatalf("%s came back as %q %q", email, phone, notes)
+		}
+	}
+}

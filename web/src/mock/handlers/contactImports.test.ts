@@ -66,6 +66,24 @@ describe("mock contact import", () => {
     expect(added.company?.name).toBe("Acme Imports");
   });
 
+  it("imports an export as it was, its formula guards taken off", async () => {
+    vi.useFakeTimers();
+    const ws = db.workspaces[0]!;
+    const ann = ws.contacts.find((c) => c.email)!;
+    ann.phone = "+1 555 0134";
+    ann.notes = "=1+1";
+    const exported = (await call("POST", "/v1/contacts/export", { ids: [ann.id] })).body as string;
+    expect(exported).toContain("'+1 555 0134");
+    const up = (await call("POST", "/v1/contacts/import/upload", csv(exported))).body as ContactImportUpload;
+    expect(up.columns.find((c) => c.name === "Phone")?.samples).toEqual(["+1 555 0134"]);
+    ann.phone = "";
+    ann.notes = "";
+    const x = (await call("POST", "/v1/contacts/imports", { upload_id: up.upload_id, mapping: { name: "Name", email: "Email", phone: "Phone", notes: "Notes" }, match_on: "email", on_match: "overwrite" })).body as ContactImport;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await call("GET", `/v1/contacts/imports/${x.id}`)).body).toMatchObject({ status: "done", updated: 1, failed: 0 });
+    expect(ws.contacts.find((c) => c.id === ann.id)).toMatchObject({ phone: "+1 555 0134", notes: "=1+1" });
+  });
+
   it("refuses a mapping that cannot find people or name a column the file lacks", async () => {
     const up = (await call("POST", "/v1/contacts/import/upload", csv("Name,Email\nA,a@example.test\n"))).body as ContactImportUpload;
     const start = (mapping: object, match_on = "email") => call("POST", "/v1/contacts/imports", { upload_id: up.upload_id, mapping, match_on, on_match: "skip" });

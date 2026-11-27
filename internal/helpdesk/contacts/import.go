@@ -326,7 +326,7 @@ func upload(ctx context.Context, d *deps.Deps, p *auth.Principal, f huma.FormFil
 				break
 			}
 			if i < len(rec) {
-				if v := strings.TrimSpace(rec[i]); v != "" {
+				if v := importCell(rec[i]); v != "" {
 					col.Samples = append(col.Samples, hd.Excerpt(v, 80))
 				}
 			}

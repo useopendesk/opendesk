@@ -387,5 +387,5 @@ most 50,000 people) and answers `text/csv` as an attachment with a byte order ma
 reads it as UTF-8, `Cache-Control: no-store`. Columns: `Name`, `Email`, `Other emails`, `Phone`,
 `Company`, `External ID`, `Notes`, `Labels`, `Blocked`, `Created`, then one for each custom field by
 its name. A cell that would start a formula (`=`, `+`, `-`, `@`, tab or return) is written with a
-leading `'`. Needs `contacts:read` and an agent role; 30 per workspace per hour; audited as
+leading `'`, and an import takes that one `'` off again, so an export imports as it was. Needs `contacts:read` and an agent role; 30 per workspace per hour; audited as
 `contact.exported` with the count.
