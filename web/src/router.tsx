@@ -22,7 +22,7 @@ import { stripWorkspaceParam, workspaceParam } from "./lib/workspaceParam";
 import { queryClient } from "./lib/queryClient";
 import { q } from "./lib/queries";
 import { companyFilter, parseCompanySearch, parsePeopleSearch, peopleFilter } from "./lib/directorySort";
-import { productHome, productsOf, requireTickets, TICKET_SETTINGS } from "./lib/products";
+import { productHome, productsOf, requireTickets, settingsProductAvailable } from "./lib/products";
 import { folderById, listQuery, parseInboxSearch, teamQuery } from "./lib/folders";
 import { viewOrTicket } from "./lib/viewLink";
 import { withRememberedSort } from "./lib/listSort";
@@ -699,9 +699,9 @@ export function reportsRange(s: { from?: string; to?: string }) {
   return { from: s.from ?? d.from, to: s.to ?? d.to };
 }
 
-/** The overview query from the URL: the range, and the team (`none`: no team) and brand filters. */
-export function reportsQuery(s: { from?: string; to?: string; team?: string; brand?: string }) {
-  return { ...reportsRange(s), team_id: s.team, brand_id: s.brand };
+/** The overview query from the URL: the range, and the team (`none`: no team), brand, mailbox (`none`: no mailbox) and person filters. */
+export function reportsQuery(s: { from?: string; to?: string; team?: string; brand?: string; mailbox?: string; person?: string }) {
+  return { ...reportsRange(s), team_id: s.team, brand_id: s.brand, mailbox_id: s.mailbox, assignee_id: s.person };
 }
 
 const isRef = (v: unknown): v is string => typeof v === "string" && /^[\w-]{1,64}$/.test(v);
@@ -709,11 +709,13 @@ const isRef = (v: unknown): v is string => typeof v === "string" && /^[\w-]{1,64
 const reportsRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/reports",
-  validateSearch: (s: Record<string, unknown>): { from?: string; to?: string; team?: string; brand?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { from?: string; to?: string; team?: string; brand?: string; mailbox?: string; person?: string } => ({
     from: isDay(s.from) ? s.from : undefined,
     to: isDay(s.to) ? s.to : undefined,
     team: isRef(s.team) ? s.team : undefined,
     brand: isRef(s.brand) ? s.brand : undefined,
+    mailbox: isRef(s.mailbox) ? s.mailbox : undefined,
+    person: isRef(s.person) ? s.person : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ context, deps }) => {
@@ -733,9 +735,10 @@ const reportsRoute = createRoute({
 const settingsLayout = createRoute({
   getParentRoute: () => appLayout,
   path: "/settings",
-  // A link to a ticket setting is a link to nothing while Tickets is off.
+  // Send links to settings for disabled products to the workspace home.
   beforeLoad: async ({ context, location }) => {
-    if ([...TICKET_SETTINGS].some((p) => location.pathname === p || location.pathname.startsWith(p + "/"))) await requireTickets(context.queryClient);
+    const products = productsOf(await context.queryClient.ensureQueryData(q.workspace()));
+    if (!settingsProductAvailable(location.pathname, products)) throw await productHome(context.queryClient);
   },
   component: page(() => import("./pages/settings/SettingsLayout")),
   staticData: { title: "settings" },

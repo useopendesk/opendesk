@@ -8,7 +8,7 @@ import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, pos
 import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
-import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, refreshLastNote, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
+import { addActivity, addMessage, addressHit, addressMatch, addressQuery, contactAddresses, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, refreshLastNote, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
 import { DAY, escapeHtml, isRecord, nowIso, parseUUID, uuid } from "../util";
 import { clearDraft, clearOwnDraft } from "./drafts";
 import { renderSentReply } from "./templates";
@@ -314,6 +314,8 @@ export function registerTickets() {
     return ticketSummary(ctx.ws.tickets.filter((t) => matches(ctx.ws, t, f, db.meId)), resolveFilters(ctx.ws, f));
   });
 
+  const moreToOf = (v: unknown): { contact_id?: string; email?: string }[] =>
+    Array.isArray(v) ? v.filter(isRecord).map((r) => ({ contact_id: typeof r.contact_id === "string" ? r.contact_id : undefined, email: typeof r.email === "string" ? r.email : undefined })) : [];
   post("/v1/tickets", (ctx) => {
     const ws = ctx.ws;
     const channel = (s(ctx, "channel") as Channel | undefined) ?? "email";
@@ -349,7 +351,24 @@ export function registerTickets() {
     const inbound = s(ctx, "direction") === "inbound";
     if (inbound && s(ctx, "kind") === "note") throw invalid("an inbound message is a reply, not a note");
     if (inbound && !contact) throw invalid("an inbound message needs a contact to speak for");
-    if (inbound && (strArr(ctx.body.cc)?.length || strArr(ctx.body.bcc)?.length)) throw invalid("cc and bcc are for messages sent");
+    if (inbound && (moreToOf(ctx.body.to).length || strArr(ctx.body.cc)?.length || strArr(ctx.body.bcc)?.length)) throw invalid("to, cc and bcc are for messages sent");
+    // More people the first email goes to, after the contact: this workspace's contacts or addresses.
+    const moreTo = moreToOf(ctx.body.to);
+    if (moreTo.length && (channel !== "email" || s(ctx, "kind") === "note")) throw invalid("to applies to an email ticket's first reply");
+    if (moreTo.length > 19) throw invalid("to takes at most 19 more addresses");
+    const seen = new Set([contact?.email?.toLowerCase()]);
+    const extraTo: string[] = [];
+    for (const r of moreTo) {
+      if (r.contact_id && r.email) throw invalid("each of to is a contact_id or an email, not both");
+      const email = r.contact_id ? ws.contacts.find((c) => c.id === r.contact_id)?.email : r.email?.trim().toLowerCase();
+      if (r.contact_id && !ws.contacts.some((c) => c.id === r.contact_id)) throw invalid("contact not found in this workspace");
+      if (!email) throw invalid(r.contact_id ? "a contact in to has no email address" : "each of to is a contact_id or an email");
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email)) throw invalid(`"${email}" is not a valid email address`);
+      if (!seen.has(email.toLowerCase())) {
+        seen.add(email.toLowerCase());
+        extraTo.push(email.toLowerCase());
+      }
+    }
     if (box && !inbound && (s(ctx, "kind") ?? "reply") === "reply" && sendingOf(box) === "system_off") throw cannotSend();
     const t = newTicket(ws, {
       subject,
@@ -375,7 +394,7 @@ export function registerTickets() {
     } else if (body) {
       const kind = s(ctx, "kind") === "note" ? "note" : "reply";
       // Copies go with an emailed reply only, like the API's.
-      const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc) } : {};
+      const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc), ...(extraTo.length && contact?.email ? { to: [contact.email, ...extraTo] } : {}) } : {};
       const attachments = attachmentsFor(strArr(ctx.body.attachment_ids));
       const msg = addMessage(ws, t, { kind, direction: "outbound", html: body, user: userRef(db.meId), ...copies, attachments, delivery: "pending" }, { status: p.status, actor: userRef(db.meId) });
       if (msg.delivery_status === "pending") simulateDelivery(ws, t, msg.id);
@@ -739,8 +758,12 @@ export function registerTickets() {
     const q = (ctx.query.get("q") ?? "").trim().toLowerCase();
     if (!q) return { tickets: [], contacts: [], articles: [], wiki_pages: [] };
     const ws = ctx.ws;
-    const tickets = sortTickets(ws.tickets.filter((t) => matches(ws, t, { q }, db.meId)), "last_message_at", "desc").slice(0, 5);
-    const contacts = ws.contacts.filter((c) => [c.name, c.email ?? "", c.company?.name ?? ""].join(" ").toLowerCase().includes(q)).slice(0, 5);
+    // The address's own tickets first (contracts/api.md "Search"), then the rest; 8 in all.
+    const found = sortTickets(ws.tickets.filter((t) => matches(ws, t, { q }, db.meId)), "last_message_at", "desc");
+    const tickets = [...found.filter((t) => addressMatch(ws, t, q)), ...found.filter((t) => !addressMatch(ws, t, q))].slice(0, 8);
+    const contacts = ws.contacts
+      .filter((c) => [c.name, c.email ?? "", ...(c.emails ?? []), c.company?.name ?? ""].join(" ").toLowerCase().includes(q) || (!!addressQuery(q) && contactAddresses(ws, c.id).some((a) => addressHit(a, q))))
+      .slice(0, 5);
     const articles = ws.articles.filter((a) => (a.title + " " + a.excerpt).toLowerCase().includes(q)).slice(0, 5);
     return { tickets, contacts, articles, wiki_pages: searchWiki(ws, q, 5) };
   });
@@ -774,16 +797,36 @@ function reports(ctx: Ctx): ReportsOverview {
   const brandF = (ctx.query.get("brand_id") ?? "").trim();
   if (teamF && teamF !== "none" && !ws.teams.some((t) => t.id === teamF)) throw invalid("team_id must be a team of the workspace or none");
   if (brandF && !ws.brands.some((b) => b.id === brandF)) throw invalid("brand_id must be a brand of the workspace");
+  // assignee_id: one member's tickets. A member who is not an admin may only name themselves.
+  const personF = (ctx.query.get("assignee_id") ?? "").trim();
+  if (personF && !ws.members.some((m) => m.user_id === personF)) throw invalid("assignee_id must be a member of the workspace");
+  if (personF && personF !== db.meId && !isAdmin(ws, db.meId)) throw forbidden();
+  const agentShares = [0.27, 0.22, 0.21, 0.18, 0.12];
+  const personShare = personF ? (agentShares[db.users.findIndex((u) => u.id === personF)] ?? 0.05) : 1;
+  // mailbox_id (a mailbox, or "none") narrows every figure to the tickets that reply from it.
+  const mailboxF = (ctx.query.get("mailbox_id") ?? "").trim();
+  if (mailboxF && mailboxF !== "none" && !ws.mailboxes.some((m) => m.id === mailboxF)) throw invalid("mailbox_id must be a mailbox of the workspace or none");
+  const mailboxShare = shares([...ws.mailboxes.map((m) => m.id), "none"], (k) => (k === "none" ? 0.3 : 0.4 + hash(k)));
   const teamKeys: (string | null)[] = [...ws.teams.map((t) => t.id), null];
   const teamShare = shares(teamKeys, (k) => (k === null ? 0.55 : 0.35 + hash(k)));
   const brandShare = shares(
     ws.brands.map((b) => b.id),
     (id) => (ws.brands.find((b) => b.id === id)?.is_default ? 3 : 0.4 + hash(id) * 0.4),
   );
-  const factor = (teamF ? (teamShare.get(teamF === "none" ? null : teamF) ?? 0) : 1) * (brandF ? (brandShare.get(brandF) ?? 0) : 1);
+  const factor =
+    (teamF ? (teamShare.get(teamF === "none" ? null : teamF) ?? 0) : 1) *
+    (brandF ? (brandShare.get(brandF) ?? 0) : 1) *
+    (mailboxF ? (mailboxShare.get(mailboxF) ?? 0) : 1) *
+    personShare;
   const live = ws.tickets.filter((t) => !t.spam && !ws.deletedTickets.has(t.id) && OPENISH_REPORT.includes(t.status));
   const openOf = (team: string | null | undefined, brand: string | undefined) =>
-    live.filter((t) => (team === undefined || (t.team_id ?? null) === team) && (brand === undefined || t.brand_id === brand)).length;
+    live.filter(
+      (t) =>
+        (team === undefined || (t.team_id ?? null) === team) &&
+        (brand === undefined || t.brand_id === brand) &&
+        (!mailboxF || (mailboxF === "none" ? !t.mailbox_id : t.mailbox_id === mailboxF)) &&
+        (!personF || t.assignee?.id === personF),
+    ).length;
   const teamArg = teamF ? (teamF === "none" ? null : teamF) : undefined;
   const brandArg = brandF || undefined;
 
@@ -802,8 +845,7 @@ function reports(ctx: Ctx): ReportsOverview {
   }
   const created = by_day.reduce((a, b) => a + b.created, 0);
   const solved = by_day.reduce((a, b) => a + b.solved, 0);
-  const key = `${by_day[0]?.date}-${by_day.length}-${teamF}-${brandF}`;
-  const agentShares = [0.27, 0.22, 0.21, 0.18, 0.12];
+  const key = `${by_day[0]?.date}-${by_day.length}-${teamF}-${brandF}-${mailboxF}-${personF}`;
   const frp = (k: string) => Math.round(22 + hash(key + k) * 50);
   const group = (share: number, k: string, open: number) => ({
     created: Math.round(created * share),
@@ -856,10 +898,11 @@ function reports(ctx: Ctx): ReportsOverview {
             const u = db.users[i];
             return {
               user: { id: u.id, name: u.name, email: u.email, avatar_url: u.avatar_url },
-              solved: Math.round(solved * share),
+              solved: personF ? solved : Math.round(solved * share),
               first_response_p50_minutes: frp(u.id),
             };
           })
+          .filter((a) => !personF || a.user.id === personF)
           // Personal, as the agents report: a member who is not an admin gets their own row alone.
           .filter((a) => isAdmin(ws, db.meId) || a.user.id === db.meId)
       : [],
@@ -877,12 +920,17 @@ const OPENISH_REPORT: TicketStatus[] = ["open", "pending", "on_hold"];
  * (settings.agent_online_time false) gets none.
  */
 function agentReports(ctx: Ctx): ReportsAgents {
+  // assignee_id picks the row, not the tickets: the member's figures stay as unfiltered.
+  const person = (ctx.query.get("assignee_id") ?? "").trim();
+  if (person && !ctx.ws.members.some((m) => m.user_id === person)) throw invalid("assignee_id must be a member of the workspace");
+  if (person && person !== db.meId && !isAdmin(ctx.ws, db.meId)) throw forbidden();
   const ws = ctx.ws;
   const teamF = (ctx.query.get("team_id") ?? "").trim();
   const team = teamF && teamF !== "none" ? ws.teams.find((t) => t.id === teamF) : undefined;
   // settings.reports_team_members: a team names whose rows, each with the figures it has without it.
   const byPeople = !!team && ws.workspace.settings.reports_team_members === true;
   const query = new URLSearchParams(ctx.query);
+  query.delete("assignee_id");
   if (byPeople) query.delete("team_id");
   const o = reports({ ...ctx, query });
   const staff = ws.members.filter((m) => m.role !== "viewer");
@@ -897,7 +945,7 @@ function agentReports(ctx: Ctx): ReportsAgents {
   const off = ws.workspace.settings.agent_online_time === false;
   const data = roster.flatMap((m) => {
     const user = userRef(m.user_id);
-    if (!user || (!all && m.user_id !== db.meId)) return [];
+    if (!user || (!all && m.user_id !== db.meId) || (person && m.user_id !== person)) return [];
     const h = (k: string) => hash(key + m.user_id + k);
     const share = weight.get(m.user_id) ?? 0;
     const solved = Math.round(o.solved * share);

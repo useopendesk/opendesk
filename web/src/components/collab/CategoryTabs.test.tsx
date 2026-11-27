@@ -83,17 +83,25 @@ it("takes conversations dropped on another category's tab, lit while they are ov
   expect(link("Codes / Logins").className).not.toContain("bg-chrome-hover");
 });
 
-it("offers no drop where the page says the conversations' accounts lack the category", async () => {
-  const accepts = vi.fn((_ids: string[], to: ThreadDropTarget) => to.category !== "updates");
+it("refuses a drop where the page says the conversations' accounts lack the category, and says why on the tab", async () => {
+  const accepts = vi.fn((_ids: string[], to: ThreadDropTarget) => to.category !== "codes");
   const drop = takeDrops(accepts);
   await render();
-  const dt = dragRows(["t1"]);
-  expect(fire(link("Updates"), "dragover", dt).defaultPrevented).toBe(false);
-  expect(link("Updates").className).not.toContain("bg-chrome-hover");
-  expect(accepts).toHaveBeenCalledWith(["t1"], { box: "inbox", category: "updates" });
-  fire(link("Updates"), "drop", dt);
+  const dt = dragRows(["t1", "t2"]);
+  // The pointer shows they cannot drop, and the tab says why.
+  fire(link("Codes / Logins"), "dragover", dt);
+  expect(dt.dropEffect).toBe("none");
+  expect(link("Codes / Logins").className).not.toContain("bg-chrome-hover");
+  expect(accepts).toHaveBeenCalledWith(["t1", "t2"], { box: "inbox", category: "codes" });
+  expect(document.querySelector('[role="status"]')?.textContent).toBe("Their inboxes have no Codes / Logins category");
+  fire(link("Codes / Logins"), "drop", dt);
   expect(drop).not.toHaveBeenCalled();
-  expect(fire(link("Codes / Logins"), "dragover", dt).defaultPrevented).toBe(true);
+  expect(document.querySelector('[role="status"]')).toBeNull();
+  // Another tab takes them.
+  fire(link("Updates"), "dragover", dt);
+  expect(dt.dropEffect).toBe("move");
+  fire(link("Updates"), "dragleave", dt);
+  expect(document.querySelector('[role="status"]')).toBeNull();
 });
 
 it("does nothing with conversations dropped on the tab in view, where they already are", async () => {

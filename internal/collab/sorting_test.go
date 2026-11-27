@@ -22,12 +22,14 @@ type fakeMailAI struct {
 	err      error
 	calls    int
 	asked    []string // senders asked about
+	reqs     []decide.Request
 }
 
 func (f *fakeMailAI) Enabled() bool                             { return true }
 func (f *fakeMailAI) CanDecide(context.Context, uuid.UUID) bool { return true }
 func (f *fakeMailAI) DecideMail(_ context.Context, _ uuid.UUID, req decide.Request) (decide.Result, bool, error) {
 	f.calls++
+	f.reqs = append(f.reqs, req)
 	if f.err != nil {
 		return decide.Result{}, false, f.err
 	}

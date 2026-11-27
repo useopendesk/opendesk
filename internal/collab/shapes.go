@@ -468,13 +468,14 @@ type commentRow struct {
 	Replied   bool       // it was written as a reply, kept when the comment it answered is deleted
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	AIClient  *string
 }
 
-const commentColumns = `id, thread_id, author_id, body_html, mentions, reply_to, replied, created_at, updated_at`
+const commentColumns = `id, thread_id, author_id, body_html, mentions, reply_to, replied, created_at, updated_at, ai_client`
 
 func scanComment(row pgx.Row) (*commentRow, error) {
 	var c commentRow
-	if err := row.Scan(&c.ID, &c.ThreadID, &c.AuthorID, &c.BodyHTML, &c.Mentions, &c.ReplyTo, &c.Replied, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.ThreadID, &c.AuthorID, &c.BodyHTML, &c.Mentions, &c.ReplyTo, &c.Replied, &c.CreatedAt, &c.UpdatedAt, &c.AIClient); err != nil {
 		return nil, err
 	}
 	if c.Mentions == nil {
@@ -523,11 +524,11 @@ func commentsOut(ctx context.Context, q db.Querier, list []*commentRow) ([]MailC
 	out := make([]MailComment, 0, len(list))
 	for _, c := range list {
 		m := MailComment{ID: c.ID, ThreadID: c.ThreadID, Author: refOf(refs, c.AuthorID), BodyHTML: c.BodyHTML,
-			Mentions: c.Mentions, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
+			Mentions: c.Mentions, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, AINoteBy: c.AIClient}
 		if c.ReplyTo != nil {
 			if p := parents[*c.ReplyTo]; p != nil && p.ThreadID == c.ThreadID {
 				m.ReplyTo = &p.ID
-				m.Parent = &CommentQuote{Author: refOf(refs, p.AuthorID), Excerpt: firstLine(p.BodyHTML)}
+				m.Parent = &CommentQuote{Author: refOf(refs, p.AuthorID), Excerpt: firstLine(p.BodyHTML), AINoteBy: p.AIClient}
 			}
 		}
 		m.ParentDeleted = c.Replied && m.ReplyTo == nil
