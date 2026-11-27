@@ -486,6 +486,8 @@
     "automation": "An automation",
     "customer": "The customer",
     "ai": "AI",
+    "why": "Why?",
+    "whyInternal": "Only the team sees this.",
     "noteEdited": "<b>{{who}}</b> edited an internal note",
     "noteDeleted": "<b>{{who}}</b> deleted an internal note",
     "status": "<b>{{who}}</b> marked this <b>{{status}}</b>",
@@ -535,6 +537,12 @@
     "triagedAs": "<b>{{who}}</b> triaged this as <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> answered from the knowledge base",
     "aiAnsweredEmail": "<b>{{who}}</b> answered by email",
+    "aiSkipped": "<b>{{who}}</b> left this message for the team",
+    "skippedReason": {
+      "contact_limit": "The customer reached the limit of answers {{who}} gives one person in an hour.",
+      "monthly_cap": "{{who}} had used its monthly cap.",
+      "no_balance": "The AI balance is used up, so {{who}} could not answer."
+    },
     "procedureRan": "<b>{{who}}</b> ran <b>{{name}}</b>",
     "procedureNothing": "<b>{{who}}</b> ran <b>{{name}}</b>: nothing to do",
     "procedureFailed": "<b>{{who}}</b> couldn't finish <b>{{name}}</b>",
@@ -550,7 +558,9 @@
     "messageDeleted": "<b>{{who}}</b> deleted a message",
     "messageRestored": "<b>{{who}}</b> restored a deleted message",
     "noteSentAsReply": "<b>{{who}}</b> sent an internal note as a reply",
-    "messagePurged": "<b>{{who}}</b> permanently deleted a message’s content"
+    "messagePurged": "<b>{{who}}</b> permanently deleted a message’s content",
+    "panelAction": "<b>{{who}}</b> ran <b>{{label}}</b> in {{panel}}",
+    "panelActionFailed": "<b>{{who}}</b> tried <b>{{label}}</b> in {{panel}}, which did not go through: {{message}}"
   },
   "typing_one": "{{who}} is typing",
   "typing_other": "{{who}} are typing",
@@ -877,6 +887,7 @@
     "setBy": "Set by {{name}}",
     "said": "{{name}} replied",
     "sure": "{{pct}}% sure",
+    "threshold": "threshold {{pct}}%",
     "setThis": "{{name}} set this"
   },
   "suggest": {
@@ -1068,6 +1079,12 @@
     "line": "Line {{line}}",
     "playRecording": "Play recording",
     "playVoicemail": "Play voicemail",
+    "recording": "Recording",
+    "loadingRecording": "Loading…",
+    "tryAgain": "Try again",
+    "recordingNotReady": "The recording is not ready yet. Try again in a minute.",
+    "recordingRefused": "The provider refused the connection's token. It needs access to call recordings.",
+    "recordingError": "The recording could not be loaded.",
     "openIn": "Open in {{provider}}",
     "summary": "Summary",
     "showTranscript": "Show transcript",
@@ -1135,7 +1152,13 @@
     "discountCodes_other": "Discount codes",
     "refunded": "{{amount}} refunded",
     "openLink": "Open {{name}}",
-    "copyValue": "Copy {{name}}"
+    "copyValue": "Copy {{name}}",
+    "actions": {
+      "error": "That didn't go through. Try again in a moment.",
+      "cancel": "Cancel",
+      "fill": "Fill in the required fields.",
+      "choose": "Choose"
+    }
   },
   "print": {
     "action": "Print or save as PDF",

@@ -10,8 +10,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next";
 import type { AIAnswer, AISummary, IntegrationStarter, Priority, Sentiment, Severity, Suggestion, SuggestionField, Ticket, TicketPatch, Triage } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
+import { uiLanguage } from "@/i18n";
 import { useAI } from "@/lib/ai";
-import { aiSuggestions, pct } from "@/lib/decisions";
+import { aiDecisions, aiSuggestions, pct } from "@/lib/decisions";
 import { relLong, fullDate } from "@/lib/format";
 import { ease, springs } from "@/lib/motion";
 import { q, qk } from "@/lib/queries";
@@ -164,7 +165,7 @@ function useSummary(ticket: Ticket, run: Run) {
   const summarize = async () => {
     setBusy(true);
     try {
-      const res = await run(t("summary.working"), () => api.ai.summary(ticket.id));
+      const res = await run(t("summary.working"), () => api.ai.summary(ticket.id, uiLanguage()));
       const cur = qc.getQueryData<Ticket>(qk.of("tickets", "detail", ticket.id)) ?? ticket;
       patchCachedTicket(qc, { ...cur, custom: { ...cur.custom, ai_summary: { text: res.summary, key_points: res.key_points, sentiment: res.sentiment, updated_at: res.updated_at }, ai_sentiment: res.sentiment } }, me);
       balanceSpent(qc);
@@ -227,6 +228,8 @@ type Row = {
   /** Plain words for the value, for screen readers. */
   text: string;
   sure: number | null;
+  /** Why Ollie did not apply it itself, for the tooltip. */
+  why?: string;
   patch: TicketPatch;
   apply: () => void;
   skip: () => void;
@@ -326,6 +329,7 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
   const askedLeft = asked.filter((r) => !handled.has(r.key as AskedKey));
   const askedFields = new Set<SuggestionField>(result ? ["priority", "severity", "team", "labels"] : []);
 
+  const decisions = aiDecisions(ticket);
   // Ollie's own decisions that fell below the workspace threshold; a severity one only while the workspace uses severity.
   const auto: Row[] = aiSuggestions(ticket)
     .filter(([f]) => !askedFields.has(f) && (f !== "severity" || display.severity))
@@ -361,6 +365,7 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
         value,
         text,
         sure: pct(s.confidence),
+        why: s.reason ? t(`suggest.why.${s.reason}`, { pct: pct(decisions?.threshold) ?? 70 }) : undefined,
         patch,
         apply: () =>
           void patchAsync(patch)
@@ -442,6 +447,7 @@ function SuggestionRow({ row, labels, disabled }: { row: Row; labels: string[]; 
   const reduce = useReducedMotion();
   const what = `${row.label}: ${row.text}`;
   const sure = row.sure != null;
+  const sureTip = sure ? [t("suggest.sure", { name, pct: row.sure }), row.why].filter(Boolean).join(" · ") : null;
   return (
     <motion.li
       layout={reduce ? false : "position"}
@@ -459,7 +465,7 @@ function SuggestionRow({ row, labels, disabled }: { row: Row; labels: string[]; 
         ))}
         <span className="col-start-1 row-start-1">{row.label}</span>
       </span>
-      <Tooltip content={sure ? t("suggest.sure", { name, pct: row.sure }) : null}>
+      <Tooltip content={sureTip}>
         <span className="flex min-h-6 min-w-0 flex-[1_1_5rem] flex-wrap items-center gap-1 text-[12px] text-fg" tabIndex={sure ? -1 : undefined}>
           {row.value}
         </span>
