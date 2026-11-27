@@ -448,7 +448,7 @@ no audit entry of their own; the first two only publish `whatsapp_connection.upd
 
 ## Migrations
 
-- `000766_whatsapp` creates `whatsapp_connections` (one row per number, unique by
+- `000781_whatsapp` creates `whatsapp_connections` (one row per number, unique by
   `(workspace_id, phone_number_id)`, sealed `credentials_enc`, status and last error, the
   brand it opens tickets for), `whatsapp_inbound_events` (one verified delivery's jsonb body,
   unique by `(connection_id, external_event_id)`, cascade with the connection) and
@@ -456,11 +456,11 @@ no audit entry of their own; the first two only publish `whatsapp_connection.upd
   `last_inbound_at`, primary key `(connection_id, wa_id)`, cascade with the connection and
   the contact). It also adds `messages.provider_message_id` and `messages.delivery_meta` and
   a unique index on `(workspace_id, provider_message_id)` where the id is set.
-- `000767_whatsapp_channel` replaces the `tickets_channel_check` constraint so a ticket may
+- `000782_whatsapp_channel` replaces the `tickets_channel_check` constraint so a ticket may
   be on the `whatsapp` channel beside email, chat, api, portal and phone. Its down migration
   restores the five channels and fails while a WhatsApp ticket exists, so those are resolved
   first.
-- `000768_whatsapp_templates` creates `whatsapp_templates`, the local copy of Meta's
+- `000783_whatsapp_templates` creates `whatsapp_templates`, the local copy of Meta's
   templates: workspace and connection (both cascade), Meta's template id, name, language,
   category, status, header type, header content, body, footer and buttons (JSON), unique by
   `(connection_id, name, language)`, with a workspace index.
