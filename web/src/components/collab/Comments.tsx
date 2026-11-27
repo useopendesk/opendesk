@@ -4,7 +4,7 @@
 // reply to another: it quotes the one it answers, and its author follows the conversation again.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerUpLeft, Lock, MoreHorizontal, Pencil, Reply, Trash2, X } from "lucide-react";
+import { CornerUpLeft, Lock, MoreHorizontal, Pencil, Reply, Sparkles, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { dur, ease, flash, springs } from "@/lib/motion";
 import { qk, q } from "@/lib/queries";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { AI_TONE, tone } from "@/lib/tones";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { RichEditor, type RichEditorHandle } from "@/components/editor/RichEditor";
 import { mentionExtension, SuggestionPopup, useSuggest } from "@/components/tickets/detail/suggestions";
@@ -83,7 +84,7 @@ function ParentQuote({ c }: { c: MailComment }) {
   }
   if (!c.reply_to || !c.parent) return null;
   const parentId = c.reply_to;
-  const name = c.parent.author?.name ?? t("comments.someone");
+  const name = c.parent.ai_note_by ?? c.parent.author?.name ?? t("comments.someone");
   return (
     <button
       type="button"
@@ -106,13 +107,16 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
   const confirm = useConfirm();
   const me = useSession((s) => s.user?.id);
   const admin = atLeast(useRole(), "admin");
-  const mine = !!c.author && c.author.id === me;
+  // An AI note is the key's words: it can be deleted, never edited as if a person wrote it.
+  const mine = !!c.author && c.author.id === me && !c.ai_note_by;
   const [editing, setEditing] = useState(false);
   const [html, setHtml] = useState(c.body_html);
   const extensions = useMentionExtension();
   const editor = useRef<RichEditorHandle>(null);
   const body = useMemo(() => sanitizeHtml(c.body_html), [c.body_html]);
-  const name = c.author?.name ?? t("comments.someone");
+  // An AI note's author is the key that added it, not the member who made the key.
+  const name = c.ai_note_by ?? c.author?.name ?? t("comments.someone");
+  const ownAINote = !!c.ai_note_by && !!c.author && c.author.id === me;
   const reply = onReply
     ? () => {
         useReplyTargets.getState().set(threadId, { id: c.id, name, excerpt: firstLine(c.body_html) });
@@ -147,17 +151,32 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
         // A comment that arrived while the conversation is open (yours or a teammate's) glows once.
         <motion.span aria-hidden className="pointer-events-none absolute -inset-x-2 -inset-y-1.5 rounded-md bg-hover" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={{ duration: 1.4, delay: 0.5, ease: ease.out }} />
       )}
-      <Avatar name={name} src={c.author?.avatar_url} size="sm" className="relative mt-0.5" />
+      {c.ai_note_by ? (
+        <span aria-hidden data-ai-mark className={cn("relative mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm", tone[AI_TONE].soft, tone[AI_TONE].text)}>
+          <Sparkles className="size-3" />
+        </span>
+      ) : (
+        <Avatar name={name} src={c.author?.avatar_url} size="sm" className="relative mt-0.5" />
+      )}
       <div className="relative min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="truncate text-[12.5px] font-medium">{name}</span>
+          {c.ai_note_by ? (
+            <>
+              <Tooltip content={t("comments.aiNoteVia", { name: c.author?.name ?? t("comments.someone") })}>
+                <span className={cn("truncate text-[12.5px] font-medium", tone[AI_TONE].text)}>{name}</span>
+              </Tooltip>
+              <span className={cn("shrink-0 rounded-sm px-1 text-[10px] font-medium leading-4", tone[AI_TONE].soft, tone[AI_TONE].text)}>{t("comments.aiNote")}</span>
+            </>
+          ) : (
+            <span className="truncate text-[12.5px] font-medium">{name}</span>
+          )}
           <Tooltip content={fullDate(c.created_at)}>
             <time dateTime={c.created_at} className="mono shrink-0 text-[10.5px] text-fg-4">
               {relShort(c.created_at)}
             </time>
           </Tooltip>
           {c.updated_at !== c.created_at && <span className="text-[10.5px] text-fg-4">{t("comments.edited")}</span>}
-          {canAct && !editing && (reply || mine || admin) && (
+          {canAct && !editing && (reply || mine || ownAINote || admin) && (
             <span className="ml-auto flex items-center gap-0.5">
               {reply && (
                 <Tooltip content={t("comments.reply")}>
@@ -171,7 +190,7 @@ function CommentItem({ c, threadId, canAct, fresh, onReply }: { c: MailComment; 
                   </button>
                 </Tooltip>
               )}
-              {(mine || admin) && (
+              {(mine || ownAINote || admin) && (
             <Menu>
               <MenuTrigger asChild>
                 <button
