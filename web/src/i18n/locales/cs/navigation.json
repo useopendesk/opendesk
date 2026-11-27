@@ -101,7 +101,8 @@
     "open": "Všechny otevřené",
     "pending": "Čekající",
     "solved": "Vyřešené",
-    "spam": "Spam"
+    "spam": "Spam",
+    "all": "Všechny tikety"
   },
   "groups": {
     "account": "Účet",
@@ -192,7 +193,14 @@
     "aiPlayground": "Zkušební prostředí AI agenta",
     "importHistory": "Importovat historii ze Zendesk, Help Scout, FreeScout, Freshdesk, Intercom, Front nebo CSV",
     "pages": "Stránky",
-    "newPage": "Nová stránka"
+    "newPage": "Nová stránka",
+    "sidebarPlace": "Postranní panel",
+    "docs": "Dokumentace",
+    "searchSettings": "Hledat v nastavení",
+    "settingsNoResults": "Žádné nastavení neodpovídá",
+    "settingsNoResultsHelp": "Zkuste jiná slova, nebo hledejte v dokumentaci z nabídky příkazů.",
+    "seeAll": "Zobrazit všechny tikety pro „{{query}}“",
+    "followUp": "Navazující"
   },
   "shortcuts": {
     "general": "Obecné",

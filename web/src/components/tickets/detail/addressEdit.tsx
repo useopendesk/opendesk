@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/cn";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export const splitAddresses = (text: string) => text.split(/[\s,;]+/).filter(Boolean);
 
@@ -116,9 +117,11 @@ export function EmailChip({ value, values, onChange, isEmail }: { value: string;
   }
   return (
     <span className="mono inline-flex h-5 items-center gap-1 rounded-sm bg-hover pl-1.5 pr-0.5 text-[11.5px] animate-pop-in motion-reduce:animate-none" data-ph-mask>
-      <button type="button" aria-label={t("tickets.editAddress", { name: value })} title={t("tickets.editAddress", { name: value })} onClick={() => setEditing(true)} className="cursor-text hover:text-fg">
-        {value}
-      </button>
+      <Tooltip content={t("tickets.editAddress", { name: value })}>
+        <button type="button" aria-label={t("tickets.editAddress", { name: value })} onClick={() => setEditing(true)} className="cursor-text hover:text-fg">
+          {value}
+        </button>
+      </Tooltip>
       <button type="button" aria-label={t("tickets.remove", { name: value })} onClick={() => onChange(values.filter((x) => x !== value))} className="flex size-4 items-center justify-center rounded-xs text-fg-4 hover:text-fg">
         <X className="size-3" />
       </button>
@@ -148,15 +151,16 @@ export function TypedAddress({ email, onChange, isEmail }: { email: string; onCh
     );
   }
   return (
-    <button
-      type="button"
-      aria-label={t("tickets.editAddress", { name: email })}
-      title={t("tickets.editAddress", { name: email })}
-      onClick={() => setEditing(true)}
-      className="min-w-0 flex-1 cursor-text truncate text-left text-fg-3 hover:text-fg"
-      data-ph-mask
-    >
-      {email}
-    </button>
+    <Tooltip content={t("tickets.editAddress", { name: email })}>
+      <button
+        type="button"
+        aria-label={t("tickets.editAddress", { name: email })}
+        onClick={() => setEditing(true)}
+        className="min-w-0 flex-1 cursor-text truncate text-left text-fg-3 hover:text-fg"
+        data-ph-mask
+      >
+        {email}
+      </button>
+    </Tooltip>
   );
 }

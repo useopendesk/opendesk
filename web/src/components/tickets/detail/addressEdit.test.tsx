@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { i18n, loadAgentCatalogs } from "@/i18n";
 import { NewTicketTo } from "@/components/tickets/NewTicketFields";
 import type { NewTicketState } from "@/components/tickets/useNewTicket";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { EmailChips } from "./composerParts";
 import { editChip } from "./addressEdit";
 
@@ -72,7 +73,13 @@ describe("editing addresses in place", () => {
         />
       );
     }
-    await act(async () => root.render(<Host />));
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <Host />
+        </TooltipProvider>,
+      ),
+    );
     return onChange;
   }
 
@@ -121,12 +128,14 @@ describe("editing addresses in place", () => {
 
   async function newTicket(to: { email?: string; contact?: { id: string; name: string; email: string } }) {
     const set = vi.fn();
-    const s = { draft: { kind: "reply", to }, chat: false, set } as unknown as NewTicketState;
+    const s = { draft: { kind: "reply", to, moreTo: [] }, chat: false, set } as unknown as NewTicketState;
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () =>
       root.render(
         <QueryClientProvider client={qc}>
-          <NewTicketTo s={s} />
+          <TooltipProvider>
+            <NewTicketTo s={s} />
+          </TooltipProvider>
         </QueryClientProvider>,
       ),
     );

@@ -132,11 +132,24 @@ export type CreateTicketBody = {
   tags?: string[];
   fields?: T.FieldValues;
   status?: T.TicketStatus;
+  /** An email reply: more people it goes to, after the contact. */
+  to?: ({ contact_id: string } | { email: string })[];
   /** An email reply's copies. */
   cc?: string[];
   bcc?: string[];
   /** Files on the first message (POST /v1/attachments). */
   attachment_ids?: string[];
+};
+
+/** PUT /v1/tickets/{id}/reply-draft: the reply as it is being written. */
+export type ReplyDraftBody = {
+  body_html: string;
+  attachment_ids: string[];
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  mailbox_id?: string;
+  from_account?: { account_id: string; email?: string; reply_to?: string };
 };
 
 export type SendMessageBody = {
@@ -632,7 +645,7 @@ export const api = {
     /** My own unsent reply on the ticket, saved as I type (contracts/api.md "Reply drafts"). */
     replyDraft: {
       get: (id: string) => http.get<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`),
-      save: (id: string, b: { body_html: string; attachment_ids: string[] }) => http.put<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`, b),
+      save: (id: string, b: ReplyDraftBody) => http.put<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft`, b),
       discard: (id: string) => http.del(`/v1/tickets/${id}/reply-draft`),
       schedule: (id: string, send_at: string, reply?: SendMessageBody) =>
         http.post<{ draft: T.ReplyDraft | null }>(`/v1/tickets/${id}/reply-draft/schedule`, { send_at, reply }),
@@ -876,6 +889,8 @@ export const api = {
     translate: (b: { html?: string; text?: string; target: string }) => http.post<T.TranslateResult>("/v1/ai/translate", b),
     kbDraft: (b: { ticket_ids?: string[]; topic?: string }) => http.post<T.KBArticleDraft>("/v1/kb/articles/ai/draft", b),
     search: (q: string) => http.get<T.SearchResults>("/v1/ai/search", { query: { q } }),
+    /** A few sentences on doing something in opendesk, from the app places and docs the app's own search found. */
+    appHelp: (b: T.AppHelpInput) => http.post<{ answer: string }>("/v1/ai/app-help", b),
     /** The models a workspace may choose from, with the instance defaults. */
     models: () => http.get<T.AIModels>("/v1/ai/models"),
     /** The workspace's provider: the instance's (charged to the AI balance) or its own key. */
@@ -1011,7 +1026,10 @@ export const api = {
         http.post<{ threads: T.MailThread[] }>("/v1/collab/threads/actions", b),
       share: (id: string, shares: T.MailAudience) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/shares`, { shares }),
       assign: (id: string, user_ids: string[]) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/assignees`, { user_ids }),
-      comment: (id: string, b: { body_html: string; mentions?: string[] }) => http.create<T.MailComment>(`/v1/collab/threads/${id}/comments`, b),
+      comment: (id: string, b: { body_html: string; mentions?: string[]; reply_to?: string }) => http.create<T.MailComment>(`/v1/collab/threads/${id}/comments`, b),
+      /** In or out of your Mentions box (contracts/collab.md "Mentions"). */
+      follow: (id: string) => http.put<void>(`/v1/collab/threads/${id}/follow`),
+      unfollow: (id: string) => http.del(`/v1/collab/threads/${id}/follow`),
     },
     comments: {
       update: (id: string, body_html: string) => http.patch<T.MailComment>(`/v1/collab/comments/${id}`, { body_html }),
