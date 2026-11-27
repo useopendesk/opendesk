@@ -482,6 +482,8 @@
     "automation": "Eine Automatisierung",
     "customer": "Der Kunde",
     "ai": "KI",
+    "why": "Warum?",
+    "whyInternal": "Nur das Team sieht das.",
     "noteEdited": "<b>{{who}}</b> hat eine interne Notiz bearbeitet",
     "noteDeleted": "<b>{{who}}</b> hat eine interne Notiz gelöscht",
     "status": "<b>{{who}}</b> hat dies als <b>{{status}}</b> markiert",
@@ -531,6 +533,12 @@
     "triagedAs": "<b>{{who}}</b> hat dies als <b>{{category}}</b> eingeordnet",
     "aiAnswered": "<b>{{who}}</b> hat aus der Wissensdatenbank geantwortet",
     "aiAnsweredEmail": "<b>{{who}}</b> hat per E-Mail geantwortet",
+    "aiSkipped": "<b>{{who}}</b> hat diese Nachricht dem Team überlassen",
+    "skippedReason": {
+      "contact_limit": "Der Kunde hat das Limit der Antworten erreicht, die {{who}} einer Person pro Stunde gibt.",
+      "monthly_cap": "{{who}} hatte sein Monatslimit aufgebraucht.",
+      "no_balance": "Das KI-Guthaben ist aufgebraucht, daher konnte {{who}} nicht antworten."
+    },
     "procedureRan": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt",
     "procedureNothing": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt: nichts zu tun",
     "procedureFailed": "<b>{{who}}</b> konnte <b>{{name}}</b> nicht abschließen",
@@ -546,7 +554,9 @@
     "messageDeleted": "<b>{{who}}</b> hat eine Nachricht gelöscht",
     "messageRestored": "<b>{{who}}</b> hat eine gelöschte Nachricht wiederhergestellt",
     "noteSentAsReply": "<b>{{who}}</b> hat eine interne Notiz als Antwort gesendet",
-    "messagePurged": "<b>{{who}}</b> hat den Inhalt einer Nachricht endgültig gelöscht"
+    "messagePurged": "<b>{{who}}</b> hat den Inhalt einer Nachricht endgültig gelöscht",
+    "panelAction": "<b>{{who}}</b> hat <b>{{label}}</b> in {{panel}} ausgeführt",
+    "panelActionFailed": "<b>{{who}}</b> hat <b>{{label}}</b> in {{panel}} versucht, was nicht geklappt hat: {{message}}"
   },
   "typing_one": "{{who}} schreibt",
   "typing_other": "{{who}} schreiben",
@@ -873,6 +883,7 @@
     "setBy": "Gesetzt von {{name}}",
     "said": "{{name}} hat geantwortet",
     "sure": "{{pct}} % sicher",
+    "threshold": "Schwelle {{pct}} %",
     "setThis": "{{name}} hat das gesetzt"
   },
   "suggest": {
@@ -1064,6 +1075,12 @@
     "line": "Leitung {{line}}",
     "playRecording": "Aufnahme abspielen",
     "playVoicemail": "Mailbox-Nachricht abspielen",
+    "recording": "Aufnahme",
+    "loadingRecording": "Lädt …",
+    "tryAgain": "Erneut versuchen",
+    "recordingNotReady": "Die Aufnahme ist noch nicht bereit. Versuche es in einer Minute erneut.",
+    "recordingRefused": "Der Anbieter hat den Token der Verbindung abgelehnt. Er braucht Zugriff auf Gesprächsaufnahmen.",
+    "recordingError": "Die Aufnahme konnte nicht geladen werden.",
     "openIn": "In {{provider}} öffnen",
     "summary": "Zusammenfassung",
     "showTranscript": "Transkript zeigen",
@@ -1131,7 +1148,13 @@
     "discountCodes_other": "Rabattcodes",
     "refunded": "{{amount}} erstattet",
     "openLink": "{{name}} öffnen",
-    "copyValue": "{{name}} kopieren"
+    "copyValue": "{{name}} kopieren",
+    "actions": {
+      "error": "Das hat nicht geklappt. Versuchen Sie es gleich noch einmal.",
+      "cancel": "Abbrechen",
+      "fill": "Füllen Sie die Pflichtfelder aus.",
+      "choose": "Auswählen"
+    }
   },
   "print": {
     "action": "Drucken oder als PDF speichern",

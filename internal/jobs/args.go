@@ -567,3 +567,12 @@ type ContactMessageArgs struct {
 }
 
 func (ContactMessageArgs) Kind() string { return "helpdesk.contact_message" }
+
+// ContactImportArgs adds the people of an uploaded CSV file to the directory
+// (contracts/imports.md "Contacts"), working from the import's checkpoint and snoozing when
+// its time is up. Owner: helpdesk.
+type ContactImportArgs struct {
+	ImportID uuid.UUID `json:"import_id"`
+}
+
+func (ContactImportArgs) Kind() string { return "contacts.import" }
