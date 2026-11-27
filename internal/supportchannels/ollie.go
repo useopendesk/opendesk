@@ -223,6 +223,7 @@ func (s *Service) registerOllie(api huma.API, tags []string) {
 				IncludeNotes *bool `json:"include_notes,omitempty" doc:"Mirror internal notes too."`
 				RoutingInput
 				OllieInput
+				AccessInput
 			}
 		}) (*struct{ Body destination }, error) {
 			p, err := requireAdminUser(ctx)
@@ -247,6 +248,11 @@ func (s *Service) registerOllie(api huma.API, tags []string) {
 					return err
 				}
 				changed = append(changed, routing...)
+				access, err := in.Body.AccessInput.apply(ctx, tx, p.WorkspaceID, &d)
+				if err != nil {
+					return err
+				}
+				changed = append(changed, access...)
 				if in.Body.IncludeNotes != nil && *in.Body.IncludeNotes != d.IncludeNotes {
 					d.IncludeNotes = *in.Body.IncludeNotes
 					changed = append(changed, "include_notes")
@@ -259,8 +265,8 @@ func (s *Service) registerOllie(api huma.API, tags []string) {
 						return err
 					}
 				}
-				if _, err := tx.Exec(ctx, `UPDATE support_channel_destinations SET include_notes=$3,mode=$4,conditions=$5,mirror=$6,ollie_summary=$7,ollie_warnings=$8,ollie_personality=$9,ollie_length=$10,updated_at=now()
-					WHERE workspace_id=$1 AND id=$2`, p.WorkspaceID, id, d.IncludeNotes, d.Mode, d.Conditions, d.Mirror, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength); err != nil {
+				if _, err := tx.Exec(ctx, `UPDATE support_channel_destinations SET include_notes=$3,mode=$4,conditions=$5,mirror=$6,ollie_summary=$7,ollie_warnings=$8,ollie_personality=$9,ollie_length=$10,min_role=$11,allowed_user_ids=$12,updated_at=now()
+					WHERE workspace_id=$1 AND id=$2`, p.WorkspaceID, id, d.IncludeNotes, d.Mode, d.Conditions, d.Mirror, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength, d.MinRole, d.AllowedUserIDs); err != nil {
 					return err
 				}
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_destination.updated", Data: map[string]any{"support_channel_destination": d}}); err != nil {
@@ -394,8 +400,8 @@ func (s *Service) postSummary(ctx context.Context, a jobs.SupportChannelSummaryA
 		if !ok {
 			return nil
 		}
-		creds := map[string]string{}
-		if err := s.d.Box.OpenJSON(current.CredentialsEnc, &creds); err != nil {
+		creds, err := s.openCredentials(current.CredentialsEnc, current.ConnectionID, current.Provider)
+		if err != nil {
 			return err
 		}
 		creds["channel_id"] = current.ChannelID
@@ -608,8 +614,8 @@ func (s *Service) warnSLAs(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			creds := map[string]string{}
-			if err := s.d.Box.OpenJSON(d.CredentialsEnc, &creds); err != nil {
+			creds, err := s.openCredentials(d.CredentialsEnc, d.ConnectionID, d.Provider)
+			if err != nil {
 				return err
 			}
 			creds["channel_id"] = d.ChannelID
@@ -662,8 +668,8 @@ func (s *Service) warnSentiment(ctx context.Context, d deliveryTarget, t domain.
 			if !ok {
 				return nil
 			}
-			creds := map[string]string{}
-			if err := s.d.Box.OpenJSON(current.CredentialsEnc, &creds); err != nil {
+			creds, err := s.openCredentials(current.CredentialsEnc, current.ConnectionID, current.Provider)
+			if err != nil {
 				return err
 			}
 			creds["channel_id"] = current.ChannelID

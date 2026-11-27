@@ -41,6 +41,18 @@ const providers: SupportChannelProvider[] = [
     configures: false,
     fields: [{ name: "service_account_json", label: "Service account JSON", secret: true }],
   },
+  {
+    key: "mattermost",
+    name: "Mattermost",
+    description: "Mirror email tickets into Mattermost threads and work them by talking to Ollie.",
+    configures: true,
+    fields: [
+      { name: "server_url", label: "Server address", secret: false },
+      { name: "bot_token", label: "Bot access token", secret: true },
+      { name: "team_id", label: "Team", secret: false, discovered: true },
+      { name: "webhook_token", label: "Button token", secret: true, generated: true },
+    ],
+  },
 ];
 
 const connections: SupportChannelConnection[] = [];
@@ -58,6 +70,10 @@ const discovered: Record<string, { id: string; name: string; kind: string; avail
   ],
   telegram: [],
   google_chat: [{ id: "spaces/AAAAsupport", name: "Support", kind: "space", available: true }],
+  mattermost: [
+    { id: "mmchan0000000000000000000support", name: "Support", kind: "channel", available: true },
+    { id: "mmchan000000000000000000private", name: "Escalations", kind: "private", available: true },
+  ],
 };
 
 const health = (provider: string) =>
@@ -78,6 +94,21 @@ function applyOllie(row: SupportChannelDestination, body: Record<string, unknown
     if (/[<>]/.test(personality)) throw invalid("The personality can't contain < or >.");
     if (personality.length > 500) throw invalid("The personality must be 500 characters or less.");
     row.ollie_personality = personality;
+  }
+  if (body.min_role !== undefined || body.allowed_user_ids !== undefined) {
+    let minRole = row.min_role;
+    let allowed = row.allowed_user_ids;
+    if (body.min_role !== undefined) {
+      if (body.min_role !== "agent" && body.min_role !== "admin") throw invalid("min_role must be agent or admin.");
+      minRole = body.min_role;
+    }
+    if (body.allowed_user_ids !== undefined) {
+      if (!Array.isArray(body.allowed_user_ids) || body.allowed_user_ids.length > 100) throw invalid("Choose at most 100 people.");
+      allowed = [...new Set(body.allowed_user_ids.map(String))];
+    }
+    if (minRole === "admin" && allowed.length > 0) throw invalid("Choose admins only or a list of people, not both.");
+    row.min_role = minRole;
+    row.allowed_user_ids = allowed;
   }
   if (body.ollie_length !== undefined) {
     const length = ollieLengths.find((value) => value === body.ollie_length);
@@ -163,9 +194,18 @@ export function registerSupportChannels() {
     return respond(202, { event_seq: row.event_seq, status: row.status });
   });
   post("/v1/support-channels/providers/:provider/accounts", (ctx) => {
-    if (ctx.params.provider !== "discord") throw invalid("This provider does not have selectable accounts.");
+    const accounts: Record<string, { id: string; name: string }[]> = {
+      discord: [{ id: "1289000000000000000", name: "Margin community" }],
+      mattermost: [
+        { id: "mmteam0000000000000000margin", name: "Margin" },
+        { id: "mmteam00000000000000000other", name: "Partners" },
+      ],
+    };
+    const list = accounts[ctx.params.provider];
+    if (!list) throw invalid("This provider does not have selectable accounts.");
     if (!String((ctx.body.credentials as Record<string, string> | undefined)?.bot_token ?? "").trim()) throw invalid("Couldn't load accounts from the provider.");
-    return { data: [{ id: "1289000000000000000", name: "Margin community" }] };
+    if (ctx.params.provider === "mattermost" && !/^https:\/\//.test(String((ctx.body.credentials as Record<string, string>).server_url ?? ""))) throw invalid("The URL must use https://.");
+    return { data: list };
   });
   post("/v1/support-channels/connections", (ctx) => {
     const provider = providers.find((p) => p.key === ctx.body.provider);
@@ -177,8 +217,8 @@ export function registerSupportChannels() {
       id,
       provider: provider.key,
       name: "",
-      external_account_id: provider.key === "discord" ? String(credentials.guild_id) : `demo-${provider.key}`,
-      external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : provider.key === "google_chat" ? "Margin Chat app" : "Margin",
+      external_account_id: provider.key === "discord" ? String(credentials.guild_id) : provider.key === "mattermost" ? String(credentials.team_id) : `demo-${provider.key}`,
+      external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : provider.key === "google_chat" ? "Margin Chat app" : provider.key === "mattermost" ? "Margin" : "Margin",
       external_account_handle: provider.key === "telegram" ? "@margin_support_bot" : "",
       status: "connected",
       last_error: "",
@@ -247,6 +287,8 @@ export function registerSupportChannels() {
       ollie_warnings: true,
       ollie_personality: "",
       ollie_length: "standard",
+      min_role: "agent",
+      allowed_user_ids: [],
       created_at: nowIso(),
     };
     applyOllie(row, ctx.body);

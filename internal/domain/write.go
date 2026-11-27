@@ -401,12 +401,14 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	}
 	if len(nm.AttachmentIDs) > 0 {
 		// An agent's or visitor's upload goes only on their own message, or on the one a
-		// member records in a contact's name.
+		// member records in a contact's name, and never one a knowledge base article or
+		// changelog entry holds (its help center serves it).
 		uploader := nm.AuthorUserID
 		if nm.RecordedBy != nil {
 			uploader = nm.RecordedBy
 		}
 		if _, err := tx.Exec(ctx, `UPDATE attachments SET message_id = $1 WHERE workspace_id = $2 AND id = ANY($3) AND message_id IS NULL
+			AND kb_article_id IS NULL AND changelog_entry_id IS NULL
 			AND (uploaded_by IS NULL OR uploaded_by IS NOT DISTINCT FROM $4)
 			AND (uploaded_by_contact_id IS NULL OR uploaded_by_contact_id IS NOT DISTINCT FROM $5)`,
 			id, nm.WorkspaceID, nm.AttachmentIDs, uploader, nm.AuthorContactID); err != nil {
@@ -507,9 +509,9 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		if err := ClearTicketDraft(ctx, tx, nm.WorkspaceID, nm.TicketID); err != nil {
 			return Message{}, err
 		}
-		// And the author's own unsent copy of it.
+		// And the author's own unsent copy of it; one scheduled to go out later stays until it does.
 		if nm.AuthorUserID != nil {
-			if _, err := tx.Exec(ctx, `DELETE FROM ticket_reply_drafts WHERE workspace_id = $1 AND ticket_id = $2 AND user_id = $3`,
+			if _, err := tx.Exec(ctx, `DELETE FROM ticket_reply_drafts WHERE workspace_id = $1 AND ticket_id = $2 AND user_id = $3 AND send_at IS NULL`,
 				nm.WorkspaceID, nm.TicketID, *nm.AuthorUserID); err != nil {
 				return Message{}, err
 			}

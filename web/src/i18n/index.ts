@@ -7,9 +7,10 @@
 // itself loads only `common`, so a help center or CSAT visitor never downloads
 // the agent app's catalogs.
 //
-// The agent app ships English, French and German (AGENT_LOCALES), following the
-// browser's language. A key a translation does not have yet falls back to
-// English (fallbackLng), so a new English string never shows a raw key. The customer-facing surfaces (help center, CSAT,
+// The agent app ships English, Spanish, French, German, Czech and Chinese (AGENT_LOCALES),
+// following the browser's language. A key a translation does not have yet falls
+// back to English (fallbackLng), so a new English string never shows a raw key.
+// The customer-facing surfaces (help center, CSAT,
 // widget) ship every SUPPORTED language, picked from the visitor's browser with
 // the workspace default as the fallback (see pickLocale).
 
@@ -17,7 +18,7 @@ import i18n, { type BackendModule, type ReadCallback } from "i18next";
 import { initReactI18next } from "react-i18next";
 import { en, NAMESPACES, type Namespace } from "./resources";
 
-export const SUPPORTED = ["en", "es", "fr", "de", "pt", "it", "nl", "pl", "ja", "zh-CN", "ko", "tr", "az", "ar"] as const;
+export const SUPPORTED = ["en", "es", "fr", "de", "pt", "it", "nl", "pl", "cs", "ja", "zh-CN", "ko", "tr", "az", "ar"] as const;
 export type Locale = (typeof SUPPORTED)[number];
 export const RTL: ReadonlySet<string> = new Set(["ar"]);
 
@@ -31,6 +32,7 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   it: "Italiano",
   nl: "Nederlands",
   pl: "Polski",
+  cs: "Čeština",
   ja: "日本語",
   "zh-CN": "简体中文",
   ko: "한국어",
@@ -60,7 +62,7 @@ export function pickLocale(opts: { explicit?: string | null; browser?: readonly 
 }
 
 /** The languages the agent app is translated into. */
-export const AGENT_LOCALES = ["en", "fr", "de"] as const;
+export const AGENT_LOCALES = ["en", "es", "fr", "de", "cs", "zh-CN"] as const;
 export type AgentLocale = (typeof AGENT_LOCALES)[number];
 
 /** The agent app's language from the browser's; a language it is not translated into gets English. */
@@ -128,11 +130,11 @@ export function loadAgentCatalogs(lng: string = pickAgentLocale()): Promise<void
 
 /**
  * A label (a field's entity, a view's name, a rewrite mode) placed inside a
- * sentence. English and French lowercase it; German keeps its capital, which
- * its nouns need.
+ * sentence. English, Spanish, French and Czech lowercase it; German keeps its capital,
+ * which its nouns need; Chinese has no letter case, so it is unchanged.
  */
 export function inSentence(label: string): string {
-  return i18n.resolvedLanguage === "de" ? label : label.toLowerCase();
+  return i18n.resolvedLanguage === "de" || i18n.resolvedLanguage === "zh-CN" ? label : label.toLowerCase();
 }
 
 /** Public routes, which load only the namespaces they show. */
@@ -175,7 +177,7 @@ export function resetLocale() {
 resetLocale();
 
 /**
- * The language the app shows, as a lowercase base tag ("en", "fr", "de"): what a server that
+ * The language the app shows, as a lowercase base tag ("en", "es", "fr", "de", "cs", "zh"): what a server that
  * writes text for this reader is told (a ticket panel's URL, contracts/integrations.md).
  */
 export function uiLanguage(): string {

@@ -182,7 +182,27 @@ export type HelpDomainRecord = { type: "TXT" | "CNAME"; name: string; value: str
 /** How customers sign in to a brand's portal: a password, the company's identity provider, or either. */
 export type PortalAuthMode = "local" | "oidc" | "local_and_oidc";
 /** What GET /v1/brands/{id}/portal/auth returns (admin). The client secret is never returned. */
-export type PortalAuthSettings = { mode: PortalAuthMode; issuer: string; client_id: string; secret_configured: boolean; create_contacts: boolean };
+export type PortalAuthSettings = {
+  mode: PortalAuthMode;
+  /** The kind of identity provider; oidc until a brand sets up SAML. */
+  protocol: PortalSsoProtocol;
+  issuer: string;
+  client_id: string;
+  secret_configured: boolean;
+  create_contacts: boolean;
+  saml: PortalSamlSettings;
+};
+export type PortalSsoProtocol = "oidc" | "saml";
+/** A brand's SAML provider, and what to enter at it (the service provider's entity id and ACS URL). */
+export type PortalSamlSettings = {
+  idp_entity_id: string;
+  idp_sso_url: string;
+  idp_certificates: string;
+  email_attribute: string;
+  name_attribute: string;
+  sp_entity_id: string;
+  acs_url: string;
+};
 /** A brand whose help center is on: where a portal invitation can lead (contracts/customer-portal.md "Invitations"). */
 export type PortalBrand = { id: string; name: string; slug: string; auth_mode: PortalAuthMode; default: boolean };
 /** A contact's customer portal access, as members see it. */
@@ -1311,12 +1331,16 @@ export type SupportChannelDestination = {
   /** How Ollie sounds in this channel's threads; empty for the default. */
   ollie_personality: string;
   ollie_length: SupportChannelOllieLength;
+  /** The lowest role that may act on tickets from this channel's threads. */
+  min_role: "agent" | "admin";
+  /** When not empty, only these members may act from this channel. */
+  allowed_user_ids: string[];
   created_at: string;
 };
 export type SupportChannelDestinationMode = "route" | "copy";
 export type SupportChannelMirror = "customer_replies" | "agent_replies" | "status_changes" | "assignee_changes" | "priority_changes";
 /** Where a destination's threads start and what they show; the create and update bodies share it. */
-export type SupportChannelRouting = Partial<Pick<SupportChannelDestination, "mode" | "conditions" | "mirror" | "include_notes">>;
+export type SupportChannelRouting = Partial<Pick<SupportChannelDestination, "mode" | "conditions" | "mirror" | "include_notes" | "min_role" | "allowed_user_ids">>;
 export type SupportChannelOllieLength = "brief" | "standard" | "detailed";
 /** Ticket changes Ollie may choose in support channel threads. */
 export type SupportChannelOllieAction = "reply" | "note" | "assign_self" | "status" | "priority" | "create_ticket";
@@ -1412,6 +1436,8 @@ export type PanelValue =
 export type PanelField = { label?: string; value: PanelValue; url?: string };
 export type PanelLine = { quantity?: number; title: string; subtitle?: string; value?: PanelValue; url?: string };
 export type PanelListItem = { title: string; subtitle?: string; value?: PanelValue; badge?: PanelBadge; url?: string; links?: PanelLink[] };
+/** A message's raw source as the app shows it (contracts/api.md, `GET /v1/messages/{id}/source`). */
+export type MailSource = { source: string; size_bytes: number; truncated: boolean };
 /** The record in another tool: a small button by the title. `icon` is one the app draws (TicketPanels' LINK_ICONS or a shipped logo), else the label's first letter shows. */
 export type PanelLink = { label: string; url: string; icon?: string };
 /** A block of an http panel's version 2 answer (contracts/integrations.md "The http answer"). */
@@ -1519,12 +1545,13 @@ export type AuditLog = {
   ip: string;
   created_at: string;
 };
-export type NotificationType = "assigned" | "new_ticket" | "mentioned" | "customer_replied" | "thread_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "support_channel_unhealthy" | "collab_assigned" | "collab_mention" | "wiki_mention" | "wiki_comment" | "wiki_reminder";
+export type NotificationType = "assigned" | "new_ticket" | "mentioned" | "customer_replied" | "thread_replied" | "sla_breached" | "scheduled_reply_failed" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "support_channel_unhealthy" | "collab_assigned" | "collab_mention" | "wiki_mention" | "wiki_comment" | "wiki_reminder";
 /** `ai_cap_reached`: data `{cap_usd}`, ticket null; the widget agent reached `widget_monthly_cap_usd` (once a month, owners and admins).
  * `ai_balance_low` / `ai_balance_out`: data `{remaining_usd}` (US dollars); `auto_recharge_failed`: data `{reason: AutoRechargeFailure}` (billing, owners and admins, ticket null).
  * `ai_key_failed`: data `{provider: AIKeyKind, reason: "rejected" | "no_funds"}`; the workspace's own AI key failed (at most hourly, owners and admins, ticket null).
  * `thread_replied`: data `{message_id, thread_id, subject, preview, from: {name, email}}`; someone outside the team answered a third-party thread on a ticket assigned to you.
  * `team_joined`: data `{team_id, team: {id, name, private}, user: {id, name}, by}`; an admin joined a team you lead (ticket null).
+ * `scheduled_reply_failed`: data `{reason: ScheduledReplyError}`; a reply you scheduled did not go out and is your draft again (ticket null when you can no longer see it).
  * `support_channel_unhealthy`: data `{connection_id, name, provider, status, detail}`; a provider connection stayed unhealthy for 15 minutes (owners and admins, ticket null).
  * `import_finished`: data `{import_id, source, source_name, account, status: "completed" | "failed" | "needs_credentials", tickets, updated, articles, failed, error}`;
  * a history import you started ended or paused for new credentials (contracts/imports.md, ticket null). */
@@ -2345,8 +2372,17 @@ export type AutoRecharge = {
   failure: { code: AutoRechargeFailure; at: string } | null;
 };
 export type AutoRechargePatch = Partial<Pick<AutoRecharge, "enabled" | "threshold_usd" | "amount_usd" | "monthly_limit_usd">>;
+/** POST /v1/ai/app-help (contracts/ai.md "Asking about the app"). */
+export type AppHelpInput = {
+  question: string;
+  /** The reader's language, a BCP 47 tag. */
+  language?: string;
+  /** 1 to 8 excerpts: places in the app and docs sections, `title` the path to them. */
+  sources: { title: string; url?: string; text?: string }[];
+};
+
 export type AIFeature =
-  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer" | "procedure" | "wiki_write";
+  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer" | "procedure" | "wiki_write" | "app_help";
 /**
  * GET /v1/billing/usage (contracts/billing.md). `from`/`to` are RFC 3339; `to` is exclusive.
  * Every usd value is US dollars, a number with up to 6 decimals.
@@ -2635,7 +2671,24 @@ export type ReplyDraft = {
   body_html: string;
   attachments: Attachment[];
   updated_at: string;
+  /** Who it goes to; null: the customer's reply address. */
+  to?: string[] | null;
+  cc?: string[];
+  bcc?: string[];
+  /** The address it goes from, when another was picked and it is still there. */
+  mailbox_id?: string | null;
+  /** One of my own Collab addresses it goes from, while I still see its account. */
+  from_account?: ReplyDraftFrom | null;
+  schedule?: { send_at: string; cc: string[]; bcc: string[]; status: TicketStatus | null; mailbox_id: string } | null;
+  /** Why the scheduled reply did not go out, or empty. */
+  send_error?: ScheduledReplyError | "";
 };
+
+/** The Collab address a reply draft goes from, as `from_account` of a send. */
+export type ReplyDraftFrom = { account_id: string; email: string; reply_to: string };
+
+/** Why a scheduled reply did not go out (contracts/api.md "Reply drafts"). */
+export type ScheduledReplyError = "merged" | "not_visible" | "cannot_send_from" | "member_gone" | "refused" | "failed";
 
 /** Ollie's suggested reply on an email ticket (contracts/agent.md "Email"). */
 export type SuggestedReply = {
@@ -3337,6 +3390,8 @@ export type MailThreadAIDraft = {
   /** Its first lines. */
   snippet: string;
   to: MailAddress[];
+  /** Its AI draft record (feedback names it once the draft is discarded); null when none was kept. */
+  record_id: string | null;
 };
 
 export type MailAttachment = {
@@ -3438,9 +3493,22 @@ export type MailComment = {
   body_html: string;
   /** User ids. */
   mentions: string[];
+  /** The comment of this conversation it replies to (contracts/collab.md "Replies"). */
+  reply_to: string | null;
+  /** That comment's author and first line, with `reply_to`. */
+  parent: MailCommentQuote | null;
+  /** It replied to a comment that has since been deleted. */
+  parent_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /** An AI note: the key's name when it added it (contracts/collab.md "AI notes"). */
+  ai_note_by?: string | null;
 };
+
+export type MailCommentQuote = { author: UserRef | null; excerpt: string; ai_note_by?: string | null };
+
+/** An AI key that skipped a conversation since its last message (contracts/collab.md "AI notes"). */
+export type MailAISkip = { client: string; reason: string; at: string };
 
 export type MailThreadAccount = {
   id: string;
@@ -3469,6 +3537,12 @@ export type MailThreadDetail = {
   can_act: boolean;
   /** The ticket it answered or was answered from, when you see it (contracts/collab.md "Answering tickets"). */
   ticket?: { id: string; number: number; subject: string } | null;
+  /** AI keys that skipped it since its last message, newest first. */
+  ai_skips?: MailAISkip[];
+  /** AI drafts discarded, replaced or abandoned and gone, oldest first (contracts/collab.md "AI draft outcomes"). */
+  unused_ai_drafts?: (AIDraftRef & { outcome_at: string })[];
+  /** You follow it: it is in your Mentions box (contracts/collab.md "Mentions"). */
+  following?: boolean;
 };
 
 /** One address across the conversations you see (contracts/collab.md "People"). */
@@ -3496,6 +3570,8 @@ export type CollabStatus = {
   /** Why not: not on the plan, or off on this instance. */
   reason: "plan" | "disabled" | "workspace_disabled" | null;
   providers: { google: boolean; microsoft: boolean; imap: boolean };
+  /** The OAuth client a Google Workspace admin trusts so the domain's accounts can connect; null without Google. */
+  google_client_id: string | null;
   /** Accounts the caller sees. */
   accounts: number;
   storage: CollabStorage;
@@ -3540,7 +3616,7 @@ export type SidebarPrefs = {
 };
 
 /** A row of a member's own section: a Space row of this workspace. */
-export type SidebarItem = Omit<SpaceItem, "workspace_id" | "kind"> & { kind: Exclude<SpaceItemKind, "section" | "everywhere"> };
+export type SidebarItem = Omit<SpaceItem, "workspace_id" | "kind" | "rows" | "hidden"> & { kind: Exclude<SpaceItemKind, "section" | "everywhere"> };
 
 /** One of a member's own sidebar sections: at most 20, 60 rows each, 300 in all. */
 export type SidebarSection = { id: string; title: string; collapsed: boolean; icon?: string; items: SidebarItem[] };
@@ -3548,8 +3624,11 @@ export type SidebarSection = { id: string; title: string; collapsed: boolean; ic
 /** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
 export type SidebarBadge = "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none";
 
-/** ai_review: Ready for review, conversations in an inbox with an AI draft waiting for a person. */
-export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "needs_action" | "snoozed" | "ai_review";
+/**
+ * ai_review: Ready for review, conversations in an inbox with an AI draft waiting for a person.
+ * mentions: the conversations you follow, mentioned in a comment or answered (contracts/collab.md "Mentions").
+ */
+export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "mentions" | "needs_action" | "snoozed" | "ai_review";
 
 export type MailThreadAction =
   | "read"
@@ -3570,8 +3649,8 @@ export type MailThreadAction =
   | "snooze";
 
 export type MailCounts = {
-  /** Unread conversations; assigned, shared, needs_action, snoozed and ai_review: open ones; spam: unread ones in spam. */
-  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number; needs_action: number; snoozed?: number; ai_review?: number; spam?: number };
+  /** Unread conversations; assigned, shared, needs_action, snoozed and ai_review: open ones; spam: unread ones in spam; mentions: every one you follow and see. */
+  boxes: { inbox: number; unread: number; shared: number; assigned: number; mentions?: number; drafts: number; needs_action: number; snoozed?: number; ai_review?: number; spam?: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
   /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
@@ -3625,7 +3704,7 @@ export type SpaceItem = {
   /** A workspace the user is a member of; "" for an everywhere row (it spans them all). */
   workspace_id: string;
   kind: SpaceItemKind;
-  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
+  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned | mentions; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
   id: string;
   /** The person's own label for the row, 1..64 characters. */
   name?: string;
@@ -3633,6 +3712,14 @@ export type SpaceItem = {
   badge?: SidebarBadge;
   /** One emoji in place of the row's own icon. */
   icon?: string;
+  /**
+   * A whole section only (kind "section"), contracts/spaces.md "Arranging a whole section": its rows
+   * top to bottom as row keys (`team:<id>`, `box:assigned`), the rest following in their usual
+   * order; in Favorites, rows the Space adds before the person's own favorites. At most 300.
+   */
+  rows?: string[];
+  /** A whole section only: the row keys it does not show in this Space. At most 300. */
+  hidden?: string[];
 };
 
 export type SpaceSection = {

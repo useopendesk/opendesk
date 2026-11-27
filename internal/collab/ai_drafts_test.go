@@ -100,11 +100,12 @@ func TestAIClientDrafts(t *testing.T) {
 	}
 	// Its row carries the draft, so it can be sent, edited or discarded in place (GH#430).
 	if p := list.Data[0].AIDraft; p == nil || p.DraftID != d.ID || p.DraftedBy != "Local drafter" || !strings.Contains(p.Snippet, "1.90") ||
-		len(p.To) != 1 || p.To[0].Email != "frank@example.com" {
+		len(p.To) != 1 || p.To[0].Email != "frank@example.com" || d2.AIDraft == nil || p.RecordID == nil || *p.RecordID != d2.AIDraft.ID {
 		t.Fatalf("row preview: %+v", list.Data[0].AIDraft)
 	}
 
-	// It never sends, discards, marks read, assigns or comments.
+	// It never sends, discards, marks read or assigns. It may add an AI note (TestAINotes),
+	// never edit or delete a comment.
 	refusals := []struct {
 		method, path string
 		body         any
@@ -116,7 +117,8 @@ func TestAIClientDrafts(t *testing.T) {
 		{"PUT", "/v1/collab/threads/" + m1.ThreadID.String() + "/assignees", map[string]any{"user_ids": []uuid.UUID{w.agent.UserID}}},
 		{"POST", "/v1/collab/messages", map[string]any{"account_id": a.ID, "mode": "reply", "message_id": m1.ID, "to": []string{"frank@example.com"},
 			"subject": "", "body_html": "<p>x</p>"}},
-		{"POST", "/v1/collab/threads/" + m1.ThreadID.String() + "/comments", map[string]any{"body_html": "<p>x</p>"}},
+		{"PATCH", "/v1/collab/comments/" + uuid.NewString(), map[string]any{"body_html": "<p>x</p>"}},
+		{"DELETE", "/v1/collab/comments/" + uuid.NewString(), nil},
 		{"GET", "/v1/collab/counts", nil},
 	}
 	for _, r := range refusals {

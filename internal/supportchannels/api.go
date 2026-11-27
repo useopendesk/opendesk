@@ -542,6 +542,7 @@ ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur
 				MessageLimit        *int   `json:"message_limit,omitempty" minimum:"500" maximum:"3500" doc:"Maximum mirrored message length before linking to the complete message in opendesk."`
 				RoutingInput
 				OllieInput
+				AccessInput
 			}
 		}) (*struct{ Body destination }, error) {
 			p, e := requireAdminUser(ctx)
@@ -586,11 +587,14 @@ ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur
 				limit = *in.Body.MessageLimit
 			}
 			d := destination{ID: ids.New(), ConnectionID: cid, TeamID: team, Priority: priority, ExternalChannelID: strings.TrimSpace(in.Body.ExternalChannelID), ExternalChannelName: cleanExternalName(in.Body.ExternalChannelName), Enabled: true, IncludeNotes: in.Body.IncludeNotes, MessageLimit: limit,
-				Mode: modeRoute, Conditions: []hd.Condition{}, Mirror: slices.Clone(defaultMirror), OllieSummary: true, OllieWarnings: true, OllieLength: lengthStandard, CreatedAt: time.Now().UTC()}
+				Mode: modeRoute, Conditions: []hd.Condition{}, Mirror: slices.Clone(defaultMirror), OllieSummary: true, OllieWarnings: true, OllieLength: lengthStandard, MinRole: roleAgent, AllowedUserIDs: []uuid.UUID{}, CreatedAt: time.Now().UTC()}
 			if _, e = in.Body.OllieInput.apply(&d); e != nil {
 				return nil, e
 			}
 			if _, e = in.Body.RoutingInput.apply(ctx, s.d.DB.Pool, p.WorkspaceID, &d); e != nil {
+				return nil, httpx.Wrap(e)
+			}
+			if _, e = in.Body.AccessInput.apply(ctx, s.d.DB.Pool, p.WorkspaceID, &d); e != nil {
 				return nil, httpx.Wrap(e)
 			}
 			inserted := false
@@ -598,7 +602,7 @@ ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur
 				if err := checkRouteUnique(ctx, tx, p.WorkspaceID, d); err != nil {
 					return err
 				}
-				tag, err := tx.Exec(ctx, `INSERT INTO support_channel_destinations(id,workspace_id,connection_id,team_id,priority,external_channel_id,external_channel_name,include_notes,message_limit,mode,conditions,mirror,ollie_summary,ollie_warnings,ollie_personality,ollie_length,created_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17 WHERE EXISTS(SELECT 1 FROM support_channel_connections WHERE workspace_id=$2 AND id=$3)`, d.ID, p.WorkspaceID, d.ConnectionID, d.TeamID, d.Priority, d.ExternalChannelID, d.ExternalChannelName, d.IncludeNotes, d.MessageLimit, d.Mode, d.Conditions, d.Mirror, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength, d.CreatedAt)
+				tag, err := tx.Exec(ctx, `INSERT INTO support_channel_destinations(id,workspace_id,connection_id,team_id,priority,external_channel_id,external_channel_name,include_notes,message_limit,mode,conditions,mirror,ollie_summary,ollie_warnings,ollie_personality,ollie_length,min_role,allowed_user_ids,created_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19 WHERE EXISTS(SELECT 1 FROM support_channel_connections WHERE workspace_id=$2 AND id=$3)`, d.ID, p.WorkspaceID, d.ConnectionID, d.TeamID, d.Priority, d.ExternalChannelID, d.ExternalChannelName, d.IncludeNotes, d.MessageLimit, d.Mode, d.Conditions, d.Mirror, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength, d.MinRole, d.AllowedUserIDs, d.CreatedAt)
 				if err != nil {
 					return err
 				}
@@ -609,7 +613,7 @@ ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_destination.created", Data: map[string]any{"support_channel_destination": d}}); err != nil {
 					return err
 				}
-				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.destination_created", "support_channel_destination", &d.ID, map[string]any{"connection_id": d.ConnectionID, "team_id": d.TeamID, "priority": d.Priority, "mode": d.Mode, "conditions": len(d.Conditions), "mirror": d.Mirror, "include_notes": d.IncludeNotes, "message_limit": d.MessageLimit})
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.destination_created", "support_channel_destination", &d.ID, map[string]any{"connection_id": d.ConnectionID, "team_id": d.TeamID, "priority": d.Priority, "mode": d.Mode, "conditions": len(d.Conditions), "mirror": d.Mirror, "include_notes": d.IncludeNotes, "message_limit": d.MessageLimit, "min_role": d.MinRole, "allowed_users": len(d.AllowedUserIDs)})
 			})
 			if db.IsUniqueViolation(e, "") {
 				return nil, httpx.Conflict("That provider channel already has a destination.")
@@ -822,8 +826,6 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	// Google Chat binds its signed request audience to this connection's URL.
-	cr["webhook_url"] = s.webhookURL(c)
 	if e = a.Verify(r.Header, body, cr); e != nil {
 		s.recordWebhookRejection(r.Context(), c.ID)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -958,7 +960,20 @@ const connectionSelect = `SELECT id,workspace_id,provider,name,external_account_
 func connectionScan(c *connection) []any {
 	return []any{&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.ExternalAccountHandle, &c.CredentialsEnc, &c.Status, &c.LastError, &c.HealthStatus, &c.HealthDetail, &c.HealthCheckedAt, &c.HealthUnhealthySince, &c.HealthAlertedAt, &c.CredentialsUpdatedAt, &c.CreatedAt}
 }
+
 func (s *Service) credentials(c connection) (map[string]string, error) {
+	return s.openCredentials(c.CredentialsEnc, c.ID, c.Provider)
+}
+
+// openCredentials opens a connection's stored credentials and adds its webhook address as
+// webhook_url: never stored, but an adapter whose messages carry the address (Mattermost's
+// buttons) needs it wherever it posts, and Google Chat checks its signed requests against it.
+// Every path that posts or verifies opens credentials through here.
+func (s *Service) openCredentials(enc []byte, connectionID uuid.UUID, provider string) (map[string]string, error) {
 	out := map[string]string{}
-	return out, s.d.Box.OpenJSON(c.CredentialsEnc, &out)
+	if err := s.d.Box.OpenJSON(enc, &out); err != nil {
+		return out, err
+	}
+	out["webhook_url"] = s.webhookURL(connection{ID: connectionID, Provider: provider})
+	return out, nil
 }

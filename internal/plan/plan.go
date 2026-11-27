@@ -27,11 +27,11 @@ const (
 	SelfHosted = "self_hosted"
 )
 
-// Collab access an instance admin gives a workspace (contracts/admin.md "Collab access").
+// A workspace's Collab access, set by an instance admin (contracts/admin.md "Collab access").
 const (
-	// CollabNone: the collab plan is not offered (it is hidden).
+	// CollabNone: an instance admin hid the collab plan from the workspace.
 	CollabNone = "none"
-	// CollabOffered: the workspace may subscribe to the collab plan.
+	// CollabOffered (the default): the workspace may subscribe to the collab plan.
 	CollabOffered = "offered"
 	// CollabComplimentary: the workspace has the collab plan without paying for it.
 	CollabComplimentary = "complimentary"
@@ -116,6 +116,7 @@ var Typical = map[string]Micro{
 	"assistant":       20_000, // one model turn of the assistant (Ollie)
 	"assistant_peer":  10_000, // one answer of a teammate's Ollie, paid by the asker's workspace
 	"procedure":       20_000, // one model turn of a procedure an automation runs (Ollie)
+	"app_help":        5_000,  // a question about using the app, answered from the app's settings and docs (fast model)
 }
 
 var (
