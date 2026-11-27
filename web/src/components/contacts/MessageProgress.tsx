@@ -67,8 +67,9 @@ export function MessageProgress() {
         <Button
           size="sm"
           variant="ghost"
-          // A customer who answers reopens their ticket, so the replies are in Open whatever the tickets started as.
-          onClick={() => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "open", ticketId: undefined }, search: { tag: m.label } })}
+          // Every ticket of the label in any status: what was sent shows at once, even when the tickets
+          // started as solved, and a customer's answer reopens their ticket in the same list.
+          onClick={() => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "all", ticketId: undefined }, search: { tag: m.label } })}
         >
           {t("message.replies")}
         </Button>
