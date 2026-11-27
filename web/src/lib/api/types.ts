@@ -2662,10 +2662,21 @@ export type ReplyDraft = {
   body_html: string;
   attachments: Attachment[];
   updated_at: string;
+  /** Who it goes to; null: the customer's reply address. */
+  to?: string[] | null;
+  cc?: string[];
+  bcc?: string[];
+  /** The address it goes from, when another was picked and it is still there. */
+  mailbox_id?: string | null;
+  /** One of my own Collab addresses it goes from, while I still see its account. */
+  from_account?: ReplyDraftFrom | null;
   schedule?: { send_at: string; cc: string[]; bcc: string[]; status: TicketStatus | null; mailbox_id: string } | null;
   /** Why the scheduled reply did not go out, or empty. */
   send_error?: ScheduledReplyError | "";
 };
+
+/** The Collab address a reply draft goes from, as `from_account` of a send. */
+export type ReplyDraftFrom = { account_id: string; email: string; reply_to: string };
 
 /** Why a scheduled reply did not go out (contracts/api.md "Reply drafts"). */
 export type ScheduledReplyError = "merged" | "not_visible" | "cannot_send_from" | "member_gone" | "refused" | "failed";
@@ -3481,9 +3492,14 @@ export type MailComment = {
   parent_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /** An AI note: the key's name when it added it (contracts/collab.md "AI notes"). */
+  ai_note_by?: string | null;
 };
 
-export type MailCommentQuote = { author: UserRef | null; excerpt: string };
+export type MailCommentQuote = { author: UserRef | null; excerpt: string; ai_note_by?: string | null };
+
+/** An AI key that skipped a conversation since its last message (contracts/collab.md "AI notes"). */
+export type MailAISkip = { client: string; reason: string; at: string };
 
 export type MailThreadAccount = {
   id: string;
@@ -3512,6 +3528,8 @@ export type MailThreadDetail = {
   can_act: boolean;
   /** The ticket it answered or was answered from, when you see it (contracts/collab.md "Answering tickets"). */
   ticket?: { id: string; number: number; subject: string } | null;
+  /** AI keys that skipped it since its last message, newest first. */
+  ai_skips?: MailAISkip[];
   /** AI drafts discarded, replaced or abandoned and gone, oldest first (contracts/collab.md "AI draft outcomes"). */
   unused_ai_drafts?: (AIDraftRef & { outcome_at: string })[];
   /** You follow it: it is in your Mentions box (contracts/collab.md "Mentions"). */

@@ -4,7 +4,7 @@
 // an account's box, a folder or label, a category), and the mail page that started the drag acts
 // on them as its own buttons would, with the same toast and Undo (pages/mail/MailPage.tsx).
 
-import { useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import type { MailBox } from "../api/types";
 
 export const THREAD_DRAG = "application/x-od-mail-threads";
@@ -43,6 +43,11 @@ function accepted(to: ThreadDropTarget): boolean {
   return !!handler && (!dragging || !handler.accepts || handler.accepts(dragging, to));
 }
 
+/** How many conversations this window drags that the page refuses here (0 when it takes them, or cannot tell before the drop). */
+function refusedHere(to: ThreadDropTarget): number {
+  return handler?.accepts && dragging && !handler.accepts(dragging, to) ? dragging.length : 0;
+}
+
 /** Starts dragging conversations: the drag shows how many, as a small label by the pointer. */
 export function startThreadDrag(e: DragEvent, ids: string[], label: string) {
   dragging = ids;
@@ -68,25 +73,57 @@ function readIds(e: DragEvent): string[] | null {
   }
 }
 
-/** Drop handlers for a row or tab leading to `to`, and whether conversations are over it. Inert for places that take none, and without a place. */
+/**
+ * Drop handlers for a row or tab leading to `to`, whether conversations are over it, and, while the page refuses the
+ * ones over it, how many (the place says why; the pointer shows they cannot drop). Inert for places that take none, and without a place.
+ */
 export function useThreadDrop(to: ThreadDropTarget | null) {
   const [over, setOver] = useState(false);
-  if (!to || !takesThreads(to)) return { over: false, props: {} };
+  const [refused, setRefused] = useState(0);
+  // A drag that ends anywhere leaves nothing lit.
+  useEffect(() => {
+    if (!over && !refused) return;
+    const clear = () => {
+      setOver(false);
+      setRefused(0);
+    };
+    window.addEventListener("dragend", clear, true);
+    window.addEventListener("drop", clear, true);
+    return () => {
+      window.removeEventListener("dragend", clear, true);
+      window.removeEventListener("drop", clear, true);
+    };
+  }, [over, refused]);
+  if (!to || !takesThreads(to)) return { over: false, refused: 0, props: {} };
   return {
     over,
+    refused,
     props: {
       onDragOver: (e: DragEvent) => {
-        // Not taken here: no drop effect, so the pointer says so.
-        if (!carriesThreads(e) || !accepted(to)) return;
+        if (!carriesThreads(e)) return;
+        if (!accepted(to)) {
+          const n = refusedHere(to);
+          // Refused: the pointer says they cannot drop here, and the place says why.
+          if (n) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "none";
+          }
+          if (refused !== n) setRefused(n);
+          return;
+        }
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         if (!over) setOver(true);
+        if (refused) setRefused(0);
       },
       onDragLeave: (e: DragEvent) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setOver(false);
+        setRefused(0);
       },
       onDrop: (e: DragEvent) => {
         setOver(false);
+        setRefused(0);
         const ids = readIds(e);
         if (!ids || !handler) return;
         e.preventDefault();

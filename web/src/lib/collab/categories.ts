@@ -109,9 +109,12 @@ export function accountCategories(a: MailAccount | undefined): MailCategory[] {
   return a?.categories?.enabled ? a.categories.categories : [];
 }
 
-/** Whether conversations may move to a category, as a tab they are dropped on: there are some and each one's account has it. */
-export function canMoveToCategory(threads: Pick<MailThread, "account_id">[], accounts: Map<string, MailAccount>, key: string): boolean {
-  return threads.length > 0 && threads.every((x) => accountCategories(accounts.get(x.account_id)).some((c) => c.key === key));
+/**
+ * The conversations that may move to a category, as a tab they are dropped on: those whose account has it.
+ * The tabs of an inbox spanning accounts are their sets together, so a tab may be one only some accounts have.
+ */
+export function movableToCategory<T extends Pick<MailThread, "account_id">>(threads: T[], accounts: Map<string, MailAccount>, key: string): T[] {
+  return threads.filter((x) => accountCategories(accounts.get(x.account_id)).some((c) => c.key === key));
 }
 
 /** A key from a name, as the server makes it. */
