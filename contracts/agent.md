@@ -641,12 +641,12 @@ no severity to filter on, set or create with.
 | tool | scope | does |
 | --- | --- | --- |
 | `search_tickets` | `tickets:read` | filters (status, assignee, team, label, priority, text, dates), at most 50 |
-| `get_ticket` | `tickets:read` | a ticket with its thread (notes included), team, brand, `received_at`, the reply address and its `links` (id, url, title, provider and the item's state, as `GET /v1/tickets/{id}/links`) |
+| `get_ticket` | `tickets:read` | a ticket with its thread (notes included), team, brand, `received_at`, the reply address, its `links` (id, url, title, provider and the item's state, as `GET /v1/tickets/{id}/links`) and its `related_tickets` (id, number, subject, status; those the caller may see) |
 | `list_custom_fields` | `tickets:read` | custom field definitions (`GET /v1/custom-fields`): key, name, entity, type, options (id, label), `required_on_solve`; optional `entity`, archived left out unless `include_archived` |
 | `reply_to_ticket` | `tickets:write` | a public reply (`body` markdown), optional `attachment_ids`; `direction: "inbound"` logs it as the contact's own words instead (`POST /v1/tickets/{id}/messages` rules: nothing sent, no `cc`, not on a chat) |
 | `draft_reply` | `tickets:write` | stages the ticket's shared draft (`body` markdown) without sending; a teammate sends it from the composer (`contracts/api.md` "Drafts") |
 | `add_note` | `tickets:write` | an internal note, optional `attachment_ids` |
-| `link_ticket` | `tickets:write` | a link from the ticket to an item in another tool (`url` https, optional `title`), as `POST /v1/tickets/{id}/links`: the same URL again returns the link that is there. Not destructive, idempotent |
+| `link_ticket` | `tickets:write` | a link on the ticket, to an item in another tool (`url` https, optional `title`, as `POST /v1/tickets/{id}/links`) or to another ticket (`to_ticket`, number or id, as `POST /v1/tickets/{id}/related`); exactly one of the two. The same URL or pair again returns the link that is there. Not destructive, idempotent |
 | `update_ticket` | `tickets:write` | status, priority, severity, assignee, team, labels, `fields` (custom field values by key, merged; null clears one); returns the ticket with its `fields` |
 | `create_ticket` | `tickets:write` | a ticket for a contact email, with optional `fields` and `attachment_ids`; `direction: "inbound"` logs the first message as the contact's request (`POST /v1/tickets` rules); returns the ticket with its `fields` |
 | `upload_attachment` | `tickets:write` | a file from an https `url` (fetched through the SSRF guard, at most 3 redirects, 25 MB) or `content_base64` (6 MB) with `filename`, uploaded as `POST /v1/attachments` → `attachment_id` |

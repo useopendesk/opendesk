@@ -551,6 +551,10 @@
     "csat": "Le client a donné la note de <m>{{score}}/5</m>",
     "linked": "<b>{{who}}</b> a lié",
     "unlinked": "<b>{{who}}</b> a retiré le lien vers",
+    "linkedTicket": "<b>{{who}}</b> a lié le ticket",
+    "unlinkedTicket": "<b>{{who}}</b> a retiré le lien vers le ticket",
+    "linkedTicketHidden": "<b>{{who}}</b> a lié un ticket privé",
+    "unlinkedTicketHidden": "<b>{{who}}</b> a retiré le lien vers un ticket privé",
     "triaged": "<b>{{who}}</b> a trié ce ticket",
     "triagedAs": "<b>{{who}}</b> a classé ce ticket dans <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> a répondu à partir de la base de connaissances",
@@ -960,7 +964,18 @@
     "removed": "Lien retiré",
     "remove": "Retirer le lien",
     "removeNamed": "Retirer le lien vers {{title}}",
-    "byOllie": "Créé par {{name}}"
+    "byOllie": "Créé par {{name}}",
+    "kindLabel": "Que lier",
+    "kind": {
+      "link": "Lien",
+      "ticket": "Ticket"
+    },
+    "addTicketDescription": "Liez un ticket qui va avec celui-ci.",
+    "searchTickets": "Rechercher par objet, client ou numéro",
+    "noTickets": "Aucun ticket trouvé",
+    "noTicketsHint": "Recherchez par objet, numéro ou client.",
+    "ticketAdded": "Ticket lié",
+    "privateTicket": "Ticket privé"
   },
   "teams": {
     "team": "Équipe",

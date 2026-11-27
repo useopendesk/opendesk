@@ -18,6 +18,9 @@ Scopes: `tickets:read` to read, `tickets:write` to change.
 | `GET` | `/v1/tickets/deleted` | The trash: deleted tickets, who deleted each and when (admins) |
 | `POST` | `/v1/tickets/{id}/restore` | Restore a deleted ticket (admins) |
 | `POST` | `/v1/tickets/{id}/merge` | Merge into another ticket |
+| `GET` | `/v1/tickets/{id}/related` | The tickets this ticket is linked to |
+| `POST` | `/v1/tickets/{id}/related` | Link another ticket |
+| `DELETE` | `/v1/tickets/{id}/related/{relationId}` | Remove a link between two tickets |
 | `GET` | `/v1/tickets/{id}/activities` | The ticket's activity, ascending |
 | `GET` | `/v1/tickets/{id}/wiki` | The wiki pages you can see that mention the ticket. Also needs `wiki:read`. See [Wiki](/api/resources/wiki/#tickets-and-the-help-center) |
 
@@ -241,6 +244,19 @@ curl https://api.opendesk.sh/v1/tickets/1042/merge \
 
 Every message, call, third-party thread and label moves to the target, and this ticket is closed. The answer is the ticket merged into. When `into_id` was itself merged, the merge goes into the ticket it went into, following the chain, and answers that ticket; `409` when that is this very ticket. A ticket that was open, pending or on hold, merged into a solved or closed one, reopens it, with a status change on its timeline. Apart from setting its status, this is the only way a closed ticket opens again: the customer's messages and their email leave it closed.
 
+## Related tickets
+
+Two tickets that belong together without being merged, such as an email and the call about it. Each keeps its own status, assignee, team, SLA and timeline, and shows the other.
+
+```sh
+curl https://api.opendesk.sh/v1/tickets/1042/related \
+  -H "Authorization: Bearer od_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "ticket_id": "#1038" }'
+```
+
+`ticket_id` is the other ticket's id, number (`#1038` or `1038`) or alias. The answer is the relation, read from this ticket: `{ id, ticket_id, related: { id, number, subject, status, channel } | null, actor_type, created_by, created_at }`. Linking the same pair again, from either side, answers the relation that is there. `GET` lists them oldest first; a ticket in a private team you cannot see is listed with `related: null`. `DELETE` removes the link on both tickets. A ticket cannot be linked to itself or to a merged ticket (`422`), and together with its links to other tools a ticket has at most 50 links (`409`). Merging a ticket moves its links to the ticket it went into.
+
 ## Activities
 
 `GET /v1/tickets/{id}/activities` returns the timeline entries that are not messages. An entry an API key made (`actor.type` `"api"`) names the key in `actor.api_key` (`{ id, name }`), and its id in `data.api_key_id`; `api_key` is `null` for an entry recorded before keys were, and once the key is deleted.
@@ -252,6 +268,7 @@ Every message, call, third-party thread and label moves to the target, and this 
 | `tagged`, `untagged` | `{ tag }` |
 | `sla_breached` | `{ kind }` |
 | `merged` | `{ into }` |
+| `linked_ticket`, `unlinked_ticket` | `{ relation_id, ticket_id, number, subject }`, naming the other ticket; the last three are `null` when it is in another, private team |
 | `csat_received` | `{ score }` |
 | `contact_changed` | `{ from, to }`, each `{ id, name }` (the name, else the email) or `null` |
 

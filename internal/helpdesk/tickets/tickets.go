@@ -1160,6 +1160,9 @@ func merge(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uuid.UUID
 	if _, err := tx.Exec(ctx, `UPDATE phone_calls SET ticket_id = $3, updated_at = now() WHERE workspace_id = $1 AND ticket_id = $2`, wid, src, dst); err != nil {
 		return err
 	}
+	if err := moveRelations(ctx, tx, wid, src, dst); err != nil {
+		return err
+	}
 	// Third-party threads go with their messages, and show on the target for everyone.
 	rows, err = tx.Query(ctx, `UPDATE ticket_threads SET ticket_id = $3, updated_at = now() WHERE workspace_id = $1 AND ticket_id = $2 RETURNING id`, wid, src, dst)
 	if err != nil {

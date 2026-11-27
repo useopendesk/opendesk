@@ -20,9 +20,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/ids"
 )
 
-// maxLinks bounds the links on one ticket.
-const maxLinks = 50
-
 // LinkState is a provider-independent state for a linked issue or task.
 type LinkState string
 
@@ -164,11 +161,11 @@ func (s *Service) linkTicket(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID,
 	} else if !db.IsNotFound(err) {
 		return Link{}, err
 	}
-	var n int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM ticket_links WHERE workspace_id = $1 AND ticket_id = $2`, wid, tid).Scan(&n); err != nil {
+	n, err := domain.TicketLinkCount(ctx, tx, wid, tid)
+	if err != nil {
 		return Link{}, err
 	}
-	if n >= maxLinks {
+	if n >= domain.MaxTicketLinks {
 		return Link{}, httpx.Conflict("A ticket can have at most 50 links.")
 	}
 	if title == "" {

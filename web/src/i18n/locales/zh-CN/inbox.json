@@ -507,6 +507,10 @@
     "csat": "客户给出了 <m>{{score}}/5</m> 的评分",
     "linked": "<b>{{who}}</b> 添加了链接",
     "unlinked": "<b>{{who}}</b> 移除了链接，原链接指向",
+    "linkedTicket": "<b>{{who}}</b> 链接了工单",
+    "unlinkedTicket": "<b>{{who}}</b> 移除了指向工单的链接",
+    "linkedTicketHidden": "<b>{{who}}</b> 链接了一个私有工单",
+    "unlinkedTicketHidden": "<b>{{who}}</b> 移除了指向一个私有工单的链接",
     "triaged": "<b>{{who}}</b> 对工单做了分诊",
     "triagedAs": "<b>{{who}}</b> 把工单分诊为 <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> 从知识库做了回复",
@@ -938,7 +942,18 @@
     "removed": "已移除链接",
     "remove": "移除链接",
     "removeNamed": "移除指向 {{title}} 的链接",
-    "byOllie": "由 {{name}} 创建"
+    "byOllie": "由 {{name}} 创建",
+    "kindLabel": "要链接的内容",
+    "kind": {
+      "link": "链接",
+      "ticket": "工单"
+    },
+    "addTicketDescription": "链接一个与此工单相关的工单。",
+    "searchTickets": "按主题、客户或 #编号搜索",
+    "noTickets": "没有找到工单",
+    "noTicketsHint": "按主题、编号或客户搜索。",
+    "ticketAdded": "已链接工单",
+    "privateTicket": "私有工单"
   },
   "teams": {
     "team": "团队",

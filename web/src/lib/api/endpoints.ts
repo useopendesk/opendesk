@@ -674,6 +674,9 @@ export const api = {
       http.get<T.TicketPanelData>(`/v1/tickets/${id}/panels/${panelId}`, { query: { refresh: refresh || undefined, locale: uiLanguage() } }),
     addLink: (id: string, b: { url: string; title?: string; integration_id?: string }) => http.create<T.TicketLink>(`/v1/tickets/${id}/links`, b),
     removeLink: (id: string, linkId: string) => http.del(`/v1/tickets/${id}/links/${linkId}`),
+    related: (id: string) => http.get<{ data: T.TicketRelation[] }>(`/v1/tickets/${id}/related`),
+    addRelated: (id: string, ticketId: string) => http.create<T.TicketRelation>(`/v1/tickets/${id}/related`, { ticket_id: ticketId }),
+    removeRelated: (id: string, relationId: string) => http.del(`/v1/tickets/${id}/related/${relationId}`),
   },
   messages: {
     original: (id: string) => http.get<{ full_html: string }>(`/v1/messages/${id}/original`),

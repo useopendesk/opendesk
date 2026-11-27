@@ -334,6 +334,20 @@ func TestTicketLinksTakeANumber(t *testing.T) {
 	e.Do("GET", fmt.Sprintf("/v1/tickets/%%23%d/links", tk.Number+1000), agent, nil).Want(t, 404)
 }
 
+func TestTicketLinksCountTicketRelations(t *testing.T) {
+	e, ws := apiEnv(t)
+	agent := ws.Agent.As(ws)
+	var tk, other struct {
+		ID string `json:"id"`
+	}
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Broken export", "body_html": "It fails"}).Want(t, 201).JSON(t, &tk)
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Call about it", "body_html": "Called"}).Want(t, 201).JSON(t, &other)
+	e.Exec(`INSERT INTO ticket_links (workspace_id, ticket_id, provider, url, title)
+		SELECT $1, $2, 'link', 'https://example.com/' || n, 'Item ' || n FROM generate_series(1, 49) n`, ws.ID, tk.ID)
+	e.Exec(`INSERT INTO ticket_relations (workspace_id, ticket_id, related_ticket_id) VALUES ($1, $2, $3)`, ws.ID, other.ID, tk.ID)
+	e.Do("POST", "/v1/tickets/"+tk.ID+"/links", agent, map[string]any{"url": "https://example.com/more"}).Want(t, 409)
+}
+
 func TestTicketLinksFollowVisibility(t *testing.T) {
 	e, ws := apiEnv(t)
 	lead := e.AddUser(ws, "agent", "Lena Lead")

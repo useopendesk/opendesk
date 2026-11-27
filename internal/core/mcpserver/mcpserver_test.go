@@ -530,6 +530,68 @@ func TestLinkTicket(t *testing.T) {
 	}
 }
 
+func TestLinkTicketToAnotherTicket(t *testing.T) {
+	e := newEnv(t)
+	mail := e.ticket("Invoice question", "Where is my invoice?")
+	call2 := e.ticket("Call about the invoice", "Customer phoned.")
+	s := e.session(e.APIKey(e.WS, auth.ScopeTicketsRead, auth.ScopeTicketsWrite))
+
+	var rel struct {
+		ID      string `json:"id"`
+		Related struct {
+			ID      string `json:"id"`
+			Number  int64  `json:"number"`
+			Subject string `json:"subject"`
+			Status  string `json:"status"`
+		} `json:"related"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": fmt.Sprintf("#%d", mail.Number), "to_ticket": fmt.Sprintf("#%d", call2.Number)}, &rel)
+	if rel.ID == "" || rel.Related.ID != call2.ID.String() || rel.Related.Number != call2.Number || rel.Related.Subject != "Call about the invoice" {
+		t.Fatalf("link_ticket to a ticket: %+v", rel)
+	}
+	var actor string
+	e.Scalar(`SELECT actor_type FROM ticket_relations WHERE id = $1 AND workspace_id = $2`, &actor, rel.ID, e.WS.ID)
+	if actor != "api" {
+		t.Fatalf("relation attributed to %q", actor)
+	}
+
+	// The same pair again, named from the other side, answers the link that is there.
+	var again struct {
+		ID string `json:"id"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": call2.ID.String(), "to_ticket": mail.ID.String()}, &again)
+	var n int
+	e.Scalar(`SELECT count(*) FROM ticket_relations WHERE workspace_id = $1`, &n, e.WS.ID)
+	if again.ID != rel.ID || n != 1 {
+		t.Fatalf("second link_ticket: %+v, %d relations", again, n)
+	}
+
+	// One target, not two, and not none.
+	for name, args := range map[string]map[string]any{
+		"both":    {"ticket": mail.ID.String(), "to_ticket": call2.ID.String(), "url": "https://linear.app/a/issue/A-1"},
+		"neither": {"ticket": mail.ID.String()},
+		"itself":  {"ticket": mail.ID.String(), "to_ticket": mail.ID.String()},
+	} {
+		if res := call(t, s, "link_ticket", args, nil); !res.IsError {
+			t.Fatalf("link_ticket accepted %s", name)
+		}
+	}
+
+	// get_ticket shows the linked tickets from either side.
+	var got struct {
+		RelatedTickets []struct {
+			ID      string `json:"id"`
+			Number  int64  `json:"number"`
+			Subject string `json:"subject"`
+			Status  string `json:"status"`
+		} `json:"related_tickets"`
+	}
+	call(t, s, "get_ticket", map[string]any{"ticket": fmt.Sprintf("#%d", call2.Number)}, &got)
+	if len(got.RelatedTickets) != 1 || got.RelatedTickets[0].ID != mail.ID.String() || got.RelatedTickets[0].Subject != "Invoice question" {
+		t.Fatalf("get_ticket related_tickets: %+v", got.RelatedTickets)
+	}
+}
+
 func TestScopeRefusals(t *testing.T) {
 	e := newEnv(t)
 	tk := e.ticket("Hello", "Hi there")

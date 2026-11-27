@@ -1494,6 +1494,15 @@ export type TicketLink = {
   created_by: string | null;
   created_at: string;
 };
+/** A link between two tickets, read from the ticket `ticket_id`; `related` is null for a ticket in a private team the viewer cannot see. */
+export type TicketRelation = {
+  id: string;
+  ticket_id: string;
+  related: { id: string; number: number; subject: string; status: Ticket["status"]; channel: Channel } | null;
+  actor_type: "user" | "ai" | "api";
+  created_by: string | null;
+  created_at: string;
+};
 export type WebhookDelivery = {
   id: string;
   event_id: string;
