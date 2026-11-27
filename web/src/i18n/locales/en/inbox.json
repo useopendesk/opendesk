@@ -925,6 +925,7 @@
     "setBy": "Set by {{name}}",
     "said": "{{name}} replied",
     "sure": "{{pct}}% sure",
+    "threshold": "threshold {{pct}}%",
     "setThis": "{{name}} set this"
   },
   "suggest": {
