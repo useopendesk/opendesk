@@ -21,25 +21,25 @@ afterEach(async () => {
 });
 
 async function open(data: Record<string, unknown>) {
-  await act(async () => root.render(<HandoffWhy data={data} />));
+  await act(async () => root.render(<HandoffWhy data={data} ollie="Ollie" />));
   const button = container.querySelector("button");
   if (button) await act(async () => button.click());
   return button;
 }
 
 describe("HandoffWhy", () => {
-  it("says which rule handed over and what the agent wrote", async () => {
+  it("says which rule handed over and what Ollie wrote", async () => {
     await open({ rule: "agent", reason: "Wants a refund decision" });
     const text = document.body.textContent ?? "";
-    expect(text).toContain("The agent decided a person was needed.");
+    expect(text).toContain("Ollie decided a person was needed.");
     expect(text).toContain("Wants a refund decision");
     expect(text).toContain("Only the team sees this.");
   });
 
-  it("names the rule alone when there are no words", async () => {
-    await open({ rule: "reply_limit" });
+  it("names the rule alone when there are no words, with the bot that handed over", async () => {
+    await open({ rule: "reply_limit", bot: "Pip" });
     const text = document.body.textContent ?? "";
-    expect(text).toContain("reply limit");
+    expect(text).toContain("The conversation reached Pip's reply limit.");
     expect(text).not.toContain("Reason");
   });
 

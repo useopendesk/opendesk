@@ -486,6 +486,8 @@
     "automation": "An automation",
     "customer": "The customer",
     "ai": "AI",
+    "why": "Why?",
+    "whyInternal": "Only the team sees this.",
     "noteEdited": "<b>{{who}}</b> edited an internal note",
     "noteDeleted": "<b>{{who}}</b> deleted an internal note",
     "status": "<b>{{who}}</b> marked this <b>{{status}}</b>",
@@ -542,14 +544,12 @@
     "aiSuggestedSent": "<b>{{who}}</b> sent {{ollie}}'s suggested reply",
     "handoffCustomer": "The customer asked for a person",
     "handoffAi": "<b>{{who}}</b> handed this to the team",
-    "handoffWhy": "Why?",
     "handoffReason": "Reason",
-    "handoffInternal": "Only the team sees this.",
     "handoffRule": {
-      "agent": "The agent decided a person was needed.",
+      "agent": "{{who}} decided a person was needed.",
       "visitor_request": "The visitor asked for a person.",
-      "reply_limit": "The conversation reached the agent's reply limit.",
-      "needs_human": "The AI judged that a person is needed."
+      "reply_limit": "The conversation reached {{who}}'s reply limit.",
+      "needs_human": "{{who}} judged that a person is needed."
     },
     "other": "<b>{{who}}</b> updated this ticket <m>{{type}}</m>",
     "teamFrom": "<b>{{who}}</b> moved this from <b>{{from}}</b> to <b>{{team}}</b>",

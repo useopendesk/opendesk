@@ -506,6 +506,8 @@
     "automation": "Une automatisation",
     "customer": "Le client",
     "ai": "IA",
+    "why": "Pourquoi ?",
+    "whyInternal": "Seule l’équipe voit ceci.",
     "noteEdited": "<b>{{who}}</b> a modifié une note interne",
     "noteDeleted": "<b>{{who}}</b> a supprimé une note interne",
     "status": "<b>{{who}}</b> a marqué ce ticket <b>{{status}}</b>",
@@ -562,14 +564,12 @@
     "aiSuggestedSent": "<b>{{who}}</b> a envoyé la réponse suggérée par {{ollie}}",
     "handoffCustomer": "Le client a demandé à parler à une personne",
     "handoffAi": "<b>{{who}}</b> a passé le relais à l’équipe",
-    "handoffWhy": "Pourquoi ?",
     "handoffReason": "Raison",
-    "handoffInternal": "Seule l’équipe voit ceci.",
     "handoffRule": {
-      "agent": "L’agent a décidé qu’une personne était nécessaire.",
+      "agent": "{{who}} a décidé qu’une personne était nécessaire.",
       "visitor_request": "Le visiteur a demandé à parler à une personne.",
-      "reply_limit": "La conversation a atteint la limite de réponses de l’agent.",
-      "needs_human": "L’IA a jugé qu’une personne était nécessaire."
+      "reply_limit": "La conversation a atteint la limite de réponses de {{who}}.",
+      "needs_human": "{{who}} a jugé qu’une personne était nécessaire."
     },
     "other": "<b>{{who}}</b> a mis à jour ce ticket <m>{{type}}</m>",
     "teamFrom": "<b>{{who}}</b> a déplacé ce ticket de <b>{{from}}</b> vers <b>{{team}}</b>",

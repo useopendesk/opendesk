@@ -13,12 +13,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TagChip } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { AI_TONE, tone } from "@/lib/tones";
-import { Popover } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PriorityIcon, priorityOrder, SeverityChip, severityLabel, StatusIcon, statusOrder } from "../bits";
 import { isSeverity, pct } from "@/lib/decisions";
 import { MessageItem, type ThreadActions } from "./MessageItem";
 import { LiveAgentReply } from "./AgentReply";
+import { WhyPopover } from "./WhyPopover";
 import { CallEntry } from "./CallEntry";
 import { latestMessageFloor, stickToBottom, type Stick } from "./stickToBottom";
 import { BotFace } from "@/components/bots/BotFace";
@@ -55,6 +55,12 @@ function actorName(a: Activity, t: TFunction<"inbox">, ollie: string) {
   if (a.actor.type === "automation") return t("activity.automation");
   if (a.actor.type === "contact") return t("activity.customer");
   return "opendesk";
+}
+
+/** The bot an AI activity names (data.bot, as it was called then), else the assistant. */
+function botWho(d: Record<string, unknown>, ollie?: string): { who?: string } {
+  if (typeof d.bot === "string" && d.bot) return { who: d.bot };
+  return ollie ? { who: ollie } : {};
 }
 
 const B = <span className="font-medium text-fg-2" />;
@@ -313,7 +319,7 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     case "ai_handoff":
       if (a.actor.type === "contact") return { icon: <Hand />, text: line("activity.handoffCustomer") };
       // The bot that handed over, by the name it had then.
-      return { icon: <Hand />, text: line("activity.handoffAi", typeof d.bot === "string" && d.bot ? { who: d.bot } : {}) };
+      return { icon: <Hand />, text: line("activity.handoffAi", botWho(d)) };
     default:
       return { icon: <ArrowRightLeft />, text: line("activity.other", { type: a.type }) };
   }
@@ -350,7 +356,7 @@ function ActivityLine({ a }: { a: Activity }) {
       </span>
       <span className="min-w-0 truncate">{text}</span>
       {ai && <DecisionMeta a={a} ollie={ollie} />}
-      {a.type === "ai_handoff" && <HandoffWhy data={a.data} />}
+      {a.type === "ai_handoff" && <HandoffWhy data={a.data} ollie={ollie} />}
       <span className="flex-1" />
       <Tooltip content={fullDate(a.created_at)}>
         <time dateTime={a.created_at} className="mono shrink-0 text-[10.5px] text-fg-4">
@@ -365,30 +371,20 @@ const HANDOFF_RULES = ["agent", "visitor_request", "reply_limit", "needs_human"]
 type HandoffRule = (typeof HANDOFF_RULES)[number];
 const isHandoffRule = (r: unknown): r is HandoffRule => (HANDOFF_RULES as readonly unknown[]).includes(r);
 
-/** Why a handoff happened: the rule that applied and, when the agent decided, its own words (internal, never shown to the customer). */
-export function HandoffWhy({ data }: { data: Record<string, unknown> }) {
+/** Why a handoff happened: the rule that applied, naming the bot that handed over, and when it decided, its own words. */
+export function HandoffWhy({ data, ollie }: { data: Record<string, unknown>; ollie: string }) {
   const { t } = useTranslation("inbox");
   if (!isHandoffRule(data.rule)) return null; // older handoffs kept no reason
   const reason = typeof data.reason === "string" ? data.reason : "";
   return (
-    <Popover
-      align="start"
-      className="w-72 p-3"
-      trigger={
-        <button type="button" className="shrink-0 rounded-sm px-1 text-[11px] text-fg-3 underline decoration-line underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-          {t("activity.handoffWhy")}
-        </button>
-      }
-    >
-      <p className="text-[12.5px] font-medium text-fg">{t(`activity.handoffRule.${data.rule}`)}</p>
+    <WhyPopover title={t(`activity.handoffRule.${data.rule}`, botWho(data, ollie))}>
       {reason && (
         <p className="mt-1.5 text-[12px] leading-[18px] text-fg-2" data-ph-mask>
           <span className="label-caps mr-1.5">{t("activity.handoffReason")}</span>
           {reason}
         </p>
       )}
-      <p className="mt-2 text-[11px] text-fg-4">{t("activity.handoffInternal")}</p>
-    </Popover>
+    </WhyPopover>
   );
 }
 
