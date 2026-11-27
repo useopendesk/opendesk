@@ -243,7 +243,10 @@
     "shareWith": "Sdílet s…",
     "moveTo": "Přesunout do…",
     "labelAs": "Označit štítkem…",
-    "newTab": "Otevřít na nové kartě"
+    "newTab": "Otevřít na nové kartě",
+    "copyForAgent": "Kopírovat pro AI agenta",
+    "copiedForAgent": "Zkopírováno. Vložte to do svého AI agenta.",
+    "copyFailed": "Kopírování se nezdařilo. Zkuste to znovu."
   },
   "drop": {
     "otherAccount": "Tyto konverzace jsou v jiném účtu.",
@@ -340,8 +343,6 @@
     "showQuoted": "Zobrazit citovaný text",
     "hideQuoted": "Skrýt citovaný text",
     "download": "Stáhnout: {{name}}",
-    "preview": "Zobrazit náhled: {{name}}",
-    "fullSize": "Otevřít v plné velikosti",
     "readOnly": "Tuto konverzaci můžete číst. Pracovat s ní mohou agenti a vyšší role.",
     "showComments": "Zobrazit komentáře",
     "replyOrComment": "Zvolte, zda odpovědět odesílateli, nebo napsat komentář pro tým",
@@ -1030,6 +1031,14 @@
     "moved_few": "Do kategorie {{name}} přesunuty {{count}} konverzace",
     "moved_many": "Do kategorie {{name}} přesunuto {{count}} konverzace",
     "moved_other": "Do kategorie {{name}} přesunuto {{count}} konverzací",
+    "dropRefused_one": "Její schránka nemá kategorii {{name}}",
+    "dropRefused_few": "Jejich schránky nemají kategorii {{name}}",
+    "dropRefused_many": "Jejich schránky nemají kategorii {{name}}",
+    "dropRefused_other": "Jejich schránky nemají kategorii {{name}}",
+    "dropSome_one": "{{count}} konverzace zůstala: její schránka nemá kategorii {{name}}",
+    "dropSome_few": "{{count}} konverzace zůstaly: jejich schránky nemají kategorii {{name}}",
+    "dropSome_many": "{{count}} konverzace zůstalo: jejich schránky nemají kategorii {{name}}",
+    "dropSome_other": "{{count}} konverzací zůstalo: jejich schránky nemají kategorii {{name}}",
     "always": "Vždy",
     "alwaysHint": "Směrovat sem i budoucí poštu od odesílatele {{sender}}",
     "ruleSaved": "Pošta od odesílatele {{sender}} nyní patří do kategorie {{name}}",
@@ -1038,6 +1047,12 @@
       "body": "Pošta od lidí zůstane v kategorii „Hlavní“, zatímco zpravodaje, aktualizace a propagační sdělení dostanou vlastní karty. Ollie může navrhnout kategorie podle vaší pošty.",
       "action": "Nastavit kategorie",
       "dismiss": "Teď ne"
+    },
+    "reorder": {
+      "hint": "Přetažením změníte pořadí, nebo stiskněte {{left}} či {{right}}",
+      "hintDrag": "Přetažením změníte pořadí",
+      "moved": "{{name}} přesunuto na {{position}}. místo z {{count}}",
+      "failed": "Nové pořadí karet se nepodařilo uložit"
     }
   },
   "aiFeedback": {
