@@ -19,7 +19,9 @@ curl "https://api.opendesk.sh/v1/search?q=refund" -H "Authorization: Bearer od_l
 { "tickets": [ ... ], "contacts": [ ... ], "articles": [ ... ], "wiki_pages": [ ... ] }
 ```
 
-Up to five of each, of the kinds the key's scopes can read. For more tickets, use `GET /v1/tickets?q=`; for more wiki pages, [`GET /v1/wiki/search?q=`](/api/resources/wiki/).
+Up to eight tickets and five of each other kind, of the kinds the key's scopes can read. For more tickets, use `GET /v1/tickets?q=`; for more wiki pages, [`GET /v1/wiki/search?q=`](/api/resources/wiki/).
+
+Tickets match by number, alias, subject, custom fields, message text (whole words or their start) and the contact's name, email and phone. A `q` that is one address-like word, such as `buyer@example.com`, `example.com` or `example`, also matches the tickets whose contact has that address (primary or extra) or with a message from, to or cc'd to it, and those come first. Contacts match by part of an address the same way. `GET /v1/tickets?q=` matches the same way, in the list's order.
 
 ## Reports overview
 
@@ -39,6 +41,8 @@ curl "https://api.opendesk.sh/v1/reports/overview?from=2026-09-01&to=2026-09-30"
   "by_agent": [{ "user": { "id": "...", "name": "Sam", "email": "sam@example.com", "avatar_url": "" }, "solved": 120, "first_response_p50_minutes": 11 }]
 }
 ```
+
+`by_agent` is personal, as in the agents report: API keys, owners and admins get every member's row, and other members their own row alone. The other figures are the same for everyone.
 
 See [Reports](/guides/reports/) for what each metric means.
 

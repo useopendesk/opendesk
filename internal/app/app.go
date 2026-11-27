@@ -296,7 +296,8 @@ func webCSP(cfg *config.Config) string {
 		"media-src 'self' blob:",
 		"font-src 'self' data:",
 		"connect-src " + strings.Join(connect, " "),
-		"frame-src https://challenges.cloudflare.com " + strings.Join(embedFrameSources, " "),
+		// blob: is the attachment preview's PDF, made by the app from bytes it checked.
+		"frame-src https://challenges.cloudflare.com blob: " + strings.Join(embedFrameSources, " "),
 		"frame-ancestors 'none'",
 		"base-uri 'self'",
 		"form-action 'self'",
