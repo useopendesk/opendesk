@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MailX, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Trash2, Undo2, Users, UserRound, Reply } from "lucide-react";
+import { AlarmClock, Hand, MousePointerClick, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MailX, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Trash2, Undo2, Users, UserRound, Reply } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -18,6 +18,7 @@ import { PriorityIcon, priorityOrder, SeverityChip, severityLabel, StatusIcon, s
 import { isSeverity, pct } from "@/lib/decisions";
 import { MessageItem, type ThreadActions } from "./MessageItem";
 import { LiveAgentReply } from "./AgentReply";
+import { WhyPopover } from "./WhyPopover";
 import { CallEntry } from "./CallEntry";
 import { latestMessageFloor, stickToBottom, type Stick } from "./stickToBottom";
 import { BotFace } from "@/components/bots/BotFace";
@@ -54,6 +55,12 @@ function actorName(a: Activity, t: TFunction<"inbox">, ollie: string) {
   if (a.actor.type === "automation") return t("activity.automation");
   if (a.actor.type === "contact") return t("activity.customer");
   return "opendesk";
+}
+
+/** The bot an AI activity names (data.bot, as it was called then), else the assistant. */
+function botWho(d: Record<string, unknown>, ollie?: string): { who?: string } {
+  if (typeof d.bot === "string" && d.bot) return { who: d.bot };
+  return ollie ? { who: ollie } : {};
 }
 
 const B = <span className="font-medium text-fg-2" />;
@@ -296,6 +303,11 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
       const key = d.outcome === "failed" ? "activity.procedureFailed" : d.outcome === "nothing_to_do" ? "activity.procedureNothing" : "activity.procedureRan";
       return { icon: <Sparkles />, hue: "ai", text: line(key, { name }) };
     }
+    case "panel_action":
+      return {
+        icon: <MousePointerClick />,
+        text: line(d.ok === false ? "activity.panelActionFailed" : "activity.panelAction", { label: String(d.label ?? d.action ?? ""), panel: String(d.panel ?? ""), message: String(d.message ?? "") }),
+      };
     case "ai_suggested_reply":
       return { icon: <Sparkles />, hue: "ai", text: line("activity.aiSuggested") };
     case "ai_suggested_reply_sent":
@@ -312,7 +324,10 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     case "ai_handoff":
       if (a.actor.type === "contact") return { icon: <Hand />, text: line("activity.handoffCustomer") };
       // The bot that handed over, by the name it had then.
-      return { icon: <Hand />, text: line("activity.handoffAi", typeof d.bot === "string" && d.bot ? { who: d.bot } : {}) };
+      return { icon: <Hand />, text: line("activity.handoffAi", botWho(d)) };
+    case "ai_skipped":
+      // The bot that left the message, by the name it had then.
+      return { icon: <Sparkles />, hue: "ai", text: line("activity.aiSkipped", botWho(d)) };
     default:
       return { icon: <ArrowRightLeft />, text: line("activity.other", { type: a.type }) };
   }
@@ -329,8 +344,8 @@ function ActivityLine({ a }: { a: Activity }) {
   const display = useDisplay();
   const ollie = useAssistantName();
   const line = describe(a, t, { teams, members, tags, fields, mailboxes, display, ollie });
-  // A handoff shows the face of the bot that handed over.
-  const botId = a.type === "ai_handoff" && typeof a.data.bot_id === "string" ? a.data.bot_id : null;
+  // A handoff or a message left for the team shows the face of the bot that did it.
+  const botId = (a.type === "ai_handoff" || a.type === "ai_skipped") && typeof a.data.bot_id === "string" ? a.data.bot_id : null;
   const { data: bots } = useQuery({ ...q.bots(), enabled: !!botId });
   const bot = botId ? bots?.find((b) => b.id === botId) : undefined;
   // Anything the AI did carries its violet mark as the actor.
@@ -348,6 +363,7 @@ function ActivityLine({ a }: { a: Activity }) {
         {icon}
       </span>
       <span className="min-w-0 truncate">{text}</span>
+      {a.type === "ai_skipped" && <SkippedWhy data={a.data} ollie={ollie} />}
       {ai && <DecisionMeta a={a} ollie={ollie} />}
       <span className="flex-1" />
       <Tooltip content={fullDate(a.created_at)}>
@@ -359,12 +375,23 @@ function ActivityLine({ a }: { a: Activity }) {
   );
 }
 
+const SKIP_REASONS = ["contact_limit", "monthly_cap", "no_balance"] as const;
+const isSkipReason = (r: unknown): r is (typeof SKIP_REASONS)[number] => (SKIP_REASONS as readonly unknown[]).includes(r);
+
+/** Why the agent left a message unanswered: the rule that applied, naming the bot that left it. */
+export function SkippedWhy({ data, ollie }: { data: Record<string, unknown>; ollie: string }) {
+  const { t } = useTranslation("inbox");
+  if (!isSkipReason(data.reason)) return null;
+  return <WhyPopover title={t(`activity.skippedReason.${data.reason}`, botWho(data, ollie))} />;
+}
+
 /** How sure Ollie was about an AI change ({confidence} in the activity data). */
 function DecisionMeta({ a, ollie }: { a: Activity; ollie: string }) {
   const { t } = useTranslation("inbox");
   const sure = typeof a.data.confidence === "number" ? pct(a.data.confidence) : null;
   if (sure == null) return null;
-  const note = `${t("ollie.setThis", { name: ollie })} · ${t("ollie.sure", { pct: sure })}`;
+  const threshold = typeof a.data.threshold === "number" ? pct(a.data.threshold) : null;
+  const note = [t("ollie.setThis", { name: ollie }), t("ollie.sure", { pct: sure }), ...(threshold != null ? [t("ollie.threshold", { pct: threshold })] : [])].join(" · ");
   return (
     <Tooltip content={note}>
       <span className={cn("mono shrink-0 rounded-sm px-1 text-[10px] tabular-nums", tone[AI_TONE].text, tone[AI_TONE].soft)}>{sure}%</span>
