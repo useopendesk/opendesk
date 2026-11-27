@@ -133,6 +133,10 @@ func TestAPISharedAccountVisible(t *testing.T) {
 		map[string]any{"name": "Support", "color": "teal"}, &out); st != 200 || out.Name != "Support" || out.Color != "teal" {
 		t.Fatalf("admin patch: %d %+v", st, out)
 	}
+	// Making a shared account private is its owner's choice alone.
+	if st := doJSON(t, "PATCH", w.api(w.owner).URL+"/v1/collab/accounts/"+everyone.ID.String(), map[string]any{"visibility": "private"}, nil); st != 422 {
+		t.Fatalf("admin makes a teammate's account private: %d, want 422", st)
+	}
 	if st := doJSON(t, "PATCH", w.api(w.agent2).URL+"/v1/collab/accounts/"+byTeam.ID.String(), map[string]any{"name": "X"}, nil); st != 403 {
 		t.Fatalf("audience patch: %d, want 403", st)
 	}
@@ -337,7 +341,8 @@ func TestAPICollabRequired(t *testing.T) {
 	// On: enabled, no reason.
 	w.s = newService(w.d)
 	srv = w.api(w.agent)
-	if st := doJSON(t, "GET", srv.URL+"/v1/collab", nil, &status); st != 200 || !status.Enabled || status.Reason != nil {
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab", nil, &status); st != 200 || !status.Enabled || status.Reason != nil ||
+		status.GoogleClientID == nil || *status.GoogleClientID != "gid" {
 		t.Fatalf("status on: %d %+v", st, status)
 	}
 	// An API key never reaches Collab.
