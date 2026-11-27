@@ -1,6 +1,6 @@
 // Typed wrappers for every endpoint in contracts/api.md.
 
-import { download, http, stream, streamEvents, type StreamHandlers } from "./client";
+import { download, downloadPost, http, stream, streamEvents, type StreamHandlers } from "./client";
 import type * as T from "./types";
 import { creatingTicket } from "../ownTickets";
 import { uiLanguage } from "@/i18n";
@@ -286,6 +286,10 @@ export const api = {
       http.post<{ recovery_codes: string[] }>("/v1/auth/totp/enable", { code }, { workspace: false }),
     totpDisable: (code: string) => http.post<void>("/v1/auth/totp/disable", { code }, { workspace: false }),
   },
+  signatureImages: {
+    /** PNG, JPEG, GIF or WebP, at most 5 MB: a public, stable URL for an <img> in a signature. */
+    upload: (file: File | Blob) => http.create<T.SignatureImage>("/v1/signature-images", imageForm(file)),
+  },
   me: {
     get: () => http.get<T.Me>("/v1/me", { workspace: false }),
     /** `avatar_url` is an https picture to copy (processed in the background), or "" to remove it. */
@@ -501,6 +505,8 @@ export const api = {
     rotateWebhook: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/rotate-webhook`),
     disconnect: (id: string) => http.del(`/v1/phone/connections/${id}`),
     lines: () => http.get<{ data: T.PhoneLine[] }>("/v1/phone/lines"),
+    /** A call's recording, for a provider that only serves it to the connection (the audio, not a link). */
+    recording: (callId: string) => download(`/v1/phone/calls/${callId}/recording`),
   },
   ticketPanels: {
     list: () => http.get<{ data: T.TicketPanel[] }>("/v1/ticket-panels"),
@@ -637,6 +643,8 @@ export const api = {
     /** Admin: removes a deleted message's text, files and original email for good. */
     purgeMessage: (id: string, messageId: string) => http.post<T.Message>(`/v1/tickets/${id}/messages/${messageId}/purge`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    /** The customer's other tickets, from any of their addresses: newest first, at most 50, with how many in all. */
+    customerTickets: (id: string) => http.get<{ data: T.CustomerPastTicket[]; total: number }>(`/v1/tickets/${encodeURIComponent(id)}/customer-tickets`),
     /** A teammate is writing a reply: the chat's visitor sees them typing. */
     typing: (id: string, opts?: { workspace?: string }) => http.post<void>(`/v1/tickets/${id}/typing`, undefined, opts),
     /** The ticket's shared draft (contracts/api.md "Drafts"): staged for the team, sent by whoever picks it up. */
@@ -668,6 +676,9 @@ export const api = {
     links: (id: string) => http.get<{ data: T.TicketLink[] }>(`/v1/tickets/${id}/links`),
     /** Wiki pages the caller can see that mention the ticket, newest edit first. */
     wiki: (id: string) => http.get<{ data: T.WikiNode[] }>(`/v1/tickets/${encodeURIComponent(id)}/wiki`),
+    /** Presses an action of an http panel's answer; the URL's own words come back, and the panel as it is now. */
+    panelAction: (id: string, panelId: string, b: { action: string; inputs?: Record<string, string> }) =>
+      http.post<T.PanelActionResult>(`/v1/tickets/${id}/panels/${panelId}/actions`, { ...b, locale: uiLanguage() }),
     /**
      * What a ticket panel's product knows about the ticket's contact; `refresh` asks it again. An
      * http panel's URL is told the app's language, so it can answer in it.
@@ -691,6 +702,18 @@ export const api = {
     merge: (id: string, into: string) => http.post<T.Contact>(`/v1/contacts/${id}/merge`, { into }),
     bulk: (b: DirectoryBulkTarget<ContactBulkQuery> & ({ delete: true } | { patch: DirectoryBulkPatch & { company_id?: string | null } })) =>
       http.post<BulkResult>("/v1/contacts/bulk", b),
+    /** A CSV file of the people named by id (at most 1000) or by the People list's filters. */
+    exportCsv: (target: { ids: string[] } | { query: ContactBulkQuery }) => downloadPost("/v1/contacts/export", target),
+    /** Contact imports (contracts/imports.md "Contacts"): upload a file, map its columns, then follow the run. */
+    importUpload: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return http.create<T.ContactImportUpload>("/v1/contacts/import/upload", fd);
+    },
+    importStart: (b: { upload_id: string; mapping: T.ContactImportMapping; match_on: T.ContactImportMatch; on_match: T.ContactImportOnMatch }) =>
+      http.create<T.ContactImport>("/v1/contacts/imports", b),
+    importGet: (id: string) => http.get<T.ContactImport>(`/v1/contacts/imports/${id}`),
+    importCancel: (id: string) => http.post<T.ContactImport>(`/v1/contacts/imports/${id}/cancel`),
     /** Extra addresses (contracts/api.md "Contact emails"); each answers with the contact. */
     addEmail: (id: string, email: string) => http.post<T.Contact>(`/v1/contacts/${id}/emails`, { email }),
     removeEmail: (id: string, email: string) => http.del<T.Contact>(`/v1/contacts/${id}/emails/${encodeURIComponent(email)}`),
@@ -876,7 +899,7 @@ export const api = {
     /** Streams `delta` text; resolves with the full draft at `done`. */
     draft: (ticketId: string, b: { instructions?: string; tone?: string }, h?: StreamHandlers) =>
       stream<T.AIDraft>(`/v1/tickets/${ticketId}/ai/draft`, b, h),
-    summary: (ticketId: string) => http.post<T.AISummary>(`/v1/tickets/${ticketId}/ai/summary`, {}),
+    summary: (ticketId: string, language: string) => http.post<T.AISummary>(`/v1/tickets/${ticketId}/ai/summary`, { language }),
     ask: (ticketId: string, question: string, h?: StreamHandlers) => stream<T.AIAnswer>(`/v1/tickets/${ticketId}/ai/ask`, { question }, h),
     triage: (ticketId: string, apply: boolean) => http.post<T.Triage>(`/v1/tickets/${ticketId}/ai/triage`, { apply }),
     /** Ollie's pending suggested reply on an email ticket, sent or discarded by a teammate. */
@@ -1057,7 +1080,7 @@ export const api = {
       removeRule: (id: string, ruleId: string) => http.del(`/v1/collab/accounts/${id}/category-rules/${ruleId}`),
     },
     /** Sent through the provider within the request (502 send_failed, nothing stored). */
-    send: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/messages", b),
+    send: (b: CollabSendBody, snoozeUntil?: string) => http.create<T.MailMessage>("/v1/collab/messages", b, { query: { snooze_until: snoozeUntil } }),
     /** Read from the message's source at the provider (502 provider_error). */
     messageDetails: (id: string) => http.get<T.MailMessageDetails>(`/v1/collab/messages/${id}/details`),
     messageSource: (id: string) => http.get<T.MailSource>(`/v1/collab/messages/${id}/source`),
@@ -1070,7 +1093,7 @@ export const api = {
       remove: (id: string) => http.del(`/v1/collab/drafts/${id}`),
       /** With a body the draft is saved with it first. `opts` pins the account and workspace a
        * held send started in (components/collab/outbox.ts), and lets it outlive the page. */
-      send: (id: string, b?: CollabDraftBody, opts?: { keepalive?: boolean; as?: string; workspace?: string }) =>
+      send: (id: string, b?: CollabDraftBody, opts?: { keepalive?: boolean; as?: string; workspace?: string; query?: { snooze_until: string } }) =>
         http.post<T.MailMessage>(`/v1/collab/drafts/${id}/send`, b, opts),
     },
     /** A person's feedback on an AI draft, for the key that wrote it (contracts/collab.md "AI draft outcomes"). */
