@@ -21,6 +21,7 @@ import { rowMotion } from "@/components/tickets/motion";
 import { SnoozeMenu } from "@/components/tickets/detail/SnoozeMenu";
 import { AccountDot, LabelPill } from "./bits";
 import { ThreadMenu } from "./ThreadMenu";
+import { useHeldSends } from "./outbox";
 
 export type ThreadRowProps = {
   thread: MailThread;
@@ -87,7 +88,14 @@ function AIDraftStrip({ t, busy, onDraft }: { t: MailThread; busy?: boolean; onD
     </Tooltip>
   );
   return (
-    <div className="flex items-center gap-2 border-b border-line-soft bg-sunken/40 py-1.5 pl-10 pr-3" onClick={(e) => e.stopPropagation()}>
+    // A click anywhere else on the strip opens the conversation, as on the row above (GH#591).
+    // Its buttons act on the draft only, a disabled one (while busy) included.
+    <div
+      className="flex cursor-pointer items-center gap-2 border-b border-line-soft bg-sunken/40 py-1.5 pl-10 pr-3 transition-colors duration-100 hover:bg-sunken/70"
+      onClick={(e) => {
+        if ((e.target as Element).closest("button")) e.stopPropagation();
+      }}
+    >
       <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-sm bg-tone-violet-soft px-1.5 text-[10.5px] font-medium text-tone-violet">
         <Sparkles className="size-3" />
         {tr("thread.aiDraftBy", { name: d.drafted_by })}
@@ -129,6 +137,8 @@ const Row = forwardRef<HTMLDivElement, ThreadRowProps & TriggerProps>(function T
   ref,
 ) {
   const { t: tr } = useTranslation("collab");
+  // An AI draft on its way out (Undo send) is not offered again meanwhile.
+  const aiDraftHeld = useHeldSends((s) => !!t.ai_draft && !!s[t.ai_draft.draft_id]);
   const reduced = useReducedMotion();
   const motionProps = rowMotion(reduced);
   const who = participantsLine(t.participants, ownEmails, tr("list.me")) || tr("list.me");
@@ -368,7 +378,7 @@ const Row = forwardRef<HTMLDivElement, ThreadRowProps & TriggerProps>(function T
           {end}
         </div>
       )}
-      {t.ai_draft && onDraft && <AIDraftStrip t={t} busy={draftBusy} onDraft={onDraft} />}
+      {t.ai_draft && onDraft && !aiDraftHeld && <AIDraftStrip t={t} busy={draftBusy} onDraft={onDraft} />}
     </motion.div>
   );
 });

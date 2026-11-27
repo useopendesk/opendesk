@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { AIDraftRef, MailFolder, MailThread, MailThreadAction } from "@/lib/api/types";
+import type { AIDraftRef, MailFolder, MailThread, MailThreadAction, MailThreadDetail } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { inverseAction, leavesList, listPlace, UNDOABLE } from "@/lib/collab/actions";
 import { rememberAccountView } from "@/lib/collab/accountView";
@@ -43,7 +43,7 @@ import { accountName, boxForRole, isMailBox, mailListQuery, type MailSearch } fr
 import { cachedFolders } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
 import { addressNumbers } from "@/lib/collab/badges";
-import { accountCategories, categoryTabs, PRIMARY, ruleSender } from "@/lib/collab/categories";
+import { accountCategories, categoryTabs, movableToCategory, PRIMARY, ruleSender } from "@/lib/collab/categories";
 import { assignChanges, useAllFolders, useAssignThreads, useCanAct, useMailAccounts, useSelectEvery, useSidebarPrefs, useThreadAction } from "@/lib/collab/hooks";
 import { type ComposeMode } from "@/lib/collab/recipients";
 import { identitiesOf, ownEmails as ownEmailsOf } from "@/lib/collab/identities";
@@ -66,8 +66,9 @@ import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AIDraftFeedbackDialog } from "@/components/collab/AIDraftFeedback";
 import { AccountDot, boxIcon, FolderGlyph } from "@/components/collab/bits";
-import { canOfferCategories, CategoryOffer, CategoryTabs, useCategorySettingsTarget } from "@/components/collab/CategoryTabs";
+import { canOfferCategories, CategoryOffer, CategoryTabs, useCategoryReorder, useCategorySettingsTarget } from "@/components/collab/CategoryTabs";
 import { FolderBar } from "@/components/collab/FolderBar";
+import { holdSend, undoSendSeconds, useUndoneSends } from "@/components/collab/outbox";
 import { SearchCoverage, SpamBesideWork, StorageFullBanner } from "@/components/collab/MailNotices";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "@/components/collab/pickers";
 import { ListShareDialog, SnoozeItems } from "@/components/collab/ThreadMenu";
@@ -136,6 +137,7 @@ export default function MailPage() {
   const openId = params.threadId;
   const { data: accounts } = useMailAccounts();
   const { data: counts } = useQuery(q.mailCounts());
+  const { data: workspace } = useQuery(q.workspace());
   const prefs = useSidebarPrefs();
   const folderMap = useAllFolders(accounts);
   const action = useThreadAction();
@@ -159,6 +161,7 @@ export default function MailPage() {
   const tabs = useMemo(() => categoryTabs(tabAccounts, counts), [tabAccounts, counts]);
   const category = tabs.length ? (tabs.some((c) => c.key === search.category) ? search.category : PRIMARY) : undefined;
   const settingsTarget = useCategorySettingsTarget(tabAccounts);
+  const reorderTabs = useCategoryReorder(tabAccounts, settingsTarget);
   const offer = !tabs.length && canAct ? tabAccounts.find(canOfferCategories) : undefined;
   const query = useMemo(() => mailListQuery(box, { ...search, category }), [box, search.account, search.folder, search.q, search.to, search.with, category]); // eslint-disable-line react-hooks/exhaustive-deps
   const listKey = JSON.stringify(query);
@@ -386,7 +389,7 @@ export default function MailPage() {
   // Only the conversation Edit opened takes the draft into its composer, once.
   useEffect(() => setEditAI((id) => (id && id !== openId ? null : id)), [openId]);
   const [draftBusy, setDraftBusy] = useState<Set<string>>(new Set());
-  // An AI draft just discarded from its row: feedback on it, offered from the toast, as the composer's discard does.
+  // An AI draft just discarded from its row: feedback on it, asked at once, as the composer's discard does.
   const [discardedAI, setDiscardedAI] = useState<{ draft: AIDraftRef; threadId: string } | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const busyDraft = useCallback((id: string, on: boolean) => setDraftBusy((s) => {
@@ -419,14 +422,24 @@ export default function MailPage() {
           },
         );
       };
-      if (a === "send") return run(() => api.collab.drafts.send(d.draft_id), () => toast.success(t("toast.sent", { email: accountsById.get(x.account_id)?.email ?? "" })), t("composer.sendFailed"));
+      if (a === "send") {
+        // Held for the undo window like any other send; Undo opens the conversation with the draft.
+        const reopen = () => {
+          const m = qc.getQueryData<MailThreadDetail>(qk.mailThread(x.id))?.messages.find((y) => y.draft && (y.draft_id ?? y.id) === d.draft_id);
+          if (m) useUndoneSends.setState({ [x.id]: m });
+          else setEditAI(x.id);
+          open(x);
+        };
+        void holdSend({ draftId: d.draft_id, from: accountsById.get(x.account_id)?.email ?? "", reopen }, undoSendSeconds(workspace?.settings));
+        return;
+      }
+      // The feedback form opens at once, not behind a toast that expires (GH#592); closing it skips it.
+      // Discarding reads nothing: the conversation stays as unread as it was.
       const discarded = () => {
+        toast.success(t("aiFeedback.discardedToast", { name: d.drafted_by }));
         if (!d.record_id) return;
-        setFeedbackOpen(false);
         setDiscardedAI({ draft: { id: d.record_id, client: d.drafted_by, outcome: "discarded", has_feedback: false }, threadId: x.id });
-        toast.success(t("aiFeedback.discardedToast", { name: d.drafted_by }), {
-          action: { label: t("aiFeedback.why"), onClick: () => setFeedbackOpen(true) },
-        });
+        setFeedbackOpen(true);
       };
       confirm.show(t("composer.discardDraftConfirm"), () => run(() => api.collab.drafts.remove(d.draft_id), discarded, t("composer.discardFailed")), {
         title: t("composer.discardDraftTitle"),
@@ -434,7 +447,7 @@ export default function MailPage() {
         danger: true,
       });
     },
-    [open, qc, t, accountsById, confirm, busyDraft],
+    [open, qc, t, accountsById, confirm, busyDraft, workspace],
   );
   const onThreadAction = useCallback(
     (a: MailThreadAction, opts?: ActOpts) => {
@@ -723,6 +736,15 @@ export default function MailPage() {
   dropRef.current = (ids, to) => {
     const items = threads.filter((x) => ids.includes(x.id));
     if (!items.length) return;
+    // A category tab: those whose account has it move there as the row menu moves them; the others stay, and the toast says so.
+    if (to.category) {
+      const name = tabs.find((c) => c.key === to.category)?.name ?? to.category;
+      const ok = movableToCategory(items, accountsById, to.category);
+      if (!ok.length) return void toast.error(t("categories.dropRefused", { count: items.length, name }));
+      act(ok, "categorize", { category: to.category, label: name });
+      if (ok.length < items.length) toast.info(t("categories.dropSome", { count: items.length - ok.length, name }));
+      return;
+    }
     const folderTo = to.box === "folder" && to.folder ? Object.values(folderMap).flatMap((fs) => fs ?? []).find((f) => f.id === to.folder) : undefined;
     const accountId = folderTo?.account_id ?? to.account;
     const its = accountId ? items.filter((x) => x.account_id === accountId) : items;
@@ -756,7 +778,19 @@ export default function MailPage() {
         return assignMe(its);
     }
   };
-  useEffect(() => (canAct ? takeThreadDrops((ids, to) => dropRef.current(ids, to)) : undefined), [canAct]);
+  /** Whether the conversations being dragged may drop on a place: a category tab takes them while one of their accounts has its category. */
+  const acceptsRef = useRef<(ids: string[], to: ThreadDropTarget) => boolean>(() => true);
+  acceptsRef.current = (ids, to) => !to.category || movableToCategory(threads.filter((x) => ids.includes(x.id)), accountsById, to.category).length > 0;
+  useEffect(
+    () =>
+      canAct
+        ? takeThreadDrops(
+            (ids, to) => dropRef.current(ids, to),
+            (ids, to) => acceptsRef.current(ids, to),
+          )
+        : undefined,
+    [canAct],
+  );
 
   useShortcuts({
     "mail.next": () => move(1),
@@ -786,10 +820,14 @@ export default function MailPage() {
     "mail.comment": () => openId && threadRef.current?.comment(),
     "mail.people": () => openId && threadRef.current?.people(),
     "mail.search": () => searchRef.current?.focus(),
-    "mail.escape": () => {
-      if (selected.size || every.running) clearSelection();
-      else if (openId) close();
-    },
+    // Only with something to clear or close: otherwise Escape is left to others (the sidebar's edit mode).
+    "mail.escape":
+      selected.size || every.running || openId
+        ? () => {
+            if (selected.size || every.running) clearSelection();
+            else if (openId) close();
+          }
+        : undefined,
     "mail.selectAll": () => !openId && setSelected(new Set(threads.map((x) => x.id))),
   });
 
@@ -852,6 +890,7 @@ export default function MailPage() {
     if (box === "inbox" && !folder) return <EmptyState art="solved" title={t("list.empty.inbox")} description={t("list.empty.inboxHint")} />;
     if (box === "shared") return <EmptyState art="inbox" title={t("list.empty.shared")} description={t("list.empty.sharedHint")} />;
     if (box === "assigned") return <EmptyState art="mine" title={t("list.empty.assigned")} description={t("list.empty.assignedHint")} />;
+    if (box === "mentions") return <EmptyState art="inbox" title={t("list.empty.mentions")} description={t("list.empty.mentionsHint")} />;
     if (box === "ai_review") return <EmptyState art="solved" title={t("list.empty.aiReview")} description={t("list.empty.aiReviewHint")} />;
     if (box === "starred") return <EmptyState art="generic" title={t("list.empty.starred")} description={t("list.empty.starredHint")} tips={[{ label: t("shortcuts.star"), kbd: "s" }]} />;
     return <EmptyState art="generic" title={t("list.empty.generic")} description={t("list.empty.genericHint")} />;
@@ -895,7 +934,7 @@ export default function MailPage() {
             )}
           </div>
         </div>
-        {!noAccounts && accounts && box !== "shared" && box !== "assigned" && (
+        {!noAccounts && accounts && box !== "shared" && box !== "assigned" && box !== "mentions" && (
           <FolderBar
             box={box}
             account={account}
@@ -906,7 +945,7 @@ export default function MailPage() {
             prefs={prefs}
           />
         )}
-        {tabs.length > 0 && category && <CategoryTabs tabs={tabs} active={category} search={search} settings={settingsTarget} />}
+        {tabs.length > 0 && category && <CategoryTabs tabs={tabs} active={category} search={search} settings={settingsTarget} reorder={reorderTabs} />}
         {offer && <CategoryOffer account={offer} />}
         {!noAccounts && <StorageFullBanner />}
         {(box === "needs_action" || box === "ai_review") && accounts && <SpamBesideWork accounts={account ? [account] : accounts} counts={counts} />}
