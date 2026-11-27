@@ -38,21 +38,37 @@ func TestNotificationSubjects(t *testing.T) {
 	tid := uuid.New()
 	long := strings.Repeat("word ", 60)
 	one := func(n Note) string {
-		return Notifications(s, Batch{WorkspaceID: uuid.New(), Workspace: "Margin", Notes: []Note{n}}).Subject
+		m := Notifications(s, Batch{WorkspaceID: uuid.New(), Workspace: "Margin", Notes: []Note{n}, ThreadSubject: true})
+		if m.FromName != "" {
+			return m.FromName + " | " + m.Subject
+		}
+		return m.Subject
 	}
 	n := Note{Type: "assigned", TicketID: &tid, TicketNumber: 1095, TicketSubject: "SAML with Okta", Data: map[string]any{"actor": map[string]any{"name": "Maya"}}}
-	if got := one(n); got != "Maya assigned you #1095: SAML with Okta" {
+	if got := one(n); got != "Maya assigned you | #1095: SAML with Okta" {
 		t.Errorf("assigned: %q", got)
 	}
 	n.TicketSubject = "Line one\r\nBcc: x@example.com " + long
 	if got := one(n); strings.ContainsAny(got, "\r\n") || len([]rune(got)) > 120 {
 		t.Errorf("subject not flattened and clipped: %q", got)
 	}
-	if got := one(Note{Type: "new_ticket", TicketID: &tid, TicketNumber: 7, TicketSubject: "Hi", Data: map[string]any{"contact": map[string]any{"name": "Sam"}}}); got != "New ticket from Sam #7: Hi" {
+	if got := one(Note{Type: "new_ticket", TicketID: &tid, TicketNumber: 7, TicketSubject: "Hi", Data: map[string]any{"contact": map[string]any{"name": "Sam"}}}); got != "New ticket from Sam | #7: Hi" {
 		t.Errorf("new ticket: %q", got)
 	}
-	if got := one(Note{Type: "new_ticket", TicketID: &tid, TicketNumber: 7, TicketSubject: "Hi"}); got != "New ticket #7: Hi" {
+	if got := one(Note{Type: "new_ticket", TicketID: &tid, TicketNumber: 7, TicketSubject: "Hi"}); got != "New ticket | #7: Hi" {
 		t.Errorf("new ticket without a contact: %q", got)
+	}
+	// Every email about one ticket shares its subject and thread headers; the sender name differs.
+	replyNote := Note{Type: "customer_replied", TicketID: &tid, TicketNumber: 7, TicketSubject: "Hi", Data: map[string]any{"contact": map[string]any{"name": "Sam"}}}
+	reply := Notifications(s, Batch{WorkspaceID: uuid.New(), Workspace: "Margin", Notes: []Note{replyNote}, ThreadSubject: true})
+	ref := "<ticket-" + tid.String() + "@app.example>"
+	if reply.Subject != "#7: Hi" || reply.FromName != "Sam replied" || reply.Headers["References"] != ref || reply.Headers["In-Reply-To"] != ref {
+		t.Errorf("reply threading: %q %q %v", reply.FromName, reply.Subject, reply.Headers)
+	}
+	// Off (the default), the subject says what happened and the sender keeps its name.
+	plain := Notifications(s, Batch{WorkspaceID: uuid.New(), Workspace: "Margin", Notes: []Note{replyNote}})
+	if plain.Subject != "Sam replied on #7: Hi" || plain.FromName != "" || plain.Headers["References"] != ref || plain.Headers["In-Reply-To"] != "" {
+		t.Errorf("default threading: %q %q %v", plain.FromName, plain.Subject, plain.Headers)
 	}
 	if got := one(Note{Type: "ai_balance_out", Data: map[string]any{"remaining_usd": 0.0}}); got != "Your AI balance is used up in Margin" {
 		t.Errorf("billing: %q", got)

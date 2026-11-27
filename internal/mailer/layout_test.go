@@ -29,6 +29,16 @@ func TestRenderEscapes(t *testing.T) {
 	}
 }
 
+func TestSender(t *testing.T) {
+	head, _, _ := strings.Cut(Build("opendesk <team@opendesk.sh>", Mail{To: "a@example.com", Subject: "s", FromName: "Sam replied\r\nBcc: x@example.com"}), "\r\n\r\n")
+	if !strings.Contains(head, "From: \"Sam replied Bcc: x@example.com\" <team@opendesk.sh>\r\n") || strings.Contains(head, "\r\nBcc:") {
+		t.Errorf("sender name:\n%s", head)
+	}
+	if got := Sender("opendesk <team@opendesk.sh>", Mail{}); got != "opendesk <team@opendesk.sh>" {
+		t.Errorf("default sender: %q", got)
+	}
+}
+
 func TestBuildHeaders(t *testing.T) {
 	msg := Build("opendesk <team@opendesk.sh>", Mail{To: "a@example.com", Subject: "Hello\r\nBcc: evil@example.com", Text: "t", HTML: "h",
 		Headers: map[string]string{"List-Unsubscribe": "<https://api.example/u?token=x>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

@@ -396,6 +396,10 @@ type NotifyEmail struct {
 	InstancePerMinute int
 	// ActiveWindow: emails wait while the person was active in the app this recently.
 	ActiveWindow time.Duration
+	// ThreadSubject gives every email about one ticket the subject "#<number>: <subject>",
+	// with what happened in the sender's display name, so clients that match subjects
+	// (Gmail) thread them per ticket.
+	ThreadSubject bool
 }
 
 // NotifyEmailDefaults are the pacing defaults: strict for opendesk Cloud, relaxed for
@@ -437,6 +441,7 @@ func loadNotifyEmail(billing bool) (NotifyEmail, error) {
 	n.PerDay = envInt("NOTIFY_EMAIL_PER_DAY", n.PerDay)
 	n.InstancePerMinute = envInt("NOTIFY_EMAIL_INSTANCE_PER_MINUTE", n.InstancePerMinute)
 	n.ActiveWindow = envDuration("NOTIFY_EMAIL_ACTIVE_WINDOW", n.ActiveWindow)
+	n.ThreadSubject = envBool("NOTIFY_EMAIL_THREAD_SUBJECT", false)
 	return n, n.Validate()
 }
 
