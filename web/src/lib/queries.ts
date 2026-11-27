@@ -206,6 +206,11 @@ export const qk = {
     return w(["imports"] as const);
   },
   ticketLinks: (id: string) => w(["tickets", "links", id] as const),
+  /** The tickets a ticket is linked to (GET /v1/tickets/{id}/related). */
+  ticketRelations: (id: string) => w(["tickets", "related", id] as const),
+  get ticketRelationLists() {
+    return w(["tickets", "related"] as const);
+  },
   /** Wiki pages that mention a ticket (GET /v1/tickets/{id}/wiki). */
   ticketWiki: (id: string) => w(["tickets", "wiki", id] as const),
   get auditLogs() {
@@ -526,6 +531,7 @@ export const q = {
     list(qk.supportChannelAvailableDestinations(id), () => api.supportChannels.availableDestinations(id), { staleTime: 30_000 }),
   imports: () => list(qk.imports, () => api.imports.list()),
   ticketLinks: (id: string) => list(qk.ticketLinks(id), () => api.tickets.links(id)),
+  ticketRelations: (id: string) => list(qk.ticketRelations(id), () => api.tickets.related(id)),
   ticketWiki: (id: string) => list(qk.ticketWiki(id), () => api.tickets.wiki(id)),
   ticketPanels: () => list(qk.ticketPanels, () => api.ticketPanels.list()),
   // The server keeps an answer for a minute too; reopening a ticket shows it at once.

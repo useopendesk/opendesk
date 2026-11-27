@@ -531,6 +531,10 @@
     "csat": "The customer rated this <m>{{score}}/5</m>",
     "linked": "<b>{{who}}</b> linked",
     "unlinked": "<b>{{who}}</b> removed the link to",
+    "linkedTicket": "<b>{{who}}</b> linked ticket",
+    "unlinkedTicket": "<b>{{who}}</b> removed the link to ticket",
+    "linkedTicketHidden": "<b>{{who}}</b> linked a private ticket",
+    "unlinkedTicketHidden": "<b>{{who}}</b> removed the link to a private ticket",
     "triaged": "<b>{{who}}</b> triaged this",
     "triagedAs": "<b>{{who}}</b> triaged this as <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> answered from the knowledge base",
@@ -974,7 +978,18 @@
     "removed": "Link removed",
     "remove": "Remove link",
     "removeNamed": "Remove the link to {{title}}",
-    "byOllie": "Created by {{name}}"
+    "byOllie": "Created by {{name}}",
+    "kindLabel": "What to link",
+    "kind": {
+      "link": "Link",
+      "ticket": "Ticket"
+    },
+    "addTicketDescription": "Link a ticket that belongs with this one.",
+    "searchTickets": "Search by subject, customer or #number",
+    "noTickets": "No tickets found",
+    "noTicketsHint": "Search by subject, number or customer.",
+    "ticketAdded": "Ticket linked",
+    "privateTicket": "Private ticket"
   },
   "teams": {
     "team": "Team",

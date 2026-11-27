@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -311,6 +312,40 @@ func TestTicketLinks(t *testing.T) {
 	if acts != 2 {
 		t.Fatalf("activities = %d", acts)
 	}
+}
+
+func TestTicketLinksTakeANumber(t *testing.T) {
+	e, ws := apiEnv(t)
+	agent := ws.Agent.As(ws)
+	var tk struct {
+		ID     string `json:"id"`
+		Number int64  `json:"number"`
+	}
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Broken export", "body_html": "It fails"}).Want(t, 201).JSON(t, &tk)
+	byNumber := fmt.Sprintf("/v1/tickets/%%23%d/links", tk.Number)
+	l := e.Do("POST", byNumber, agent, map[string]any{"url": "https://linear.app/a/issue/A-1"}).Want(t, 201).Map(t)
+	if l["ticket_id"] != tk.ID {
+		t.Fatalf("link = %v", l)
+	}
+	if n := len(e.Do("GET", byNumber, agent, nil).Want(t, 200).Map(t)["data"].([]any)); n != 1 {
+		t.Fatalf("links = %d", n)
+	}
+	e.Do("DELETE", byNumber+"/"+l["id"].(string), agent, nil).Want(t, 204)
+	e.Do("GET", fmt.Sprintf("/v1/tickets/%%23%d/links", tk.Number+1000), agent, nil).Want(t, 404)
+}
+
+func TestTicketLinksCountTicketRelations(t *testing.T) {
+	e, ws := apiEnv(t)
+	agent := ws.Agent.As(ws)
+	var tk, other struct {
+		ID string `json:"id"`
+	}
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Broken export", "body_html": "It fails"}).Want(t, 201).JSON(t, &tk)
+	e.Do("POST", "/v1/tickets", agent, map[string]any{"subject": "Call about it", "body_html": "Called"}).Want(t, 201).JSON(t, &other)
+	e.Exec(`INSERT INTO ticket_links (workspace_id, ticket_id, provider, url, title)
+		SELECT $1, $2, 'link', 'https://example.com/' || n, 'Item ' || n FROM generate_series(1, 49) n`, ws.ID, tk.ID)
+	e.Exec(`INSERT INTO ticket_relations (workspace_id, ticket_id, related_ticket_id) VALUES ($1, $2, $3)`, ws.ID, other.ID, tk.ID)
+	e.Do("POST", "/v1/tickets/"+tk.ID+"/links", agent, map[string]any{"url": "https://example.com/more"}).Want(t, 409)
 }
 
 func TestTicketLinksFollowVisibility(t *testing.T) {

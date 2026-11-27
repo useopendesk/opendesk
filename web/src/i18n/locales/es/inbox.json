@@ -555,6 +555,10 @@
     "csat": "El cliente lo valoró con <m>{{score}}/5</m>",
     "linked": "<b>{{who}}</b> vinculó",
     "unlinked": "<b>{{who}}</b> quitó el enlace a",
+    "linkedTicket": "<b>{{who}}</b> vinculó el ticket",
+    "unlinkedTicket": "<b>{{who}}</b> quitó el enlace al ticket",
+    "linkedTicketHidden": "<b>{{who}}</b> vinculó un ticket privado",
+    "unlinkedTicketHidden": "<b>{{who}}</b> quitó el enlace a un ticket privado",
     "triaged": "<b>{{who}}</b> clasificó esto",
     "triagedAs": "<b>{{who}}</b> clasificó esto como <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> respondió desde la base de conocimiento",
@@ -1007,7 +1011,18 @@
     "removed": "Enlace quitado",
     "remove": "Quitar enlace",
     "removeNamed": "Quitar el enlace a {{title}}",
-    "byOllie": "Creado por {{name}}"
+    "byOllie": "Creado por {{name}}",
+    "kindLabel": "Qué vincular",
+    "kind": {
+      "link": "Enlace",
+      "ticket": "Ticket"
+    },
+    "addTicketDescription": "Vincula un ticket que pertenezca a este.",
+    "searchTickets": "Buscar por asunto, cliente o #número",
+    "noTickets": "No se encontraron tickets",
+    "noTicketsHint": "Busca por asunto, número o cliente.",
+    "ticketAdded": "Ticket vinculado",
+    "privateTicket": "Ticket privado"
   },
   "teams": {
     "team": "Equipo",

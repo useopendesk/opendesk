@@ -3,11 +3,21 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import "@/i18n";
+import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
-import type { TicketLink } from "@/lib/api/types";
+import type { Page, Ticket, TicketLink, TicketRelation } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
 import { TicketLinks } from "./TicketLinks";
+
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({ children, params, className }: { children: ReactNode; params: { ticketId: string }; className?: string }) => (
+    <a href={`/inbox/open/${params.ticketId}`} className={className}>
+      {children}
+    </a>
+  ),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,6 +48,7 @@ beforeEach(() => {
   root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(qk.ticketLinks("ticket-1"), []);
+  client.setQueryData(qk.ticketRelations("ticket-1"), []);
 });
 
 afterEach(async () => {
@@ -113,4 +124,67 @@ it("keeps provider state visible while an agent can add another link", async () 
   await render();
   expect(host.textContent).toContain("Shipped");
   expect([...host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Add link")).toBe(true);
+});
+
+const callRelation: TicketRelation = {
+  id: "rel-1",
+  ticket_id: "ticket-1",
+  related: { id: "ticket-2", number: 42, subject: "Call about the invoice", status: "pending", channel: "phone" },
+  actor_type: "user",
+  created_by: "user-1",
+  created_at: "2026-11-02T12:00:00Z",
+};
+
+const ticketRow = (id: string, number: number, subject: string) => ({ id, number, subject, status: "open", contact: null, last_message_at: "2026-11-02T12:00:00Z" }) as unknown as Ticket;
+
+function button(label: string) {
+  return [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === label)!;
+}
+
+it("shows a linked ticket with its number, subject and status, and a private one without details", async () => {
+  client.setQueryData<TicketRelation[]>(qk.ticketRelations("ticket-1"), [callRelation, { ...callRelation, id: "rel-2", related: null }]);
+  await render();
+
+  const link = host.querySelector<HTMLAnchorElement>("a[href='/inbox/open/ticket-2']")!;
+  expect(link.textContent).toContain("Call about the invoice");
+  expect(link.textContent).toContain("#42");
+  expect(link.textContent).toContain("Pending");
+  expect(host.querySelector("svg[aria-label='Phone']")).not.toBeNull();
+  expect(host.textContent).toContain("Private ticket");
+  expect(host.querySelectorAll("a").length).toBe(1);
+});
+
+it("links another ticket from the Ticket tab of the add dialog", async () => {
+  vi.spyOn(api.tickets, "list").mockResolvedValue({ data: [ticketRow("ticket-1", 7, "This ticket"), ticketRow("ticket-2", 42, "Call about the invoice")], next_cursor: null } as unknown as Page<Ticket>);
+  const addRelated = vi.spyOn(api.tickets, "addRelated").mockResolvedValue(callRelation);
+  await render();
+
+  await act(async () => button("Add link").click());
+  const tabs = document.querySelector("[role='dialog'] [role='radiogroup']")!;
+  expect([...tabs.querySelectorAll("[role='radio']")].map((r) => r.textContent)).toEqual(["Link", "Ticket"]);
+  await act(async () => [...tabs.querySelectorAll<HTMLElement>("[role='radio']")].find((r) => r.textContent === "Ticket")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const dialog = document.querySelector("[role='dialog']")!;
+  expect(dialog.textContent).toContain("Call about the invoice");
+  expect(dialog.textContent).not.toContain("This ticket");
+  await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent?.includes("Call about the invoice"))!.click());
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button")].find((b) => b.textContent?.trim() === "Add link")!.click());
+
+  expect(addRelated).toHaveBeenCalledWith("ticket-1", "ticket-2");
+  expect(client.getQueryData<TicketRelation[]>(qk.ticketRelations("ticket-1"))).toEqual([callRelation]);
+  expect(document.querySelector("[role='dialog']")).toBeNull();
+});
+
+it("removes a linked ticket from the panel", async () => {
+  const removeRelated = vi.spyOn(api.tickets, "removeRelated").mockResolvedValue(undefined);
+  client.setQueryData<TicketRelation[]>(qk.ticketRelations("ticket-1"), [callRelation]);
+  await render();
+
+  await act(async () => host.querySelector<HTMLButtonElement>("button[aria-label='Remove the link to #42']")!.click());
+
+  expect(removeRelated).toHaveBeenCalledWith("ticket-1", "rel-1");
+  expect(client.getQueryData<TicketRelation[]>(qk.ticketRelations("ticket-1"))).toEqual([]);
 });

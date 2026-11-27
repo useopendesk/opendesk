@@ -4,7 +4,7 @@
 
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { TicketListQuery } from "./api/endpoints";
-import type { Page, Priority, Severity, Team, Ticket, TicketFilters, View } from "./api/types";
+import type { Page, Priority, Severity, Team, Ticket, TicketFilters, TicketRelation, View } from "./api/types";
 import { labelsMatch } from "./labelFilter";
 import { keyBody, qk } from "./queries";
 
@@ -151,6 +151,11 @@ export function findTicket(data: TicketPages | undefined, id: string): Ticket | 
 /** Apply a changed ticket to its detail cache and every cached list. */
 export function patchTicketEverywhere(qc: QueryClient, t: Ticket, me: string) {
   qc.setQueryData(qk.ticket(t.id), t);
+  // A ticket linked from another one shows its subject and status there.
+  for (const [key, rows] of qc.getQueriesData<TicketRelation[]>({ queryKey: qk.ticketRelationLists })) {
+    if (!rows?.some((r) => r.related?.id === t.id)) continue;
+    qc.setQueryData<TicketRelation[]>(key, rows.map((r) => (r.related?.id === t.id ? { ...r, related: { id: t.id, number: t.number, subject: t.subject, status: t.status, channel: t.channel } } : r)));
+  }
   // Detail views opened by number (/inbox/mine/1072) cache under the number.
   for (const alias of [String(t.number), `#${t.number}`]) {
     qc.setQueryData(qk.ticket(alias), (old: Ticket | undefined) => (old ? t : old));
@@ -196,6 +201,7 @@ export function forgetTicket(qc: QueryClient, id: string) {
   qc.removeQueries({ queryKey: qk.suggestedReply(id), exact: true });
   qc.removeQueries({ queryKey: qk.ticketDraft(id), exact: true });
   qc.removeQueries({ queryKey: qk.ticketLinks(id), exact: true });
+  qc.removeQueries({ queryKey: qk.ticketRelations(id), exact: true });
   qc.removeQueries({ queryKey: qk.threads(id), exact: true });
 }
 

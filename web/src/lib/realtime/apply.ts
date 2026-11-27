@@ -422,6 +422,12 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
     return;
   }
 
+  if (resource === "ticket_relation") {
+    // The event names the ticket and relation only: each viewer reads the list with their own visibility.
+    void qc.invalidateQueries({ queryKey: qk.ticketRelations(d.ticket_id as string), exact: true });
+    return;
+  }
+
   if (resource === "contact") {
     if (verb === "deleted") {
       const id = d.contact_id as string;

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MailX, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Trash2, Undo2, Users, UserRound, Reply } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -269,6 +270,27 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
             ) : (
               <span className="min-w-0 truncate font-medium text-fg-3">{title}</span>
             )}
+          </span>
+        ),
+      };
+    }
+    case "linked_ticket":
+    case "unlinked_ticket": {
+      const linked = a.type === "linked_ticket";
+      const number = typeof d.number === "number" ? d.number : null;
+      const id = typeof d.ticket_id === "string" ? d.ticket_id : null;
+      // The other ticket is in a private team the viewer may not see: it is not named.
+      if (number === null || !id) return { icon: <Link2 />, text: line(linked ? "activity.linkedTicketHidden" : "activity.unlinkedTicketHidden") };
+      const subject = typeof d.subject === "string" ? d.subject : "";
+      return {
+        icon: <Link2 />,
+        text: (
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">{line(linked ? "activity.linkedTicket" : "activity.unlinkedTicket")}</span>
+            <Link to="/inbox/$folder/{-$ticketId}" params={{ folder: "open", ticketId: id }} className="min-w-0 truncate font-medium text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg">
+              #{number}
+              {subject && ` ${subject}`}
+            </Link>
           </span>
         ),
       };

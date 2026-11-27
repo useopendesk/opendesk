@@ -25,6 +25,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/idempotency"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/integrations"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
@@ -58,6 +59,7 @@ func newEnv(t *testing.T) *env {
 	api := humachi.New(r, huma.DefaultConfig("opendesk test", "test"))
 	core.Register(&d, api, r)
 	helpdesk.Register(&d, api, r)
+	integrations.Register(&d, api, r)
 	Register(&d, api, r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -265,7 +267,7 @@ func TestToolsFollowScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"search_tickets", "get_ticket", "list_custom_fields", "reply_to_ticket", "draft_reply", "add_note", "update_ticket", "create_ticket",
+	want := []string{"search_tickets", "get_ticket", "list_custom_fields", "reply_to_ticket", "draft_reply", "add_note", "link_ticket", "update_ticket", "create_ticket",
 		"upload_attachment", "search_contacts", "get_contact", "create_contact", "update_contact",
 		"search_companies", "get_company", "create_company", "update_company", "search_knowledge", "create_kb_draft",
 		"find_api", "describe_api", "api_read", "api_write",
@@ -294,6 +296,9 @@ func TestToolsFollowScopes(t *testing.T) {
 		}
 		if tl.Name == "add_note" && (tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint) {
 			t.Fatal("add_note should not be marked destructive")
+		}
+		if tl.Name == "link_ticket" && (tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint || !tl.Annotations.IdempotentHint) {
+			t.Fatal("link_ticket should be idempotent and not destructive")
 		}
 	}
 	slices.Sort(names)
@@ -448,6 +453,142 @@ func TestWritesRunAsTheKey(t *testing.T) {
 	call(t, s, "create_ticket", map[string]any{"email": "sam@example.com", "name": "Sam", "subject": "Follow up", "body": "Calling back tomorrow.", "kind": "note"}, &created)
 	if created.Number == 0 || created.Contact.Email != "sam@example.com" || created.Channel != "api" {
 		t.Fatalf("create_ticket: %+v", created)
+	}
+}
+
+func TestLinkTicket(t *testing.T) {
+	e := newEnv(t)
+	tk := e.ticket("Broken export", "The export fails.")
+	number := fmt.Sprintf("#%d", tk.Number)
+
+	// The tool needs tickets:write; a key that only reads is not offered it.
+	if names := toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeTicketsRead))); slices.Contains(names, "link_ticket") {
+		t.Fatalf("tickets:read tools: %v", names)
+	}
+	s := e.session(e.APIKey(e.WS, auth.ScopeTicketsWrite))
+	if names := toolNames(t, s); !slices.Contains(names, "link_ticket") {
+		t.Fatalf("tickets:write tools: %v", names)
+	}
+
+	var link struct {
+		ID       string `json:"id"`
+		URL      string `json:"url"`
+		Title    string `json:"title"`
+		Provider string `json:"provider"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": number, "url": "https://linear.app/a/issue/A-1", "title": "Export fails"}, &link)
+	if link.ID == "" || link.URL != "https://linear.app/a/issue/A-1" || link.Title != "Export fails" || link.Provider != "linear" {
+		t.Fatalf("link_ticket: %+v", link)
+	}
+	var actor string
+	e.Scalar(`SELECT actor_type FROM ticket_links WHERE id = $1 AND workspace_id = $2`, &actor, link.ID, e.WS.ID)
+	if actor != "api" {
+		t.Fatalf("link attributed to %q", actor)
+	}
+
+	// The same URL again answers the link that is there.
+	var again struct {
+		ID string `json:"id"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": tk.ID.String(), "url": "https://linear.app/a/issue/A-1"}, &again)
+	var n int
+	e.Scalar(`SELECT count(*) FROM ticket_links WHERE ticket_id = $1`, &n, tk.ID)
+	if again.ID != link.ID || n != 1 {
+		t.Fatalf("second link_ticket: %+v, %d links", again, n)
+	}
+
+	// Only a full https link is accepted, and nothing is stored for a refusal.
+	if res := call(t, s, "link_ticket", map[string]any{"ticket": number, "url": "ftp://linear.app/x"}, nil); !res.IsError {
+		t.Fatal("link_ticket accepted a non-https url")
+	}
+	if res := call(t, s, "link_ticket", map[string]any{"ticket": "#999999", "url": "https://linear.app/a/issue/A-2"}, nil); !res.IsError {
+		t.Fatal("link_ticket linked a ticket that does not exist")
+	}
+	e.Scalar(`SELECT count(*) FROM ticket_links WHERE workspace_id = $1`, &n, e.WS.ID)
+	if n != 1 {
+		t.Fatalf("%d links after the refusals", n)
+	}
+
+	// get_ticket shows the links, for a key that may only read.
+	var got struct {
+		Links []struct {
+			ID       string `json:"id"`
+			URL      string `json:"url"`
+			Title    string `json:"title"`
+			Provider string `json:"provider"`
+		} `json:"links"`
+	}
+	call(t, e.session(e.APIKey(e.WS, auth.ScopeTicketsRead)), "get_ticket", map[string]any{"ticket": number}, &got)
+	if len(got.Links) != 1 || got.Links[0].ID != link.ID || got.Links[0].URL != link.URL || got.Links[0].Provider != "linear" {
+		t.Fatalf("get_ticket links: %+v", got.Links)
+	}
+	other := e.ticket("No links here", "Nothing linked.")
+	var bare map[string]any
+	call(t, e.session(e.APIKey(e.WS, auth.ScopeTicketsRead)), "get_ticket", map[string]any{"ticket": fmt.Sprintf("#%d", other.Number)}, &bare)
+	if _, has := bare["links"]; has {
+		t.Fatalf("a ticket without links shows %v", bare["links"])
+	}
+}
+
+func TestLinkTicketToAnotherTicket(t *testing.T) {
+	e := newEnv(t)
+	mail := e.ticket("Invoice question", "Where is my invoice?")
+	call2 := e.ticket("Call about the invoice", "Customer phoned.")
+	s := e.session(e.APIKey(e.WS, auth.ScopeTicketsRead, auth.ScopeTicketsWrite))
+
+	var rel struct {
+		ID      string `json:"id"`
+		Related struct {
+			ID      string `json:"id"`
+			Number  int64  `json:"number"`
+			Subject string `json:"subject"`
+			Status  string `json:"status"`
+		} `json:"related"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": fmt.Sprintf("#%d", mail.Number), "to_ticket": fmt.Sprintf("#%d", call2.Number)}, &rel)
+	if rel.ID == "" || rel.Related.ID != call2.ID.String() || rel.Related.Number != call2.Number || rel.Related.Subject != "Call about the invoice" {
+		t.Fatalf("link_ticket to a ticket: %+v", rel)
+	}
+	var actor string
+	e.Scalar(`SELECT actor_type FROM ticket_relations WHERE id = $1 AND workspace_id = $2`, &actor, rel.ID, e.WS.ID)
+	if actor != "api" {
+		t.Fatalf("relation attributed to %q", actor)
+	}
+
+	// The same pair again, named from the other side, answers the link that is there.
+	var again struct {
+		ID string `json:"id"`
+	}
+	call(t, s, "link_ticket", map[string]any{"ticket": call2.ID.String(), "to_ticket": mail.ID.String()}, &again)
+	var n int
+	e.Scalar(`SELECT count(*) FROM ticket_relations WHERE workspace_id = $1`, &n, e.WS.ID)
+	if again.ID != rel.ID || n != 1 {
+		t.Fatalf("second link_ticket: %+v, %d relations", again, n)
+	}
+
+	// One target, not two, and not none.
+	for name, args := range map[string]map[string]any{
+		"both":    {"ticket": mail.ID.String(), "to_ticket": call2.ID.String(), "url": "https://linear.app/a/issue/A-1"},
+		"neither": {"ticket": mail.ID.String()},
+		"itself":  {"ticket": mail.ID.String(), "to_ticket": mail.ID.String()},
+	} {
+		if res := call(t, s, "link_ticket", args, nil); !res.IsError {
+			t.Fatalf("link_ticket accepted %s", name)
+		}
+	}
+
+	// get_ticket shows the linked tickets from either side.
+	var got struct {
+		RelatedTickets []struct {
+			ID      string `json:"id"`
+			Number  int64  `json:"number"`
+			Subject string `json:"subject"`
+			Status  string `json:"status"`
+		} `json:"related_tickets"`
+	}
+	call(t, s, "get_ticket", map[string]any{"ticket": fmt.Sprintf("#%d", call2.Number)}, &got)
+	if len(got.RelatedTickets) != 1 || got.RelatedTickets[0].ID != mail.ID.String() || got.RelatedTickets[0].Subject != "Invoice question" {
+		t.Fatalf("get_ticket related_tickets: %+v", got.RelatedTickets)
 	}
 }
 

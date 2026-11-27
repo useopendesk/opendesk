@@ -120,6 +120,20 @@ func ticketTools() []*tool {
 			Run: addNote,
 		},
 		{
+			Name: "link_ticket", Title: "Link a ticket to something else", Scopes: []string{auth.ScopeTicketsWrite}, Idempotent: true,
+			Description: "Add a link on a ticket, so the team finds it from the ticket: to an issue, task or page in another tool (url), or to another ticket " +
+				"that belongs with it (to_ticket), for example an email and the call about it. Pass one of the two. Both tickets keep their own status, assignee " +
+				"and team and show each other. Linking the same URL or the same pair again returns the link that is there. Nothing in the other tool changes. " +
+				"get_ticket lists a ticket's links and linked tickets.",
+			Schema: obj(map[string]any{
+				"ticket":    str(ticketArg),
+				"url":       strN("The full https:// URL of an item in another tool.", 1, 2000),
+				"title":     strN("A short title for a URL link; the host is shown when left out.", 0, 300),
+				"to_ticket": str("Another ticket to link this one to instead of a URL: its number like #123, or its id."),
+			}, "ticket"),
+			Run: linkTicket,
+		},
+		{
 			Name: "update_ticket", Title: "Update a ticket", Scopes: []string{auth.ScopeTicketsWrite}, Destructive: true, Idempotent: true,
 			Description: "Change a ticket's status, priority, severity, assignee, team, labels or custom fields. Only the arguments you pass change. " +
 				"Custom fields go in fields, by the keys list_custom_fields returns; null clears one. Returns the updated ticket.",
@@ -381,8 +395,68 @@ type outAuthor struct {
 	AI    bool   `json:"ai,omitempty"`
 }
 
+type apiLink struct {
+	ID                string  `json:"id"`
+	URL               string  `json:"url"`
+	Title             string  `json:"title"`
+	Provider          string  `json:"provider"`
+	ExternalState     *string `json:"external_state"`
+	ExternalStateName *string `json:"external_state_name"`
+}
+
+type outLink struct {
+	ID       string `json:"id"`
+	URL      string `json:"url"`
+	Title    string `json:"title"`
+	Provider string `json:"provider"`
+	State    string `json:"state,omitempty"`
+}
+
+func linkOut(l apiLink) outLink {
+	o := outLink{ID: l.ID, URL: l.URL, Title: l.Title, Provider: l.Provider}
+	switch {
+	case l.ExternalStateName != nil:
+		o.State = *l.ExternalStateName
+	case l.ExternalState != nil:
+		o.State = *l.ExternalState
+	}
+	return o
+}
+
+type apiRelation struct {
+	ID      string `json:"id"`
+	Related *struct {
+		ID      string `json:"id"`
+		Number  int64  `json:"number"`
+		Subject string `json:"subject"`
+		Status  string `json:"status"`
+	} `json:"related"`
+}
+
+type outRelated struct {
+	ID      string `json:"id"`
+	Number  int64  `json:"number"`
+	Subject string `json:"subject"`
+	Status  string `json:"status"`
+}
+
+type outRelation struct {
+	ID      string      `json:"id"`
+	Related *outRelated `json:"related"`
+}
+
+func relationOut(r apiRelation) outRelation {
+	o := outRelation{ID: r.ID}
+	if r.Related != nil {
+		o.Related = &outRelated{ID: r.Related.ID, Number: r.Related.Number, Subject: r.Related.Subject, Status: r.Related.Status}
+	}
+	return o
+}
+
 type threadOut struct {
 	Ticket          outTicket    `json:"ticket"`
+	Links           []outLink    `json:"links,omitempty"`
+	RelatedTickets  []outRelated `json:"related_tickets,omitempty"`
 	Messages        []outMessage `json:"messages"`
 	EarlierOmitted  int          `json:"earlier_messages_omitted,omitempty"`
 	TextBudgetSpent bool         `json:"text_truncated,omitempty"`
@@ -409,7 +483,27 @@ func getTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, error)
 	if err := c.get(ctx, "/v1/tickets/"+t.ID+"/messages", nil, &msgs); err != nil {
 		return nil, err
 	}
+	var links struct {
+		Data []apiLink `json:"data"`
+	}
+	if err := c.get(ctx, "/v1/tickets/"+t.ID+"/links", nil, &links); err != nil {
+		return nil, err
+	}
+	var related struct {
+		Data []apiRelation `json:"data"`
+	}
+	if err := c.get(ctx, "/v1/tickets/"+t.ID+"/related", nil, &related); err != nil {
+		return nil, err
+	}
 	out := threadOut{Ticket: compactTicket(t, true), Messages: []outMessage{}}
+	for _, l := range links.Data {
+		out.Links = append(out.Links, linkOut(l))
+	}
+	for _, r := range related.Data {
+		if r.Related != nil {
+			out.RelatedTickets = append(out.RelatedTickets, *relationOut(r).Related)
+		}
+	}
 	c.name(ctx, &out.Ticket)
 	c.replyAddress(ctx, &out.Ticket)
 	// Deleted messages and notes sent as replies stay out, whoever asks (admins read
@@ -657,6 +751,49 @@ func addNote(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return postMessage(ctx, c, "note", newMessage{Ticket: a.Ticket, Body: a.Body, AttachmentIDs: a.AttachmentIDs})
+}
+
+func linkTicket(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
+	a, err := decode[struct {
+		Ticket   string `json:"ticket"`
+		URL      string `json:"url"`
+		Title    string `json:"title"`
+		ToTicket string `json:"to_ticket"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := ticketRef(a.Ticket)
+	if err != nil {
+		return nil, err
+	}
+	if (a.URL == "") == (a.ToTicket == "") {
+		return nil, invalid("pass either url or to_ticket")
+	}
+	if a.ToTicket != "" {
+		to, err := ticketRef(a.ToTicket)
+		if err != nil {
+			return nil, err
+		}
+		other, err := url.PathUnescape(to)
+		if err != nil {
+			return nil, invalid("to_ticket must be a ticket number like #123 or a ticket id")
+		}
+		var r apiRelation
+		if err := c.do(ctx, http.MethodPost, "/v1/tickets/"+ref+"/related", nil, map[string]any{"ticket_id": other}, &r); err != nil {
+			return nil, err
+		}
+		return relationOut(r), nil
+	}
+	req := map[string]any{"url": a.URL}
+	if a.Title != "" {
+		req["title"] = a.Title
+	}
+	var l apiLink
+	if err := c.do(ctx, http.MethodPost, "/v1/tickets/"+ref+"/links", nil, req, &l); err != nil {
+		return nil, err
+	}
+	return linkOut(l), nil
 }
 
 func cleanLabels(in []string) ([]string, error) {

@@ -44,7 +44,7 @@ interface Link { id: string; ticket_id: string; integration_id: string | null; p
 | DELETE | `/v1/integrations/{id}` | admin user | → 204. Credentials are deleted; ticket links stay as plain links |
 | GET | `/v1/integrations/oauth/callback` | browser | → 302 `APP_URL/settings/integrations?connected=<id>` or `?error=<code>&id=<id>` |
 | GET | `/v1/integrations/oauth/client` | public | opendesk's OAuth client ID metadata document |
-| GET | `/v1/tickets/{id}/links` | viewer, `tickets:read` | → `{data: Link[]}` |
+| GET | `/v1/tickets/{id}/links` | viewer, `tickets:read` | `id` is the ticket's uuid, alias or number, as for `GET /v1/tickets/{id}` → `{data: Link[]}` |
 | POST | `/v1/tickets/{id}/links` | agent, `tickets:write` | `{url /* https */, title?, integration_id?}` → 201 `Link` (the same URL again answers the existing link) |
 | DELETE | `/v1/tickets/{id}/links/{linkId}` | agent, `tickets:write` | → 204. The item in the other product is left as it is |
 

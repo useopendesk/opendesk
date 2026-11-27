@@ -579,6 +579,10 @@
     "csat": "Zákazník udělil hodnocení <m>{{score}}/5</m>",
     "linked": "Propojeno uživatelem <b>{{who}}</b>",
     "unlinked": "Uživatelem <b>{{who}}</b> odebráno propojení s",
+    "linkedTicket": "Tiket propojen uživatelem <b>{{who}}</b>",
+    "unlinkedTicket": "Uživatelem <b>{{who}}</b> odebráno propojení s tiketem",
+    "linkedTicketHidden": "Soukromý tiket propojen uživatelem <b>{{who}}</b>",
+    "unlinkedTicketHidden": "Uživatelem <b>{{who}}</b> odebráno propojení se soukromým tiketem",
     "triaged": "Roztříděno uživatelem <b>{{who}}</b>",
     "triagedAs": "Zařazeno do kategorie <b>{{category}}</b> uživatelem <b>{{who}}</b>",
     "aiAnswered": "Odpovězeno ze znalostní báze uživatelem <b>{{who}}</b>",
@@ -1037,7 +1041,18 @@
     "removed": "Odkaz odebrán",
     "remove": "Odebrat odkaz",
     "removeNamed": "Odebrat odkaz na {{title}}",
-    "byOllie": "Vytvořeno uživatelem {{name}}"
+    "byOllie": "Vytvořeno uživatelem {{name}}",
+    "kindLabel": "Co propojit",
+    "kind": {
+      "link": "Odkaz",
+      "ticket": "Tiket"
+    },
+    "addTicketDescription": "Propojte tiket, který patří k tomuto.",
+    "searchTickets": "Hledat podle předmětu, zákazníka nebo #čísla",
+    "noTickets": "Žádné tikety nenalezeny",
+    "noTicketsHint": "Hledejte podle předmětu, čísla nebo zákazníka.",
+    "ticketAdded": "Tiket propojen",
+    "privateTicket": "Soukromý tiket"
   },
   "teams": {
     "team": "Tým",

@@ -2,7 +2,7 @@
 // tool lists, the service's sign-in (a redirect straight back to settings), and
 // ticket links. State lives in sessionStorage so the sign-in reload keeps it.
 
-import type { Integration, IntegrationProvider, IntegrationTool, Ticket, TicketLink } from "@/lib/api/types";
+import type { Integration, IntegrationProvider, IntegrationTool, Ticket, TicketLink, TicketRelation } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, forbidden, get, invalid, notFound, patch, post, respond, type Ctx } from "../router";
@@ -95,7 +95,8 @@ const defaultTools = [tool("search", "Search", "Search the service.", true), too
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
-type State = { integrations: Integration[]; links: TicketLink[] };
+type Pair = { id: string; a: string; b: string; created_by: string; created_at: string };
+type State = { integrations: Integration[]; links: TicketLink[]; pairs: Pair[] };
 const KEY = "od-mock-integrations";
 const state = new Map<string, State>();
 
@@ -117,7 +118,7 @@ function save() {
 function seedState(ws: WsData): State {
   const at = new Date(Date.now() - 6 * 86_400_000).toISOString();
   const linear = connection("linear", "oauth", at);
-  const st: State = { integrations: [linear], links: [] };
+  const st: State = { integrations: [linear], links: [], pairs: [] };
   const t = ws.tickets.find((x) => !ws.deletedTickets.has(x.id) && x.status === "open" && /bug|error|crash|broken|fail/i.test(x.subject));
   if (t) st.links.push({ id: uuid(), ticket_id: t.id, integration_id: linear.id, provider: "linear", url: `https://linear.app/margin/issue/FN-${t.number - 940}`, title: "Crash when opening shared notebooks on iOS", external_id: `FN-${t.number - 940}`, external_state: "in_progress", external_state_name: "In Progress", synced_at: at, actor_type: "ai", created_by: db.meId, created_at: at });
   return st;
@@ -128,6 +129,7 @@ export function stateOf(ws: WsData): State {
   let st = state.get(id);
   if (!st) {
     st = load()[id] ?? seedState(ws);
+    st.pairs ??= [];
     state.set(id, st);
   }
   return st;
@@ -188,6 +190,11 @@ export function linkTicket(ws: WsData, t: Ticket, x: Integration | null, url: st
   if (actor === "ai") a.actor = { type: "ai", user: userRef(db.meId) };
   publish(ws, "activity.created", { ticket_id: t.id, activity: a });
   return l;
+}
+
+function relationOf(ws: WsData, pair: Pair, from: string): TicketRelation {
+  const other = findTicket(ws, pair.a === from ? pair.b : pair.a);
+  return { id: pair.id, ticket_id: from, related: other ? { id: other.id, number: other.number, subject: other.subject, status: other.status, channel: other.channel } : null, actor_type: "user", created_by: pair.created_by, created_at: pair.created_at };
 }
 
 export function registerIntegrations() {
@@ -310,6 +317,41 @@ export function registerIntegrations() {
     if (!/^https:\/\/[^/\s]+/.test(url)) throw invalid("Use a full https:// link.");
     const x = stateOf(ctx.ws).integrations.find((i) => i.id === ctx.body.integration_id) ?? null;
     return respond(201, linkTicket(ctx.ws, t, x, url, String(ctx.body.title ?? "").trim().slice(0, 300), "user"));
+  });
+  get("/v1/tickets/:id/related", (ctx) => {
+    const t = findTicket(ctx.ws, ctx.params.id);
+    if (!t) throw notFound("Ticket");
+    return { data: stateOf(ctx.ws).pairs.filter((p) => p.a === t.id || p.b === t.id).map((p) => relationOf(ctx.ws, p, t.id)) };
+  });
+  post("/v1/tickets/:id/related", (ctx) => {
+    const t = findTicket(ctx.ws, ctx.params.id);
+    const other = findTicket(ctx.ws, String(ctx.body.ticket_id ?? ""));
+    if (!t || !other) throw notFound("Ticket");
+    if (t.id === other.id) throw invalid("a ticket cannot be linked to itself");
+    const st = stateOf(ctx.ws);
+    let pair = st.pairs.find((p) => (p.a === t.id && p.b === other.id) || (p.a === other.id && p.b === t.id));
+    if (!pair) {
+      pair = { id: uuid(), a: t.id, b: other.id, created_by: db.meId, created_at: nowIso() };
+      st.pairs.push(pair);
+      save();
+      for (const x of [t, other]) publish(ctx.ws, "ticket_relation.created", { ticket_id: x.id, relation_id: pair.id });
+      addActivity(ctx.ws, t, "linked_ticket", { relation_id: pair.id, ticket_id: other.id, number: other.number, subject: other.subject }, userRef(db.meId));
+      addActivity(ctx.ws, other, "linked_ticket", { relation_id: pair.id, ticket_id: t.id, number: t.number, subject: t.subject }, userRef(db.meId));
+    }
+    return respond(201, relationOf(ctx.ws, pair, t.id));
+  });
+  del("/v1/tickets/:id/related/:relationId", (ctx) => {
+    const st = stateOf(ctx.ws);
+    const t = findTicket(ctx.ws, ctx.params.id);
+    const pair = st.pairs.find((p) => p.id === ctx.params.relationId && (p.a === ctx.params.id || p.b === ctx.params.id));
+    if (!t || !pair) throw notFound("Link");
+    const other = findTicket(ctx.ws, pair.a === t.id ? pair.b : pair.a);
+    st.pairs = st.pairs.filter((p) => p !== pair);
+    save();
+    for (const x of [t, other]) if (x) publish(ctx.ws, "ticket_relation.deleted", { ticket_id: x.id, relation_id: pair.id });
+    addActivity(ctx.ws, t, "unlinked_ticket", { relation_id: pair.id, ticket_id: other?.id ?? null, number: other?.number ?? null, subject: other?.subject ?? null }, userRef(db.meId));
+    if (other) addActivity(ctx.ws, other, "unlinked_ticket", { relation_id: pair.id, ticket_id: t.id, number: t.number, subject: t.subject }, userRef(db.meId));
+    return respond(204);
   });
   del("/v1/tickets/:id/links/:linkId", (ctx) => {
     const st = stateOf(ctx.ws);

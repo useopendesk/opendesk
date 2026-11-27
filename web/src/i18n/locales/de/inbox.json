@@ -527,6 +527,10 @@
     "csat": "Der Kunde hat dies mit <m>{{score}}/5</m> bewertet",
     "linked": "<b>{{who}}</b> verknüpfte",
     "unlinked": "<b>{{who}}</b> entfernte die Verknüpfung mit",
+    "linkedTicket": "<b>{{who}}</b> verknüpfte das Ticket",
+    "unlinkedTicket": "<b>{{who}}</b> entfernte die Verknüpfung mit dem Ticket",
+    "linkedTicketHidden": "<b>{{who}}</b> verknüpfte ein privates Ticket",
+    "unlinkedTicketHidden": "<b>{{who}}</b> entfernte die Verknüpfung mit einem privaten Ticket",
     "triaged": "<b>{{who}}</b> hat dies eingeordnet",
     "triagedAs": "<b>{{who}}</b> hat dies als <b>{{category}}</b> eingeordnet",
     "aiAnswered": "<b>{{who}}</b> hat aus der Wissensdatenbank geantwortet",
@@ -970,7 +974,18 @@
     "removed": "Verknüpfung entfernt",
     "remove": "Verknüpfung entfernen",
     "removeNamed": "Verknüpfung mit {{title}} entfernen",
-    "byOllie": "Erstellt von {{name}}"
+    "byOllie": "Erstellt von {{name}}",
+    "kindLabel": "Was verknüpft werden soll",
+    "kind": {
+      "link": "Link",
+      "ticket": "Ticket"
+    },
+    "addTicketDescription": "Verknüpfe ein Ticket, das zu diesem gehört.",
+    "searchTickets": "Nach Betreff, Kunde oder #Nummer suchen",
+    "noTickets": "Keine Tickets gefunden",
+    "noTicketsHint": "Suche nach Betreff, Nummer oder Kunde.",
+    "ticketAdded": "Ticket verknüpft",
+    "privateTicket": "Privates Ticket"
   },
   "teams": {
     "team": "Team",
