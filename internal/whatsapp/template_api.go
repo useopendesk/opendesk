@@ -194,21 +194,9 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 			if t.Channel != domain.ChannelWhatsApp {
 				return nil, httpx.E(http.StatusUnprocessableEntity, "not_whatsapp_ticket", "This ticket is not a WhatsApp conversation.")
 			}
-			row, err := s.templateForTicket(ctx, p.WorkspaceID, t, in.Body.TemplateID)
+			row, err := s.templateForTicket(ctx, p.WorkspaceID, t.ID, in.Body.TemplateID)
 			if err != nil {
 				return nil, err
-			}
-			// The number the template goes to is the wa_id the contact wrote from.
-			if t.Contact == nil {
-				return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_no_contact",
-					"This ticket has no contact to send the WhatsApp template to.")
-			}
-			if _, err := waIDForContact(ctx, s.d.DB.Pool, row.ConnectionID, t.Contact.ID); err != nil {
-				if db.IsNotFound(err) {
-					return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_no_number",
-						"This contact has no WhatsApp number on this connection.")
-				}
-				return nil, httpx.Wrap(err)
 			}
 			params, err := cleanTemplateParams(in.Body.Params, row)
 			if err != nil {
@@ -218,10 +206,11 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 			if err != nil {
 				return nil, err
 			}
+			var headerUpload *uuid.UUID
 			if headerAttachmentID != "" {
 				// The file is checked here, before the message is written, so a wrong or
 				// missing one answers the agent instead of failing the send later.
-				if err := s.checkTemplateHeaderAttachment(ctx, p.WorkspaceID,
+				if headerUpload, err = s.templateHeaderFile(ctx, p, t.ID,
 					templateMediaKind(row.HeaderType), headerAttachmentID); err != nil {
 					return nil, err
 				}
@@ -243,7 +232,7 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				var err error
 				msg, err = tickets.AddWhatsAppTemplateReply(ctx, tx, s.d.Jobs, p, t.ID, bodyText,
-					map[string]any{"whatsapp_template": tmpl})
+					map[string]any{"whatsapp_template": tmpl}, headerUpload)
 				return err
 			})
 			if err != nil {
@@ -256,7 +245,7 @@ func (s *Service) registerTemplateAPI(api huma.API, _ chi.Router) {
 // templateForTicket reads the template an agent picked and checks it may go out on this
 // ticket: the same workspace, approved at Meta, and sent through the connection the ticket
 // was opened on.
-func (s *Service) templateForTicket(ctx context.Context, wid uuid.UUID, t domain.Ticket, raw string) (whatsappTemplateRow, error) {
+func (s *Service) templateForTicket(ctx context.Context, wid, ticketID uuid.UUID, raw string) (whatsappTemplateRow, error) {
 	id, err := hd.ParseRef(raw, "template_id")
 	if err != nil {
 		return whatsappTemplateRow{}, err
@@ -268,11 +257,11 @@ func (s *Service) templateForTicket(ctx context.Context, wid uuid.UUID, t domain
 	if err != nil {
 		return row, httpx.Wrap(err)
 	}
-	connID, err := s.templateTicketConnection(ctx, wid, t)
+	c, _, err := ticketConnection(ctx, s.d.DB.Pool, wid, ticketID)
 	if err != nil {
-		return row, err
+		return row, ticketConnectionError(err)
 	}
-	if row.ConnectionID != connID {
+	if row.ConnectionID != c.ID {
 		return row, httpx.Validation("That template belongs to another WhatsApp connection.")
 	}
 	if !strings.EqualFold(strings.TrimSpace(row.Status), templateApproved) {
@@ -281,31 +270,16 @@ func (s *Service) templateForTicket(ctx context.Context, wid uuid.UUID, t domain
 	return row, nil
 }
 
-// templateTicketConnection returns the connection a ticket's template goes out from: the one
-// the ticket was opened on, else the workspace's only connection.
-func (s *Service) templateTicketConnection(ctx context.Context, wid uuid.UUID, t domain.Ticket) (uuid.UUID, error) {
-	if raw, ok := t.Custom["whatsapp_connection_id"].(string); ok {
-		if id, err := uuid.Parse(raw); err == nil && id != uuid.Nil {
-			if _, err := loadConnection(ctx, s.d.DB.Pool, wid, id); err == nil {
-				return id, nil
-			} else if !db.IsNotFound(err) {
-				return uuid.Nil, httpx.Wrap(err)
-			}
-			// The connection is gone: fall back to the workspace's only one below.
-		}
+// ticketConnectionError is what the API answers when a ticket's message cannot go out.
+func ticketConnectionError(err error) error {
+	switch {
+	case errors.Is(err, errNoConversation):
+		return httpx.E(http.StatusConflict, "whatsapp_no_conversation", "This ticket has no WhatsApp conversation to reply on.")
+	case errors.Is(err, errDisconnected):
+		return httpx.E(http.StatusConflict, "whatsapp_disconnected",
+			"This ticket's WhatsApp number is not connected. Connect it again in Settings > WhatsApp to reply.")
 	}
-	all, err := listConnections(ctx, s.d.DB.Pool, wid)
-	if err != nil {
-		return uuid.Nil, httpx.Wrap(err)
-	}
-	switch len(all) {
-	case 0:
-		return uuid.Nil, httpx.E(http.StatusConflict, "whatsapp_not_configured", "This workspace has no WhatsApp connection.")
-	case 1:
-		return all[0].ID, nil
-	default:
-		return uuid.Nil, httpx.Validation("This ticket does not name the WhatsApp connection its template should go out from.")
-	}
+	return httpx.Wrap(err)
 }
 
 // templateApprovalDetail says why a template cannot be sent, from the status Meta reported.
@@ -391,36 +365,48 @@ func textHeaderValue(given string, row whatsappTemplateRow) (string, error) {
 	return given, nil
 }
 
-// checkTemplateHeaderAttachment confirms the file an agent picked for a media header belongs
-// to the workspace, is of the header's shape and is under Meta's cap for it. The row is read
-// by workspace and id only, so an id from another workspace is never taken. Size and type are
-// checked again by the send from the same row: the file may change between the two.
-func (s *Service) checkTemplateHeaderAttachment(ctx context.Context, wid uuid.UUID, kind, rawID string) error {
+// templateHeaderFile checks the file an agent picked for a media header: their own upload for
+// this send, which the reply then holds (fresh is its id), or a file already on one of this
+// ticket's messages. A file anywhere else in the workspace is refused, so a private team's
+// ticket or a member's Collab mail never reaches WhatsApp through a template. The file must be
+// of the header's shape and under Meta's cap for it; the send checks again from the same row.
+func (s *Service) templateHeaderFile(ctx context.Context, p *auth.Principal, ticketID uuid.UUID, kind, rawID string) (fresh *uuid.UUID, err error) {
 	id, err := hd.ParseRef(rawID, "header_media_id")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var (
 		contentType, storageKey string
 		sizeBytes               int64
+		attached                bool
 	)
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT content_type, size_bytes, storage_key FROM attachments
-		WHERE workspace_id = $1 AND id = $2`, wid, id).Scan(&contentType, &sizeBytes, &storageKey)
-	if db.IsNotFound(err) {
-		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
-			"The file for this template's header was not found in this workspace.")
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT a.content_type, a.size_bytes, a.storage_key, a.message_id IS NOT NULL
+		FROM attachments a LEFT JOIN messages m ON m.workspace_id = a.workspace_id AND m.id = a.message_id
+		WHERE a.workspace_id = $1 AND a.id = $2 AND (a.message_id IS NULL OR (m.ticket_id = $3 AND m.deleted_at IS NULL))`,
+		p.WorkspaceID, id, ticketID).Scan(&contentType, &sizeBytes, &storageKey, &attached)
+	if err == nil && !attached {
+		err = hd.CheckAttachments(ctx, s.d.DB.Pool, p.WorkspaceID, []uuid.UUID{id},
+			hd.Uploader{User: p.ActorUserID(), APIKey: p.ActorAPIKeyID()})
+	}
+	var refused *httpx.Error
+	if db.IsNotFound(err) || errors.As(err, &refused) {
+		return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
+			"Upload the file for this template's header, or pick one from this ticket.")
 	}
 	if err != nil {
-		return httpx.Wrap(err)
+		return nil, httpx.Wrap(err)
 	}
 	if strings.TrimSpace(storageKey) == "" {
-		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
+		return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_missing",
 			"The file for this template's header is not available.")
 	}
 	if problem := templateMediaProblem(kind, contentType, sizeBytes); problem != "" {
-		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_unsupported", problem)
+		return nil, httpx.E(http.StatusUnprocessableEntity, "whatsapp_template_file_unsupported", problem)
 	}
-	return nil
+	if attached {
+		return nil, nil
+	}
+	return &id, nil
 }
 
 // cleanButtonURLs checks the values of a template's URL buttons. Meta keeps a button's index

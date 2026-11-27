@@ -35,9 +35,6 @@ const (
 	// eventRetention is how long an applied delivery's id is kept to recognize Meta's
 	// retries (the prune job), so a replay older than that is dropped.
 	eventRetention = 7 * 24 * time.Hour
-	// WindowDuration is Meta's customer service window: free-form replies are allowed for
-	// 24 hours after the customer's latest message or call.
-	WindowDuration = 24 * time.Hour
 	// maxTextRunes is Meta's cap on a text message body.
 	maxTextRunes = 4096
 	// defaultAPIVersion is the Graph API version a connection uses unless it names another.
@@ -98,6 +95,7 @@ func Background(context.Context, *deps.Deps) {}
 func (s *Service) Register(api huma.API, r chi.Router) {
 	s.registerAPI(api, r)
 	s.registerTemplateAPI(api, r)
+	s.registerTicketAPI(api)
 	r.Get("/v1/whatsapp/hooks/{connection}", s.verifyWebhook)
 	r.Post("/v1/whatsapp/hooks/{connection}", s.webhook)
 }

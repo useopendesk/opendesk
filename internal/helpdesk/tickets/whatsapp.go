@@ -2,7 +2,7 @@ package tickets
 
 import (
 	"context"
-	"encoding/json"
+	"net/http"
 	"time"
 	"unicode/utf8"
 
@@ -11,11 +11,8 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/whatsapp/thread"
 )
-
-// whatsAppWindow is Meta's customer service window: free-form replies are allowed for 24
-// hours after the customer's latest message.
-const whatsAppWindow = 24 * time.Hour
 
 // Meta's caps on a free-form reply: 4096 characters of text, or 1024 of caption when the
 // reply carries one file.
@@ -24,43 +21,26 @@ const (
 	whatsAppMaxCaptionRunes = 1024
 )
 
-// whatsAppConnectionForTicket returns the WhatsApp connection a ticket was opened through:
-// tickets.custom.whatsapp_connection_id, else the workspace's first connection.
-func whatsAppConnectionForTicket(ctx context.Context, tx pgx.Tx, wid, ticketID uuid.UUID) (uuid.UUID, error) {
-	var custom []byte
-	if err := tx.QueryRow(ctx, `SELECT custom FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, ticketID).Scan(&custom); err != nil {
-		return uuid.Nil, err
-	}
-	var meta map[string]any
-	if len(custom) > 0 {
-		_ = json.Unmarshal(custom, &meta)
-	}
-	if raw, ok := meta["whatsapp_connection_id"].(string); ok {
-		if id, err := uuid.Parse(raw); err == nil && id != uuid.Nil {
-			return id, nil
-		}
-	}
-	var id uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT id FROM whatsapp_connections WHERE workspace_id = $1 ORDER BY created_at LIMIT 1`, wid).Scan(&id)
+// checkWhatsAppReply refuses a free-form WhatsApp reply Meta would refuse: the ticket needs
+// its conversation, a connection for the number it is on, and the customer's 24-hour window
+// open. A template goes out any time (AddWhatsAppTemplateReply).
+func checkWhatsAppReply(ctx context.Context, tx pgx.Tx, wid, ticketID uuid.UUID) error {
+	th, err := thread.ForTicket(ctx, tx, wid, ticketID)
 	if db.IsNotFound(err) {
-		return uuid.Nil, httpx.E(409, "whatsapp_not_configured", "This workspace has no WhatsApp connection.")
-	}
-	return id, err
-}
-
-// whatsAppWindowOpen reports whether the contact wrote through this connection within the
-// last 24 hours, so a free-form reply may go out.
-func whatsAppWindowOpen(ctx context.Context, tx pgx.Tx, wid, connID, contactID uuid.UUID) (bool, error) {
-	var last *time.Time
-	err := tx.QueryRow(ctx, `SELECT last_inbound_at FROM whatsapp_contacts
-		WHERE workspace_id = $1 AND connection_id = $2 AND contact_id = $3`, wid, connID, contactID).Scan(&last)
-	if db.IsNotFound(err) {
-		return false, nil
+		return httpx.E(http.StatusConflict, "whatsapp_no_conversation", "This ticket has no WhatsApp conversation to reply on.")
 	}
 	if err != nil {
-		return false, err
+		return err
 	}
-	return last != nil && time.Since(*last) < whatsAppWindow, nil
+	if th.ConnectionID == nil {
+		return httpx.E(http.StatusConflict, "whatsapp_disconnected",
+			"This ticket's WhatsApp number is not connected. Connect it again in Settings > WhatsApp to reply.")
+	}
+	if !th.Open(time.Now()) {
+		return httpx.E(http.StatusUnprocessableEntity, "whatsapp_window_closed",
+			"The 24-hour WhatsApp reply window has closed. Send a template, or wait for the customer to message again.")
+	}
+	return nil
 }
 
 // validateWhatsAppReply holds a free-form WhatsApp reply to Meta's limits: one file per
@@ -71,9 +51,9 @@ func validateWhatsAppReply(attIDs []uuid.UUID, bodyText string) error {
 	case len(attIDs) > 1:
 		return httpx.Validation("WhatsApp takes one file per message. Send the files one at a time.")
 	case len(attIDs) == 1 && utf8.RuneCountInString(bodyText) > whatsAppMaxCaptionRunes:
-		return httpx.Validation("a WhatsApp caption can be at most 1024 characters")
+		return httpx.Validation("A WhatsApp caption can be at most 1024 characters.")
 	case len(attIDs) == 0 && utf8.RuneCountInString(bodyText) > whatsAppMaxTextRunes:
-		return httpx.Validation("the message is longer than WhatsApp's limit of 4096 characters")
+		return httpx.Validation("The message is longer than WhatsApp's limit of 4096 characters.")
 	}
 	return nil
 }

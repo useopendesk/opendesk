@@ -172,13 +172,3 @@ func TestCleanTemplateParams(t *testing.T) {
 		t.Fatal("a missing variable was accepted")
 	}
 }
-
-func TestTemplateSendAttempts(t *testing.T) {
-	if got := templateSendAttempts(nil); got != 0 {
-		t.Fatalf("got %d, want 0", got)
-	}
-	raw := []byte(`{"whatsapp_template":{"name":"hello"},"template_send_attempts":2}`)
-	if got := templateSendAttempts(raw); got != 2 {
-		t.Fatalf("got %d, want 2", got)
-	}
-}

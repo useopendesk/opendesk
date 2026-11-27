@@ -566,6 +566,10 @@ type WhatsAppInboundArgs struct {
 
 func (WhatsAppInboundArgs) Kind() string { return "whatsapp.inbound" }
 
+// WhatsAppSendAttempts is how often a WhatsApp send runs: Meta's rate limit and server errors
+// are retried, every other refusal fails the message at once.
+const WhatsAppSendAttempts = 5
+
 // WhatsAppSendArgs sends one outbound WhatsApp reply. Owner: whatsapp.
 type WhatsAppSendArgs struct {
 	WorkspaceID uuid.UUID `json:"workspace_id"`

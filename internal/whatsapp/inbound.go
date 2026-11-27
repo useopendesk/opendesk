@@ -16,6 +16,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/products"
+	"github.com/useopendesk/opendesk/internal/whatsapp/thread"
 )
 
 // inboundWorker applies one verified Meta delivery: the messages in it become ticket
@@ -99,11 +100,14 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 	// Meta posts every number of an app to one callback; the payload's number decides the
 	// connection. A mismatch means the URL named another number of the same app.
 	if m.PhoneNumberID != "" && m.PhoneNumberID != c.PhoneNumberID {
-		if other, err := loadConnectionByPhoneNumber(ctx, s.d.DB.Pool, m.PhoneNumberID); err == nil && other.WorkspaceID == c.WorkspaceID {
-			c = other
-		} else {
+		other, err := loadConnectionByPhoneNumber(ctx, s.d.DB.Pool, c.WorkspaceID, m.PhoneNumberID)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+		if err != nil {
+			return err
+		}
+		c = other
 	}
 	at := m.Timestamp
 	if at.IsZero() {
@@ -155,14 +159,14 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 		if pc.Blocked {
 			return nil
 		}
-		if err := upsertContactWindow(ctx, tx, c.WorkspaceID, c.ID, pc.ID, m.From, m.ContactName, at); err != nil {
+		if err := thread.Touch(ctx, tx, c.WorkspaceID, c.PhoneNumberID, m.From, pc.ID, m.ContactName, at); err != nil {
 			return err
 		}
-		ticketID, err := openTicketFor(ctx, tx, c.WorkspaceID, pc.ID)
+		ticketID, err := thread.OpenTicket(ctx, tx, c.WorkspaceID, c.PhoneNumberID, m.From)
 		newTicket := false
 		if errors.Is(err, pgx.ErrNoRows) {
 			newTicket = true
-			ticketID, err = createTicketFor(ctx, s, tx, c, pc.ID, subject, text)
+			ticketID, err = createTicketFor(ctx, s, tx, c, pc.ID, m.From, subject, text)
 		}
 		if err != nil {
 			return err
@@ -213,18 +217,9 @@ func (w *inboundWorker) ingest(ctx context.Context, c connection, m ParsedMessag
 	return err
 }
 
-// openTicketFor returns the contact's open WhatsApp ticket on this workspace, else pgx.ErrNoRows.
-func openTicketFor(ctx context.Context, tx pgx.Tx, wid, contactID uuid.UUID) (uuid.UUID, error) {
-	var id uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT id FROM tickets
-		WHERE workspace_id = $1 AND channel = $2 AND contact_id = $3 AND deleted_at IS NULL
-			AND status IN ('open', 'pending', 'on_hold')
-		ORDER BY last_message_at DESC, id DESC LIMIT 1`, wid, domain.ChannelWhatsApp, contactID).Scan(&id)
-	return id, err
-}
-
-// createTicketFor opens a WhatsApp ticket for the contact, routing it like any other ticket.
-func createTicketFor(ctx context.Context, s *Service, tx pgx.Tx, c connection, contactID uuid.UUID, subject, body string) (uuid.UUID, error) {
+// createTicketFor opens a WhatsApp ticket for the contact, routing it like any other ticket,
+// and records the conversation it carries.
+func createTicketFor(ctx context.Context, s *Service, tx pgx.Tx, c connection, contactID uuid.UUID, waID, subject, body string) (uuid.UUID, error) {
 	res, err := routing.Resolve(ctx, tx, routing.Input{WorkspaceID: c.WorkspaceID, Channel: domain.ChannelWhatsApp,
 		BrandID: c.BrandID, ContactID: &contactID, Subject: subject, Body: body})
 	if err != nil {
@@ -235,9 +230,11 @@ func createTicketFor(ctx context.Context, s *Service, tx pgx.Tx, c connection, c
 	brandID := c.BrandID
 	t, err := domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: c.WorkspaceID, Subject: subject,
 		Channel: domain.ChannelWhatsApp, ContactID: &contactID, BrandID: &brandID, TeamID: res.TeamID,
-		Routed: res.Routed, RequiredSkillIDs: res.RequiredSkillIDs,
-		Custom: map[string]any{"whatsapp_connection_id": c.ID.String()}})
+		Routed: res.Routed, RequiredSkillIDs: res.RequiredSkillIDs})
 	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := thread.Link(ctx, tx, c.WorkspaceID, t.ID, c.PhoneNumberID, waID); err != nil {
 		return uuid.Nil, err
 	}
 	if rule := res.RuleID(); rule != nil {
@@ -279,20 +276,28 @@ func (w *inboundWorker) applyStatus(ctx context.Context, c connection, st Parsed
 	if err != nil {
 		return err
 	}
+	rank := statusRank(st.Status)
+	if rank == 0 {
+		// A status this channel does not show (Meta adds kinds over time).
+		return nil
+	}
 	status, detail := "sent", ""
 	if st.Status == "failed" {
 		status, detail = "failed", truncate(st.UserMsg, 500)
 	}
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		// Meta's reports may arrive out of order: a status only moves forward, so a late
+		// "delivered" never replaces "read".
 		var msgID uuid.UUID
 		err := tx.QueryRow(ctx, `UPDATE messages SET
-				delivery_status = CASE WHEN $3 = 'failed' THEN 'failed'
-					WHEN messages.delivery_status = 'failed' THEN 'failed' ELSE 'sent' END,
+				delivery_status = $3,
 				delivery_error = CASE WHEN $3 = 'failed' THEN $4 ELSE messages.delivery_error END,
 				delivery_meta = messages.delivery_meta || $5::jsonb
 			WHERE workspace_id = $1 AND provider_message_id = $2 AND direction = 'outbound'
 				AND delivery_status <> 'failed'
-			RETURNING id`, c.WorkspaceID, st.MessageID, status, detail, raw).Scan(&msgID)
+				AND (CASE messages.delivery_meta->>'provider_status'
+					WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 WHEN 'failed' THEN 4 ELSE 0 END) < $6
+			RETURNING id`, c.WorkspaceID, st.MessageID, status, detail, raw, rank).Scan(&msgID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -301,6 +306,21 @@ func (w *inboundWorker) applyStatus(ctx context.Context, c connection, st Parsed
 		}
 		return domain.PublishMessageUpdated(ctx, tx, c.WorkspaceID, msgID)
 	})
+}
+
+// statusRank orders Meta's delivery statuses: sent, then delivered, then read. Failed ranks
+// with read, so it replaces sent or delivered but never a message the customer read. 0 is a
+// status this channel does not apply.
+func statusRank(status string) int {
+	switch status {
+	case "sent":
+		return 1
+	case "delivered":
+		return 2
+	case "read", "failed":
+		return 3
+	}
+	return 0
 }
 
 // placeholderFor names a message kind whose payload carries no text the agent can read.

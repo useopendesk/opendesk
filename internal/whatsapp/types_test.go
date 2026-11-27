@@ -511,31 +511,6 @@ func TestSendTemplate(t *testing.T) {
 	}
 }
 
-func TestMarkRead(t *testing.T) {
-	var path string
-	var body map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path = r.URL.Path
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("request body: %v", err)
-		}
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer server.Close()
-	client := NewClient(server.Client())
-	client.SetBaseURL(server.URL)
-	if err := client.MarkRead(context.Background(),
-		Account{PhoneNumberID: "123", AccessToken: "token"}, "wamid.A1"); err != nil {
-		t.Fatal(err)
-	}
-	if path != "/v26.0/123/messages" {
-		t.Fatalf("path: %q", path)
-	}
-	if body["status"] != "read" || body["message_id"] != "wamid.A1" || body["messaging_product"] != "whatsapp" {
-		t.Fatalf("body: %+v", body)
-	}
-}
-
 func TestValidateCredentials(t *testing.T) {
 	var numberAuth, numbersAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,6 +34,12 @@ const (
 	maxVerifyTokenLength   = 200
 	maxRefusalDetailRunes  = 300
 	whatsappConnectionType = "whatsapp_connection"
+)
+
+// Meta's ids are numbers and a Graph API version is vN.N; all three go into Graph URL paths.
+var (
+	metaIDPattern     = regexp.MustCompile(`^[0-9]+$`)
+	apiVersionPattern = regexp.MustCompile(`^v[0-9]{1,3}\.[0-9]{1,3}$`)
 )
 
 // credentialsInput is the credentials an admin pastes to connect a number. verify_token and
@@ -427,6 +434,12 @@ func cleanConnectionSetup(in credentialsInput, old *Credentials) (connectionSetu
 		len(out.Credentials.VerifyToken) > maxVerifyTokenLength,
 		len(out.APIVersion) > maxAPIVersionLength:
 		return connectionSetup{}, httpx.Validation("One of these credentials is too long.")
+	}
+	if !metaIDPattern.MatchString(out.PhoneNumberID) || !metaIDPattern.MatchString(out.WABAID) {
+		return connectionSetup{}, httpx.Validation("The phone number ID and WhatsApp Business account ID are numbers. Copy them from WhatsApp > API Setup in your Meta app.")
+	}
+	if out.APIVersion != "" && !apiVersionPattern.MatchString(out.APIVersion) {
+		return connectionSetup{}, httpx.Validation("The API version looks like v23.0. Leave it empty to use the default.")
 	}
 	if out.Credentials.VerifyToken == "" && old != nil {
 		out.Credentials.VerifyToken = old.VerifyToken

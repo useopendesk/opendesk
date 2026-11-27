@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/whatsapp/thread"
 )
 
 // connectionColumns is the select list scanConnection reads.
@@ -57,11 +57,11 @@ func listConnections(ctx context.Context, q db.Querier, wid uuid.UUID) ([]connec
 	return out, rows.Err()
 }
 
-// loadConnectionByPhoneNumber reads the connection a Meta delivery names. Meta posts every
+// loadConnectionByPhoneNumber reads the workspace's connection for a number. Meta posts every
 // number of an app to one callback URL, so the payload's phone_number_id decides the connection.
-func loadConnectionByPhoneNumber(ctx context.Context, q db.Querier, phoneNumberID string) (connection, error) {
+func loadConnectionByPhoneNumber(ctx context.Context, q db.Querier, wid uuid.UUID, phoneNumberID string) (connection, error) {
 	return scanConnection(q.QueryRow(ctx, `SELECT `+connectionColumns+` FROM whatsapp_connections c
-		WHERE c.phone_number_id = $1 ORDER BY c.created_at LIMIT 1`, phoneNumberID))
+		WHERE c.workspace_id = $1 AND c.phone_number_id = $2`, wid, phoneNumberID))
 }
 
 // insertConnection stores a new connection.
@@ -85,7 +85,8 @@ func updateConnection(ctx context.Context, q db.Querier, c connection) error {
 	return err
 }
 
-// deleteConnection removes a connection, its inbound events and its contact windows.
+// deleteConnection removes a connection, its inbound events and its templates. Its tickets
+// and their windows stay with the number, for when it is connected again.
 func deleteConnection(ctx context.Context, q db.Querier, wid, id uuid.UUID) error {
 	_, err := q.Exec(ctx, `DELETE FROM whatsapp_connections WHERE workspace_id = $1 AND id = $2`, wid, id)
 	return err
@@ -125,72 +126,31 @@ func markConnectionError(ctx context.Context, q db.Querier, id uuid.UUID, msg st
 	return err
 }
 
-// upsertContactWindow links a wa_id to the contact it writes as, and advances the 24-hour
-// window. Every inbound message advances it, duplicates included (Meta's window counts them).
-func upsertContactWindow(ctx context.Context, q db.Querier, wid, connID, contactID uuid.UUID, waID, name string, at time.Time) error {
-	_, err := q.Exec(ctx, `INSERT INTO whatsapp_contacts (workspace_id, connection_id, wa_id, contact_id, profile_name, last_inbound_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,now(),now())
-		ON CONFLICT (connection_id, wa_id) DO UPDATE SET contact_id = EXCLUDED.contact_id,
-			profile_name = CASE WHEN EXCLUDED.profile_name <> '' THEN EXCLUDED.profile_name ELSE whatsapp_contacts.profile_name END,
-			last_inbound_at = GREATEST(COALESCE(whatsapp_contacts.last_inbound_at, EXCLUDED.last_inbound_at), EXCLUDED.last_inbound_at),
-			updated_at = now()`, wid, connID, waID, contactID, name, at)
-	return err
-}
+// errNoConversation and errDisconnected are why a ticket's WhatsApp message cannot go out.
+var (
+	errNoConversation = errors.New("ticket has no whatsapp conversation")
+	errDisconnected   = errors.New("ticket's whatsapp number is not connected")
+)
 
-// contactWindow reports when the contact last wrote through this connection, and whether they
-// are inside Meta's 24-hour window.
-func contactWindow(ctx context.Context, q db.Querier, wid, connID, contactID uuid.UUID) (last time.Time, open bool, err error) {
-	err = q.QueryRow(ctx, `SELECT last_inbound_at FROM whatsapp_contacts
-		WHERE workspace_id = $1 AND connection_id = $2 AND contact_id = $3`, wid, connID, contactID).Scan(&last)
+// ticketConnection is where a ticket's messages go out: its conversation (thread.ForTicket)
+// and the connection that holds the conversation's number now, so a number disconnected and
+// connected again keeps its tickets.
+func ticketConnection(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID) (connection, thread.Thread, error) {
+	th, err := thread.ForTicket(ctx, q, wid, ticketID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, false, nil
+		return connection{}, th, errNoConversation
 	}
 	if err != nil {
-		return time.Time{}, false, err
+		return connection{}, th, err
 	}
-	return last, time.Since(last) < WindowDuration, nil
-}
-
-// connectionForContact returns the connection the ticket's messages go out from: the one the
-// ticket was opened through (tickets.custom.whatsapp_connection_id), else the workspace's
-// first connection. A recorded connection that was disconnected is skipped, so a ticket whose
-// number was removed and connected again keeps replying through the new connection.
-func connectionForContact(ctx context.Context, q db.Querier, wid uuid.UUID, custom []byte) (connection, error) {
-	var meta map[string]any
-	if len(custom) > 0 {
-		_ = json.Unmarshal(custom, &meta)
+	if th.ConnectionID == nil {
+		return connection{}, th, errDisconnected
 	}
-	if raw, ok := meta["whatsapp_connection_id"].(string); ok {
-		if id, err := uuid.Parse(raw); err == nil {
-			c, err := loadConnection(ctx, q, wid, id)
-			if err == nil {
-				return c, nil
-			}
-			if !errors.Is(err, pgx.ErrNoRows) {
-				return connection{}, err
-			}
-			// The ticket's connection was disconnected: the workspace's current one speaks
-			// for it, with the contact window and number it has.
-		}
-	}
-	all, err := listConnections(ctx, q, wid)
-	if err != nil {
-		return connection{}, err
-	}
-	if len(all) == 0 {
-		return connection{}, pgx.ErrNoRows
-	}
-	return all[0], nil
-}
-
-// waIDForContact returns the wa_id a contact writes from on a connection.
-func waIDForContact(ctx context.Context, q db.Querier, connID, contactID uuid.UUID) (string, error) {
-	var waID string
-	err := q.QueryRow(ctx, `SELECT wa_id FROM whatsapp_contacts WHERE connection_id = $1 AND contact_id = $2 LIMIT 1`, connID, contactID).Scan(&waID)
+	c, err := loadConnection(ctx, q, wid, *th.ConnectionID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", pgx.ErrNoRows
+		return connection{}, th, errDisconnected
 	}
-	return waID, err
+	return c, th, err
 }
 
 // pruneEvents removes applied deliveries older than eventRetention.

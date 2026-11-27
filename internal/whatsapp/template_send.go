@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -17,14 +16,10 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
 
-// templateSendMaxAttempts is how often Meta's rate limit or a server error may be retried
-// before the message is failed: it matches the send job's MaxAttempts. The count is kept in
-// the message's delivery_meta because the send helper is handed the message, not the job.
-const templateSendMaxAttempts = 5
-
 // sendTemplateMessage delivers one outbound reply as an approved Meta template. A template
-// may go out at any time, so the customer service window is not checked here.
-func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outboundMessage, waID string, tmpl *whatsappTemplate) error {
+// may go out at any time, so the customer service window is not checked here. Meta's rate
+// limit or a server error is retried until lastTry, which fails the message instead.
+func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outboundMessage, waID string, tmpl *whatsappTemplate, lastTry bool) error {
 	row, reason, err := s.templateForSend(ctx, c, tmpl)
 	if err != nil {
 		return err
@@ -52,14 +47,11 @@ func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outbo
 		return s.failMessage(ctx, c.WorkspaceID, m.ID, "This WhatsApp connection's credentials could not be read.")
 	}
 	if headerKind != "" {
-		reason, uerr := s.uploadTemplateHeaderMedia(ctx, c, acc, tmpl)
+		reason, uerr := s.uploadTemplateHeaderMedia(ctx, c, acc, m.TicketID, tmpl)
 		if uerr != nil {
 			// Meta refused the upload before accepting anything, so the same send may
-			// succeed later: count the attempts here as the template send does.
-			if attempts := templateSendAttempts(m.DeliveryMeta) + 1; attempts < templateSendMaxAttempts {
-				if aerr := s.recordTemplateAttempt(ctx, c.WorkspaceID, m.ID, attempts); aerr != nil {
-					return aerr
-				}
+			// succeed later.
+			if !lastTry {
 				return uerr
 			}
 			return s.failMessage(ctx, c.WorkspaceID, m.ID, whatsappSendError(uerr))
@@ -70,14 +62,9 @@ func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outbo
 	}
 	wamid, err := NewClient(s.http).SendTemplate(ctx, acc, waID, tmpl.Name, tmpl.Language, tmpl.components())
 	if err != nil {
-		if mErr, ok := err.(*MetaAPIError); ok && (mErr.StatusCode == http.StatusTooManyRequests || mErr.StatusCode >= http.StatusInternalServerError) {
-			if attempts := templateSendAttempts(m.DeliveryMeta) + 1; attempts < templateSendMaxAttempts {
-				// Meta refused it before accepting: safe to let River try again.
-				if aerr := s.recordTemplateAttempt(ctx, c.WorkspaceID, m.ID, attempts); aerr != nil {
-					return aerr
-				}
-				return err
-			}
+		if metaRetryable(err) && !lastTry {
+			// Meta refused it before accepting: safe to let River try again.
+			return err
 		}
 		return s.failMessage(ctx, c.WorkspaceID, m.ID, whatsappSendError(err))
 	}
@@ -85,7 +72,7 @@ func (s *Service) sendTemplateMessage(ctx context.Context, c connection, m outbo
 	raw, _ := json.Marshal(meta)
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE messages SET delivery_status = 'sent', provider_message_id = $3,
-				delivery_error = '', delivery_meta = (delivery_meta - 'template_send_attempts') || $4::jsonb
+				delivery_error = '', delivery_meta = delivery_meta || $4::jsonb
 			WHERE workspace_id = $1 AND id = $2`, c.WorkspaceID, m.ID, wamid, raw); err != nil {
 			return err
 		}
@@ -154,10 +141,11 @@ func prepareTemplateHeader(tmpl *whatsappTemplate, row whatsappTemplateRow) {
 
 // uploadTemplateHeaderMedia reads the file an image, video or document header names out of
 // storage, checks it against Meta's caps from the stored row, and uploads it so the send can
-// carry its media id. It returns the safe reason a message cannot be sent, or an error worth
-// retrying (Meta's rate limit or a server error). The storage key never appears in the return
-// value or a log line.
-func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, acc Account, tmpl *whatsappTemplate) (string, error) {
+// carry its media id. Only a file on one of the ticket's messages is sent (the agent's upload
+// is on the template reply itself). It returns the safe reason a message cannot be sent, or
+// an error worth retrying (Meta's rate limit or a server error). The storage key never
+// appears in the return value or a log line.
+func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, acc Account, ticketID uuid.UUID, tmpl *whatsappTemplate) (string, error) {
 	kind := templateMediaKind(tmpl.HeaderType)
 	if kind == "" {
 		return "", nil
@@ -170,8 +158,10 @@ func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, a
 		filename, contentType, storageKey string
 		sizeBytes                         int64
 	)
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT filename, content_type, size_bytes, storage_key FROM attachments
-		WHERE workspace_id = $1 AND id = $2`, c.WorkspaceID, id).Scan(&filename, &contentType, &sizeBytes, &storageKey)
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT a.filename, a.content_type, a.size_bytes, a.storage_key FROM attachments a
+		JOIN messages m ON m.workspace_id = a.workspace_id AND m.id = a.message_id
+		WHERE a.workspace_id = $1 AND a.id = $2 AND m.ticket_id = $3 AND m.deleted_at IS NULL`,
+		c.WorkspaceID, id, ticketID).Scan(&filename, &contentType, &sizeBytes, &storageKey)
 	if db.IsNotFound(err) {
 		return "This template's file is missing.", nil
 	}
@@ -215,25 +205,4 @@ func (s *Service) uploadTemplateHeaderMedia(ctx context.Context, c connection, a
 		tmpl.HeaderMediaFilename = filename
 	}
 	return "", nil
-}
-
-// templateSendAttempts reads how often a template send was already refused for a transient
-// Meta error out of the message's delivery_meta.
-func templateSendAttempts(raw []byte) int {
-	var env struct {
-		Attempts int `json:"template_send_attempts"`
-	}
-	if len(raw) == 0 {
-		return 0
-	}
-	_ = json.Unmarshal(raw, &env)
-	return env.Attempts
-}
-
-// recordTemplateAttempt stores the attempt count a retry continues from.
-func (s *Service) recordTemplateAttempt(ctx context.Context, wid, msgID uuid.UUID, attempts int) error {
-	raw, _ := json.Marshal(map[string]any{"template_send_attempts": attempts})
-	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE messages SET delivery_meta = delivery_meta || $3::jsonb
-		WHERE workspace_id = $1 AND id = $2`, wid, msgID, raw)
-	return err
 }

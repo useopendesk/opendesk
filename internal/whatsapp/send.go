@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,8 +29,6 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 		BodyHTML       string
 		TicketID       uuid.UUID
 		Channel        string
-		ContactID      *uuid.UUID
-		Custom         []byte
 		Kind           string
 		Direction      string
 		DeliveryStatus string
@@ -39,12 +36,12 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 		Attachments    int64
 	}
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT m.id, m.body_text, m.body_html, m.kind, m.direction, m.delivery_status,
-			m.delivery_meta, t.id, t.channel, t.contact_id, t.custom,
+			m.delivery_meta, t.id, t.channel,
 			(SELECT count(*) FROM attachments a WHERE a.workspace_id = m.workspace_id AND a.message_id = m.id)
 		FROM messages m JOIN tickets t ON t.id = m.ticket_id AND t.workspace_id = m.workspace_id
 		WHERE m.workspace_id = $1 AND m.id = $2`, job.Args.WorkspaceID, job.Args.MessageID).Scan(
 		&m.ID, &m.BodyText, &m.BodyHTML, &m.Kind, &m.Direction, &m.DeliveryStatus, &m.DeliveryMeta,
-		&m.TicketID, &m.Channel, &m.ContactID, &m.Custom, &m.Attachments)
+		&m.TicketID, &m.Channel, &m.Attachments)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -62,45 +59,32 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 		s.d.Log.Info("whatsapp send canceled: workspace suspended", "message_id", m.ID)
 		return river.JobCancel(errors.New("workspace suspended"))
 	}
-	c, err := connectionForContact(ctx, s.d.DB.Pool, job.Args.WorkspaceID, m.Custom)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This workspace has no WhatsApp connection.")
-		}
+	c, th, err := ticketConnection(ctx, s.d.DB.Pool, job.Args.WorkspaceID, m.TicketID)
+	switch {
+	case errors.Is(err, errNoConversation):
+		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This ticket has no WhatsApp conversation to reply on.")
+	case errors.Is(err, errDisconnected):
+		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This ticket's WhatsApp number is not connected.")
+	case err != nil:
 		return err
 	}
-	if m.ContactID == nil {
-		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This ticket has no contact to reply to on WhatsApp.")
-	}
-	waID, err := waIDForContact(ctx, s.d.DB.Pool, c.ID, *m.ContactID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return s.failMessage(ctx, job.Args.WorkspaceID, m.ID, "This contact has no WhatsApp number on this connection.")
-		}
-		return err
-	}
-	out := outboundMessage{ID: m.ID, BodyText: m.BodyText, BodyHTML: m.BodyHTML, Attachments: m.Attachments, DeliveryMeta: m.DeliveryMeta}
+	lastTry := job.Attempt >= job.MaxAttempts
+	out := outboundMessage{ID: m.ID, TicketID: m.TicketID, BodyText: m.BodyText, BodyHTML: m.BodyHTML,
+		Attachments: m.Attachments, DeliveryMeta: m.DeliveryMeta}
 	// A template may go out at any time; a free-form reply only inside the window.
 	if tmpl := whatsappTemplateFromMeta(m.DeliveryMeta); tmpl != nil {
-		err := s.sendTemplateMessage(ctx, c, out, waID, tmpl)
-		if err != nil && job.Attempt >= job.MaxAttempts {
-			// River's last attempt: a template that never left is a failed message, not one
-			// that stays pending forever.
-			return s.failMessage(ctx, c.WorkspaceID, out.ID, whatsappSendError(err))
-		}
-		return err
+		return s.sendTemplateMessage(ctx, c, out, th.WaID, tmpl, lastTry)
 	}
 	// The window is checked again here: the send can run seconds after the reply was written,
 	// and the window may have closed in between.
-	if _, open, err := contactWindow(ctx, s.d.DB.Pool, c.WorkspaceID, c.ID, *m.ContactID); err == nil && !open {
+	if !th.Open(time.Now()) {
 		return s.failMessage(ctx, job.Args.WorkspaceID, m.ID,
-			"The 24-hour WhatsApp reply window has closed. The customer must message again before a free-form reply can go out.")
-	} else if err != nil {
-		return err
+			"The 24-hour WhatsApp reply window has closed. Send a template, or wait for the customer to message again.")
 	}
+	waID := th.WaID
 	if out.Attachments > 0 {
 		err := s.sendMediaMessage(ctx, c, out, waID)
-		if err != nil && job.Attempt >= job.MaxAttempts {
+		if err != nil && lastTry {
 			return s.failMessage(ctx, c.WorkspaceID, out.ID, whatsappSendError(err))
 		}
 		return err
@@ -119,7 +103,7 @@ func (w *sendWorker) Work(ctx context.Context, job *river.Job[jobs.WhatsAppSendA
 	wamid, err := NewClient(s.http).SendText(ctx, acc, waID, body)
 	if err != nil {
 		reason := whatsappSendError(err)
-		if mErr, ok := err.(*MetaAPIError); ok && (mErr.StatusCode == http.StatusTooManyRequests || mErr.StatusCode >= 500) && job.Attempt < job.MaxAttempts {
+		if metaRetryable(err) && !lastTry {
 			// Meta refused it before accepting: safe to let River try again.
 			return err
 		}
@@ -174,6 +158,7 @@ func whatsappSendError(err error) string {
 // the attachments count and the template an agent picked, if any.
 type outboundMessage struct {
 	ID           uuid.UUID
+	TicketID     uuid.UUID
 	BodyText     string
 	BodyHTML     string
 	Attachments  int64

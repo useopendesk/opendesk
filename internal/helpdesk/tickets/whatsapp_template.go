@@ -16,17 +16,14 @@ import (
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
-// whatsappTemplateSendAttempts is how often a template send may be retried for Meta's rate
-// limit or a server error; it matches the send worker's own budget.
-const whatsappTemplateSendAttempts = 5
-
 // AddWhatsAppTemplateReply adds an outbound WhatsApp reply that sends an approved template:
 // bodyText is the template rendered for the timeline, and templateMeta is the envelope stored
 // in delivery_meta under "whatsapp_template" (the template's name, language, variables and
 // buttons) that the send worker reads. The send is queued in the same transaction. A template
-// may go out at any time, so — unlike PostMessage — there is no window check.
+// may go out at any time, so unlike PostMessage there is no window check. headerFile is the
+// agent's upload for a media header, attached to the reply so the timeline shows what went.
 func AddWhatsAppTemplateReply(ctx context.Context, tx pgx.Tx, jc domain.Jobs, p *auth.Principal, tid uuid.UUID,
-	bodyText string, templateMeta map[string]any) (domain.Message, error) {
+	bodyText string, templateMeta map[string]any, headerFile *uuid.UUID) (domain.Message, error) {
 	wid := p.WorkspaceID
 	var channel, subject string
 	if err := tx.QueryRow(ctx, `SELECT channel, subject FROM tickets
@@ -45,11 +42,15 @@ func AddWhatsAppTemplateReply(ctx context.Context, tx pgx.Tx, jc domain.Jobs, p 
 	if authorType == "ai" {
 		authorType = "user" // the assistant writes on the user's behalf, after their approval
 	}
+	var attIDs []uuid.UUID
+	if headerFile != nil {
+		attIDs = []uuid.UUID{*headerFile}
+	}
 	msg, err := domain.AddMessage(ctx, tx, jc, domain.NewMessage{
 		WorkspaceID: wid, TicketID: tid, Kind: "reply", Direction: "outbound",
 		AuthorType: authorType, AuthorUserID: actor.UserID,
 		BodyHTML: hd.TextToHTML(bodyText), BodyText: bodyText,
-		Subject: replySubject(subject), DeliveryStatus: "pending",
+		Subject: replySubject(subject), DeliveryStatus: "pending", AttachmentIDs: attIDs,
 	})
 	if err != nil {
 		return domain.Message{}, err
@@ -66,7 +67,7 @@ func AddWhatsAppTemplateReply(ctx context.Context, tx pgx.Tx, jc domain.Jobs, p 
 		return domain.Message{}, err
 	}
 	if _, err := jc.InsertTx(ctx, tx, jobs.WhatsAppSendArgs{WorkspaceID: wid, MessageID: msg.ID},
-		&river.InsertOpts{MaxAttempts: whatsappTemplateSendAttempts}); err != nil {
+		&river.InsertOpts{MaxAttempts: jobs.WhatsAppSendAttempts}); err != nil {
 		return domain.Message{}, err
 	}
 	// Reloaded so the caller sees the delivery_meta that was just written.

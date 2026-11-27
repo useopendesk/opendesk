@@ -280,16 +280,6 @@ func (c *Client) SendTemplate(ctx context.Context, acc Account, to, name, langua
 	return c.send(ctx, acc, "send template", payload)
 }
 
-// MarkRead marks a customer message as read, which Meta shows as blue ticks.
-func (c *Client) MarkRead(ctx context.Context, acc Account, messageID string) error {
-	if strings.TrimSpace(acc.PhoneNumberID) == "" {
-		return errors.New("whatsapp: the account has no phone number id")
-	}
-	payload := map[string]any{"messaging_product": "whatsapp", "status": "read", "message_id": messageID}
-	path := "/" + url.PathEscape(acc.PhoneNumberID) + "/messages"
-	return c.sendJSON(ctx, acc, "mark read", http.MethodPost, path, payload, nil)
-}
-
 // SubscribeWebhook subscribes this instance's Meta app to the WhatsApp Business account and
 // points deliveries at callbackURL, handing Meta verifyToken to echo back on the handshake.
 func (c *Client) SubscribeWebhook(ctx context.Context, acc Account, callbackURL, verifyToken string) error {
