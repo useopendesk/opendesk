@@ -11,6 +11,7 @@ import type {
   MailAttachment,
   MailAudience,
   MailCategoryRule,
+  MailAISkip,
   MailComment,
   MailFolder,
   MailFolderRole,
@@ -27,6 +28,7 @@ import type {
 } from "@/lib/api/types";
 import { firstLine } from "@/lib/collab/html";
 import { collabFromName } from "@/lib/collab/identities";
+import { samplePdf } from "../samplePdf";
 import { LABEL_TONES, toneHex, type LabelTone } from "@/lib/collab/labelTones";
 import { defaultSidebarPrefs, normalizePrefs, SECTION_IDS } from "@/lib/collab/sidebarPrefs";
 import { COLLAB_FROM_VARS, fromNameProblem, hasFromVars } from "@/lib/fromname";
@@ -48,7 +50,7 @@ import { PRIMARY } from "@/lib/collab/categories";
 type Account = Omit<MailAccount, "identities" | "default_from" | "categories"> & { ownerId: string | null; aliases: MailIdentity[]; defaultFrom: string; catChoice: AccountChoice; catRules: MailCategoryRule[] };
 /** category: its tab once sorted (undefined: not yet); byPerson: someone moved it, so sorting leaves it. */
 /** followers: who follows it in their Mentions box, with when it last had something for them (contracts/collab.md "Mentions"). */
-type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; needsAction?: boolean; snoozedUntil?: string; category?: string; categoryByPerson?: boolean; followers?: Record<string, string> };
+type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; aiSkips?: MailAISkip[]; needsAction?: boolean; snoozedUntil?: string; category?: string; categoryByPerson?: boolean; followers?: Record<string, string> };
 
 /** A comment's reply fields when it replies to nothing. */
 const noReply = { reply_to: null, parent: null, parent_deleted: false } satisfies Pick<MailComment, "reply_to" | "parent" | "parent_deleted">;
@@ -354,7 +356,7 @@ function seedState(ws: WsData): State {
       const attachments: MailAttachment[] =
         story.attach && !fromUs && k === 0
           ? [
-              { id: "0", filename: "document.pdf", content_type: "application/pdf", size: 240_118, inline: false, content_id: "", url: "data:text/plain;charset=utf-8,Mock%20PDF" },
+              { id: "0", filename: "document.pdf", content_type: "application/pdf", size: 240_118, inline: false, content_id: "", url: samplePdf(story.subject, ["Attached to the email from " + person.email + "."]) },
               { id: "1", filename: "photo.png", content_type: "image/png", size: 88_210, inline: false, content_id: "", url: fileSvg(story.subject) },
             ]
           : [];
@@ -526,6 +528,53 @@ function seedState(ws: WsData): State {
       body_html: `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
       body_text: text,
       sent_at: new Date(now - 95 * MIN).toISOString(),
+      unread: true,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+      outgoing: false,
+    });
+  }
+
+  // A refund an AI drafting key looked at and handed back, with a note for the team on why (contracts/collab.md "AI notes").
+  {
+    const tid = uuid();
+    const subject = "Refund for our annual plan";
+    const from = { name: "Tomas Berg", email: "tomas@lindqvist.se" };
+    const text = "Hello,\n\nWe moved to another tool last month and would like a refund for the rest of our annual plan. We paid for the year in September.\n\nRegards,\nTomas";
+    const at = (ago: number) => new Date(now - ago).toISOString();
+    const key = "Support drafter";
+    threads.set(tid, {
+      id: tid,
+      account_id: work.id,
+      subject,
+      shares: emptyAudience(),
+      assignees: [],
+      comments: [
+        {
+          id: uuid(), thread_id: tid, author: userRef(other), mentions: [], ...noReply, created_at: at(33 * MIN), updated_at: at(33 * MIN), ai_note_by: key,
+          body_html: "<p>Paid more than 30 days ago, past the refund window. A partial refund is a person's call, so I left it without a draft.</p>",
+        },
+      ],
+      aiSkips: [{ client: key, reason: "Refund outside the 30-day window", at: at(33 * MIN) }],
+    });
+    messages.push({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@lindqvist.se`,
+      from,
+      to: [{ name: work.display_name, email: work.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      subject,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html: `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
+      body_text: text,
+      sent_at: at(41 * MIN),
       unread: true,
       starred: false,
       draft: false,
@@ -777,6 +826,9 @@ function seesAccount(ws: WsData, a: Account, uid: string) {
   return a.visibility === "shared" && inAudience(ws, a.shared_with, uid);
 }
 
+/** Whether I see this Collab account: a reply draft keeps it as its address only then. */
+export const canSeeAccount = (ws: WsData, id: string) => visibleAccounts(ws).some((a) => a.id === id);
+
 function visibleAccounts(ws: WsData): Account[] {
   const s = state(ws);
   const me = db.meId;
@@ -955,6 +1007,8 @@ function detailOut(ws: WsData, t: ThreadMeta): MailThreadDetail {
     comments: t.comments,
     shares: t.shares,
     can_act: canActRole(ws, db.meId),
+    // A skip shows until the conversation's next message (contracts/collab.md "AI notes").
+    ai_skips: (t.aiSkips ?? []).filter((x) => !msgsOf(s, t.id).some((m) => !m.draft && m.sent_at > x.at)),
     // The demo keeps no AI draft records once a draft is gone.
     unused_ai_drafts: [],
     following: !!t.followers?.[db.meId],
@@ -1976,7 +2030,7 @@ export function registerCollab() {
     const replyTo = typeof ctx.body.reply_to === "string" ? ctx.body.reply_to : null;
     const parent = replyTo ? t.comments.find((x) => x.id === replyTo) : undefined;
     if (replyTo && !parent) throw invalid("The comment you reply to is not in this conversation.");
-    const reply = parent ? { reply_to: parent.id, parent: { author: parent.author, excerpt: firstLine(parent.body_html) }, parent_deleted: false } : noReply;
+    const reply = parent ? { reply_to: parent.id, parent: { author: parent.author, excerpt: firstLine(parent.body_html), ai_note_by: parent.ai_note_by ?? null }, parent_deleted: false } : noReply;
     const c: MailComment = { id: uuid(), thread_id: t.id, author: userRef(db.meId), body_html: html, mentions, ...reply, created_at: at, updated_at: at };
     // Who it answers: the author of the comment it replies to, or else those who commented and since
     // whose latest comment only you have (before it is added).

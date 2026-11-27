@@ -281,6 +281,8 @@ Collab mail counts toward the workspace's Collab storage: each stored message's 
 term late in a long message or a long conversation is found. Mail not imported is not searched: while
 searching, the mail page says how far back the accounts in view go ("Searching mail since …", from
 `oldest_message_at`) and links to the history import of an account that has more at its provider.
+The mail page searches the box in view, except Unread, a filter: a search there asks for `box=all`, so
+read mail is found too, as a search on the inbox spans every category tab.
 
 ## Conversations
 
@@ -324,7 +326,9 @@ A `move` to an Outlook category is `422 validation_error` (a category is a label
 `label`). Moving a Microsoft or IMAP conversation keeps its categories.
 
 Opening a conversation does not mark it read; the web app sends `read` when it is shown (and the
-user can turn that off in the sidebar settings, `mark_read_on_open`).
+user can turn that off in the sidebar settings, `mark_read_on_open`). A conversation shown with an
+AI draft waiting in it is not read then: the web app sends `read` once a reply is sent from it, and
+discarding the draft leaves it as it was.
 
 ### Snooze
 
@@ -602,12 +606,16 @@ order:
 4. **Ollie**: with `sorting: "ai"`, the account's `ai` on and AI on for the workspace (`settings.ai.enabled`),
    one decision call (contracts/ai.md "Decisions", feature `mail_categorize`) asks for up to 10
    conversations at once, one Choice question each over the categories, with each category's
-   description as its rubric. The state is data, never instructions: the sender's name and address,
+   description as its rubric. Ollie prefers a category other than Primary: Primary is for mail that
+   is important, needs the reader's attention and is not an obvious fit for any other category, so
+   when another category fits, that one is chosen; mail Ollie is unsure of goes to Primary only when
+   it seems to need the reader, otherwise to the category it fits best. The state is data, never instructions: the sender's name and address,
    the subject, the first 1,200 characters of the text and the mail's signals (`list`: List-Id or
    List-Unsubscribe, `bulk`: Precedence bulk or list, `campaign`: a mailing tool's campaign header,
    `auto`: Auto-Submitted, `noreply`: a no-reply sender, `direct`: the account's address in To, and
-   Gmail's tab). On a calibrated engine (Jev) a category other than
-   Primary needs a probability of at least 0.5, so mail Ollie is unsure of stays in Primary.
+   Gmail's tab). On a calibrated engine (Jev) an answer other than Primary with a probability
+   under 0.5 goes to Primary when Primary is the next most likely, and stays where Ollie put it when
+   the doubt is between two other categories.
 5. **Headers** (without Ollie, or when its call fails or the AI balance is too low): for the built-in
    keys only, list mail goes to `promotions` when its subject reads like an offer and `promotions` is
    there, else to `newsletters`, else `promotions`; mail from a social network to `social`; automatic
@@ -616,9 +624,45 @@ order:
 
 A conversation keeps its category as more messages arrive; one the account answers moves to Primary.
 Moving a conversation (`categorize`, "Actions") is the person's choice, which nothing changes after.
-History imports are not sorted; when categories are turned on or changed for an account, its inbox
-conversations of the last 30 days (at most 300) are sorted again, except those a person moved.
-Conversations in a category that is removed go back to Primary. Mail is never archived, read or
+
+**Learning from moves.** Every move a member makes by hand (the row menu, a drag onto a tab, a bulk
+move) on a `local` account is also an example for Ollie (`collab_category_examples`): the
+conversation's latest sender who is not the account, their name, the subject, the first 200
+characters of the text, the signals, and the category it left and went to. One per conversation
+(the latest move wins); moving it back to the category it left (Undo) forgets it. An account keeps
+its latest 20 per category and 100 in all; examples go with the conversation, the account and the
+workspace, and with a category the account no longer has. When Ollie sorts the account's mail, the
+decision's state carries up to 16 of them (`moved_by_reader`, at most 4 per category and 6,000
+characters together; first those from a sender, then a domain, of the mail being sorted, then the
+latest), and a rule asks for similar mail to go where the reader put it. They are data written by
+their senders like the mail itself, never instructions. Sender rules, people the account writes to,
+replies and Gmail's tab still come first; without Ollie they change nothing. Examples are used only
+by that account's own sorting: no route returns them and no event carries them, so a private
+account's stay private. After a move, the sender's other inbox conversations of the last 30 days
+that sorting placed (Ollie, the headers or Gmail's tab; at most 25; never one a person moved, a rule
+placed or that stays in Primary as a reply or a known correspondent's) are sorted again by
+`collab.categorize` with the examples: the sender's domain, or the address alone at a public mail
+provider such as gmail.com. Like any sorting, they spend the workspace's AI balance and fall back to
+the headers when it is too low. A move on a Gmail-synced account teaches nothing here (Gmail decides).
+History imports are not sorted. **What a change sorts again**: when an account's categories change
+(its workspace's, its team's or its own set, or which of them it follows), only what the change can
+affect is sorted again, among its inbox conversations of the last 30 days (at most 300 per change),
+and never one a person moved. The account records the key, name and description of each category it
+was sorted with (`collab_accounts.category_basis`) and compares:
+
+- a new category: Primary's conversations (and those not sorted yet), to see whether they belong in it;
+  conversations in the other categories stay;
+- a category renamed or with a new description: Primary's conversations and that category's own;
+- Primary's own name or description: Primary's conversations;
+- a removed category: its conversations, which need a new home; one a person moved there goes to Primary;
+- order, colours, the lock (`locked`, "Members choose their own" off) and the team order: nothing,
+  unless they change which categories an account follows, which is then compared like any change.
+
+Turning categories on, a change between Gmail sync and opendesk's own sorting, and turning Ollie's
+sorting on or off for an account sort all of its recent inbox again, except what a person moved.
+An account sorted before the basis was recorded records it on its next sync; a change before then
+sorts Primary's conversations and a removed category's. Re-sorting spends the workspace's AI balance
+like any sorting and falls back to the headers when it is too low. Mail is never archived, read or
 moved by sorting.
 
 **Seeing them.** `MailThread.category` is the conversation's category key for its account (`null` when
@@ -634,9 +678,11 @@ own order (accounts taken in list order). So a set that was reordered or extende
 whatever other accounts in view follow. Moving a conversation offers "Always for this sender" to
 whoever manages the account, which adds the sender rule and moves that sender's other inbox
 conversations too. A conversation dragged from the list onto a tab is moved there as the row menu
-moves it (`categorize`, the same toast and Undo); dragging a selected row moves the selection. A
-tab takes the drop only while every dragged conversation's account has its key, and the tab in view
-takes none.
+moves it (`categorize`, the same toast and Undo); dragging a selected row moves the selection. In
+All inboxes a tab can be a category only some accounts have: dropped there, the conversations whose
+account has its key move and a toast says how many stayed. While none of the dragged conversations'
+accounts has it, the tab refuses the drop (the pointer shows it cannot drop) and a hint under it says
+their inbox has no such category. The tab in view takes none.
 
 **Reordering the tabs.** Whoever may change the one set the tabs show reorders them on the mail page:
 a tab dragged along the row (a pointer drag past a few pixels; a press that does not move opens the
@@ -720,9 +766,10 @@ Any AI client, whatever model runs it (local or hosted), may draft replies for a
   team's internal comments), `POST /v1/collab/drafts` (mode `reply` or `reply_all`, no
   `attachment_ids` or `forward_attachments`) and `PUT /v1/collab/drafts/{id}` for a draft it saved
   that nobody has saved since (`403 ai_draft_not_own` otherwise; no `attachment_ids`), both with an
-  optional `client_ref`, and the outcome feed ("AI draft outcomes"). Every other
-  Collab route refuses it (`403`): it never sends, discards, marks read or unread, moves, labels,
-  assigns, shares or comments. Reading changes no state, so a conversation the key read stays
+  optional `client_ref`, the outcome feed ("AI draft outcomes") and `POST
+  /v1/collab/threads/{id}/comments` for an AI note ("AI notes"). Every other Collab route refuses
+  it (`403`): it never sends, discards, marks read or unread, moves, labels, assigns or shares, and
+  never edits or deletes a comment. Reading changes no state, so a conversation the key read stays
   unread for the team.
 - **Attribution**: a draft it saves is the member's (`sent_by`) with `drafted_by_ai`, the key's name
   as it was then (shown "AI draft by <name>"). A person who saves the draft takes it over:
@@ -732,8 +779,32 @@ Any AI client, whatever model runs it (local or hosted), may draft replies for a
   as with any draft. Each save by a key is audit-logged (`collab.ai_draft_saved`, actor the member,
   `actor: "ai"` with the key).
 - **MCP tools** (contracts/agent.md): `list_collab_conversations`, `get_collab_conversation`,
-  `draft_collab_reply`, `claim_collab_conversation`, `release_collab_conversation` and
-  `list_collab_draft_outcomes`, offered to a key with `collab:draft`.
+  `draft_collab_reply`, `claim_collab_conversation`, `release_collab_conversation`,
+  `add_collab_note` and `list_collab_draft_outcomes`, offered to a key with `collab:draft`.
+
+### AI notes
+
+A key tells the reviewer why a draft needs a person, or why it did not draft, in the team's
+internal comments, never in a draft body (GH#431).
+
+- `POST /v1/collab/threads/{id}/comments` from a `collab:draft` key (member an agent or above, on a
+  conversation the member sees) adds an internal comment written as the member, with `ai_note_by`
+  the key's name then. It mentions no one (`422 ai_note_mentions` for a
+  mention mark or `mentions`), so a note never shares a conversation, and replies to no comment
+  (`422 ai_note_reply` for `reply_to`), so it notifies no one. People may reply to an AI note like
+  any comment. At most 30 a minute per key, notes with drafts included.
+  Audit-logged (`collab.ai_note_added`, `actor: "ai"` with the key and its name, never the words).
+  An AI note is never edited (`403`), so its words stay the key's; it is deleted like a comment.
+- `ai_note` (≤20000) on `POST /v1/collab/drafts` from a key: the same note, under the same limit,
+  checked before the draft is saved and stored in the draft's transaction, so both are kept or
+  neither; refused from a person (`422`).
+- Web: an AI note reads as AI, never as the member: a violet AI mark in place of their avatar, the
+  key's name as its author with a quiet "AI note" tag, and "Added through an API key made by
+  <member>" on hovering the name. A reply to one quotes the key's name.
+- **Skips shown**: a conversation's `ai_skips` are the keys that released it with `skip` since its
+  last message (`{client, reason, at}`, the key's name now; revoked keys left out), shown as one
+  violet line "<name> looked at this and did not draft: <reason>", so a person knows an AI looked
+  and why it did not draft.
 
 ### AI queue
 
@@ -766,6 +837,10 @@ with a claim that expires on its own, and reports back. Nobody has to assign it.
   `204` gives it back; `404` when the key holds no live claim on it. With `skip` the key is not
   offered it again until new mail arrives; the reason (for example "not confident") is kept with
   the skip (`collab_ai_skips`).
+- **Clearing skips**: `POST /v1/collab/ai-queue/skips/clear` `{account_id?, reason?}` → `{cleared}`
+  removes the calling key's own skips, all of them, those of one account the member sees (`404`
+  otherwise) or those kept with exactly that reason, so the key is offered those conversations
+  again without new mail, for example after its drafting improved. Another key's skips stay.
 - **Approval**: an AI draft does not clear Needs action (only a sent reply does), so the
   conversation waits in Needs action, its draft labelled "AI draft by <name>", until a person sends
   a reply or marks it done; discarding the draft leaves it in Needs action. **Ready for review** (`box=ai_review`, `boxes.ai_review`) lists the conversations
@@ -1022,10 +1097,11 @@ interface MailComment {
   body_html: string            // sanitized like a note
   mentions: string[]           // user ids
   reply_to: string | null      // the comment of this conversation it replies to ("Replies")
-  parent: { author: UserRef | null; excerpt: string } | null  // that comment's author and first line, with reply_to
+  parent: { author: UserRef | null; excerpt: string; ai_note_by: string | null } | null  // that comment's author and first line, with reply_to (ai_note_by: it is an AI note)
   parent_deleted: boolean      // it replied to a comment since deleted
   created_at: string
   updated_at: string
+  ai_note_by: string | null    // an AI note: the key's name when it added it ("AI notes")
 }
 
 interface MailThreadDetail {
@@ -1037,6 +1113,7 @@ interface MailThreadDetail {
   shares: Audience             // the conversation's own shares
   can_act: boolean
   ticket: { id: string; number: number; subject: string } | null  // the ticket it answered or was answered from, when the caller sees it ("Answering tickets")
+  ai_skips: { client: string; reason: string; at: string }[]  // AI keys that skipped it since its last message, newest first ("AI notes")
   unused_ai_drafts: (AIDraftRef & { outcome_at: string })[]  // AI drafts discarded, replaced or abandoned and gone, oldest first ("AI draft outcomes")
   following: boolean           // the caller follows it: it is in their Mentions ("Mentions")
 }
@@ -1319,7 +1396,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?, category?, until?}` → `{threads: MailThread[]}`. `done`, `needs_action` and `snooze` are available only for a shared account with handling enabled and do not create a provider job; `snooze` needs `until` in the future ("Snooze"). Threads the caller cannot act on are `404` (all or nothing). `categorize` needs a `category` every one of their accounts has (`422 validation_failed`) |
 | GET | `/v1/collab/categories` | member | `MailCategorySettings` ("Categories") |
-| PUT | `/v1/collab/categories/workspace` | admin | `{enabled, categories?, locked?}` → `MailCategorySettings`. Categories: 2..10, `primary` first, keys and names once each (`422 validation_failed`); names through `internal/displayname`. Every account is sorted again where its categories changed |
+| PUT | `/v1/collab/categories/workspace` | admin | `{enabled, categories?, locked?}` → `MailCategorySettings`. Categories: 2..10, `primary` first, keys and names once each (`422 validation_failed`); names through `internal/displayname`. Each account sorts again only what the change can affect ("What a change sorts again") |
 | DELETE | `/v1/collab/categories/workspace` | admin | → `MailCategorySettings`: no default |
 | PUT | `/v1/collab/categories/teams/{team_id}` | admin | `{enabled, categories?}` → `MailCategorySettings`; a new team set goes last in the order |
 | DELETE | `/v1/collab/categories/teams/{team_id}` | admin | → `MailCategorySettings`: the team follows the workspace |
@@ -1622,7 +1699,8 @@ in-app and push like other notifications, emailed by the member's notification p
   `migrations/000662_collab_history.up.sql`, with `collab_messages.size`, the generated
   `collab_messages.search`, `collab_accounts.stored_bytes` and `subscriptions.collab_storage_override`).
 - `collab_category_sets` (the workspace's, each team's and each account's categories; one row per scope),
-  `collab_category_rules` (an account's sender rules), `collab_threads.category`, `category_source` and
+  `collab_category_rules` (an account's sender rules), `collab_category_examples` (conversations moved by
+  hand, Ollie's examples; `migrations/000772_collab_category_examples.up.sql`), `collab_threads.category`, `category_source` and
   `category_pending`, `collab_messages.signals`, and `collab_accounts.category_keys` and `category_sig` (what
   the account was last sorted with) (`migrations/000684_collab_categories.up.sql`).
 - `collab_accounts.config` (not secret) holds the granted `scopes` and, under `settings`, the settings

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailAccount, MailAccountCategories, MailCategory, MailCounts } from "../api/types";
-import { accountCategories, canMoveToCategory, categoryOrderSet, categoryProblem, categoryTabs, categoryTone, inKeyOrder, moveCategory, ruleSender, showsOrderSet, slugKey, withKeys } from "./categories";
+import { accountCategories, movableToCategory, categoryOrderSet, categoryProblem, categoryTabs, categoryTone, inKeyOrder, moveCategory, ruleSender, showsOrderSet, slugKey, withKeys } from "./categories";
 
 const cat = (key: string, name = key[0].toUpperCase() + key.slice(1), color: MailCategory["color"] = "gray"): MailCategory => ({ key, name, description: "", color });
 
@@ -124,22 +124,28 @@ describe("accountCategories and categoryTone", () => {
   });
 });
 
-describe("canMoveToCategory", () => {
-  const work = account("w", [cat("primary"), cat("codes"), cat("updates")]);
+describe("movableToCategory", () => {
+  const work = account("w", [cat("primary"), cat("codes-logins"), cat("updates")]);
   const sales = account("s", [cat("primary"), cat("updates")]);
   const plain = account("p", null);
   const byId = new Map([work, sales, plain].map((a) => [a.id, a]));
+  const t = (id: string, account_id: string) => ({ id, account_id });
 
-  it("takes conversations whose accounts all have the category", () => {
-    expect(canMoveToCategory([{ account_id: "w" }, { account_id: "s" }], byId, "updates")).toBe(true);
-    expect(canMoveToCategory([{ account_id: "w" }], byId, "codes")).toBe(true);
+  it("takes the conversations whose account has the category", () => {
+    expect(movableToCategory([t("1", "w"), t("2", "s")], byId, "updates").map((x) => x.id)).toEqual(["1", "2"]);
+    expect(movableToCategory([t("1", "w")], byId, "codes-logins").map((x) => x.id)).toEqual(["1"]);
   });
 
-  it("refuses when one conversation's account lacks it, is not split, is unknown, or when there are none", () => {
-    expect(canMoveToCategory([{ account_id: "w" }, { account_id: "s" }], byId, "codes")).toBe(false);
-    expect(canMoveToCategory([{ account_id: "p" }], byId, "primary")).toBe(false);
-    expect(canMoveToCategory([{ account_id: "gone" }], byId, "updates")).toBe(false);
-    expect(canMoveToCategory([], byId, "updates")).toBe(false);
+  it("moves those of an account with a category of its own when others in the drag lack it", () => {
+    // An inbox spanning accounts shows one account's own category as a tab for every account.
+    expect(movableToCategory([t("1", "s"), t("2", "w"), t("3", "s")], byId, "codes-logins").map((x) => x.id)).toEqual(["2"]);
+  });
+
+  it("leaves those whose account lacks it, is not split or is unknown", () => {
+    expect(movableToCategory([t("1", "s")], byId, "codes-logins")).toEqual([]);
+    expect(movableToCategory([t("1", "p")], byId, "primary")).toEqual([]);
+    expect(movableToCategory([t("1", "gone")], byId, "updates")).toEqual([]);
+    expect(movableToCategory([], byId, "updates")).toEqual([]);
   });
 });
 
