@@ -483,7 +483,8 @@ func TestVoysRecordingPlaysThroughTheApp(t *testing.T) {
 	h.v.SetRecording(call, audio, "audio/mpeg")
 	r := h.e.Do("GET", path, h.ws.Agent.As(h.ws), nil).Want(t, 200)
 	if !bytes.Equal(r.Body, audio) || r.Header.Get("Content-Type") != "audio/mpeg" || r.Header.Get("X-Content-Type-Options") != "nosniff" ||
-		!strings.HasPrefix(r.Header.Get("Content-Disposition"), "attachment") || r.Header.Get("Cache-Control") != "no-store" {
+		!strings.HasPrefix(r.Header.Get("Content-Disposition"), "attachment") || r.Header.Get("Cache-Control") != "private, no-store" ||
+		r.Header.Get("Content-Security-Policy") != "default-src 'none'; sandbox" {
 		t.Fatalf("play: %q %v", r.Body, r.Header)
 	}
 	if !slices.Contains(h.v.Requests(), "GET /api/v2/clients/"+fake.Client+"/callrecordings/"+call+"/audio") {

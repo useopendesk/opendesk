@@ -102,9 +102,13 @@ func (s *Service) registerRecording(api huma.API, tags []string) {
 				defer cancel()
 				defer out.Body.Close()
 				hctx.SetHeader("Content-Type", out.ContentType)
+				// A download of an outside file: never shown or sniffed as a page, never stored.
+				// The app fetches it and plays it from a blob, which this policy does not touch.
 				hctx.SetHeader("Content-Disposition", `attachment; filename="call-recording"`)
 				hctx.SetHeader("X-Content-Type-Options", "nosniff")
-				hctx.SetHeader("Cache-Control", "no-store")
+				hctx.SetHeader("Content-Security-Policy", "default-src 'none'; sandbox")
+				hctx.SetHeader("Cache-Control", "private, no-store")
+				hctx.SetHeader("Referrer-Policy", "no-referrer")
 				if out.Length >= 0 && out.Length <= maxRecordingBytes {
 					hctx.SetHeader("Content-Length", strconv.FormatInt(out.Length, 10))
 				}

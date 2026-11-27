@@ -436,9 +436,11 @@ through `GET /v1/phone/calls/{id}/recording` (viewer, `tickets:read`; a call who
 caller cannot see, of another workspace, or without a recording is `404`). The server opens the
 address the provider's event gave with the connection's token and streams the audio, with no
 copy kept: `Content-Type` the provider's `audio/*` (anything else is not played),
-`Content-Disposition: attachment`, `nosniff`, `no-store`, at most 200 MB and three minutes. The
-address is trusted only as a path on the provider's own API host, so the token is never sent
-elsewhere, and redirects are not followed. The browser fetches it with the session and plays the
+the headers of every download of an outside file (`Content-Disposition: attachment`, `nosniff`,
+`Content-Security-Policy: default-src 'none'; sandbox`, `private, no-store`, `no-referrer`), at
+most 200 MB and three minutes. The address is trusted only as a path on the provider's own API
+host, so the token is never sent elsewhere, and redirects are not followed (Voys serves the audio
+from that host itself). The browser fetches it with the session and plays the
 bytes from memory (`media-src blob:`). `409 recording_not_ready` when the provider has no audio
 yet (the entry offers to try again), `429 provider_rate_limited`, `502 recording_refused` (the
 token's user lacks access to recordings) or `recording_unavailable`. Each play that reached the
